@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, Wrench, CreditCard, CalendarCheck2, FileText, MessageSquare } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/app-shell";
 
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/portal")({
 });
 
 function PortalLayout() {
-  const path = typeof window !== "undefined" ? window.location.pathname : "/portal";
+  const path = useRouterState({ select: s => s.location.pathname });
   const title = titles[path] ?? "Customer Portal";
   return (
     <AppShell variant="portal" title={title} nav={nav}>
