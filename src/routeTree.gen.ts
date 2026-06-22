@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as PropertiesRouteImport } from './routes/properties'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as ContactRouteImport } from './routes/contact'
@@ -32,6 +33,11 @@ import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PropertiesRoute = PropertiesRouteImport.update({
   id: '/properties',
   path: '/properties',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/contact': typeof ContactRoute
   '/portal': typeof PortalRouteWithChildren
   '/properties': typeof PropertiesRouteWithChildren
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/book-visit': typeof BookVisitRoute
   '/contact': typeof ContactRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/contact': typeof ContactRoute
   '/portal': typeof PortalRouteWithChildren
   '/properties': typeof PropertiesRouteWithChildren
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/portal'
     | '/properties'
+    | '/sitemap.xml'
     | '/admin/finance'
     | '/admin/leases'
     | '/admin/maintenance'
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/book-visit'
     | '/contact'
+    | '/sitemap.xml'
     | '/admin/finance'
     | '/admin/leases'
     | '/admin/maintenance'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/contact'
     | '/portal'
     | '/properties'
+    | '/sitemap.xml'
     | '/admin/finance'
     | '/admin/leases'
     | '/admin/maintenance'
@@ -293,10 +305,18 @@ export interface RootRouteChildren {
   ContactRoute: typeof ContactRoute
   PortalRoute: typeof PortalRouteWithChildren
   PropertiesRoute: typeof PropertiesRouteWithChildren
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/properties': {
       id: '/properties'
       path: '/properties'
@@ -519,6 +539,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactRoute: ContactRoute,
   PortalRoute: PortalRouteWithChildren,
   PropertiesRoute: PropertiesRouteWithChildren,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
