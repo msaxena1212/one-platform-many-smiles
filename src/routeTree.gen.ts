@@ -9,38 +9,336 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PropertiesRouteImport } from './routes/properties'
+import { Route as PortalRouteImport } from './routes/portal'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as BookVisitRouteImport } from './routes/book-visit'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PropertiesIndexRouteImport } from './routes/properties.index'
+import { Route as PortalIndexRouteImport } from './routes/portal.index'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as PropertiesIdRouteImport } from './routes/properties.$id'
+import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
+import { Route as PortalPaymentsRouteImport } from './routes/portal.payments'
+import { Route as PortalDocumentsRouteImport } from './routes/portal.documents'
+import { Route as PortalCommunityRouteImport } from './routes/portal.community'
+import { Route as PortalBookingsRouteImport } from './routes/portal.bookings'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as AdminUnitsRouteImport } from './routes/admin.units'
+import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
+import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
+import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
+import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 
+const PropertiesRoute = PropertiesRouteImport.update({
+  id: '/properties',
+  path: '/properties',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalRoute = PortalRouteImport.update({
+  id: '/portal',
+  path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BookVisitRoute = BookVisitRouteImport.update({
+  id: '/book-visit',
+  path: '/book-visit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PropertiesIndexRoute = PropertiesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PropertiesRoute,
+} as any)
+const PortalIndexRoute = PortalIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const PropertiesIdRoute = PropertiesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PropertiesRoute,
+} as any)
+const PortalTicketsRoute = PortalTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalPaymentsRoute = PortalPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalDocumentsRoute = PortalDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalCommunityRoute = PortalCommunityRouteImport.update({
+  id: '/community',
+  path: '/community',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalBookingsRoute = PortalBookingsRouteImport.update({
+  id: '/bookings',
+  path: '/bookings',
+  getParentRoute: () => PortalRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUnitsRoute = AdminUnitsRouteImport.update({
+  id: '/units',
+  path: '/units',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPropertiesRoute = AdminPropertiesRouteImport.update({
+  id: '/properties',
+  path: '/properties',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMaintenanceRoute = AdminMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLeasesRoute = AdminLeasesRouteImport.update({
+  id: '/leases',
+  path: '/leases',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFinanceRoute = AdminFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/book-visit': typeof BookVisitRoute
+  '/contact': typeof ContactRoute
+  '/portal': typeof PortalRouteWithChildren
+  '/properties': typeof PropertiesRouteWithChildren
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/leases': typeof AdminLeasesRoute
+  '/admin/maintenance': typeof AdminMaintenanceRoute
+  '/admin/properties': typeof AdminPropertiesRoute
+  '/admin/units': typeof AdminUnitsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/portal/bookings': typeof PortalBookingsRoute
+  '/portal/community': typeof PortalCommunityRoute
+  '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/payments': typeof PortalPaymentsRoute
+  '/portal/tickets': typeof PortalTicketsRoute
+  '/properties/$id': typeof PropertiesIdRoute
+  '/admin/': typeof AdminIndexRoute
+  '/portal/': typeof PortalIndexRoute
+  '/properties/': typeof PropertiesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/book-visit': typeof BookVisitRoute
+  '/contact': typeof ContactRoute
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/leases': typeof AdminLeasesRoute
+  '/admin/maintenance': typeof AdminMaintenanceRoute
+  '/admin/properties': typeof AdminPropertiesRoute
+  '/admin/units': typeof AdminUnitsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/portal/bookings': typeof PortalBookingsRoute
+  '/portal/community': typeof PortalCommunityRoute
+  '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/payments': typeof PortalPaymentsRoute
+  '/portal/tickets': typeof PortalTicketsRoute
+  '/properties/$id': typeof PropertiesIdRoute
+  '/admin': typeof AdminIndexRoute
+  '/portal': typeof PortalIndexRoute
+  '/properties': typeof PropertiesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/book-visit': typeof BookVisitRoute
+  '/contact': typeof ContactRoute
+  '/portal': typeof PortalRouteWithChildren
+  '/properties': typeof PropertiesRouteWithChildren
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/leases': typeof AdminLeasesRoute
+  '/admin/maintenance': typeof AdminMaintenanceRoute
+  '/admin/properties': typeof AdminPropertiesRoute
+  '/admin/units': typeof AdminUnitsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/portal/bookings': typeof PortalBookingsRoute
+  '/portal/community': typeof PortalCommunityRoute
+  '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/payments': typeof PortalPaymentsRoute
+  '/portal/tickets': typeof PortalTicketsRoute
+  '/properties/$id': typeof PropertiesIdRoute
+  '/admin/': typeof AdminIndexRoute
+  '/portal/': typeof PortalIndexRoute
+  '/properties/': typeof PropertiesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/admin'
+    | '/book-visit'
+    | '/contact'
+    | '/portal'
+    | '/properties'
+    | '/admin/finance'
+    | '/admin/leases'
+    | '/admin/maintenance'
+    | '/admin/properties'
+    | '/admin/units'
+    | '/admin/users'
+    | '/portal/bookings'
+    | '/portal/community'
+    | '/portal/documents'
+    | '/portal/payments'
+    | '/portal/tickets'
+    | '/properties/$id'
+    | '/admin/'
+    | '/portal/'
+    | '/properties/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/about'
+    | '/book-visit'
+    | '/contact'
+    | '/admin/finance'
+    | '/admin/leases'
+    | '/admin/maintenance'
+    | '/admin/properties'
+    | '/admin/units'
+    | '/admin/users'
+    | '/portal/bookings'
+    | '/portal/community'
+    | '/portal/documents'
+    | '/portal/payments'
+    | '/portal/tickets'
+    | '/properties/$id'
+    | '/admin'
+    | '/portal'
+    | '/properties'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/admin'
+    | '/book-visit'
+    | '/contact'
+    | '/portal'
+    | '/properties'
+    | '/admin/finance'
+    | '/admin/leases'
+    | '/admin/maintenance'
+    | '/admin/properties'
+    | '/admin/units'
+    | '/admin/users'
+    | '/portal/bookings'
+    | '/portal/community'
+    | '/portal/documents'
+    | '/portal/payments'
+    | '/portal/tickets'
+    | '/properties/$id'
+    | '/admin/'
+    | '/portal/'
+    | '/properties/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  BookVisitRoute: typeof BookVisitRoute
+  ContactRoute: typeof ContactRoute
+  PortalRoute: typeof PortalRouteWithChildren
+  PropertiesRoute: typeof PropertiesRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/properties': {
+      id: '/properties'
+      path: '/properties'
+      fullPath: '/properties'
+      preLoaderRoute: typeof PropertiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal': {
+      id: '/portal'
+      path: '/portal'
+      fullPath: '/portal'
+      preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/book-visit': {
+      id: '/book-visit'
+      path: '/book-visit'
+      fullPath: '/book-visit'
+      preLoaderRoute: typeof BookVisitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +346,180 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/properties/': {
+      id: '/properties/'
+      path: '/'
+      fullPath: '/properties/'
+      preLoaderRoute: typeof PropertiesIndexRouteImport
+      parentRoute: typeof PropertiesRoute
+    }
+    '/portal/': {
+      id: '/portal/'
+      path: '/'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof PortalIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/properties/$id': {
+      id: '/properties/$id'
+      path: '/$id'
+      fullPath: '/properties/$id'
+      preLoaderRoute: typeof PropertiesIdRouteImport
+      parentRoute: typeof PropertiesRoute
+    }
+    '/portal/tickets': {
+      id: '/portal/tickets'
+      path: '/tickets'
+      fullPath: '/portal/tickets'
+      preLoaderRoute: typeof PortalTicketsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/payments': {
+      id: '/portal/payments'
+      path: '/payments'
+      fullPath: '/portal/payments'
+      preLoaderRoute: typeof PortalPaymentsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/documents': {
+      id: '/portal/documents'
+      path: '/documents'
+      fullPath: '/portal/documents'
+      preLoaderRoute: typeof PortalDocumentsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/community': {
+      id: '/portal/community'
+      path: '/community'
+      fullPath: '/portal/community'
+      preLoaderRoute: typeof PortalCommunityRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/bookings': {
+      id: '/portal/bookings'
+      path: '/bookings'
+      fullPath: '/portal/bookings'
+      preLoaderRoute: typeof PortalBookingsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/units': {
+      id: '/admin/units'
+      path: '/units'
+      fullPath: '/admin/units'
+      preLoaderRoute: typeof AdminUnitsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/properties': {
+      id: '/admin/properties'
+      path: '/properties'
+      fullPath: '/admin/properties'
+      preLoaderRoute: typeof AdminPropertiesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/maintenance': {
+      id: '/admin/maintenance'
+      path: '/maintenance'
+      fullPath: '/admin/maintenance'
+      preLoaderRoute: typeof AdminMaintenanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/leases': {
+      id: '/admin/leases'
+      path: '/leases'
+      fullPath: '/admin/leases'
+      preLoaderRoute: typeof AdminLeasesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/finance': {
+      id: '/admin/finance'
+      path: '/finance'
+      fullPath: '/admin/finance'
+      preLoaderRoute: typeof AdminFinanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminFinanceRoute: typeof AdminFinanceRoute
+  AdminLeasesRoute: typeof AdminLeasesRoute
+  AdminMaintenanceRoute: typeof AdminMaintenanceRoute
+  AdminPropertiesRoute: typeof AdminPropertiesRoute
+  AdminUnitsRoute: typeof AdminUnitsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminFinanceRoute: AdminFinanceRoute,
+  AdminLeasesRoute: AdminLeasesRoute,
+  AdminMaintenanceRoute: AdminMaintenanceRoute,
+  AdminPropertiesRoute: AdminPropertiesRoute,
+  AdminUnitsRoute: AdminUnitsRoute,
+  AdminUsersRoute: AdminUsersRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface PortalRouteChildren {
+  PortalBookingsRoute: typeof PortalBookingsRoute
+  PortalCommunityRoute: typeof PortalCommunityRoute
+  PortalDocumentsRoute: typeof PortalDocumentsRoute
+  PortalPaymentsRoute: typeof PortalPaymentsRoute
+  PortalTicketsRoute: typeof PortalTicketsRoute
+  PortalIndexRoute: typeof PortalIndexRoute
+}
+
+const PortalRouteChildren: PortalRouteChildren = {
+  PortalBookingsRoute: PortalBookingsRoute,
+  PortalCommunityRoute: PortalCommunityRoute,
+  PortalDocumentsRoute: PortalDocumentsRoute,
+  PortalPaymentsRoute: PortalPaymentsRoute,
+  PortalTicketsRoute: PortalTicketsRoute,
+  PortalIndexRoute: PortalIndexRoute,
+}
+
+const PortalRouteWithChildren =
+  PortalRoute._addFileChildren(PortalRouteChildren)
+
+interface PropertiesRouteChildren {
+  PropertiesIdRoute: typeof PropertiesIdRoute
+  PropertiesIndexRoute: typeof PropertiesIndexRoute
+}
+
+const PropertiesRouteChildren: PropertiesRouteChildren = {
+  PropertiesIdRoute: PropertiesIdRoute,
+  PropertiesIndexRoute: PropertiesIndexRoute,
+}
+
+const PropertiesRouteWithChildren = PropertiesRoute._addFileChildren(
+  PropertiesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
+  AdminRoute: AdminRouteWithChildren,
+  BookVisitRoute: BookVisitRoute,
+  ContactRoute: ContactRoute,
+  PortalRoute: PortalRouteWithChildren,
+  PropertiesRoute: PropertiesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
