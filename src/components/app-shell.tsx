@@ -16,7 +16,7 @@ export function AppShell({
   nav,
   children,
 }: {
-  variant: "portal" | "admin";
+  variant: "portal" | "admin" | "host";
   title: string;
   nav: NavItem[];
   children: ReactNode;
@@ -32,7 +32,7 @@ export function AppShell({
             <span className="flex flex-col leading-none">
               <span className="text-sm text-sidebar-foreground">Kinan</span>
               <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/60">
-                {variant === "admin" ? "Staff Console" : "Customer Portal"}
+                {variant === "admin" ? "Staff Console" : variant === "host" ? "Host Console" : "Customer Portal"}
               </span>
             </span>
           </Link>
@@ -87,14 +87,14 @@ export function AppShell({
             </Link>
             <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                {variant === "admin" ? "AD" : "KM"}
+                {variant === "admin" ? "AD" : variant === "host" ? "HO" : "KM"}
               </span>
               <span className="text-xs">
                 <span className="block font-medium text-foreground">
-                  {variant === "admin" ? "Ahmad (Admin)" : "Khalid Al-Mutairi"}
+                  {variant === "admin" ? "Ahmad (Admin)" : variant === "host" ? "Host User" : "Khalid Al-Mutairi"}
                 </span>
                 <span className="block text-muted-foreground">
-                  {variant === "admin" ? "Finance Officer" : "Tenant · A-1201"}
+                  {variant === "admin" ? "Finance Officer" : variant === "host" ? "Property Owner" : "Tenant · A-1201"}
                 </span>
               </span>
             </div>
@@ -110,3 +110,4 @@ export function AppShell({
     </div>
   );
 }
+

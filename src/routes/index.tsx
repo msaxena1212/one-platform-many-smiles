@@ -1,212 +1,196 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Building2, Users, Wrench, Receipt, ShieldCheck, BarChart3 } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowRight, MapPin, Calendar, Users, Search, Star, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { PublicHeader, PublicFooter } from "@/components/public-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { properties } from "@/lib/mock-data";
+import { fetchProperties, type Property } from "@/lib/supabase";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Kinan — Unified Real Estate Platform" },
-      { name: "description", content: "One platform for buying, leasing, living and managing real estate across the Kingdom — by Kinan International Real Estate Development Co." },
-      { property: "og:title", content: "Kinan — Unified Real Estate Platform" },
-      { property: "og:description", content: "One platform for buying, leasing, living and managing real estate across the Kingdom." },
+      { title: "StayHub — Find your next stay" },
+      { name: "description", content: "Book unique homes and experiences all over the world." },
     ],
   }),
   component: Landing,
 });
 
-function Landing() {
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=800";
+
+function PropertyCard({ property }: { property: Property }) {
+  const image = property.property_images?.find(i => i.is_primary)?.image_url
+    || property.property_images?.[0]?.image_url
+    || FALLBACK_IMAGE;
+
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <PublicHeader />
-
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-border bg-gradient-to-b from-secondary/40 to-background">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:py-28">
-          <div>
-            <span className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-              <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-gold" />
-              Kinan Unified Real Estate Platform · Web MVP
-            </span>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-              One platform.<br />
-              <span className="text-primary">Every door</span> we build, sell and serve.
-            </h1>
-            <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-              From discovery and reservation to leases, payments, maintenance and finance —
-              Kinan unifies the customer journey and the ERP backbone on a single source of truth.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link to="/properties">Browse properties <ArrowRight /></Link>
-              </Button>
-              <Button asChild size="lg" variant="outline">
-                <Link to="/admin">Open staff console</Link>
-              </Button>
-            </div>
-            <dl className="mt-12 grid grid-cols-3 gap-6 border-t border-border pt-8">
-              <Stat k="943+" v="Residents served" />
-              <Stat k="680" v="Units under management" />
-              <Stat k="4" v="Cities across KSA" />
-            </dl>
-          </div>
-
-          <div className="relative">
-            <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-border shadow-2xl">
-              <img
-                src={properties[0].image}
-                alt="Featured Kinan development"
-                className="h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-primary/70 via-primary/10 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-6 text-primary-foreground">
-                <p className="text-xs uppercase tracking-widest opacity-80">Featured · Riyadh</p>
-                <p className="mt-1 text-2xl font-semibold">Al Nakheel Residences</p>
-                <p className="text-sm opacity-90">184 units · 92% occupancy</p>
-              </div>
-            </div>
-            <div className="absolute -bottom-6 -left-6 hidden w-56 rounded-xl border border-border bg-card p-4 shadow-xl sm:block">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">This month</p>
-              <p className="mt-1 text-2xl font-semibold text-foreground">SAR 2.84M</p>
-              <p className="text-xs text-[oklch(0.55_0.13_155)]">▲ 12% rent receipts</p>
-            </div>
+    <Link
+      to="/properties/$id"
+      params={{ id: property.id }}
+      className="group flex flex-col gap-3"
+    >
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-muted">
+        <img src={image} alt={property.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+        <Button variant="ghost" size="icon" className="absolute top-2 right-2 text-white hover:bg-black/20 hover:text-white rounded-full bg-black/10 backdrop-blur-sm">
+          <Star className="h-4 w-4" />
+        </Button>
+      </div>
+      <div>
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-foreground line-clamp-1">{property.city}, {property.country}</h3>
+          <div className="flex items-center gap-1 text-sm">
+            <Star className="h-3.5 w-3.5 fill-[oklch(0.72_0.13_80)] text-[oklch(0.72_0.13_80)]" />
+            <span>4.9</span>
           </div>
         </div>
-      </section>
-
-      {/* Modules */}
-      <section className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <div className="max-w-2xl">
-            <p className="text-sm font-medium uppercase tracking-widest text-gold">Platform modules</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Three surfaces. One source of truth.
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              Customer-facing experiences, an internal admin console, and a real-estate ERP backbone — all sharing the same data, rules and audit trail.
-            </p>
-          </div>
-
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
-            <ModuleCard
-              tag="Customers"
-              title="Customer Portal"
-              desc="Tickets, payments, facility booking, documents and surveys for tenants and owners."
-              to="/portal"
-              icon={<Users className="h-5 w-5" />}
-            />
-            <ModuleCard
-              tag="Sales"
-              title="Marketing & Sales"
-              desc="Public discovery, visit booking, reservation, e-signature and milestone payments."
-              to="/properties"
-              icon={<Building2 className="h-5 w-5" />}
-            />
-            <ModuleCard
-              tag="ERP"
-              title="Staff Console"
-              desc="Properties, units, leases, PDC, finance, fixed assets and maintenance — with approvals."
-              to="/admin"
-              icon={<BarChart3 className="h-5 w-5" />}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Capability strip */}
-      <section className="border-b border-border bg-secondary/30">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 md:grid-cols-4 lg:px-8">
-          <Capability icon={<Receipt />} title="Balanced postings" desc="Every receipt, expense and accrual produces a balanced journal entry, automatically." />
-          <Capability icon={<Wrench />} title="Workflow engine" desc="State machines enforce who can move a ticket, lease or unit — server-side." />
-          <Capability icon={<ShieldCheck />} title="Audit by default" desc="Every write is captured. AES-256 at rest, TLS 1.2+, MFA for staff." />
-          <Capability icon={<BarChart3 />} title="Decisions in real time" desc="Live dashboards across occupancy, collections, tickets and asset health." />
-        </div>
-      </section>
-
-      {/* Featured properties */}
-      <section>
-        <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium uppercase tracking-widest text-gold">Featured properties</p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Live inventory</h2>
-            </div>
-            <Button asChild variant="ghost">
-              <Link to="/properties">View all <ArrowRight /></Link>
-            </Button>
-          </div>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {properties.slice(0, 6).map((p) => (
-              <Link
-                key={p.id}
-                to="/properties/$id"
-                params={{ id: p.id }}
-                className="group overflow-hidden rounded-xl border border-border bg-card transition-all hover:shadow-lg"
-              >
-                <div className="relative aspect-[4/3] overflow-hidden">
-                  <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                  <span className="absolute left-3 top-3 rounded-full bg-card/90 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-foreground backdrop-blur">
-                    {p.type}
-                  </span>
-                </div>
-                <div className="p-5">
-                  <p className="text-xs text-muted-foreground">{p.code} · {p.city}</p>
-                  <h3 className="mt-1 text-lg font-semibold text-foreground">{p.name}</h3>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{p.units} units</span>
-                    <span className="font-medium text-primary">{Math.round(p.occupancy * 100)}% occupied</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <PublicFooter />
-    </div>
-  );
-}
-
-function Stat({ k, v }: { k: string; v: string }) {
-  return (
-    <div>
-      <dt className="text-2xl font-semibold tracking-tight text-foreground">{k}</dt>
-      <dd className="mt-1 text-xs text-muted-foreground">{v}</dd>
-    </div>
-  );
-}
-
-function ModuleCard({ tag, title, desc, to, icon }: { tag: string; title: string; desc: string; to: string; icon: React.ReactNode }) {
-  return (
-    <Link to={to} className="group block">
-      <Card className="h-full transition-all hover:shadow-lg hover:border-primary/30">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">{icon}</span>
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-gold">{tag}</span>
-          </div>
-          <h3 className="mt-5 text-xl font-semibold text-foreground">{title}</h3>
-          <p className="mt-2 text-sm text-muted-foreground">{desc}</p>
-          <p className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary">
-            Open <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-          </p>
-        </CardContent>
-      </Card>
+        <p className="text-sm text-muted-foreground line-clamp-1">{property.title}</p>
+        <p className="mt-1 text-sm">
+          <span className="font-semibold text-foreground">${property.base_price_per_night}</span>{" "}
+          <span className="text-muted-foreground">night</span>
+        </p>
+      </div>
     </Link>
   );
 }
 
-function Capability({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+function Landing() {
+  const navigate = useNavigate();
+  const [location, setLocation] = useState("");
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [guests, setGuests] = useState("1");
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProperties()
+      .then(setProperties)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    navigate({
+      to: "/properties",
+      search: {
+        location: location || undefined,
+        checkIn: checkIn || undefined,
+        checkOut: checkOut || undefined,
+        guests: guests ? parseInt(guests) : undefined,
+      },
+    });
+  };
+
   return (
-    <div>
-      <div className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-card text-primary [&_svg]:h-5 [&_svg]:w-5">
-        {icon}
-      </div>
-      <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
-      <p className="mt-1.5 text-sm text-muted-foreground">{desc}</p>
+    <div className="flex min-h-screen flex-col bg-background">
+      <PublicHeader />
+
+      {/* Hero & Search */}
+      <section className="relative overflow-hidden border-b border-border bg-gradient-to-b from-primary/10 to-background pt-10 pb-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
+          <h1 className="text-4xl font-semibold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+            Find your next <span className="text-primary">perfect stay</span>
+          </h1>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Discover and book the best properties around the world.
+          </p>
+
+          {/* Search Bar */}
+          <div className="mt-10 mx-auto max-w-4xl bg-card rounded-full shadow-xl border border-border p-2">
+            <form onSubmit={handleSearch} className="flex flex-col md:flex-row items-center divide-y md:divide-y-0 md:divide-x divide-border">
+              <div className="flex-1 w-full px-4 py-2 flex flex-col items-start">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-foreground">Where</label>
+                <div className="flex items-center w-full">
+                  <MapPin className="h-4 w-4 text-muted-foreground mr-2" />
+                  <input
+                    type="text"
+                    placeholder="Search destinations"
+                    className="w-full bg-transparent border-none text-sm outline-none placeholder:text-muted-foreground"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 w-full px-4 py-2 flex flex-col items-start">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-foreground">Check in</label>
+                <div className="flex items-center w-full">
+                  <Calendar className="h-4 w-4 text-muted-foreground mr-2" />
+                  <input
+                    type="date"
+                    className="w-full bg-transparent border-none text-sm outline-none"
+                    value={checkIn}
+                    onChange={(e) => setCheckIn(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 w-full px-4 py-2 flex flex-col items-start">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-foreground">Check out</label>
+                <div className="flex items-center w-full">
+                  <Calendar className="h-4 w-4 text-muted-foreground mr-2" />
+                  <input
+                    type="date"
+                    className="w-full bg-transparent border-none text-sm outline-none"
+                    value={checkOut}
+                    onChange={(e) => setCheckOut(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 w-full px-4 py-2 flex flex-col items-start">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-foreground">Who</label>
+                <div className="flex items-center w-full">
+                  <Users className="h-4 w-4 text-muted-foreground mr-2" />
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Add guests"
+                    className="w-full bg-transparent border-none text-sm outline-none"
+                    value={guests}
+                    onChange={(e) => setGuests(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="pl-2 pr-2 py-2 w-full md:w-auto flex justify-end">
+                <Button type="submit" size="icon" className="rounded-full h-12 w-12 bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Search className="h-5 w-5" />
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured properties */}
+      <section className="flex-1 bg-background">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Featured stays</h2>
+              <p className="mt-2 text-muted-foreground">Handpicked properties for your next adventure</p>
+            </div>
+            <Button asChild variant="ghost">
+              <Link to="/properties">View all <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="mt-10 flex items-center justify-center h-48">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : properties.length === 0 ? (
+            <div className="mt-10 text-center text-muted-foreground py-12">
+              <p>No properties available yet. Check back soon!</p>
+            </div>
+          ) : (
+            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {properties.slice(0, 8).map((p) => (
+                <PropertyCard key={p.id} property={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <PublicFooter />
     </div>
   );
 }

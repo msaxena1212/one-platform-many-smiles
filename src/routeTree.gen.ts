@@ -12,13 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as PropertiesRouteImport } from './routes/properties'
 import { Route as PortalRouteImport } from './routes/portal'
+import { Route as HostRouteImport } from './routes/host'
+import { Route as GuestRouteImport } from './routes/guest'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as BookVisitRouteImport } from './routes/book-visit'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PropertiesIndexRouteImport } from './routes/properties.index'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
+import { Route as HostIndexRouteImport } from './routes/host.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PropertiesIdRouteImport } from './routes/properties.$id'
 import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
@@ -26,12 +30,25 @@ import { Route as PortalPaymentsRouteImport } from './routes/portal.payments'
 import { Route as PortalDocumentsRouteImport } from './routes/portal.documents'
 import { Route as PortalCommunityRouteImport } from './routes/portal.community'
 import { Route as PortalBookingsRouteImport } from './routes/portal.bookings'
+import { Route as HostUsersRouteImport } from './routes/host.users'
+import { Route as HostUnitsRouteImport } from './routes/host.units'
+import { Route as HostPropertiesRouteImport } from './routes/host.properties'
+import { Route as HostMaintenanceRouteImport } from './routes/host.maintenance'
+import { Route as HostLeasesRouteImport } from './routes/host.leases'
+import { Route as HostFinanceRouteImport } from './routes/host.finance'
+import { Route as HostCreateRouteImport } from './routes/host.create'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
 import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
+import { Route as AdminFinanceIndexRouteImport } from './routes/admin.finance.index'
+import { Route as HostManageIdRouteImport } from './routes/host.manage.$id'
+import { Route as AdminFinanceReceiptsRouteImport } from './routes/admin.finance.receipts'
+import { Route as AdminFinancePayablesRouteImport } from './routes/admin.finance.payables'
+import { Route as AdminFinanceLedgerRouteImport } from './routes/admin.finance.ledger'
+import { Route as AdminFinanceCoaRouteImport } from './routes/admin.finance.coa'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -48,6 +65,16 @@ const PortalRoute = PortalRouteImport.update({
   path: '/portal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HostRoute = HostRouteImport.update({
+  id: '/host',
+  path: '/host',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuestRoute = GuestRouteImport.update({
+  id: '/guest',
+  path: '/guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -56,6 +83,11 @@ const ContactRoute = ContactRouteImport.update({
 const BookVisitRoute = BookVisitRouteImport.update({
   id: '/book-visit',
   path: '/book-visit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -82,6 +114,11 @@ const PortalIndexRoute = PortalIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PortalRoute,
+} as any)
+const HostIndexRoute = HostIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HostRoute,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
@@ -118,6 +155,41 @@ const PortalBookingsRoute = PortalBookingsRouteImport.update({
   path: '/bookings',
   getParentRoute: () => PortalRoute,
 } as any)
+const HostUsersRoute = HostUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostUnitsRoute = HostUnitsRouteImport.update({
+  id: '/units',
+  path: '/units',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostPropertiesRoute = HostPropertiesRouteImport.update({
+  id: '/properties',
+  path: '/properties',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostMaintenanceRoute = HostMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostLeasesRoute = HostLeasesRouteImport.update({
+  id: '/leases',
+  path: '/leases',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostFinanceRoute = HostFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => HostRoute,
+} as any)
+const HostCreateRoute = HostCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => HostRoute,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -148,22 +220,62 @@ const AdminFinanceRoute = AdminFinanceRouteImport.update({
   path: '/finance',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminFinanceIndexRoute = AdminFinanceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminFinanceRoute,
+} as any)
+const HostManageIdRoute = HostManageIdRouteImport.update({
+  id: '/manage/$id',
+  path: '/manage/$id',
+  getParentRoute: () => HostRoute,
+} as any)
+const AdminFinanceReceiptsRoute = AdminFinanceReceiptsRouteImport.update({
+  id: '/receipts',
+  path: '/receipts',
+  getParentRoute: () => AdminFinanceRoute,
+} as any)
+const AdminFinancePayablesRoute = AdminFinancePayablesRouteImport.update({
+  id: '/payables',
+  path: '/payables',
+  getParentRoute: () => AdminFinanceRoute,
+} as any)
+const AdminFinanceLedgerRoute = AdminFinanceLedgerRouteImport.update({
+  id: '/ledger',
+  path: '/ledger',
+  getParentRoute: () => AdminFinanceRoute,
+} as any)
+const AdminFinanceCoaRoute = AdminFinanceCoaRouteImport.update({
+  id: '/coa',
+  path: '/coa',
+  getParentRoute: () => AdminFinanceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
+  '/auth': typeof AuthRoute
   '/book-visit': typeof BookVisitRoute
   '/contact': typeof ContactRoute
+  '/guest': typeof GuestRoute
+  '/host': typeof HostRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/properties': typeof PropertiesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/host/create': typeof HostCreateRoute
+  '/host/finance': typeof HostFinanceRoute
+  '/host/leases': typeof HostLeasesRoute
+  '/host/maintenance': typeof HostMaintenanceRoute
+  '/host/properties': typeof HostPropertiesRoute
+  '/host/units': typeof HostUnitsRoute
+  '/host/users': typeof HostUsersRoute
   '/portal/bookings': typeof PortalBookingsRoute
   '/portal/community': typeof PortalCommunityRoute
   '/portal/documents': typeof PortalDocumentsRoute
@@ -171,21 +283,36 @@ export interface FileRoutesByFullPath {
   '/portal/tickets': typeof PortalTicketsRoute
   '/properties/$id': typeof PropertiesIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/host/': typeof HostIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/properties/': typeof PropertiesIndexRoute
+  '/admin/finance/coa': typeof AdminFinanceCoaRoute
+  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
+  '/admin/finance/payables': typeof AdminFinancePayablesRoute
+  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
+  '/host/manage/$id': typeof HostManageIdRoute
+  '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/auth': typeof AuthRoute
   '/book-visit': typeof BookVisitRoute
   '/contact': typeof ContactRoute
+  '/guest': typeof GuestRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/finance': typeof AdminFinanceRoute
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/host/create': typeof HostCreateRoute
+  '/host/finance': typeof HostFinanceRoute
+  '/host/leases': typeof HostLeasesRoute
+  '/host/maintenance': typeof HostMaintenanceRoute
+  '/host/properties': typeof HostPropertiesRoute
+  '/host/units': typeof HostUnitsRoute
+  '/host/users': typeof HostUsersRoute
   '/portal/bookings': typeof PortalBookingsRoute
   '/portal/community': typeof PortalCommunityRoute
   '/portal/documents': typeof PortalDocumentsRoute
@@ -193,25 +320,42 @@ export interface FileRoutesByTo {
   '/portal/tickets': typeof PortalTicketsRoute
   '/properties/$id': typeof PropertiesIdRoute
   '/admin': typeof AdminIndexRoute
+  '/host': typeof HostIndexRoute
   '/portal': typeof PortalIndexRoute
   '/properties': typeof PropertiesIndexRoute
+  '/admin/finance/coa': typeof AdminFinanceCoaRoute
+  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
+  '/admin/finance/payables': typeof AdminFinancePayablesRoute
+  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
+  '/host/manage/$id': typeof HostManageIdRoute
+  '/admin/finance': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
+  '/auth': typeof AuthRoute
   '/book-visit': typeof BookVisitRoute
   '/contact': typeof ContactRoute
+  '/guest': typeof GuestRoute
+  '/host': typeof HostRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/properties': typeof PropertiesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/leases': typeof AdminLeasesRoute
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/host/create': typeof HostCreateRoute
+  '/host/finance': typeof HostFinanceRoute
+  '/host/leases': typeof HostLeasesRoute
+  '/host/maintenance': typeof HostMaintenanceRoute
+  '/host/properties': typeof HostPropertiesRoute
+  '/host/units': typeof HostUnitsRoute
+  '/host/users': typeof HostUsersRoute
   '/portal/bookings': typeof PortalBookingsRoute
   '/portal/community': typeof PortalCommunityRoute
   '/portal/documents': typeof PortalDocumentsRoute
@@ -219,8 +363,15 @@ export interface FileRoutesById {
   '/portal/tickets': typeof PortalTicketsRoute
   '/properties/$id': typeof PropertiesIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/host/': typeof HostIndexRoute
   '/portal/': typeof PortalIndexRoute
   '/properties/': typeof PropertiesIndexRoute
+  '/admin/finance/coa': typeof AdminFinanceCoaRoute
+  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
+  '/admin/finance/payables': typeof AdminFinancePayablesRoute
+  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
+  '/host/manage/$id': typeof HostManageIdRoute
+  '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -228,8 +379,11 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/admin'
+    | '/auth'
     | '/book-visit'
     | '/contact'
+    | '/guest'
+    | '/host'
     | '/portal'
     | '/properties'
     | '/sitemap.xml'
@@ -239,6 +393,13 @@ export interface FileRouteTypes {
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/host/create'
+    | '/host/finance'
+    | '/host/leases'
+    | '/host/maintenance'
+    | '/host/properties'
+    | '/host/units'
+    | '/host/users'
     | '/portal/bookings'
     | '/portal/community'
     | '/portal/documents'
@@ -246,21 +407,36 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/properties/$id'
     | '/admin/'
+    | '/host/'
     | '/portal/'
     | '/properties/'
+    | '/admin/finance/coa'
+    | '/admin/finance/ledger'
+    | '/admin/finance/payables'
+    | '/admin/finance/receipts'
+    | '/host/manage/$id'
+    | '/admin/finance/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/auth'
     | '/book-visit'
     | '/contact'
+    | '/guest'
     | '/sitemap.xml'
-    | '/admin/finance'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/host/create'
+    | '/host/finance'
+    | '/host/leases'
+    | '/host/maintenance'
+    | '/host/properties'
+    | '/host/units'
+    | '/host/users'
     | '/portal/bookings'
     | '/portal/community'
     | '/portal/documents'
@@ -268,15 +444,25 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/properties/$id'
     | '/admin'
+    | '/host'
     | '/portal'
     | '/properties'
+    | '/admin/finance/coa'
+    | '/admin/finance/ledger'
+    | '/admin/finance/payables'
+    | '/admin/finance/receipts'
+    | '/host/manage/$id'
+    | '/admin/finance'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/admin'
+    | '/auth'
     | '/book-visit'
     | '/contact'
+    | '/guest'
+    | '/host'
     | '/portal'
     | '/properties'
     | '/sitemap.xml'
@@ -286,6 +472,13 @@ export interface FileRouteTypes {
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/host/create'
+    | '/host/finance'
+    | '/host/leases'
+    | '/host/maintenance'
+    | '/host/properties'
+    | '/host/units'
+    | '/host/users'
     | '/portal/bookings'
     | '/portal/community'
     | '/portal/documents'
@@ -293,16 +486,26 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/properties/$id'
     | '/admin/'
+    | '/host/'
     | '/portal/'
     | '/properties/'
+    | '/admin/finance/coa'
+    | '/admin/finance/ledger'
+    | '/admin/finance/payables'
+    | '/admin/finance/receipts'
+    | '/host/manage/$id'
+    | '/admin/finance/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AuthRoute: typeof AuthRoute
   BookVisitRoute: typeof BookVisitRoute
   ContactRoute: typeof ContactRoute
+  GuestRoute: typeof GuestRoute
+  HostRoute: typeof HostRouteWithChildren
   PortalRoute: typeof PortalRouteWithChildren
   PropertiesRoute: typeof PropertiesRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -331,6 +534,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/host': {
+      id: '/host'
+      path: '/host'
+      fullPath: '/host'
+      preLoaderRoute: typeof HostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guest': {
+      id: '/guest'
+      path: '/guest'
+      fullPath: '/guest'
+      preLoaderRoute: typeof GuestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contact': {
       id: '/contact'
       path: '/contact'
@@ -343,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/book-visit'
       fullPath: '/book-visit'
       preLoaderRoute: typeof BookVisitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -379,6 +603,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/portal/'
       preLoaderRoute: typeof PortalIndexRouteImport
       parentRoute: typeof PortalRoute
+    }
+    '/host/': {
+      id: '/host/'
+      path: '/'
+      fullPath: '/host/'
+      preLoaderRoute: typeof HostIndexRouteImport
+      parentRoute: typeof HostRoute
     }
     '/admin/': {
       id: '/admin/'
@@ -429,6 +660,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalBookingsRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/host/users': {
+      id: '/host/users'
+      path: '/users'
+      fullPath: '/host/users'
+      preLoaderRoute: typeof HostUsersRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/units': {
+      id: '/host/units'
+      path: '/units'
+      fullPath: '/host/units'
+      preLoaderRoute: typeof HostUnitsRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/properties': {
+      id: '/host/properties'
+      path: '/properties'
+      fullPath: '/host/properties'
+      preLoaderRoute: typeof HostPropertiesRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/maintenance': {
+      id: '/host/maintenance'
+      path: '/maintenance'
+      fullPath: '/host/maintenance'
+      preLoaderRoute: typeof HostMaintenanceRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/leases': {
+      id: '/host/leases'
+      path: '/leases'
+      fullPath: '/host/leases'
+      preLoaderRoute: typeof HostLeasesRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/finance': {
+      id: '/host/finance'
+      path: '/finance'
+      fullPath: '/host/finance'
+      preLoaderRoute: typeof HostFinanceRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/host/create': {
+      id: '/host/create'
+      path: '/create'
+      fullPath: '/host/create'
+      preLoaderRoute: typeof HostCreateRouteImport
+      parentRoute: typeof HostRoute
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -471,11 +751,73 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFinanceRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/finance/': {
+      id: '/admin/finance/'
+      path: '/'
+      fullPath: '/admin/finance/'
+      preLoaderRoute: typeof AdminFinanceIndexRouteImport
+      parentRoute: typeof AdminFinanceRoute
+    }
+    '/host/manage/$id': {
+      id: '/host/manage/$id'
+      path: '/manage/$id'
+      fullPath: '/host/manage/$id'
+      preLoaderRoute: typeof HostManageIdRouteImport
+      parentRoute: typeof HostRoute
+    }
+    '/admin/finance/receipts': {
+      id: '/admin/finance/receipts'
+      path: '/receipts'
+      fullPath: '/admin/finance/receipts'
+      preLoaderRoute: typeof AdminFinanceReceiptsRouteImport
+      parentRoute: typeof AdminFinanceRoute
+    }
+    '/admin/finance/payables': {
+      id: '/admin/finance/payables'
+      path: '/payables'
+      fullPath: '/admin/finance/payables'
+      preLoaderRoute: typeof AdminFinancePayablesRouteImport
+      parentRoute: typeof AdminFinanceRoute
+    }
+    '/admin/finance/ledger': {
+      id: '/admin/finance/ledger'
+      path: '/ledger'
+      fullPath: '/admin/finance/ledger'
+      preLoaderRoute: typeof AdminFinanceLedgerRouteImport
+      parentRoute: typeof AdminFinanceRoute
+    }
+    '/admin/finance/coa': {
+      id: '/admin/finance/coa'
+      path: '/coa'
+      fullPath: '/admin/finance/coa'
+      preLoaderRoute: typeof AdminFinanceCoaRouteImport
+      parentRoute: typeof AdminFinanceRoute
+    }
   }
 }
 
+interface AdminFinanceRouteChildren {
+  AdminFinanceCoaRoute: typeof AdminFinanceCoaRoute
+  AdminFinanceLedgerRoute: typeof AdminFinanceLedgerRoute
+  AdminFinancePayablesRoute: typeof AdminFinancePayablesRoute
+  AdminFinanceReceiptsRoute: typeof AdminFinanceReceiptsRoute
+  AdminFinanceIndexRoute: typeof AdminFinanceIndexRoute
+}
+
+const AdminFinanceRouteChildren: AdminFinanceRouteChildren = {
+  AdminFinanceCoaRoute: AdminFinanceCoaRoute,
+  AdminFinanceLedgerRoute: AdminFinanceLedgerRoute,
+  AdminFinancePayablesRoute: AdminFinancePayablesRoute,
+  AdminFinanceReceiptsRoute: AdminFinanceReceiptsRoute,
+  AdminFinanceIndexRoute: AdminFinanceIndexRoute,
+}
+
+const AdminFinanceRouteWithChildren = AdminFinanceRoute._addFileChildren(
+  AdminFinanceRouteChildren,
+)
+
 interface AdminRouteChildren {
-  AdminFinanceRoute: typeof AdminFinanceRoute
+  AdminFinanceRoute: typeof AdminFinanceRouteWithChildren
   AdminLeasesRoute: typeof AdminLeasesRoute
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminPropertiesRoute: typeof AdminPropertiesRoute
@@ -485,7 +827,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminFinanceRoute: AdminFinanceRoute,
+  AdminFinanceRoute: AdminFinanceRouteWithChildren,
   AdminLeasesRoute: AdminLeasesRoute,
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminPropertiesRoute: AdminPropertiesRoute,
@@ -495,6 +837,32 @@ const AdminRouteChildren: AdminRouteChildren = {
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface HostRouteChildren {
+  HostCreateRoute: typeof HostCreateRoute
+  HostFinanceRoute: typeof HostFinanceRoute
+  HostLeasesRoute: typeof HostLeasesRoute
+  HostMaintenanceRoute: typeof HostMaintenanceRoute
+  HostPropertiesRoute: typeof HostPropertiesRoute
+  HostUnitsRoute: typeof HostUnitsRoute
+  HostUsersRoute: typeof HostUsersRoute
+  HostIndexRoute: typeof HostIndexRoute
+  HostManageIdRoute: typeof HostManageIdRoute
+}
+
+const HostRouteChildren: HostRouteChildren = {
+  HostCreateRoute: HostCreateRoute,
+  HostFinanceRoute: HostFinanceRoute,
+  HostLeasesRoute: HostLeasesRoute,
+  HostMaintenanceRoute: HostMaintenanceRoute,
+  HostPropertiesRoute: HostPropertiesRoute,
+  HostUnitsRoute: HostUnitsRoute,
+  HostUsersRoute: HostUsersRoute,
+  HostIndexRoute: HostIndexRoute,
+  HostManageIdRoute: HostManageIdRoute,
+}
+
+const HostRouteWithChildren = HostRoute._addFileChildren(HostRouteChildren)
 
 interface PortalRouteChildren {
   PortalBookingsRoute: typeof PortalBookingsRoute
@@ -535,8 +903,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AdminRoute: AdminRouteWithChildren,
+  AuthRoute: AuthRoute,
   BookVisitRoute: BookVisitRoute,
   ContactRoute: ContactRoute,
+  GuestRoute: GuestRoute,
+  HostRoute: HostRouteWithChildren,
   PortalRoute: PortalRouteWithChildren,
   PropertiesRoute: PropertiesRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
@@ -544,3 +915,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
