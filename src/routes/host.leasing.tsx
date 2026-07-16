@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   AlertCircle,
   BadgeCheck,
   Banknote,
+  Bell,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -21,9 +23,11 @@ import {
   DoorOpen,
   FileCheck2,
   FileSignature,
+  Key,
   KeyRound,
   Loader2,
   Lock,
+  LogOut,
   Receipt,
   RefreshCw,
   ShieldCheck,
@@ -107,6 +111,7 @@ type TenantDocument = {
   expiryDate: string;
   reviewer: string;
   remarks: string;
+  file?: string;
 };
 
 type Lease = {
@@ -148,6 +153,7 @@ type Pdc = {
   date: string;
   amount: number;
   status: PdcStatus;
+  file?: string;
 };
 
 type KeyNotice = {
@@ -468,6 +474,13 @@ function LeasingPage() {
     remarks: "",
   });
 
+  const [uploadDocOpen, setUploadDocOpen] = useState(false);
+  const [uploadDocForm, setUploadDocForm] = useState({
+    file: "",
+    fileName: "",
+    remarks: "",
+  });
+
   // ── Signature Workflow Dialogs ─────────────────────────────────
   const [signatureWorkflowLease, setSignatureWorkflowLease] = useState<Lease | null>(null);
 
@@ -488,6 +501,7 @@ function LeasingPage() {
     depositAmount: "",
     depositMode: "Cash" as string,
     notes: "",
+    receiptFile: "",
   });
 
   // Submit to Landlord
@@ -497,6 +511,7 @@ function LeasingPage() {
     submittedAt: today.toISOString().split("T")[0],
     docsSent: "Email",
     notes: "",
+    proofFile: "",
   });
 
   // Landlord Sign
@@ -512,7 +527,7 @@ function LeasingPage() {
   // ── Keys & Check-In Dialogs ──────────────────────────────────────
   const [keysWorkflowLease, setKeysWorkflowLease] = useState<Lease | null>(null);
   const [keyNotifyOpen, setKeyNotifyOpen] = useState(false);
-  const [keyNotifyForm, setKeyNotifyForm] = useState({ handoverAt: addDays(today, 1), recipients: "Tenant, Property Manager, Security, Maintenance", note: "" });
+  const [keyNotifyForm, setKeyNotifyForm] = useState({ handoverAt: addDays(today, 1), recipients: ["Tenant", "Property Manager", "Security", "Maintenance"], note: "" });
 
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverForm, setHandoverForm] = useState({ keys: "2", accessCards: "2", parkingRemotes: "1", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", note: "" });
@@ -537,7 +552,7 @@ function LeasingPage() {
   // ── PDC Add Dialog ───────────────────────────────────────────────
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [pdcLeaseId, setPdcLeaseId] = useState("");
-  const [pdcForm, setPdcForm] = useState({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "" });
+  const [pdcForm, setPdcForm] = useState({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
 
 
   const [reservationForm, setReservationForm] = useState({
@@ -703,6 +718,34 @@ function LeasingPage() {
     setVerifyDocOpen(false);
   }
 
+  function submitUploadDoc() {
+    if (!selectedDocId || !uploadDocForm.file) {
+      alert("Please select a file to upload.");
+      return;
+    }
+    setDocuments((items) =>
+      items.map((item) =>
+        item.id === selectedDocId
+          ? {
+              ...item,
+              file: uploadDocForm.fileName || uploadDocForm.file,
+              status: "pending",
+              remarks: uploadDocForm.remarks || "Document uploaded and awaiting review",
+            }
+          : item,
+      ),
+    );
+    recordAudit({
+      stage: "Document Upload",
+      owner: "Leasing Department",
+      input: `Doc ${selectedDocId} uploaded file: ${uploadDocForm.fileName || uploadDocForm.file}`,
+      approval: "N/A",
+      status: "pending",
+      output: uploadDocForm.remarks || "Document uploaded successfully",
+    });
+    setUploadDocOpen(false);
+  }
+
   function submitAgreementTerms() {
     if (!selectedLeaseForTerms) return;
     setLeases((items) =>
@@ -847,7 +890,7 @@ function LeasingPage() {
       input: `${lease.pdcCount} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
-      output: collectForm.notes || "Rent and deposit receipts generated",
+      output: (collectForm.notes || "Rent and deposit receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
     setCollectOpen(false);
   }
@@ -863,7 +906,7 @@ function LeasingPage() {
       input: `Sent to ${submitLandlordForm.submittedTo} via ${submitLandlordForm.docsSent}`,
       approval: "Landlord package submission",
       status: "pending_landlord_signature",
-      output: submitLandlordForm.notes || "Lease package submitted to landlord for signature",
+      output: (submitLandlordForm.notes || "Package submitted to owner/landlord") + (submitLandlordForm.proofFile ? ` (Proof: ${submitLandlordForm.proofFile})` : ""),
     });
     setSubmitLandlordOpen(false);
   }
@@ -878,79 +921,8 @@ function LeasingPage() {
     setLandlordSignOpen(false);
   }
 
-  function issueKeyNotice(lease: Lease) {
-    const blocked = !(lease.status === "fully_signed" && lease.collectionCompleted);
-    const notice: KeyNotice = {
-      id: `kn${keyNotices.length + 1}`,
-      leaseId: lease.id,
-      recipient: `${lease.tenantName}, Property Manager, Security, Maintenance`,
-      handoverAt: addDays(today, 1),
-      status: blocked ? "blocked" : "sent",
-      note: blocked ? "Lease must be fully signed and collection completed" : "Key issue approved",
-    };
-    setKeyNotices((items) => [notice, ...items]);
-    if (!blocked) advanceLease(lease, "active");
-    recordAudit({
-      stage: "Key Issue Notification",
-      owner: "Leasing Department",
-      input: `${lease.tenantName}, ${lease.unit}, handover ${notice.handoverAt}`,
-      approval: blocked ? "Blocked by lease gate" : "Fully signed and collected",
-      status: notice.status,
-      output: blocked ? notice.note : "Tenant, property manager, security and facility team notified",
-    });
-  }
-
-  function completeHandover(lease: Lease) {
-    setHandovers((items) => [
-      {
-        id: `kh${items.length + 1}`,
-        leaseId: lease.id,
-        keys: 2,
-        accessCards: 2,
-        parkingRemotes: 1,
-        meterInfo: "Electricity and water readings captured",
-        acknowledged: true,
-        issuedBy: "Property Manager",
-      },
-      ...items,
-    ]);
-    recordAudit({
-      stage: "Key Handover",
-      owner: "Property Manager",
-      input: `${lease.unit}, keys/access cards/parking remote, meter readings`,
-      approval: "Tenant and staff acknowledgement",
-      status: "acknowledged",
-      output: "Key handover form completed",
-    });
-  }
-
-  function completeCheckIn(lease: Lease) {
-    setInspections((items) => [
-      {
-        id: `ci${items.length + 1}`,
-        leaseId: lease.id,
-        type: "check_in",
-        condition: "Good; furniture, appliances, fixtures, walls, floor, ceiling, doors, windows and AC checked",
-        electricityMeter: "182167",
-        waterMeter: "149089",
-        damages: "Existing wall marks recorded; maintenance ticket assigned for paint touch-up",
-        acknowledged: true,
-        photos: 8,
-      },
-      ...items,
-    ]);
-    setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Occupied" } : item)));
-    recordAudit({
-      stage: "Check-In Process",
-      owner: "Property Manager",
-      input: "Unit condition, meter readings, photos/videos, pending maintenance",
-      approval: "Tenant acknowledgement",
-      status: "completed",
-      output: "Check-in report completed and unit marked occupied",
-    });
-  }
-
   function generateRenewalNotices(form?: typeof renewalNoticeForm) {
+
     const f = form ?? renewalNoticeForm;
     const increaseMultiplier = 1 + (Number(f.rentIncreasePercent) || 5) / 100;
     const existing = new Set(renewals.map((item) => item.leaseId));
@@ -994,7 +966,7 @@ function LeasingPage() {
       startDate: addDays(new Date(oldLease.endDate), 1),
       endDate: addDays(new Date(oldLease.endDate), 366),
       monthlyRent: renewal.proposedRent,
-      status: "documents_pending",
+      status: "documents_pending" as LeaseStatus,
       tenantSignedAt: undefined,
       landlordSignedAt: undefined,
       signedDocument: undefined,
@@ -1003,7 +975,7 @@ function LeasingPage() {
       sharedWithTenant: false,
       collectionCompleted: false,
     };
-    setLeases((items) => [renewed, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" } : item))]);
+    setLeases((items) => [renewed, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
     setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed" } : item)));
     recordAudit({
       stage: "Lease Renewal Process",
@@ -1012,87 +984,6 @@ function LeasingPage() {
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
       output: "Renewed lease linked to previous lease history",
-    });
-  }
-
-  function startCheckout(lease: Lease) {
-    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "checkout" } : item)));
-    setCheckouts((items) => [
-      {
-        id: `co${items.length + 1}`,
-        leaseId: lease.id,
-        noticeDate: today.toISOString().split("T")[0],
-        moveOutDate: lease.endDate,
-        inspectionDate: addDays(new Date(lease.endDate), -3),
-        comparisonSummary: "Pending final comparison with original check-in report",
-        financeClearance: false,
-        utilityClearance: false,
-        keysReturned: false,
-        status: "planned",
-      },
-      ...items,
-    ]);
-    recordAudit({
-      stage: "Non-Renewal & Check-Out",
-      owner: "Leasing Department",
-      input: `${lease.tenantName}, notice date ${today.toISOString().split("T")[0]}, planned move-out ${lease.endDate}`,
-      approval: "Tenant non-renewal notice",
-      status: "planned",
-      output: "Checkout case opened with finance, utility and key return requirements",
-    });
-  }
-
-  function completeCheckout(checkout: CheckoutCase) {
-    const lease = leases.find((item) => item.id === checkout.leaseId);
-    if (!lease) return;
-    setCheckouts((items) =>
-      items.map((item) =>
-        item.id === checkout.id
-          ? { ...item, financeClearance: true, utilityClearance: true, keysReturned: true, status: "ready_for_settlement" }
-          : item,
-      ),
-    );
-    setInspections((items) => [
-      {
-        id: `coi${items.length + 1}`,
-        leaseId: lease.id,
-        type: "check_out",
-        condition: "Repair required; compared with original check-in report",
-        electricityMeter: "182207",
-        waterMeter: "149129",
-        damages: "Tenant-caused paint damage, AC remote missing, cleaning/restoration required; normal wear excluded",
-        acknowledged: true,
-        photos: 12,
-      },
-      ...items,
-    ]);
-    setCheckouts((items) =>
-      items.map((item) =>
-        item.id === checkout.id
-          ? { ...item, comparisonSummary: "Normal wear separated from tenant-caused damages, missing items and utility balances" }
-          : item,
-      ),
-    );
-    setSettlements((items) => [
-      {
-        id: `s${items.length + 1}`,
-        leaseId: lease.id,
-        depositReceived: lease.securityDeposit,
-        outstandingRent: 0,
-        damages: 650,
-        utilityCharges: 220,
-        otherDeductions: 0,
-        approval: "pending_approval",
-      },
-      ...items,
-    ]);
-    recordAudit({
-      stage: "Check-Out Inspection",
-      owner: "Property Manager",
-      input: "Original check-in report, final condition, keys, utilities, missing items",
-      approval: "Tenant acknowledgement",
-      status: "ready_for_settlement",
-      output: "Settlement draft created with deductions",
     });
   }
 
@@ -1117,6 +1008,193 @@ function LeasingPage() {
       status: "closed",
       output: "Refund processed, lease closed, unit released and history retained",
     });
+  }
+
+  function issueKeyNotice(lease: Lease) {
+    const blocked = !(lease.status === "fully_signed" && lease.collectionCompleted);
+    const notice: KeyNotice = {
+      id: `kn${keyNotices.length + 1}`,
+      leaseId: lease.id,
+      recipient: keyNotifyForm.recipients.join(", "),
+      handoverAt: keyNotifyForm.handoverAt,
+      status: blocked ? "blocked" : "sent",
+      note: keyNotifyForm.note || (blocked ? "Lease must be fully signed and collection completed" : "Key issue approved"),
+    };
+    setKeyNotices((items) => [notice, ...items]);
+    if (!blocked) advanceLease(lease, "active");
+    recordAudit({
+      stage: "Key Issue Notification",
+      owner: "Leasing Department",
+      input: `${lease.tenantName}, ${lease.unit}`,
+      approval: blocked ? "Blocked by lease gate" : "Fully signed and collected",
+      status: notice.status,
+      output: blocked ? notice.note : "Tenant, property manager, security and facility team notified",
+    });
+    setKeyNotifyOpen(false);
+  }
+
+  function completeHandover(lease: Lease) {
+    setHandovers((items) => [
+      {
+        id: `kh${items.length + 1}`,
+        leaseId: lease.id,
+        keys: Number(handoverForm.keys) || 2,
+        accessCards: Number(handoverForm.accessCards) || 2,
+        parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
+        meterInfo: `Elec: ${handoverForm.electricityMeterReading || "—"}, Water: ${handoverForm.waterMeterReading || "—"}`,
+        acknowledged: true,
+        issuedBy: handoverForm.issuedBy,
+      },
+      ...items,
+    ]);
+    recordAudit({
+      stage: "Key Handover",
+      owner: "Property Manager",
+      input: `${lease.unit}, keys/access cards/parking remote, meter readings`,
+      approval: "Tenant and staff acknowledgement",
+      status: "acknowledged",
+      output: handoverForm.note || "Key handover form completed",
+    });
+    setHandoverOpen(false);
+  }
+
+  function completeCheckIn(lease: Lease) {
+    setInspections((items) => [
+      {
+        id: `ci${items.length + 1}`,
+        leaseId: lease.id,
+        type: "check_in",
+        condition: checkInForm.condition,
+        electricityMeter: checkInForm.electricityMeter || "182167",
+        waterMeter: checkInForm.waterMeter || "149089",
+        damages: checkInForm.damages || "None recorded",
+        acknowledged: true,
+        photos: Number(checkInForm.photos) || 8,
+      },
+      ...items,
+    ]);
+    setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Occupied" } : item)));
+    recordAudit({
+      stage: "Check-In Process",
+      owner: "Property Manager",
+      input: "Unit condition, meter readings, photos",
+      approval: "Tenant acknowledgement",
+      status: "completed",
+      output: checkInForm.note || "Check-in report completed and unit marked occupied",
+    });
+    setCheckInOpen(false);
+  }
+
+  function startCheckout(lease: Lease) {
+    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "checkout" } : item)));
+    setCheckouts((items) => [
+      {
+        id: `co${items.length + 1}`,
+        leaseId: lease.id,
+        noticeDate: startCheckoutForm.noticeDate || today.toISOString().split("T")[0],
+        moveOutDate: startCheckoutForm.moveOutDate || lease.endDate,
+        inspectionDate: startCheckoutForm.inspectionDate || addDays(new Date(lease.endDate), -3),
+        comparisonSummary: "Pending final comparison with original check-in report",
+        financeClearance: false,
+        utilityClearance: false,
+        keysReturned: false,
+        status: "planned",
+      },
+      ...items,
+    ]);
+    recordAudit({
+      stage: "Non-Renewal & Check-Out",
+      owner: "Leasing Department",
+      input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${startCheckoutForm.moveOutDate}`,
+      approval: "Tenant non-renewal notice",
+      status: "planned",
+      output: startCheckoutForm.notes || "Checkout case opened",
+    });
+    setStartCheckoutOpen(false);
+  }
+
+  function completeCheckout(checkout: CheckoutCase) {
+    const lease = leases.find((item) => item.id === checkout.leaseId);
+    if (!lease) return;
+    setCheckouts((items) =>
+      items.map((item) =>
+        item.id === checkout.id
+          ? {
+              ...item,
+              financeClearance: completeCheckoutForm.financeClearance,
+              utilityClearance: completeCheckoutForm.utilityClearance,
+              keysReturned: completeCheckoutForm.keysReturned,
+              status: "ready_for_settlement",
+              comparisonSummary: "Normal wear separated from tenant-caused damages",
+            }
+          : item,
+      ),
+    );
+    setInspections((items) => [
+      {
+        id: `coi${items.length + 1}`,
+        leaseId: lease.id,
+        type: "check_out",
+        condition: completeCheckoutForm.condition,
+        electricityMeter: completeCheckoutForm.electricityMeter || "182207",
+        waterMeter: completeCheckoutForm.waterMeter || "149129",
+        damages: completeCheckoutForm.damages || "None",
+        acknowledged: true,
+        photos: Number(completeCheckoutForm.photos) || 12,
+      },
+      ...items,
+    ]);
+    setSettlements((items) => [
+      {
+        id: `s${items.length + 1}`,
+        leaseId: lease.id,
+        depositReceived: lease.securityDeposit,
+        outstandingRent: Number(completeCheckoutForm.outstandingRent) || 0,
+        damages: Number(completeCheckoutForm.damagesAmount) || 0,
+        utilityCharges: Number(completeCheckoutForm.utilityCharges) || 0,
+        otherDeductions: Number(completeCheckoutForm.otherDeductions) || 0,
+        approval: "pending_approval",
+      },
+      ...items,
+    ]);
+    recordAudit({
+      stage: "Check-Out Inspection",
+      owner: "Property Manager",
+      input: "Condition, meters, keys, utilities, damages",
+      approval: "Tenant acknowledgement",
+      status: "ready_for_settlement",
+      output: "Settlement draft created with deductions",
+    });
+    setCompleteCheckoutOpen(false);
+  }
+
+  function addManualPdc() {
+    if (!pdcLeaseId || !pdcForm.chequeNo || !pdcForm.file) {
+      alert("Please fill all required fields, including the PDC document upload.");
+      return;
+    }
+    const pdc: Pdc = {
+      id: `p${pdcs.length + 1}`,
+      leaseId: pdcLeaseId,
+      chequeNo: pdcForm.chequeNo,
+      bank: pdcForm.bank,
+      date: pdcForm.date,
+      amount: Number(pdcForm.amount) || 0,
+      status: "received",
+      file: pdcForm.file,
+    };
+    setPdcs((items) => [pdc, ...items]);
+    recordAudit({
+      stage: "PDC Added Manually",
+      owner: "Finance",
+      input: `Cheque ${pdc.chequeNo}, ${pdc.bank}, ${formatMoney(pdc.amount)}`,
+      approval: "Manual entry",
+      status: "received",
+      output: "PDC recorded in system",
+    });
+    setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
+    setPdcLeaseId("");
+    setAddPdcOpen(false);
   }
 
   return (
@@ -1234,6 +1312,35 @@ function LeasingPage() {
             >
               <FileSignature className="mr-2 h-4 w-4" /> Create Lease
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── UPLOAD DOC DIALOG ─────────────────────────────────────── */}
+      <Dialog open={uploadDocOpen} onOpenChange={setUploadDocOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-primary" /> Upload Document</DialogTitle>
+            <DialogDescription>Upload the requested document for verification.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Field label="Document File *">
+              <Input type="file" onChange={e => {
+                const name = e.target.files?.[0]?.name || "";
+                setUploadDocForm(f => ({ ...f, file: name, fileName: f.fileName || name }));
+              }} />
+              {uploadDocForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {uploadDocForm.file}</p>}
+            </Field>
+            <Field label="File Name (Optional)">
+              <Input value={uploadDocForm.fileName} onChange={e => setUploadDocForm(f => ({ ...f, fileName: e.target.value }))} placeholder="Custom name for the file" />
+            </Field>
+            <Field label="Remarks (Optional)">
+              <Textarea rows={2} value={uploadDocForm.remarks} onChange={e => setUploadDocForm(f => ({ ...f, remarks: e.target.value }))} />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadDocOpen(false)}>Cancel</Button>
+            <Button onClick={submitUploadDoc}><ClipboardCheck className="mr-2 h-4 w-4" /> Upload Document</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1465,8 +1572,9 @@ function LeasingPage() {
             <Field label="Date of Signing">
               <Input type="date" value={tenantSignForm.signedAt} onChange={e => setTenantSignForm(f => ({ ...f, signedAt: e.target.value }))} />
             </Field>
-            <Field label="Signed Document Reference / Filename">
-              <Input value={tenantSignForm.signedDocument} onChange={e => setTenantSignForm(f => ({ ...f, signedDocument: e.target.value }))} placeholder={`tenant-signed-${signatureWorkflowLease?.id}.pdf`} />
+            <Field label="Upload Signed Document">
+              <Input type="file" onChange={e => setTenantSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
+              {tenantSignForm.signedDocument && <p className="text-xs text-muted-foreground mt-1">Selected: {tenantSignForm.signedDocument}</p>}
             </Field>
             <Field label="Received By">
               <Select value={tenantSignForm.receivedBy} onValueChange={v => setTenantSignForm(f => ({ ...f, receivedBy: v }))}>
@@ -1532,6 +1640,10 @@ function LeasingPage() {
             <div className="rounded-md border bg-muted/40 p-3 text-sm">
               <p>📦 {signatureWorkflowLease?.pdcCount} PDC cheques will be auto-generated and vouchers will be posted.</p>
             </div>
+            <Field label="Upload Collection Proof / Receipt (Optional)">
+              <Input type="file" onChange={e => setCollectForm(f => ({ ...f, receiptFile: e.target.files?.[0]?.name || "" }))} />
+              {collectForm.receiptFile && <p className="text-xs text-muted-foreground mt-1">Selected: {collectForm.receiptFile}</p>}
+            </Field>
             <Field label="Notes">
               <Textarea rows={2} value={collectForm.notes} onChange={e => setCollectForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
             </Field>
@@ -1570,6 +1682,10 @@ function LeasingPage() {
                 </Select>
               </Field>
             </div>
+            <Field label="Upload Proof of Submission (Optional)">
+              <Input type="file" onChange={e => setSubmitLandlordForm(f => ({ ...f, proofFile: e.target.files?.[0]?.name || "" }))} />
+              {submitLandlordForm.proofFile && <p className="text-xs text-muted-foreground mt-1">Selected: {submitLandlordForm.proofFile}</p>}
+            </Field>
             <Field label="Notes">
               <Textarea rows={2} value={submitLandlordForm.notes} onChange={e => setSubmitLandlordForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
             </Field>
@@ -1595,8 +1711,9 @@ function LeasingPage() {
             <Field label="Signed By">
               <Input value={landlordSignForm.signedBy} onChange={e => setLandlordSignForm(f => ({ ...f, signedBy: e.target.value }))} placeholder="e.g. Sheikh Hassan Al-Thani" />
             </Field>
-            <Field label="Signed Document Reference">
-              <Input value={landlordSignForm.signedDocument} onChange={e => setLandlordSignForm(f => ({ ...f, signedDocument: e.target.value }))} placeholder={`fully-signed-${signatureWorkflowLease?.id}.pdf`} />
+            <Field label="Upload Signed Document">
+              <Input type="file" onChange={e => setLandlordSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
+              {landlordSignForm.signedDocument && <p className="text-xs text-muted-foreground mt-1">Selected: {landlordSignForm.signedDocument}</p>}
             </Field>
             <div className="flex items-center gap-3 rounded-md border p-3">
               <input type="checkbox" id="shared" checked={landlordSignForm.sharedWithTenant} onChange={e => setLandlordSignForm(f => ({ ...f, sharedWithTenant: e.target.checked }))} className="h-4 w-4" />
@@ -1623,10 +1740,34 @@ function LeasingPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <Field label="Planned Handover Date">
-              <Input type="date" value={typeof keyNotifyForm.handoverAt === "string" ? keyNotifyForm.handoverAt : keyNotifyForm.handoverAt.toISOString().split("T")[0]} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverAt: e.target.value }))} />
+              <Input type="date" value={keyNotifyForm.handoverAt} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverAt: e.target.value }))} />
             </Field>
             <Field label="Recipients">
-              <Input value={keyNotifyForm.recipients} onChange={e => setKeyNotifyForm(f => ({ ...f, recipients: e.target.value }))} />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                    {keyNotifyForm.recipients.length > 0 ? keyNotifyForm.recipients.join(", ") : "Select recipients..."}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-[300px]">
+                  {["Tenant", "Property Manager", "Security", "Maintenance", "Facility Management", "Landlord"].map(role => (
+                    <DropdownMenuCheckboxItem
+                      key={role}
+                      checked={keyNotifyForm.recipients.includes(role)}
+                      onCheckedChange={(checked) => {
+                        setKeyNotifyForm(f => ({
+                          ...f,
+                          recipients: checked 
+                            ? [...f.recipients, role] 
+                            : f.recipients.filter(r => r !== role)
+                        }));
+                      }}
+                    >
+                      {role}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </Field>
             <Field label="Special Instructions / Note">
               <Textarea rows={2} value={keyNotifyForm.note} onChange={e => setKeyNotifyForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special access or coordination instructions..." />
@@ -1847,6 +1988,12 @@ function LeasingPage() {
               <Field label="Cheque Date"><Input type="date" value={pdcForm.date} onChange={e => setPdcForm(f => ({ ...f, date: e.target.value }))} /></Field>
               <Field label="Amount (QR)"><Input type="number" value={pdcForm.amount} onChange={e => setPdcForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 5600" /></Field>
             </div>
+            <div className="pt-2">
+              <Field label="Upload PDC Document *">
+                <Input type="file" onChange={e => setPdcForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
+                {pdcForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {pdcForm.file}</p>}
+              </Field>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddPdcOpen(false)}>Cancel</Button>
@@ -1998,9 +2145,13 @@ function LeasingPage() {
                     document.name,
                     document.mandatory ? "Yes" : "No",
                     document.expiryDate || "-",
-                    <StatusBadge key="status" value={document.status} />,
+                    <div key="status" className="flex items-center gap-2">
+                      <StatusBadge value={document.status} />
+                      {document.file && <span className="text-xs text-muted-foreground">({document.file})</span>}
+                    </div>,
                     document.reviewer || "-",
                     <div key="actions" className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setUploadDocForm({ file: "", fileName: "", remarks: "" }); setUploadDocOpen(true); }}>Upload</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "verified", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Verify</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "info_required", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Need Info</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "rejected", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Reject</Button>
@@ -2077,10 +2228,10 @@ function LeasingPage() {
                     <StatusBadge key="status" value={lease.status} />,
                     `Tenant: ${lease.tenantSignedAt || "-"}; file: ${lease.signedDocument || "-"}; received by: ${lease.receivedBy || "-"}; landlord package: ${lease.landlordPackageSubmittedAt || "-"}; shared: ${lease.sharedWithTenant ? "Yes" : "No"}`,
                     <div key="actions" className="flex flex-wrap justify-end gap-2">
-                      <Button size="sm" variant="outline" disabled={!docsVerified || lease.status !== "documents_verified"} onClick={() => { setSignatureWorkflowLease(lease); setTenantSignForm({ signedAt: today.toISOString().split("T")[0], signedDocument: "", receivedBy: "Leasing Department", remarks: "" }); setTenantSignOpen(true); }}>Tenant Sign</Button>
-                      <Button size="sm" variant="outline" disabled={!lease.tenantSignedAt || lease.collectionCompleted} onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", notes: "" }); setCollectOpen(true); }}>Collect</Button>
-                      <Button size="sm" variant="outline" disabled={!lease.collectionCompleted || lease.status === "pending_landlord_signature" || lease.status === "fully_signed"} onClick={() => { setSignatureWorkflowLease(lease); setSubmitLandlordForm({ submittedTo: "", submittedAt: today.toISOString().split("T")[0], docsSent: "Email", notes: "" }); setSubmitLandlordOpen(true); }}>Submit Landlord</Button>
-                      <Button size="sm" variant="outline" disabled={lease.status !== "pending_landlord_signature"} onClick={() => { setSignatureWorkflowLease(lease); setLandlordSignForm({ signedAt: today.toISOString().split("T")[0], signedBy: "", signedDocument: "", sharedWithTenant: true, remarks: "" }); setLandlordSignOpen(true); }}>Landlord Sign</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setTenantSignForm({ signedAt: today.toISOString().split("T")[0], signedDocument: "", receivedBy: "Leasing Department", remarks: "" }); setTenantSignOpen(true); }}>Tenant Sign</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", notes: "", receiptFile: "" }); setCollectOpen(true); }}>Collect</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setSubmitLandlordForm({ submittedTo: "", submittedAt: today.toISOString().split("T")[0], docsSent: "Email", notes: "", proofFile: "" }); setSubmitLandlordOpen(true); }}>Submit Landlord</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setLandlordSignForm({ signedAt: today.toISOString().split("T")[0], signedBy: "", signedDocument: "", sharedWithTenant: true, remarks: "" }); setLandlordSignOpen(true); }}>Landlord Sign</Button>
                     </div>,
                   ];
                 })}
@@ -2109,7 +2260,7 @@ function LeasingPage() {
                     handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "-",
                     checkIn ? `${checkIn.condition}, ${checkIn.photos} photos` : "-",
                     <div key="actions" className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), recipients: "Tenant, Property Manager, Security, Maintenance", note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), recipients: ["Tenant", "Property Manager", "Security", "Maintenance"], note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
                       <Button size="sm" variant="outline" disabled={lease.status !== "active"} onClick={() => { setKeysWorkflowLease(lease); setHandoverForm({ keys: "2", accessCards: "2", parkingRemotes: "1", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", note: "" }); setHandoverOpen(true); }}>Handover</Button>
                       <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", electricityMeter: handover?.meterInfo || "", waterMeter: "", damages: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
                     </div>,
@@ -2201,7 +2352,7 @@ function LeasingPage() {
                   <CardTitle>Detailed Voucher Accounting</CardTitle>
                   <CardDescription>Named financial documents model rent receipt, deposit, PDC clearance, cheque return, rental income and settlement.</CardDescription>
                 </div>
-                <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "" }); setAddPdcOpen(true); }}>
+                <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" }); setAddPdcOpen(true); }}>
                   <Receipt className="mr-2 h-4 w-4" /> Add PDC
                 </Button>
               </div>
