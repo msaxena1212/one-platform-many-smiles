@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MapPin, Image as ImageIcon, CheckCircle, ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
-import { createProperty } from "@/lib/supabase";
+import { createProperty, createUnit, createLease, createRentSchedules } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 
@@ -261,6 +261,63 @@ function HostCreateProperty() {
         room_details: formData.roomDetails,
         amenities: formData.amenities,
       });
+
+      const unitCount = Math.random() > 0.5 ? 2 : 1;
+      const createdUnits = [];
+      for (let i = 0; i < unitCount; i++) {
+        const unitRef = `${newProperty.title
+          .split(" ")
+          .map((word) => word[0])
+          .join("")
+          .toUpperCase()}-${Math.floor(100 + Math.random() * 899)}`;
+        const status = i === 0 ? "LEASED" : "AVAILABLE";
+        const unit = await createUnit({
+          property_id: newProperty.id,
+          unit_ref: unitRef,
+          room_type: "FLAT",
+          bedrooms: Math.max(1, formData.bedrooms),
+          bathrooms: Math.max(1, formData.bathrooms),
+          area: `${Math.max(60, formData.bedrooms * 35)} sqm`,
+          price: Number(formData.basePrice),
+          status,
+        });
+        createdUnits.push(unit);
+      }
+
+      if (createdUnits.length > 0) {
+        const leaseUnit = createdUnits[0];
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        const lease = await createLease({
+          property_id: newProperty.id,
+          unit_ref: leaseUnit.unit_ref,
+          tenant_name: `Tenant ${leaseUnit.unit_ref}`,
+          start_date: startDate.toISOString().split("T")[0],
+          end_date: endDate.toISOString().split("T")[0],
+          monthly_rent: Number(leaseUnit.price || formData.basePrice),
+          security_deposit: Number(leaseUnit.price || formData.basePrice) * 2,
+          status: "active",
+          host_id: MOCK_HOST_ID,
+        });
+
+        const rentSchedules = [];
+        const dueDate = new Date(lease.start_date);
+        while (dueDate <= new Date(lease.end_date)) {
+          rentSchedules.push({
+            lease_id: lease.id,
+            due_date: dueDate.toISOString().split("T")[0],
+            amount: lease.monthly_rent,
+            status: "unpaid",
+          });
+          dueDate.setMonth(dueDate.getMonth() + 1);
+          if (rentSchedules.length >= 12) break;
+        }
+        if (rentSchedules.length > 0) {
+          await createRentSchedules(rentSchedules);
+        }
+      }
+
       toast.success("🎉 Listing published successfully!");
       navigate({ to: "/host/manage/$id", params: { id: newProperty.id } });
     } catch (err: any) {

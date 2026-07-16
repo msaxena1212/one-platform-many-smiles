@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { payments, formatSAR, type Payment } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/portal/payments")({
-  head: () => ({ meta: [{ title: "Payments — Kinan Portal" }] }),
+  head: () => ({ meta: [{ title: "Payments — ZYNO Property Management Portal" }] }),
   component: PaymentsPage,
 });
 
@@ -17,6 +18,14 @@ const methodColor: Record<Payment["method"], string> = {
 };
 
 function PaymentsPage() {
+  const handlePayment = (method: Payment["method"]) => {
+    toast.success(`Payment flow started with ${method}.`);
+  };
+
+  const handleAutoPay = () => {
+    toast(`Auto-pay setup form opened.`);
+  };
+
   return (
     <div className="space-y-6">
       <Card className="border-gold/40 bg-gradient-to-br from-card to-gold/5">
@@ -27,9 +36,9 @@ function PaymentsPage() {
             <p className="text-sm text-muted-foreground">Due July 1, 2026 · Reference 119988443</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button>Pay with SADAD</Button>
-            <Button variant="outline">Pay with Mada</Button>
-            <Button variant="ghost">Set up auto-pay</Button>
+            <Button onClick={() => handlePayment("SADAD")}>Pay with SADAD</Button>
+            <Button variant="outline" onClick={() => handlePayment("Mada")}>Pay with Mada</Button>
+            <Button variant="ghost" onClick={handleAutoPay}>Set up auto-pay</Button>
           </div>
         </CardContent>
       </Card>

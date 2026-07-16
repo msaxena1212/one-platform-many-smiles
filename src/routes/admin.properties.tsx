@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { properties } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/properties")({
-  head: () => ({ meta: [{ title: "Properties — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Properties — ZYNO Property Management Staff" }] }),
   component: AdminProperties,
 });
 
@@ -13,7 +13,7 @@ function AdminProperties() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">All Kinan-owned and managed assets across the Kingdom.</p>
+        <p className="text-sm text-muted-foreground">All ZYNO Property Management-owned and managed assets across the Kingdom.</p>
         <Button><Plus /> New property</Button>
       </div>
       <Card>

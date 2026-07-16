@@ -1,20 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { communityPosts, communityEvents } from "@/lib/mock-data";
 
-const posts = [
-  { id: "c1", author: "Kinan Community Team", time: "2h", title: "Pool maintenance Tuesday 9 AM – 12 PM", body: "We'll be running our quarterly deep-clean. Thanks for your patience." },
-  { id: "c2", author: "Sara · A-805", time: "1d", title: "Lost set of car keys near lobby", body: "If found, please drop at concierge — much appreciated 🙏" },
-  { id: "c3", author: "Kinan Events", time: "3d", title: "Eid family majlis — Saturday 19:00", body: "Open to all residents. RSVP via Facility Booking." },
-];
-const events = [
-  { id: "e1", title: "Coffee morning", when: "Fri 24 Jun · 10:00" },
-  { id: "e2", title: "Kids movie night", when: "Sat 25 Jun · 19:00" },
-  { id: "e3", title: "Building town hall", when: "Wed 29 Jun · 18:00" },
-];
+const posts = communityPosts;
+const events = communityEvents;
 
 export const Route = createFileRoute("/portal/community")({
-  head: () => ({ meta: [{ title: "Community — Kinan Portal" }] }),
+  head: () => ({ meta: [{ title: "Community — ZYNO Property Management Portal" }] }),
   component: CommunityPage,
 });
 

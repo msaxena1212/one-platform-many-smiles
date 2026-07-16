@@ -7,16 +7,18 @@ export const Route = createFileRoute("/host/leases")({
 });
 
 const mockLeases = [
-  { ref: "L-L1", tenant: "Khalid Al-Mutairi", unit: "V-12", start: "2024-03-01", end: "2026-02-28", rent: "SAR 180,000", status: "ACTIVE" },
-  { ref: "L-L2", tenant: "Sara Al-Qahtani", unit: "A-1305", start: "2023-09-15", end: "2025-09-14", rent: "SAR 95,000", status: "EXPIRING" },
-  { ref: "L-L3", tenant: "Omar Industries LLC", unit: "C-2210", start: "2024-01-01", end: "2027-01-01", rent: "SAR 220,000", status: "ACTIVE" },
-  { ref: "L-L4", tenant: "Layla Al-Harbi", unit: "A-1202", start: "2026-07-01", end: "2028-06-30", rent: "SAR 120,000", status: "DRAFT" },
+  { ref: "L-L1", tenant: "Khalid Al-Mutairi", unit: "A-1201", start: "2025-01-01", end: "2025-12-31", rent: "$54,000", status: "ACTIVE" },
+  { ref: "L-L2", tenant: "Sara Al-Qahtani", unit: "V-07", start: "2025-03-01", end: "2026-02-28", rent: "$38,400", status: "ACTIVE" },
+  { ref: "L-L3", tenant: "Omar Industries LLC", unit: "C-2210", start: "2024-07-01", end: "2025-06-30", rent: "$81,600", status: "EXPIRING" },
+  { ref: "L-L4", tenant: "Layla Al-Harbi", unit: "B-0804", start: "2026-01-01", end: "2026-12-31", rent: "$35,400", status: "DRAFT" },
+  { ref: "L-L5", tenant: "Fahad Real Estate", unit: "A-1305", start: "2024-09-01", end: "2027-08-31", rent: "$93,600", status: "ACTIVE" },
 ];
 
 const mockPDCs = [
-  { tenant: "Khalid Al-Mutairi", details: "SNB - presents 2026-07-01", amount: "SAR 45,000" },
-  { tenant: "Sara Al-Qahtani", details: "Al Rajhi - presents 2026-07-15", amount: "SAR 23,750" },
-  { tenant: "Omar Industries LLC", details: "SAB - presents 2026-08-01", amount: "SAR 55,000" },
+  { tenant: "Khalid Al-Mutairi", details: "SNB — presents 2025-12-05", amount: "$4,500", status: "HELD" },
+  { tenant: "Sara Al-Qahtani", details: "Al Rajhi Bank — deposited 2026-01-10", amount: "$3,200", status: "DEPOSITED" },
+  { tenant: "Omar Industries LLC", details: "SAB — cleared 2024-10-01", amount: "$6,800", status: "CLEARED" },
+  { tenant: "Layla Al-Harbi", details: "Riyadh Bank — bounced 2026-02-15", amount: "$2,950", status: "BOUNCED" },
 ];
 
 function HostLeases() {
@@ -53,7 +55,7 @@ function HostLeases() {
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Annual Rent Roll</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">SAR 400,000</div>
+            <div className="text-2xl font-bold">$400,000</div>
           </CardContent>
         </Card>
       </div>

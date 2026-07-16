@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { tickets, type Ticket } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/maintenance")({
-  head: () => ({ meta: [{ title: "Maintenance — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Maintenance — ZYNO Property Management Staff" }] }),
   component: AdminMaintenance,
 });
 

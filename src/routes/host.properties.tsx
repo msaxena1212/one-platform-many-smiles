@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Building2 } from "lucide-react";
-import { fetchHostProperties, type Property } from "@/lib/supabase";
+import { fetchHostProperties, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
 
 export const Route = createFileRoute("/host/properties")({
   component: HostProperties,
@@ -25,6 +25,7 @@ function HostProperties() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [usedFallback, setUsedFallback] = useState(false);
+  const [occupancyData, setOccupancyData] = useState<Record<string, { units: number; occupancy: string }>>({});
 
   useEffect(() => {
     fetchHostProperties(MOCK_HOST_ID)
@@ -38,6 +39,33 @@ function HostProperties() {
       .catch(() => setUsedFallback(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (usedFallback || properties.length === 0) return;
+
+    (async () => {
+      const entries = await Promise.all(properties.map(async (property) => {
+        try {
+          const units = await fetchUnits({ property_id: property.id });
+          const leases = await fetchLeases({ property_id: property.id });
+          const activeLeases = (leases || []).filter((lease: any) => lease.status === 'active').length;
+          return {
+            id: property.id,
+            units: units?.length ?? 0,
+            occupancy: units?.length ? `${Math.round((activeLeases / units.length) * 100)}%` : "0%",
+          };
+        } catch (error) {
+          console.error("Failed to load occupancy metrics for property", property.id, error);
+          return {
+            id: property.id,
+            units: 0,
+            occupancy: "N/A",
+          };
+        }
+      }));
+      setOccupancyData(Object.fromEntries(entries.map((entry) => [entry.id, entry])));
+    })();
+  }, [properties, usedFallback]);
 
   // Use either live Supabase data or the fallback mock rows
   const rows = usedFallback
@@ -59,7 +87,7 @@ function HostProperties() {
         latitude: null,
         longitude: null,
         property_images: [],
-      } as unknown as Property)
+      } as unknown as Property))
     : properties;
 
   return (
@@ -105,16 +133,16 @@ function HostProperties() {
                   {rows.map((prop, i) => {
                     // Generate code from index for live data that doesn't have a code field
                     const code = (prop as any).code ?? `KIN-${String(i + 1).padStart(2, "0")}`;
-                    const occupancy = (prop as any).occupancy ?? "—";
-                    const units = (prop as any).units ?? "—";
+                    const propertyUnits = occupancyData[prop.id]?.units ?? (typeof (prop as any).units === "number" ? (prop as any).units : undefined);
+                    const propertyOccupancy = occupancyData[prop.id]?.occupancy ?? (typeof (prop as any).occupancy === "string" ? (prop as any).occupancy : undefined);
                     return (
                       <tr key={prop.id} className="hover:bg-muted/10 transition-colors">
                         <td className="px-6 py-4 font-mono text-xs text-muted-foreground">{code}</td>
                         <td className="px-6 py-4 font-semibold text-foreground">{prop.title}</td>
                         <td className="px-6 py-4 text-muted-foreground capitalize">{prop.property_type.replace(/_/g, " ")}</td>
                         <td className="px-6 py-4 text-muted-foreground">{prop.city}, {prop.country}</td>
-                        <td className="px-6 py-4 text-muted-foreground">{units}</td>
-                        <td className="px-6 py-4 font-medium">{occupancy}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{propertyUnits ?? "—"}</td>
+                        <td className="px-6 py-4 font-medium">{propertyOccupancy ?? "—"}</td>
                         <td className="px-6 py-4 text-right">
                           <Button variant="ghost" size="sm" asChild>
                             <Link to="/host/manage/$id" params={{ id: prop.id }}>

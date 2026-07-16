@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { units, properties, formatSAR, type Unit } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/units")({
-  head: () => ({ meta: [{ title: "Units — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Units — ZYNO Property Management Staff" }] }),
   component: AdminUnits,
 });
 

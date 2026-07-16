@@ -172,7 +172,7 @@ function PropertyDetail() {
             <div className="lg:col-span-2 space-y-10">
               <div className="flex justify-between items-center border-b border-border pb-6">
                 <div>
-                  <h2 className="text-xl font-semibold capitalize">Entire {property.property_type} hosted by Kinan</h2>
+                  <h2 className="text-xl font-semibold capitalize">Entire {property.property_type} hosted by ZYNO Property Management</h2>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-muted-foreground text-sm">
                     <span className="flex items-center gap-1"><Users className="h-4 w-4"/> {property.max_guests} guests</span>
                     <span>·</span>

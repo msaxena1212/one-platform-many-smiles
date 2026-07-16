@@ -1,12 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus } from "lucide-react";
-import { fetchPropertyById, fetchHostBookings, updateProperty, type Property } from "@/lib/supabase";
+import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
+import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 
@@ -24,6 +26,12 @@ const ROOM_TYPES = [
   { value: "drawing_room", label: "Drawing Room" },
   { value: "dining_room", label: "Dining Room" },
   { value: "other", label: "Other" },
+];
+
+const UNIT_TYPES = [
+  { value: 'FLAT', label: 'Flat' },
+  { value: 'SHOP', label: 'Shop' },
+  { value: 'COMPOUND', label: 'Compound' },
 ];
 
 const AMENITIES = [
@@ -61,6 +69,8 @@ function ManageProperty() {
 
   const [property, setProperty] = useState<Property | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [unitsCount, setUnitsCount] = useState<number | null>(null);
+  const [occupancyPct, setOccupancyPct] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +85,9 @@ function ManageProperty() {
   const [country, setCountry] = useState("");
   const [address, setAddress] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [propertyType, setPropertyType] = useState<string>("");
+  const [kahramaaNumber, setKahramaaNumber] = useState("");
+  const [municipalityDetails, setMunicipalityDetails] = useState("");
   const [roomDetails, setRoomDetails] = useState<any[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
 
@@ -112,6 +125,9 @@ function ManageProperty() {
         setAddress(prop.address);
         setIsActive(prop.is_active);
         setAmenities(prop.amenities || []);
+        setPropertyType(prop.property_type || "");
+        setKahramaaNumber((prop as any).kahramaa_number || "");
+        setMunicipalityDetails(JSON.stringify((prop as any).municipality_details || {}, null, 2));
         
         if (prop.room_details) {
           // Backwards compatibility: Check if old static object, convert to array
@@ -130,6 +146,19 @@ function ManageProperty() {
 
         const filtered = (bks as any[]).filter(b => b.property_id === id);
         setBookings(filtered);
+        // fetch unit/lease metrics
+        (async () => {
+          try {
+            const units = await fetchUnits({ property_id: id });
+            setUnitsCount(units.length || 0);
+            const leases = await fetchLeases({ property_id: id });
+            const activeLeases = (leases || []).filter(l => l.status === 'active').length;
+            setOccupancyPct(units.length ? Math.round((activeLeases / units.length) * 100) : 0);
+          } catch (e) {
+            setUnitsCount(null);
+            setOccupancyPct(null);
+          }
+        })();
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
@@ -194,9 +223,12 @@ function ManageProperty() {
     if (!property) return;
     setSaving(true);
     try {
+      let muni: any = null;
+      try { muni = municipalityDetails ? JSON.parse(municipalityDetails) : null; } catch { muni = municipalityDetails; }
       await updateProperty(property.id, {
         title,
         description,
+        property_type: propertyType || property.property_type,
         base_price_per_night: price,
         city,
         state,
@@ -206,6 +238,8 @@ function ManageProperty() {
         is_active: isActive,
         room_details: roomDetails,
         amenities,
+        kahramaa_number: kahramaaNumber || null,
+        municipality_details: muni,
       });
       toast.success("Property updated successfully!");
     } catch (err: any) {
@@ -241,6 +275,43 @@ function ManageProperty() {
 
   const updateRoom = (rid: string, field: string, value: any) => {
     setRoomDetails(roomDetails.map(r => r.id === rid ? { ...r, [field]: value } : r));
+  };
+
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const [ticketTitle, setTicketTitle] = useState("");
+  const [ticketDesc, setTicketDesc] = useState("");
+  const [ticketUnit, setTicketUnit] = useState("");
+  const [ticketPriority, setTicketPriority] = useState<"low"|"medium"|"high"|"urgent">("medium");
+  const [ticketCategory, setTicketCategory] = useState("general");
+  const [submittingTicket, setSubmittingTicket] = useState(false);
+
+  const handleCreateTicket = async () => {
+    if (!ticketTitle) return toast.error("Please enter a title");
+    setSubmittingTicket(true);
+    try {
+      await createMaintenanceTicket({
+        property_id: id,
+        host_id: property.host_id,
+        title: ticketTitle,
+        description: ticketDesc,
+        unit_ref: ticketUnit || null,
+        priority: ticketPriority,
+        category: ticketCategory,
+        status: "new",
+        assignee: null,
+        reported_by: "Host Portal",
+        resolved_at: null,
+      });
+      toast.success("Maintenance ticket created!");
+      setMaintenanceOpen(false);
+      setTicketTitle("");
+      setTicketDesc("");
+      setTicketUnit("");
+    } catch (err: any) {
+      toast.error("Failed to create ticket: " + err.message);
+    } finally {
+      setSubmittingTicket(false);
+    }
   };
 
   const calendarDays = useMemo(() => {
@@ -297,8 +368,71 @@ function ManageProperty() {
           </Button>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Manage Property</h1>
           <p className="mt-1 text-muted-foreground">{property.title} — {property.city}, {property.country}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Units: {unitsCount ?? '—'} · Occupancy: {occupancyPct ?? '—'}%</p>
         </div>
         <div className="flex items-center gap-3">
+          <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                <Wrench className="mr-2 h-4 w-4" /> Add Maintenance
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Maintenance Ticket</DialogTitle>
+                <DialogDescription>Create a new maintenance request for this property or a specific unit.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input value={ticketTitle} onChange={e => setTicketTitle(e.target.value)} placeholder="e.g. Broken AC" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea value={ticketDesc} onChange={e => setTicketDesc(e.target.value)} placeholder="Details..." />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Unit (Optional)</Label>
+                    <Input value={ticketUnit} onChange={e => setTicketUnit(e.target.value)} placeholder="e.g. A-12" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Priority</Label>
+                    <Select value={ticketPriority} onValueChange={(v: any) => setTicketPriority(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="urgent">Urgent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={ticketCategory} onValueChange={setTicketCategory}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">General</SelectItem>
+                      <SelectItem value="plumbing">Plumbing</SelectItem>
+                      <SelectItem value="electrical">Electrical</SelectItem>
+                      <SelectItem value="hvac">HVAC</SelectItem>
+                      <SelectItem value="cleaning">Cleaning</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMaintenanceOpen(false)}>Cancel</Button>
+                <Button onClick={handleCreateTicket} disabled={submittingTicket}>
+                  {submittingTicket && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Submit Ticket
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
             <Trash2 className="mr-2 h-4 w-4" /> Deactivate
           </Button>
@@ -344,6 +478,26 @@ function ManageProperty() {
                   </select>
                 </div>
               </div>
+
+                <div className="grid grid-cols-3 gap-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Unit Type</Label>
+                    <Select value={propertyType} onValueChange={v => setPropertyType(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {UNIT_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Kahramaa Number</Label>
+                    <Input value={kahramaaNumber} onChange={e => setKahramaaNumber(e.target.value)} placeholder="Kahramaa / DEWA ref" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Municipality Details</Label>
+                    <Input value={municipalityDetails} onChange={e => setMunicipalityDetails(e.target.value)} placeholder="JSON or short text" />
+                  </div>
+                </div>
 
               <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
                 <div className="space-y-2">

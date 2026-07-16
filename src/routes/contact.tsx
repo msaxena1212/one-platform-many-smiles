@@ -11,8 +11,8 @@ import { Card, CardContent } from "@/components/ui/card";
 export const Route = createFileRoute("/contact")({
   head: () => ({
     meta: [
-      { title: "Contact — Kinan" },
-      { name: "description", content: "Get in touch with Kinan sales, leasing or customer service." },
+      { title: "Contact — ZYNO Property Management" },
+      { name: "description", content: "Get in touch with ZYNO Property Management sales, leasing or customer service." },
     ],
   }),
   component: Contact,
@@ -30,7 +30,7 @@ function Contact() {
           <p className="mt-3 text-muted-foreground">Sales, leasing, customer service, or partnership — pick the channel that fits.</p>
           <div className="mt-8 space-y-4">
             <Info icon={<Phone className="h-4 w-4" />} k="Customer service" v="920 000 000" />
-            <Info icon={<Mail className="h-4 w-4" />} k="Email" v="hello@kinan.example" />
+            <Info icon={<Mail className="h-4 w-4" />} k="Email" v="hello@ZYNO Property Management.example" />
             <Info icon={<MapPin className="h-4 w-4" />} k="Headquarters" v="King Fahd Road, Riyadh, KSA" />
           </div>
         </div>

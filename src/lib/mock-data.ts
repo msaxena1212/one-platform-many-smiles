@@ -1,4 +1,4 @@
-// Centralized mock data for the Kinan platform skeleton.
+// Centralized mock data for the ZYNO Property Management platform skeleton.
 
 export type PropertyStatus = "available" | "reserved" | "sold" | "leased";
 
@@ -20,7 +20,7 @@ export interface Unit {
   number: string;
   bedrooms: number;
   area: number; // sqm
-  price: number; // SAR
+  price: number; // USD
   status: PropertyStatus;
 }
 
@@ -138,5 +138,224 @@ export const journal: JournalEntry[] = [
   { id: "je6", date: "2026-06-10", memo: "HVAC maintenance T1", debit: 0, credit: 3200, account: "2100 Accounts Payable" },
 ];
 
+export interface DocumentItem {
+  id: string;
+  name: string;
+  size: string;
+  date: string;
+  action: "download" | "sign";
+  category: string;
+}
+
+export interface FacilityBooking {
+  id: string;
+  name: string;
+  type: string;
+  hours: string;
+  nextSlot: string;
+  status: string;
+  availableSlots: number;
+}
+
+export interface CommunityPost {
+  id: string;
+  author: string;
+  time: string;
+  title: string;
+  body: string;
+  likes: number;
+  comments: number;
+}
+
+export interface CommunityEvent {
+  id: string;
+  title: string;
+  when: string;
+  location: string;
+  status: string;
+}
+
+export interface CRMContact {
+  id: string;
+  name: string;
+  company: string;
+  role: string;
+  email: string;
+  phone: string;
+  status: "Active" | "Prospect" | "Inactive";
+  source: string;
+  createdAt: string;
+}
+
+export interface CRMInteraction {
+  id: string;
+  contactId: string;
+  type: "Call" | "Email" | "Meeting" | "Support";
+  subject: string;
+  date: string;
+  owner: string;
+  channel: string;
+  notes: string;
+}
+
+export interface MarketingAsset {
+  id: string;
+  title: string;
+  type: "Brochure" | "Video" | "Banner" | "Email";
+  status: "Draft" | "Published" | "Archived";
+  updatedAt: string;
+}
+
+export interface SalesLead {
+  id: string;
+  name: string;
+  email: string;
+  projectInterest: string;
+  stage: "New" | "Qualified" | "Negotiation" | "Closed";
+  amount: number;
+  assignedTo: string;
+  created_at: string;
+  status: "Open" | "Won" | "Lost";
+}
+
+export interface IntegrationHealth {
+  source: string;
+  status: "Healthy" | "Warning" | "Error";
+  lastSynced: string;
+  notes: string;
+}
+
+export interface SecurityAuditLog {
+  id: string;
+  user: string;
+  action: string;
+  resource: string;
+  outcome: "Success" | "Failure";
+  timestamp: string;
+}
+
+export interface ComplianceCheck {
+  id: string;
+  title: string;
+  status: "Passed" | "Warning" | "Failed";
+  lastChecked: string;
+  details: string;
+}
+
+export interface AccessPolicy {
+  id: string;
+  name: string;
+  description: string;
+  enforcement: string;
+  status: "Enabled" | "Disabled";
+  updatedAt: string;
+}
+
+export interface DataResidency {
+  region: string;
+  compliant: boolean;
+  note: string;
+}
+
+export const documents: DocumentItem[] = [
+  { id: "d1", name: "Lease agreement — A-1201", size: "248 KB", date: "2024-08-15", action: "download", category: "Legal" },
+  { id: "d2", name: "Q3 2026 rent invoice", size: "92 KB", date: "2026-06-15", action: "download", category: "Finance" },
+  { id: "d3", name: "Move-in inspection report", size: "1.2 MB", date: "2024-08-20", action: "download", category: "Inspection" },
+  { id: "d4", name: "Lease renewal — sign required", size: "186 KB", date: "2026-06-20", action: "sign", category: "Legal" },
+  { id: "d5", name: "Community house rules v3", size: "412 KB", date: "2026-01-01", action: "download", category: "Policy" },
+  { id: "d6", name: "Pool access acknowledgement — sign required", size: "44 KB", date: "2026-06-10", action: "sign", category: "Facilities" },
+];
+
+export const facilities: FacilityBooking[] = [
+  { id: "pool", name: "Swimming pool", type: "Amenity", hours: "06:00 – 22:00", nextSlot: "Fri · 18:00–20:00", status: "Confirmed", availableSlots: 2 },
+  { id: "gym", name: "Fitness gym", type: "Amenity", hours: "24/7", nextSlot: "Open", status: "Drop-in", availableSlots: 8 },
+  { id: "hall", name: "Event hall", type: "Facility", hours: "By booking", nextSlot: "Sun · 16:00–19:00", status: "Available", availableSlots: 4 },
+  { id: "majlis", name: "Family majlis", type: "Facility", hours: "By booking", nextSlot: "Sat · 19:00–22:00", status: "Pending", availableSlots: 1 },
+  { id: "court", name: "Padel court", type: "Amenity", hours: "06:00 – 23:00", nextSlot: "Thu · 21:00–22:00", status: "Available", availableSlots: 5 },
+];
+
+export const communityPosts: CommunityPost[] = [
+  { id: "c1", author: "ZYNO Property Management Community Team", time: "2h", title: "Pool maintenance Tuesday 9 AM – 12 PM", body: "We\'ll be running our quarterly deep-clean. Thanks for your patience.", likes: 28, comments: 4 },
+  { id: "c2", author: "Sara · A-805", time: "1d", title: "Lost set of car keys near lobby", body: "If found, please drop at concierge — much appreciated 🙏", likes: 18, comments: 3 },
+  { id: "c3", author: "ZYNO Property Management Events", time: "3d", title: "Eid family majlis — Saturday 19:00", body: "Open to all residents. RSVP via Facility Booking.", likes: 41, comments: 9 },
+];
+
+export const communityEvents: CommunityEvent[] = [
+  { id: "e1", title: "Coffee morning", when: "Fri 24 Jun · 10:00", location: "Lobby Lounge", status: "Open" },
+  { id: "e2", title: "Kids movie night", when: "Sat 25 Jun · 19:00", location: "Community Hall", status: "Open" },
+  { id: "e3", title: "Building town hall", when: "Wed 29 Jun · 18:00", location: "Conference Room", status: "RSVP" },
+];
+
+export const crmContacts: CRMContact[] = [
+  { id: "crm1", name: "Noura Al-Faisal", company: "Kinan Real Estate", role: "Resident", email: "noura.alfaisal@example.com", phone: "+966 55 123 4567", status: "Active", source: "Mobile App", createdAt: "2026-05-01" },
+  { id: "crm2", name: "Mansour Al-Shehri", company: "Kinan Leasing", role: "Investor", email: "mansour.shehri@example.com", phone: "+966 54 987 6543", status: "Prospect", source: "CRM Campaign", createdAt: "2026-04-18" },
+  { id: "crm3", name: "Lina Al-Harbi", company: "Kinan Operations", role: "Service Manager", email: "lina.alharbi@example.com", phone: "+966 55 321 9876", status: "Active", source: "Referral", createdAt: "2026-06-08" },
+];
+
+export const crmInteractions: CRMInteraction[] = [
+  { id: "ci1", contactId: "crm1", type: "Email", subject: "Follow-up on maintenance ticket", date: "2026-06-20", owner: "Support Team", channel: "Email", notes: "Shared status update and ETA for repair." },
+  { id: "ci2", contactId: "crm2", type: "Call", subject: "Sales appointment request", date: "2026-06-18", owner: "Sales Agent", channel: "Phone", notes: "Booked discussion for villa reservation." },
+  { id: "ci3", contactId: "crm3", type: "Meeting", subject: "Community event planning", date: "2026-06-15", owner: "Community Manager", channel: "In-person", notes: "Reviewed upcoming Eid majlis logistics." },
+];
+
+export const marketingAssets: MarketingAsset[] = [
+  { id: "ma1", title: "Summer campaign banner", type: "Banner", status: "Published", updatedAt: "2026-06-10" },
+  { id: "ma2", title: "Property brochure — Madinah Gardens", type: "Brochure", status: "Published", updatedAt: "2026-05-20" },
+  { id: "ma3", title: "Reservation workflow video", type: "Video", status: "Draft", updatedAt: "2026-06-17" },
+];
+
+export const salesLeads: SalesLead[] = [
+  { id: "lead1", name: "Riyad Al-Qahtani", email: "riyad.q@example.com", projectInterest: "Al Nakheel Residences", stage: "New", amount: 1200000, assignedTo: "Sales Team", created_at: "2026-06-14", status: "Open" },
+  { id: "lead2", name: "Huda Al-Zahrani", email: "huda.z@example.com", projectInterest: "Corniche Heights", stage: "Qualified", amount: 900000, assignedTo: "Sales Team", created_at: "2026-06-10", status: "Open" },
+  { id: "lead3", name: "Fahad Al-Mutlaq", email: "fahad.m@example.com", projectInterest: "Madinah Gardens", stage: "Negotiation", amount: 1600000, assignedTo: "Sales Team", created_at: "2026-05-28", status: "Open" },
+];
+
+export const integrationHealth: IntegrationHealth[] = [
+  { source: "Kinan CRM", status: "Healthy", lastSynced: "2026-06-22 09:12", notes: "Customer data sync is current." },
+  { source: "ERP Leasing", status: "Warning", lastSynced: "2026-06-22 08:45", notes: "One rent schedule failed to upsert." },
+  { source: "Payment Gateway", status: "Healthy", lastSynced: "2026-06-22 09:08", notes: "No failed transactions in last 24 hours." },
+];
+
+export const securityAuditLogs: SecurityAuditLog[] = [
+  { id: "alog1", user: "admin@kinan.com", action: "Login", resource: "Admin Console", outcome: "Success", timestamp: "2026-06-22 09:05" },
+  { id: "alog2", user: "support@kinan.com", action: "Update ticket", resource: "Maintenance Ticket T2", outcome: "Success", timestamp: "2026-06-22 08:58" },
+  { id: "alog3", user: "user@kinan.com", action: "Download document", resource: "Lease agreement", outcome: "Success", timestamp: "2026-06-21 18:37" },
+];
+
+export const complianceChecks: ComplianceCheck[] = [
+  { id: "comp1", title: "PCI DSS readiness", status: "Passed", lastChecked: "2026-06-20", details: "Payment gateway integration is using tokenization." },
+  { id: "comp2", title: "Data residency review", status: "Passed", lastChecked: "2026-06-18", details: "All customer data is stored within KSA region." },
+  { id: "comp3", title: "MFA enforcement", status: "Warning", lastChecked: "2026-06-19", details: "Admin login requires MFA; customer login still pending enablement." },
+];
+
+export const accessPolicies: AccessPolicy[] = [
+  { id: "policy1", name: "Admin MFA", description: "Require MFA for all admin users.", enforcement: "Policy Engine", status: "Enabled", updatedAt: "2026-06-19" },
+  { id: "policy2", name: "Data encryption at rest", description: "AES-256 encryption for all stored data.", enforcement: "Storage layer", status: "Enabled", updatedAt: "2026-05-30" },
+  { id: "policy3", name: "Least privilege access", description: "Restrict roles to least privilege.", enforcement: "IAM policies", status: "Enabled", updatedAt: "2026-06-21" },
+];
+
+export const dataResidency: DataResidency[] = [
+  { region: "KSA", compliant: true, note: "Primary cloud region with full data residency enforcement." },
+  { region: "EU", compliant: false, note: "No cross-border data flows currently permitted." },
+];
+
+export interface OwnerStatement {
+  id: string;
+  period: string;
+  gross_revenue: number;
+  expenses: number;
+  net_payable: number;
+  paid: boolean;
+  paid_date?: string;
+}
+
+export const mockOwnerStatements: OwnerStatement[] = [
+  { id: "stmt1", period: "June 2026", gross_revenue: 255000, expenses: 42500, net_payable: 212500, paid: true, paid_date: "2026-06-15" },
+  { id: "stmt2", period: "May 2026", gross_revenue: 250000, expenses: 40000, net_payable: 210000, paid: true, paid_date: "2026-05-15" },
+  { id: "stmt3", period: "April 2026", gross_revenue: 235000, expenses: 38500, net_payable: 196500, paid: false },
+  { id: "stmt4", period: "March 2026", gross_revenue: 245000, expenses: 41000, net_payable: 204000, paid: true, paid_date: "2026-03-15" },
+  { id: "stmt5", period: "February 2026", gross_revenue: 230000, expenses: 39000, net_payable: 191000, paid: true, paid_date: "2026-02-15" },
+];
+
 export const formatSAR = (n: number) =>
-  new Intl.NumberFormat("en-SA", { style: "currency", currency: "SAR", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);

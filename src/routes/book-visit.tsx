@@ -12,8 +12,8 @@ import { properties } from "@/lib/mock-data";
 export const Route = createFileRoute("/book-visit")({
   head: () => ({
     meta: [
-      { title: "Book a visit — Kinan" },
-      { name: "description", content: "Schedule a guided visit to any Kinan development across the Kingdom." },
+      { title: "Book a visit — ZYNO Property Management" },
+      { name: "description", content: "Schedule a guided visit to any ZYNO Property Management development across the Kingdom." },
     ],
   }),
   component: BookVisit,
@@ -82,7 +82,7 @@ function BookVisit() {
                 <Field label="Notes (optional)" id="notes"><Textarea id="notes" rows={3} placeholder="Anything we should know?" /></Field>
                 <Button type="submit" className="w-full" size="lg">Request visit</Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  By submitting, you agree to be contacted by Kinan sales.
+                  By submitting, you agree to be contacted by ZYNO Property Management sales.
                 </p>
               </form>
             )}

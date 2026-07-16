@@ -3,12 +3,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 const users = [
-  { name: "Ahmad Al-Rashid", email: "ahmad@kinan.example", role: "Finance Officer", status: "active", mfa: true },
-  { name: "Noura Al-Saud", email: "noura@kinan.example", role: "Real Estate Officer", status: "active", mfa: true },
-  { name: "Yousef Bin Hamad", email: "yousef@kinan.example", role: "Maintenance Coordinator", status: "active", mfa: true },
-  { name: "Hala Al-Otaibi", email: "hala@kinan.example", role: "Management", status: "active", mfa: true },
-  { name: "Faisal T.", email: "faisal@kinan.example", role: "Technician", status: "active", mfa: false },
-  { name: "Mahmoud K.", email: "mahmoud@kinan.example", role: "Technician", status: "invited", mfa: false },
+  { name: "Ahmad Al-Rashid", email: "ahmad@ZYNO Property Management.example", role: "Finance Officer", status: "active", mfa: true },
+  { name: "Noura Al-Saud", email: "noura@ZYNO Property Management.example", role: "Real Estate Officer", status: "active", mfa: true },
+  { name: "Yousef Bin Hamad", email: "yousef@ZYNO Property Management.example", role: "Maintenance Coordinator", status: "active", mfa: true },
+  { name: "Hala Al-Otaibi", email: "hala@ZYNO Property Management.example", role: "Management", status: "active", mfa: true },
+  { name: "Faisal T.", email: "faisal@ZYNO Property Management.example", role: "Technician", status: "active", mfa: false },
+  { name: "Mahmoud K.", email: "mahmoud@ZYNO Property Management.example", role: "Technician", status: "invited", mfa: false },
 ];
 
 const roles = [
@@ -22,7 +22,7 @@ const roles = [
 ];
 
 export const Route = createFileRoute("/admin/users")({
-  head: () => ({ meta: [{ title: "Users & roles — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Users & roles — ZYNO Property Management Staff" }] }),
   component: AdminUsers,
 });
 

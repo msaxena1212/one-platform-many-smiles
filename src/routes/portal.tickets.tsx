@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { tickets as seed, type Ticket } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/portal/tickets")({
-  head: () => ({ meta: [{ title: "Tickets — Kinan Portal" }] }),
+  head: () => ({ meta: [{ title: "Tickets — ZYNO Property Management Portal" }] }),
   component: TicketsPage,
 });
 

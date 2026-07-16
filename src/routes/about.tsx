@@ -4,8 +4,8 @@ import { PublicHeader, PublicFooter } from "@/components/public-header";
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: "About — Kinan" },
-      { name: "description", content: "Kinan International Real Estate Development Co. builds and operates residential, commercial and mixed-use destinations across Saudi Arabia." },
+      { title: "About — ZYNO Property Management" },
+      { name: "description", content: "ZYNO Property Management International Real Estate Development Co. builds and operates residential, commercial and mixed-use destinations across Saudi Arabia." },
     ],
   }),
   component: About,
@@ -16,13 +16,13 @@ function About() {
     <div className="flex min-h-screen flex-col bg-background">
       <PublicHeader />
       <section className="mx-auto max-w-4xl px-4 py-20 sm:px-6 lg:px-8">
-        <p className="text-sm font-medium uppercase tracking-widest text-gold">About Kinan</p>
+        <p className="text-sm font-medium uppercase tracking-widest text-gold">About ZYNO Property Management</p>
         <h1 className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">
           Building places people are proud to live and work in.
         </h1>
         <div className="mt-8 space-y-5 text-muted-foreground">
           <p>
-            Kinan International Real Estate Development Co. is a leading Saudi developer with a portfolio spanning
+            ZYNO Property Management International Real Estate Development Co. is a leading Saudi developer with a portfolio spanning
             residential towers, villa compounds, mixed-use destinations and commercial assets in Riyadh, Jeddah,
             Dammam and Madinah.
           </p>

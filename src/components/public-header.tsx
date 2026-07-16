@@ -130,7 +130,7 @@ export function PublicFooter() {
         <div>
           <BrandLogo />
           <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-            Kinan International Real Estate Development Co. — Building places people are proud to live and work in.
+            ZYNO Property Management International Real Estate Development Co. — Building places people are proud to live and work in.
           </p>
         </div>
         <FooterCol title="Explore" links={[["Properties", "/properties"], ["Book a visit", "/book-visit"], ["Community", "/about"]]} />
@@ -139,7 +139,7 @@ export function PublicFooter() {
       </div>
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:px-6 lg:px-8">
-          <p>© {new Date().getFullYear()} Kinan International Real Estate Development Co. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} ZYNO Property Management International Real Estate Development Co. All rights reserved.</p>
           <p>Riyadh · Jeddah · Dammam · Madinah</p>
         </div>
       </div>

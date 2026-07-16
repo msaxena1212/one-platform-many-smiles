@@ -3,16 +3,19 @@ import { Wrench, CreditCard, CalendarCheck2, FileText, ArrowRight } from "lucide
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { tickets, payments, formatSAR } from "@/lib/mock-data";
+import { tickets, payments, crmContacts, integrationHealth, complianceChecks, formatSAR } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/portal/")({
-  head: () => ({ meta: [{ title: "My dashboard — Kinan Portal" }] }),
+  head: () => ({ meta: [{ title: "My dashboard — ZYNO Property Management Portal" }] }),
   component: PortalHome,
 });
 
 function PortalHome() {
   const open = tickets.filter(t => t.status !== "closed" && t.status !== "resolved").length;
   const paidThisMonth = payments.filter(p => p.status === "completed").reduce((s, p) => s + p.amount, 0);
+  const crmCount = crmContacts.length;
+  const healthyIntegrations = integrationHealth.filter(i => i.status === "Healthy").length;
+  const passedCompliance = complianceChecks.filter(c => c.status === "Passed").length;
 
   return (
     <div className="space-y-6">
@@ -34,7 +37,9 @@ function PortalHome() {
         <StatCard label="Open tickets" value={String(open)} hint="2 awaiting technician" icon={<Wrench className="h-4 w-4" />} />
         <StatCard label="Paid this month" value={formatSAR(paidThisMonth)} tone="success" delta="On track" icon={<CreditCard className="h-4 w-4" />} />
         <StatCard label="Upcoming booking" value="Pool · Fri" hint="22 Jun · 18:00–20:00" icon={<CalendarCheck2 className="h-4 w-4" />} />
-        <StatCard label="Documents" value="6" hint="2 require signature" icon={<FileText className="h-4 w-4" />} />
+        <StatCard label="CRM contacts" value={String(crmCount)} hint="Leads and customers" icon={<FileText className="h-4 w-4" />} />
+        <StatCard label="Healthy integrations" value={String(healthyIntegrations)} tone="success" hint="ERP / CRM / payments" icon={<FileText className="h-4 w-4" />} />
+        <StatCard label="Compliance checks" value={`${passedCompliance}/${complianceChecks.length}`} hint="Security and data residency" icon={<FileText className="h-4 w-4" />} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

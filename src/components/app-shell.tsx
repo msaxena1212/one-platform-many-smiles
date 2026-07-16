@@ -30,7 +30,7 @@ export function AppShell({
           <Link to="/" className="flex items-center gap-2.5 font-semibold">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-bold">K</span>
             <span className="flex flex-col leading-none">
-              <span className="text-sm text-sidebar-foreground">Kinan</span>
+              <span className="text-sm text-sidebar-foreground">ZYNO Property Management</span>
               <span className="text-[10px] uppercase tracking-[0.18em] text-sidebar-foreground/60">
                 {variant === "admin" ? "Staff Console" : variant === "host" ? "Host Console" : "Customer Portal"}
               </span>
@@ -62,10 +62,6 @@ export function AppShell({
             );
           })}
         </nav>
-        <div className="border-t border-sidebar-border p-4 text-xs text-sidebar-foreground/60">
-          <p className="font-medium text-sidebar-foreground/90">Demo mode</p>
-          <p className="mt-1">Frontend skeleton — backend wiring pending.</p>
-        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

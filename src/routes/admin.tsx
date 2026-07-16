@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Building2, DoorOpen, FileSignature, Wallet, Wrench, Users } from "lucide-react";
+import { LayoutDashboard, Building2, DoorOpen, FileSignature, Wallet, Wrench, Users, Settings, Activity } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/app-shell";
 
 const nav: NavItem[] = [
@@ -10,6 +10,8 @@ const nav: NavItem[] = [
   { to: "/admin/finance", label: "Finance", icon: <Wallet className="h-4 w-4" /> },
   { to: "/admin/maintenance", label: "Maintenance", icon: <Wrench className="h-4 w-4" />, badge: 5 },
   { to: "/admin/users", label: "Users & roles", icon: <Users className="h-4 w-4" /> },
+  { to: "/admin/masters", label: "Configuration", icon: <Settings className="h-4 w-4" /> },
+  { to: "/admin/audit-logs", label: "Audit Logs", icon: <Activity className="h-4 w-4" /> },
 ];
 
 const titles: Record<string, string> = {
@@ -20,6 +22,8 @@ const titles: Record<string, string> = {
   "/admin/finance": "Finance",
   "/admin/maintenance": "Maintenance",
   "/admin/users": "Users & roles",
+  "/admin/masters": "System Configuration",
+  "/admin/audit-logs": "Audit Logs",
 };
 
 export const Route = createFileRoute("/admin")({

@@ -1,23 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { FileText, Download, PenLine } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { documents, type DocumentItem } from "@/lib/mock-data";
 
-const docs = [
-  { id: "d1", name: "Lease agreement — A-1201", size: "248 KB", date: "2024-08-15", action: "download" },
-  { id: "d2", name: "Q3 2026 rent invoice", size: "92 KB", date: "2026-06-15", action: "download" },
-  { id: "d3", name: "Move-in inspection report", size: "1.2 MB", date: "2024-08-20", action: "download" },
-  { id: "d4", name: "Lease renewal — sign required", size: "186 KB", date: "2026-06-20", action: "sign" },
-  { id: "d5", name: "Community house rules v3", size: "412 KB", date: "2026-01-01", action: "download" },
-  { id: "d6", name: "Pool access acknowledgement — sign required", size: "44 KB", date: "2026-06-10", action: "sign" },
-];
+const docs: DocumentItem[] = documents;
 
 export const Route = createFileRoute("/portal/documents")({
-  head: () => ({ meta: [{ title: "Documents — Kinan Portal" }] }),
+  head: () => ({ meta: [{ title: "Documents — ZYNO Property Management Portal" }] }),
   component: DocsPage,
 });
 
 function DocsPage() {
+  const handleDownload = (name: string) => {
+    toast.success(`${name} download started.`);
+  };
+
+  const handleSign = (name: string) => {
+    toast(`${name} is ready for signature.`);
+  };
+
   return (
     <Card>
       <CardContent className="p-0">
@@ -38,9 +41,9 @@ function DocsPage() {
                 </div>
               </div>
               {d.action === "sign" ? (
-                <Button size="sm" className="shrink-0"><PenLine /> Sign</Button>
+                <Button size="sm" className="shrink-0" onClick={() => handleSign(d.name)}><PenLine /> Sign</Button>
               ) : (
-                <Button size="sm" variant="outline" className="shrink-0"><Download /> Download</Button>
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => handleDownload(d.name)}><Download /> Download</Button>
               )}
             </li>
           ))}

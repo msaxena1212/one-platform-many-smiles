@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { properties, tickets, payments, leases, formatSAR } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/")({
-  head: () => ({ meta: [{ title: "Dashboard — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — ZYNO Property Management Staff" }] }),
   component: AdminDashboard,
 });
 
@@ -58,7 +58,7 @@ function AdminDashboard() {
             <ul className="mt-4 space-y-3 text-sm">
               <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease draft L4" sub="Layla Al-Harbi · A-1202" />
               <Approval icon={<Wrench className="h-4 w-4" />} title="Vendor PO #2241" sub="HVAC repair · A-1201" />
-              <Approval icon={<Wallet className="h-4 w-4" />} title="Refund request" sub="RCT-10395 · 4,500 SAR" />
+              <Approval icon={<Wallet className="h-4 w-4" />} title="Refund request" sub="RCT-10395 · 4,500 USD" />
               <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease termination" sub="Lease L2 · Sara Al-Qahtani" />
             </ul>
             <Button asChild variant="outline" className="mt-5 w-full"><Link to="/admin/leases">Open queue</Link></Button>

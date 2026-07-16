@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useLocation } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/finance")({
-  head: () => ({ meta: [{ title: "Finance — Kinan Staff" }] }),
+  head: () => ({ meta: [{ title: "Finance — ZYNO Property Management Staff" }] }),
   component: FinanceLayout,
 });
 
