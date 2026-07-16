@@ -698,12 +698,12 @@ function LeasingPage() {
       items.map((item) =>
         item.id === selectedDocId
           ? {
-              ...item,
-              status: verifyDocForm.status,
-              expiryDate: verifyDocForm.status === "verified" ? verifyDocForm.expiryDate : item.expiryDate,
-              reviewer: "Leasing Department",
-              remarks: verifyDocForm.remarks || (verifyDocForm.status === "verified" ? "Verified and accepted" : verifyDocForm.status === "rejected" ? "Rejected by reviewer" : item.remarks),
-            }
+            ...item,
+            status: verifyDocForm.status,
+            expiryDate: verifyDocForm.status === "verified" ? verifyDocForm.expiryDate : item.expiryDate,
+            reviewer: "Leasing Department",
+            remarks: verifyDocForm.remarks || (verifyDocForm.status === "verified" ? "Verified and accepted" : verifyDocForm.status === "rejected" ? "Rejected by reviewer" : item.remarks),
+          }
           : item,
       ),
     );
@@ -727,11 +727,11 @@ function LeasingPage() {
       items.map((item) =>
         item.id === selectedDocId
           ? {
-              ...item,
-              file: uploadDocForm.fileName || uploadDocForm.file,
-              status: "pending",
-              remarks: uploadDocForm.remarks || "Document uploaded and awaiting review",
-            }
+            ...item,
+            file: uploadDocForm.fileName || uploadDocForm.file,
+            status: "pending",
+            remarks: uploadDocForm.remarks || "Document uploaded and awaiting review",
+          }
           : item,
       ),
     );
@@ -752,9 +752,9 @@ function LeasingPage() {
       items.map((item) =>
         item.id === selectedLeaseForTerms
           ? {
-              ...item,
-              ...agreementTermsForm,
-            }
+            ...item,
+            ...agreementTermsForm,
+          }
           : item
       )
     );
@@ -1120,13 +1120,13 @@ function LeasingPage() {
       items.map((item) =>
         item.id === checkout.id
           ? {
-              ...item,
-              financeClearance: completeCheckoutForm.financeClearance,
-              utilityClearance: completeCheckoutForm.utilityClearance,
-              keysReturned: completeCheckoutForm.keysReturned,
-              status: "ready_for_settlement",
-              comparisonSummary: "Normal wear separated from tenant-caused damages",
-            }
+            ...item,
+            financeClearance: completeCheckoutForm.financeClearance,
+            utilityClearance: completeCheckoutForm.utilityClearance,
+            keysReturned: completeCheckoutForm.keysReturned,
+            status: "ready_for_settlement",
+            comparisonSummary: "Normal wear separated from tenant-caused damages",
+          }
           : item,
       ),
     );
@@ -1404,7 +1404,7 @@ function LeasingPage() {
             <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
               <strong>{upcomingRenewals.length}</strong> lease(s) expiring within 60 days detected.
             </div>
-            
+
             <Field label="Select Lease / Unit to Renew">
               <Select value={renewalNoticeForm.selectedLeaseId} onValueChange={v => setRenewalNoticeForm(f => ({ ...f, selectedLeaseId: v }))}>
                 <SelectTrigger><SelectValue placeholder="Select a lease..." /></SelectTrigger>
@@ -1519,7 +1519,7 @@ function LeasingPage() {
                 <Input type="number" value={agreementTermsForm.noticePeriodDays} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, noticePeriodDays: Number(e.target.value) }))} />
               </Field>
             </div>
-            
+
             <Field label="Penalties">
               <Textarea rows={2} value={agreementTermsForm.penalties} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, penalties: e.target.value }))} placeholder="Late payment penalty after grace period..." />
             </Field>
@@ -1757,8 +1757,8 @@ function LeasingPage() {
                       onCheckedChange={(checked) => {
                         setKeyNotifyForm(f => ({
                           ...f,
-                          recipients: checked 
-                            ? [...f.recipients, role] 
+                          recipients: checked
+                            ? [...f.recipients, role]
                             : f.recipients.filter(r => r !== role)
                         }));
                       }}
@@ -2181,9 +2181,9 @@ function LeasingPage() {
                   `${lease.parkingDetails}; ${lease.specialConditions}`,
                   `${lease.noticePeriodDays} days`,
                   <div key="actions" className="flex justify-end">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => {
                         setSelectedLeaseForTerms(lease.id);
                         setAgreementTermsForm({
