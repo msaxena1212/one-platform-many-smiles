@@ -59,7 +59,13 @@ const EMPTY_FORM: FormState = {
   electricity_meter_no: '',
   water_meter_no: '',
   cooling_meter_no: '',
+  max_adults: 2,
+  max_children: 0,
+  total_occupancy: 2,
   price: 0,
+  weekend_price: undefined,
+  holiday_price: undefined,
+  cleaning_fee: 0,
   status: 'Available',
   lease_status: 'Vacant',
   rent_frequency: 'Monthly',
@@ -482,6 +488,26 @@ function HostUnits() {
                   <Input type="number" min={0} max={7} value={form.bathrooms} onChange={e => setF('bathrooms', Number(e.target.value))} />
                 </div>
                 <div className="space-y-1">
+                  <Label>Max Adults</Label>
+                  <Input type="number" min={1} value={form.max_adults} onChange={e => {
+                    const adults = Number(e.target.value);
+                    setF('max_adults', adults);
+                    setF('total_occupancy', adults + (form.max_children || 0));
+                  }} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Max Children</Label>
+                  <Input type="number" min={0} value={form.max_children} onChange={e => {
+                    const children = Number(e.target.value);
+                    setF('max_children', children);
+                    setF('total_occupancy', (form.max_adults || 0) + children);
+                  }} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Total Occupancy</Label>
+                  <Input type="number" value={form.total_occupancy} disabled />
+                </div>
+                <div className="space-y-1">
                   <Label>Furnishing</Label>
                   <Select value={form.furnishing} onValueChange={v => setF('furnishing', v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -562,6 +588,18 @@ function HostUnits() {
                 <div className="space-y-1">
                   <Label>Base Rate (QR)</Label>
                   <Input type="number" value={form.price || ''} onChange={e => setF('price', Number(e.target.value))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Weekend Rate (QR)</Label>
+                  <Input type="number" value={form.weekend_price || ''} onChange={e => setF('weekend_price', Number(e.target.value))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Holiday Rate (QR)</Label>
+                  <Input type="number" value={form.holiday_price || ''} onChange={e => setF('holiday_price', Number(e.target.value))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Cleaning Fee (QR)</Label>
+                  <Input type="number" value={form.cleaning_fee || ''} onChange={e => setF('cleaning_fee', Number(e.target.value))} />
                 </div>
                 <div className="space-y-1">
                   <Label>Rent Frequency</Label>

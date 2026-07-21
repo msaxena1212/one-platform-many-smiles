@@ -152,7 +152,7 @@ function ManageProperty() {
             const units = await fetchUnits({ property_id: id });
             setUnitsCount(units.length || 0);
             const leases = await fetchLeases({ property_id: id });
-            const activeLeases = (leases || []).filter(l => l.status === 'active').length;
+            const activeLeases = (leases || []).filter(l => l.lease_status === 'ACTIVE').length;
             setOccupancyPct(units.length ? Math.round((activeLeases / units.length) * 100) : 0);
           } catch (e) {
             setUnitsCount(null);
@@ -238,7 +238,7 @@ function ManageProperty() {
         is_active: isActive,
         room_details: roomDetails,
         amenities,
-        kahramaa_number: kahramaaNumber || null,
+        kahramaa_number: kahramaaNumber || undefined,
         municipality_details: muni,
       });
       toast.success("Property updated successfully!");
@@ -291,7 +291,7 @@ function ManageProperty() {
     try {
       await createMaintenanceTicket({
         property_id: id,
-        host_id: property.host_id,
+        host_id: property?.host_id ?? '',
         title: ticketTitle,
         description: ticketDesc,
         unit_ref: ticketUnit || null,

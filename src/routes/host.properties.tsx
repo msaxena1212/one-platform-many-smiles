@@ -123,6 +123,7 @@ function HostProperties() {
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Code</th>
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Name</th>
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Type</th>
+                    <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Category</th>
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">City</th>
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Units</th>
                     <th className="px-6 py-4 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Occupancy</th>
@@ -140,6 +141,7 @@ function HostProperties() {
                         <td className="px-6 py-4 font-mono text-xs text-muted-foreground">{code}</td>
                         <td className="px-6 py-4 font-semibold text-foreground">{prop.title}</td>
                         <td className="px-6 py-4 text-muted-foreground capitalize">{prop.property_type.replace(/_/g, " ")}</td>
+                        <td className="px-6 py-4 text-muted-foreground">{(prop as any).property_category || "—"}</td>
                         <td className="px-6 py-4 text-muted-foreground">{prop.city}, {prop.country}</td>
                         <td className="px-6 py-4 text-muted-foreground">{propertyUnits ?? "—"}</td>
                         <td className="px-6 py-4 font-medium">{propertyOccupancy ?? "—"}</td>

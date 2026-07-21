@@ -1,29 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { leases, units, formatSAR, type Lease } from "@/lib/mock-data";
+import { supabase, type Lease } from "@/lib/supabase";
+import { formatSAR } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/leases")({
   head: () => ({ meta: [{ title: "Leases & PDC — ZYNO Property Management Staff" }] }),
   component: AdminLeases,
 });
 
-const statusClass: Record<Lease["status"], string> = {
-  active: "bg-[oklch(0.55_0.13_155)]/15 text-[oklch(0.4_0.13_155)]",
-  expiring: "bg-gold/20 text-gold-foreground",
-  terminated: "bg-muted text-muted-foreground",
-  draft: "bg-secondary text-secondary-foreground",
+const statusClass: Record<string, string> = {
+  ACTIVE: "bg-[oklch(0.55_0.13_155)]/15 text-[oklch(0.4_0.13_155)]",
+  RENEWAL_DUE: "bg-gold/20 text-gold-foreground",
+  TERMINATED: "bg-muted text-muted-foreground",
+  DRAFT: "bg-secondary text-secondary-foreground",
 };
 
 function AdminLeases() {
-  const unitMap = Object.fromEntries(units.map(u => [u.id, u.number]));
+  const [leases, setLeases] = useState<Lease[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('leases').select('*').then(({ data }) => {
+      if (data) setLeases(data as Lease[]);
+      setLoading(false);
+    });
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-4">
-        <Mini k="Active" v={String(leases.filter(l => l.status === "active").length)} />
-        <Mini k="Expiring < 90d" v={String(leases.filter(l => l.status === "expiring").length)} tone="warn" />
-        <Mini k="Drafts" v={String(leases.filter(l => l.status === "draft").length)} />
-        <Mini k="Annual rent roll" v={formatSAR(leases.filter(l => l.status === "active").reduce((s, l) => s + l.annualRent, 0))} />
+        <Mini k="Active" v={String(leases.filter(l => l.lease_status === "ACTIVE").length)} />
+        <Mini k="Expiring < 90d" v={String(leases.filter(l => l.lease_status === "RENEWAL_DUE").length)} tone="warn" />
+        <Mini k="Drafts" v={String(leases.filter(l => l.lease_status === "DRAFT").length)} />
+        <Mini k="Annual rent roll" v={formatSAR(leases.filter(l => l.lease_status === "ACTIVE").reduce((s, l) => s + Number(l.rental_amount), 0))} />
       </div>
 
       <Card>
@@ -37,8 +48,8 @@ function AdminLeases() {
               <thead className="bg-muted/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-6 py-3 font-medium">Ref</th>
-                  <th className="px-6 py-3 font-medium">Tenant</th>
-                  <th className="px-6 py-3 font-medium">Unit</th>
+                  <th className="px-6 py-3 font-medium">Tenant ID</th>
+                  <th className="px-6 py-3 font-medium">Unit ID</th>
                   <th className="px-6 py-3 font-medium">Start</th>
                   <th className="px-6 py-3 font-medium">End</th>
                   <th className="px-6 py-3 font-medium text-right">Annual rent</th>
@@ -46,15 +57,19 @@ function AdminLeases() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border bg-card">
-                {leases.map(l => (
+                {loading ? (
+                  <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
+                ) : leases.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center py-4">No leases found.</td></tr>
+                ) : leases.map(l => (
                   <tr key={l.id} className="hover:bg-muted/40">
-                    <td className="px-6 py-3 font-mono text-xs">L-{l.id.slice(-4).toUpperCase()}</td>
-                    <td className="px-6 py-3 font-medium">{l.tenant}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{unitMap[l.unitId]}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{l.start}</td>
-                    <td className="px-6 py-3 text-muted-foreground">{l.end}</td>
-                    <td className="px-6 py-3 text-right font-medium">{formatSAR(l.annualRent)}</td>
-                    <td className="px-6 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${statusClass[l.status]}`}>{l.status}</span></td>
+                    <td className="px-6 py-3 font-mono text-xs">{l.lease_number}</td>
+                    <td className="px-6 py-3 font-medium">{l.customer_id}</td>
+                    <td className="px-6 py-3 text-muted-foreground">{l.unit_id}</td>
+                    <td className="px-6 py-3 text-muted-foreground">{l.commencement_date}</td>
+                    <td className="px-6 py-3 text-muted-foreground">{l.expiry_date}</td>
+                    <td className="px-6 py-3 text-right font-medium">{formatSAR(l.rental_amount)}</td>
+                    <td className="px-6 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${statusClass[l.lease_status] || "bg-muted text-muted-foreground"}`}>{l.lease_status}</span></td>
                   </tr>
                 ))}
               </tbody>

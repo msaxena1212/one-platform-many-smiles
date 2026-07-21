@@ -8,6 +8,7 @@ export interface NavItem {
   label: string;
   icon: ReactNode;
   badge?: string | number;
+  indent?: boolean;
 }
 
 export function AppShell({

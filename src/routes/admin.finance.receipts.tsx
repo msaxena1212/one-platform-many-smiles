@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchReceipts, type Receipt } from "@/lib/supabase";
 import { formatSAR } from "@/lib/mock-data"; 
-import { Loader2, Plus, CreditCard, Banknote, Building } from "lucide-react";
+import { Loader2, Plus, CreditCard, Banknote, Building, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { generateReceiptBlob } from "@/components/receipt-template";
 
 export const Route = createFileRoute("/admin/finance/receipts")({
   component: ReceiptsPage,
@@ -27,6 +28,31 @@ function ReceiptsPage() {
       case 'bank':
       case 'bank_transfer': return <Building className="h-4 w-4 text-blue-600" />;
       default: return <CreditCard className="h-4 w-4 text-purple-600" />;
+    }
+  };
+
+  const handleDownload = async (rec: any) => {
+    try {
+      const blob = await generateReceiptBlob({
+        receipt_no: rec.ref || rec.id.slice(0, 8),
+        receipt_date: rec.received_at,
+        tenant_name: 'Tenant (Mock)',
+        property_unit: 'Unit (Mock)',
+        payment_type: 'Rent',
+        payment_method: rec.payment_mode,
+        amount: rec.amount
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Receipt-${rec.ref || rec.id.slice(0,8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to generate PDF");
     }
   };
 
@@ -61,6 +87,7 @@ function ReceiptsPage() {
                   <th className="px-6 py-3 font-medium">Method</th>
                   <th className="px-6 py-3 font-medium text-right">Amount</th>
                   <th className="px-6 py-3 font-medium text-right">Status</th>
+                  <th className="px-6 py-3 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -83,6 +110,11 @@ function ReceiptsPage() {
                       }`}>
                         {rec.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => handleDownload(rec)}>
+                        <Download className="h-4 w-4 mr-1" /> PDF
+                      </Button>
                     </td>
                   </tr>
                 ))}

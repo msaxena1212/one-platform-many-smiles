@@ -41,8 +41,8 @@ function AdminProperties() {
                     <td className="px-6 py-3 text-right">{p.units}</td>
                     <td className="px-6 py-3 text-right font-medium">{Math.round(p.occupancy * 100)}%</td>
                     <td className="px-6 py-3 text-right">
-                      <Button asChild size="sm" variant="ghost">
-                        <Link to="/properties/$id" params={{ id: p.id }}>View →</Link>
+                      <Button asChild variant="outline" size="sm">
+                        <Link to="/host/manage/$id" params={{ id: p.id }}>Manage</Link>
                       </Button>
                     </td>
                   </tr>

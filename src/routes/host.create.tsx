@@ -10,6 +10,7 @@ import { MapPin, Image as ImageIcon, CheckCircle, ChevronLeft, ChevronRight, Loa
 import { createProperty, createUnit, createLease, createRentSchedules } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
+import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 
 export const Route = createFileRoute("/host/create")({
   component: HostCreateProperty,
@@ -68,11 +69,21 @@ function HostCreateProperty() {
     title: "",
     description: "",
     propertyType: "apartment",
+    propertyCategory: "Building",
     address: "",
     city: "",
     state: "",
     zipCode: "",
     country: "",
+    landmark: "",
+    yearBuilt: new Date().getFullYear(),
+    totalFloors: 1,
+    totalUnits: 1,
+    propertyStatus: "Active",
+    contactPerson: "",
+    mobileNumber: "",
+    email: "",
+    alternateContact: "",
     guests: 1,
     bedrooms: 1,
     beds: 1,
@@ -80,7 +91,8 @@ function HostCreateProperty() {
     amenities: [] as string[],
     basePrice: 100,
     cleaningFee: 50,
-    roomDetails: [] as any[]
+    roomDetails: [] as any[],
+    images: [] as ImageFile[]
   });
 
   // Places Autocomplete state
@@ -174,7 +186,7 @@ function HostCreateProperty() {
   const spawnRooms = () => {
     if (formData.roomDetails.length > 0) return; // Already spawned
     
-    const newRooms = [];
+    const newRooms: any[] = [];
     if (formData.propertyType === "studio") {
       newRooms.push({ id: crypto.randomUUID(), type: "other", name: `Studio Space`, length: "", width: "", unit: "ft" });
     } else {
@@ -246,11 +258,21 @@ function HostCreateProperty() {
         title: formData.title,
         description: formData.description,
         property_type: formData.propertyType,
+        property_category: formData.propertyCategory,
         address: formData.address || addressInput,
         city: formData.city,
         state: formData.state,
         zip_code: formData.zipCode,
         country: formData.country,
+        landmark: formData.landmark,
+        year_built: formData.yearBuilt,
+        total_floors: formData.totalFloors,
+        total_units: formData.totalUnits,
+        property_status: formData.propertyStatus,
+        contact_person: formData.contactPerson,
+        mobile_number: formData.mobileNumber,
+        email: formData.email,
+        alternate_contact: formData.alternateContact,
         max_guests: formData.guests,
         bedrooms: formData.bedrooms,
         beds: formData.beds,
@@ -285,37 +307,8 @@ function HostCreateProperty() {
       }
 
       if (createdUnits.length > 0) {
-        const leaseUnit = createdUnits[0];
-        const startDate = new Date();
-        const endDate = new Date(startDate);
-        endDate.setFullYear(endDate.getFullYear() + 1);
-        const lease = await createLease({
-          property_id: newProperty.id,
-          unit_ref: leaseUnit.unit_ref,
-          tenant_name: `Tenant ${leaseUnit.unit_ref}`,
-          start_date: startDate.toISOString().split("T")[0],
-          end_date: endDate.toISOString().split("T")[0],
-          monthly_rent: Number(leaseUnit.price || formData.basePrice),
-          security_deposit: Number(leaseUnit.price || formData.basePrice) * 2,
-          status: "active",
-          host_id: MOCK_HOST_ID,
-        });
-
-        const rentSchedules = [];
-        const dueDate = new Date(lease.start_date);
-        while (dueDate <= new Date(lease.end_date)) {
-          rentSchedules.push({
-            lease_id: lease.id,
-            due_date: dueDate.toISOString().split("T")[0],
-            amount: lease.monthly_rent,
-            status: "unpaid",
-          });
-          dueDate.setMonth(dueDate.getMonth() + 1);
-          if (rentSchedules.length >= 12) break;
-        }
-        if (rentSchedules.length > 0) {
-          await createRentSchedules(rentSchedules);
-        }
+        // Lease creation is now handled separately via the Lease Management UI
+        // and requires a proper Customer record.
       }
 
       toast.success("🎉 Listing published successfully!");
@@ -432,6 +425,15 @@ function HostCreateProperty() {
                     />
                   </div>
                 </div>
+                
+                <div className="space-y-2">
+                  <Label>Landmark (Optional)</Label>
+                  <Input
+                    placeholder="e.g. Near Kingdom Centre"
+                    value={formData.landmark}
+                    onChange={(e) => updateForm("landmark", e.target.value)}
+                  />
+                </div>
 
                 {formData.city || formData.country ? (
                   <div className="mt-4 aspect-video bg-muted rounded-xl flex items-center justify-center border border-border overflow-hidden">
@@ -464,21 +466,53 @@ function HostCreateProperty() {
                 <CardDescription>Share what makes your place special.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label>Property Type</Label>
-                  <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    value={formData.propertyType}
-                    onChange={e => updateForm("propertyType", e.target.value)}
-                  >
-                    <option value="apartment">Apartment</option>
-                    <option value="villa">Villa</option>
-                    <option value="house">House</option>
-                    <option value="penthouse">Penthouse</option>
-                    <option value="studio">Studio</option>
-                    <option value="townhouse">Townhouse</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Property Type</Label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      value={formData.propertyType}
+                      onChange={e => updateForm("propertyType", e.target.value)}
+                    >
+                      <option value="apartment">Apartment</option>
+                      <option value="villa">Villa</option>
+                      <option value="house">House</option>
+                      <option value="penthouse">Penthouse</option>
+                      <option value="studio">Studio</option>
+                      <option value="townhouse">Townhouse</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Property Category</Label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      value={formData.propertyCategory}
+                      onChange={e => updateForm("propertyCategory", e.target.value)}
+                    >
+                      <option value="Building">Building</option>
+                      <option value="Villa Compound">Villa Compound</option>
+                      <option value="Tower">Tower</option>
+                      <option value="Mall">Mall</option>
+                      <option value="Office Complex">Office Complex</option>
+                    </select>
+                  </div>
                 </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Year Built</Label>
+                    <Input type="number" value={formData.yearBuilt} onChange={e => updateForm("yearBuilt", parseInt(e.target.value))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Total Floors</Label>
+                    <Input type="number" value={formData.totalFloors} onChange={e => updateForm("totalFloors", parseInt(e.target.value))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Total Units</Label>
+                    <Input type="number" value={formData.totalUnits} onChange={e => updateForm("totalUnits", parseInt(e.target.value))} />
+                  </div>
+                </div>
+                
                 <div className="space-y-2">
                   <Label>Listing Title</Label>
                   <Input
@@ -487,7 +521,7 @@ function HostCreateProperty() {
                     onChange={(e) => updateForm("title", e.target.value)}
                     required
                     maxLength={50}
-                />
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Description</Label>
@@ -521,6 +555,28 @@ function HostCreateProperty() {
                   <div className="space-y-2">
                     <Label>Bathrooms</Label>
                     <Input type="number" min="1" max="10" step="0.5" value={formData.bathrooms} onChange={(e) => updateForm("bathrooms", parseFloat(e.target.value))} />
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-6 space-y-4">
+                  <h3 className="text-sm font-semibold">Contact Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Contact Person</Label>
+                      <Input placeholder="Full Name" value={formData.contactPerson} onChange={e => updateForm("contactPerson", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mobile Number</Label>
+                      <Input placeholder="+966 50 000 0000" value={formData.mobileNumber} onChange={e => updateForm("mobileNumber", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input type="email" placeholder="contact@example.com" value={formData.email} onChange={e => updateForm("email", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Alternate Contact</Label>
+                      <Input placeholder="+966 50 000 0001" value={formData.alternateContact} onChange={e => updateForm("alternateContact", e.target.value)} />
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -664,12 +720,11 @@ function HostCreateProperty() {
                 <CardDescription>You'll need at least 5 photos to get started. Photos are uploaded to Supabase Storage.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:bg-muted/30 transition-colors cursor-pointer">
-                  <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">Drag your photos here</h3>
-                  <p className="text-sm text-muted-foreground mt-1 mb-4">PNG, JPG, WEBP up to 10MB each</p>
-                  <Button type="button" variant="outline">Browse from device</Button>
-                </div>
+                <ImageUploader 
+                  images={formData.images} 
+                  onChange={(images) => updateForm("images", images)} 
+                  categories={["Exterior", "Interior", "Bedroom", "Bathroom", "Kitchen", "Living Room", "View", "Other"]}
+                />
                 <p className="text-xs text-muted-foreground mt-3 text-center">
                   ☁️ Files are uploaded to your Supabase Storage bucket.
                 </p>

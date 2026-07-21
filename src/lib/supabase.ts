@@ -53,6 +53,15 @@ export type Property = {
   handover_date?: string;
   documents_received?: boolean;
   remarks?: string;
+  year_built?: number;
+  total_floors?: number;
+  total_units?: number;
+  property_status?: string;
+  contact_person?: string;
+  mobile_number?: string;
+  email?: string;
+  alternate_contact?: string;
+  landmark?: string;
 };
 
 export type Booking = {
@@ -75,6 +84,122 @@ export type Profile = {
   role: 'GUEST' | 'HOST' | 'ADMIN';
   full_name: string;
   avatar_url: string | null;
+};
+
+export type Customer = {
+  id: string;
+  customer_type: 'Individual' | 'Company';
+  full_name: string;
+  qatar_id?: string;
+  passport_number?: string;
+  commercial_registration?: string;
+  nationality?: string;
+  mobile_number: string;
+  email_address?: string;
+  permanent_address?: string;
+  local_address?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  employer_name?: string;
+  employer_address?: string;
+  designation?: string;
+  monthly_income?: number;
+  authorized_signatory_name?: string;
+  authorized_signatory_id?: string;
+  verification_status: 'Pending' | 'Verified' | 'Rejected' | 'Additional Info Required';
+  verified_by?: string;
+  verified_at?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Lease = {
+  id: string;
+  unit_id?: string;
+  property_id: string;
+  customer_id: string;
+  lease_number: string;
+  lease_status: string;
+  commencement_date: string;
+  expiry_date: string;
+  lease_period_months: number;
+  rental_amount: number;
+  payment_frequency: 'Monthly' | 'Quarterly' | 'Semi-Annually' | 'Annually';
+  security_deposit: number;
+  security_deposit_status: 'Pending' | 'Received' | 'Refunded' | 'Adjusted';
+  grace_period_days: number;
+  late_penalty_percentage: number;
+  late_penalty_fixed: number;
+  renewal_terms?: string;
+  notice_period_days: number;
+  maintenance_responsibility: 'Landlord' | 'Tenant' | 'Shared';
+  utility_responsibility: 'Landlord' | 'Tenant' | 'Shared';
+  parking_details?: string;
+  special_conditions?: string;
+  number_of_pdc: number;
+  tenant_signed_doc_url?: string;
+  landlord_signed_doc_url?: string;
+  tenant_signature_date?: string;
+  landlord_signature_date?: string;
+  signed_by_receiver?: string;
+  key_handover_date?: string;
+  check_in_report_id?: string;
+  check_out_report_id?: string;
+  previous_lease_id?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Reservation = {
+  id: string;
+  unit_id?: string;
+  prospect_name: string;
+  prospect_contact: string;
+  prospect_id_type?: string;
+  prospect_id_number?: string;
+  marketing_agent_id?: string;
+  proposed_lease_period?: number;
+  expected_start_date?: string;
+  proposed_rental_amount?: number;
+  reservation_validity?: string;
+  special_conditions?: string;
+  status: 'Active' | 'Extended' | 'Cancelled' | 'Expired' | 'Converted';
+  created_at: string;
+  updated_at: string;
+};
+
+export type KeyHandover = {
+  id: string;
+  lease_id: string;
+  handover_date: string;
+  keys_issued: any[];
+  access_cards_issued: any[];
+  parking_remotes: any[];
+  meter_readings: any;
+  staff_name: string;
+  staff_id?: string;
+  created_at: string;
+};
+
+export type InspectionReport = {
+  id: string;
+  lease_id: string;
+  inspection_type: 'Check-In' | 'Check-Out';
+  inspection_date: string;
+  unit_condition: any;
+  furniture: any;
+  appliances: any;
+  fixtures: any;
+  meter_readings: any;
+  keys_access: any;
+  photos: any[];
+  damages: any[];
+  pending_work: any[];
+  inspector_name: string;
+  tenant_acknowledged: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 // ---- Data Fetchers ----
@@ -369,25 +494,7 @@ export async function updateMaintenanceTicket(id: string, payload: Partial<Omit<
 
 // ---- ERP Types (Leasing, Assets, Approvals) ----
 
-export type Lease = {
-  id: string;
-  property_id: string;
-  unit_ref?: string;
-  tenant_id?: string;
-  tenant_name?: string;
-  start_date: string;
-  end_date: string;
-  monthly_rent: number;
-  security_deposit: number;
-  status: 'draft' | 'active' | 'expiring' | 'terminated' | 'closed';
-  host_id?: string;
-  payment_mode?: string;
-  customer_type?: string;
-  contract_no?: string;
-  pending_uploads?: string;
-  created_at: string;
-  updated_at: string;
-};
+// Old Lease type removed to resolve duplicate identifier error
 
 export type RentSchedule = {
   id: string;
@@ -672,6 +779,12 @@ export type Unit = {
   handover_date?: string;
   documents_received?: boolean;
   remarks?: string;
+  max_adults?: number;
+  max_children?: number;
+  total_occupancy?: number;
+  weekend_price?: number;
+  holiday_price?: number;
+  cleaning_fee?: number;
 };
 
 export async function fetchUnits(filters?: { property_id?: string }) {
@@ -818,6 +931,7 @@ export type ERPVoucher = {
   notes?: string;
   created_at: string;
   journal_entries?: ERPJournalEntry[];
+  erp_journal_entries?: ERPJournalEntry[];
 };
 
 export type ERPJournalEntry = {

@@ -46,6 +46,29 @@ export const Route = createFileRoute("/guest")({
 const MOCK_GUEST_ID = "00000000-0000-4000-8000-000000000002";
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=800";
 
+const payments = [
+  { receipt: "RCP-10421", date: "May 28, 2026", method: "Visa •••• 4242", amount: "$1,180", status: "Paid" },
+  { receipt: "RCP-10422", date: "Jun 28, 2026", method: "Mastercard •••• 8812", amount: "$1,180", status: "Due" },
+];
+
+const facilities = [
+  { name: "Swimming Pool", hours: "06:00 - 22:00", status: "Confirmed", slot: "Tomorrow, 08:00 AM" },
+  { name: "Gym", hours: "24 Hours", status: "Pending", slot: "Waiting List" },
+  { name: "BBQ Area", hours: "10:00 - 23:00", status: "Available", slot: "Not Booked" },
+];
+
+const guestDocuments = [
+  { name: "Lease Agreement", size: "2.4 MB", date: "Jan 15, 2026", action: "Download" },
+  { name: "Welcome Pack", size: "1.1 MB", date: "Jan 16, 2026", action: "Download" },
+  { name: "Move-in Condition Form", size: "150 KB", date: "Pending", action: "Sign" },
+];
+
+const supportItems = [
+  { ref: "SR-920", subject: "Air conditioning not cooling", category: "Maintenance", priority: "High", status: "Confirmed", assignee: "Tech Team" },
+  { ref: "SR-915", subject: "Extra keycard request", category: "Services", priority: "Medium", status: "In Progress", assignee: "Front Desk" },
+  { ref: "SR-884", subject: "Late checkout inquiry", category: "General", priority: "Low", status: "Closed", assignee: "Concierge" },
+];
+
 const STATUS_CONFIG: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   CONFIRMED: { label: "Confirmed", className: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: CheckCircle2 },
   PENDING: { label: "Pending", className: "bg-amber-100 text-amber-800 border-amber-200", icon: Clock },
@@ -406,19 +429,6 @@ function GuestDashboard() {
               <div className="flex justify-end">
                 <Button className="gap-2 bg-[#004d48] hover:bg-[#003f3b]"><Plus className="h-4 w-4" /> New request</Button>
               </div>
-              <PortalCard>
-                <DataTable
-                  columns={["Ref", "Subject", "Category", "Priority", "Status", "Assignee"]}
-                  rows={supportItems.map((item) => [
-                    item.ref,
-                    <span key="subject" className="font-semibold">{item.subject}</span>,
-                    item.category,
-                    <SoftBadge key="priority" label={item.priority} tone={item.priority === "Medium" ? "warning" : "neutral"} />,
-                    <SoftBadge key="status" label={item.status} tone={item.status === "Confirmed" ? "success" : "info"} />,
-                    item.assignee,
-                  ])}
-                />
-              </PortalCard>
               <PortalCard title="Contact guest services" description="Send a note about arrival, amenities, or documents.">
                 <div className="grid gap-4 md:grid-cols-[0.7fr_1fr_auto]">
                   <Input defaultValue="Arrival and check-in" aria-label="Support topic" />
@@ -507,7 +517,7 @@ function ActiveStay({ booking }: { booking: Booking }) {
           <StayFact label="Total" value={`$${booking.total_price}`} />
         </div>
         <Button asChild className="mt-5 bg-[#004d48] hover:bg-[#003f3b]">
-          <Link to="/properties/$id" params={{ id: booking.property_id }}>View property</Link>
+          <Link to="/guest">View property</Link>
         </Button>
       </div>
     </div>

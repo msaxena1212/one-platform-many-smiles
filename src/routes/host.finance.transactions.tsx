@@ -226,7 +226,7 @@ function TransactionsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {entries.map((e: any, i) => (
+                            {entries.map((e: any, i: number) => (
                               <tr key={e.id || i} className="border-b border-border/50 last:border-0">
                                 <td className="px-10 py-2 text-sm">{e.account_name}</td>
                                 <td className="px-6 py-2 text-right font-mono text-sm text-blue-600">

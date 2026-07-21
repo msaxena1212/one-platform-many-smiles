@@ -102,7 +102,7 @@ function AssetsPage() {
         finalBarcode = `${form.category.substring(0,3).toUpperCase()}-${form.name.substring(0,3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
       }
       await createFixedAsset({
-        // property_id is omitted so it defaults to null/undefined instead of empty string which breaks UUID casting
+        property_id: '',
         name: form.name,
         category: form.category,
         unit_ref: form.unit_ref,
@@ -290,7 +290,7 @@ function AssetsPage() {
                   <SelectTrigger><SelectValue placeholder="Select Unit or Common Area" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Common">Common Area</SelectItem>
-                    {unitsList.map(u => <SelectItem key={u.id} value={u.unit_no}>{u.unit_no}</SelectItem>)}
+                    {unitsList.map(u => <SelectItem key={u.id} value={u.unit_ref}>{u.unit_ref}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

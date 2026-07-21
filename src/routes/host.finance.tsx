@@ -171,30 +171,7 @@ function HostFinance() {
                 const end = new Date(start);
                 end.setFullYear(end.getFullYear() + 1);
                 const monthly = u.price || 2500;
-                const lease = await createLease({
-                  property_id: p.id,
-                  unit_ref: u.unit_ref,
-                  tenant_name: `Tenant ${u.unit_ref}`,
-                  start_date: start.toISOString().split('T')[0],
-                  end_date: end.toISOString().split('T')[0],
-                  monthly_rent: Number(monthly),
-                  security_deposit: Number(monthly) * 2,
-                  status: 'active',
-                  host_id: (p as any).host_id || MOCK_HOST_ID,
-                });
-                // create simple monthly rent schedules for the lease
-                const schedules = [];
-                const s = new Date(lease.start_date);
-                const e = new Date(lease.end_date);
-                let c = new Date(s);
-                let lineNo = 1;
-                while (c <= e) {
-                  schedules.push({ lease_id: lease.id, due_date: c.toISOString().split('T')[0], amount: lease.monthly_rent, status: 'unpaid' });
-                  c.setMonth(c.getMonth() + 1);
-                  lineNo++;
-                  if (schedules.length > 60) break;
-                }
-                if (schedules.length) await createRentSchedules(schedules);
+                // Leases are now managed through the dedicated Leases UI, skipping mock creation.
               }
             }
           }
@@ -219,8 +196,8 @@ function HostFinance() {
               narration: 'Sample receipt posted',
               status: 'posted',
               journal_lines: [
-                { line_no: 1, account_id: cash.id, debit: 2500, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-                { line_no: 2, account_id: ar.id, debit: 0, credit: 2500, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
+                { id: '', je_id: '', line_no: 1, account_id: cash.id, debit: 2500, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
+                { id: '', je_id: '', line_no: 2, account_id: ar.id, debit: 0, credit: 2500, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
               ]
             });
           }
@@ -235,8 +212,8 @@ function HostFinance() {
               narration: 'Sample rent invoice',
               status: 'posted',
               journal_lines: [
-                { line_no: 1, account_id: ar.id, debit: 1800, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-                { line_no: 2, account_id: rent.id, debit: 0, credit: 1800, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
+                { id: '', je_id: '', line_no: 1, account_id: ar.id, debit: 1800, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
+                { id: '', je_id: '', line_no: 2, account_id: rent.id, debit: 0, credit: 1800, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
               ]
             });
           }
