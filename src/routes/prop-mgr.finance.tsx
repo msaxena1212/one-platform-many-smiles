@@ -28,7 +28,7 @@ import {
 } from "@/lib/supabase";
 import { accountMasterSeed, accountTransactionsSeed, referenceDropdowns } from "@/lib/reference-data";
 
-export const Route = createFileRoute("/host/finance")({
+export const Route = createFileRoute("/prop-mgr/finance")({
   component: HostFinance,
 });
 

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchProfiles, createProfile } from "@/lib/supabase";
 
-export const Route = createFileRoute("/host/users")({
+export const Route = createFileRoute("/prop-mgr/users")({
   component: HostUsers,
 });
 

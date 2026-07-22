@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Building2 } from "lucide-react";
 import { fetchHostProperties, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
 
-export const Route = createFileRoute("/host/properties")({
+export const Route = createFileRoute("/prop-mgr/properties")({
   component: HostProperties,
 });
 
@@ -97,7 +97,7 @@ function HostProperties() {
           All assets in your managed portfolio.
         </p>
         <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Link to="/host/create">+ New property</Link>
+          <Link to="/prop-mgr/create">+ New property</Link>
         </Button>
       </div>
 
@@ -112,7 +112,7 @@ function HostProperties() {
               <Building2 className="h-10 w-10 opacity-30" />
               <p className="text-sm font-medium">No properties yet.</p>
               <Button asChild size="sm">
-                <Link to="/host/create">+ Create your first listing</Link>
+                <Link to="/prop-mgr/create">+ Create your first listing</Link>
               </Button>
             </div>
           ) : (
@@ -147,7 +147,7 @@ function HostProperties() {
                         <td className="px-6 py-4 font-medium">{propertyOccupancy ?? "—"}</td>
                         <td className="px-6 py-4 text-right">
                           <Button variant="ghost" size="sm" asChild>
-                            <Link to="/host/manage/$id" params={{ id: prop.id }}>
+                            <Link to="/prop-mgr/manage/$id" params={{ id: prop.id }}>
                               View →
                             </Link>
                           </Button>

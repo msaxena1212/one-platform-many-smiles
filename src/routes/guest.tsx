@@ -657,7 +657,7 @@ function PreferenceToggle({ label, checked, onChange }: { label: string; checked
   );
 }
 
-function EmptyPanel({ title, action, to }: { title: string; action: string; to: "/" | "/properties" }) {
+function EmptyPanel({ title, action, to }: { title: string; action: string; to: "/" | "/" }) {
   return (
     <div className="rounded-lg border border-dashed border-[#d8dfdc] p-8 text-center">
       <CalendarIcon className="mx-auto h-8 w-8 text-[#53615e]" />

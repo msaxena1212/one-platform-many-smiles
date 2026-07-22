@@ -22,7 +22,7 @@ import {
   type MaterialUsage,
 } from "@/lib/supabase";
 
-export const Route = createFileRoute("/host/maintenance")({
+export const Route = createFileRoute("/prop-mgr/maintenance")({
   component: HostMaintenance,
 });
 

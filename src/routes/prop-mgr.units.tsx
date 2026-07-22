@@ -16,7 +16,7 @@ import {
 } from '@/lib/supabase';
 import { Loader2, Plus, Home, Building2, Users, FileText, Zap, Droplets, Snowflake, X } from 'lucide-react';
 
-export const Route = createFileRoute("/host/units")({
+export const Route = createFileRoute("/prop-mgr/units")({
   component: HostUnits,
 });
 

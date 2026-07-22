@@ -12,20 +12,29 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SalesRouteImport } from './routes/sales'
+import { Route as PropMgrRouteImport } from './routes/prop-mgr'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OwnerRouteImport } from './routes/owner'
-import { Route as HostRouteImport } from './routes/host'
+import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as LeasingRouteImport } from './routes/leasing'
 import { Route as GuestRouteImport } from './routes/guest'
+import { Route as FinanceRouteImport } from './routes/finance'
+import { Route as CashierRouteImport } from './routes/cashier'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SuperAdminIndexRouteImport } from './routes/super-admin.index'
+import { Route as PropMgrIndexRouteImport } from './routes/prop-mgr.index'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
-import { Route as HostIndexRouteImport } from './routes/host.index'
+import { Route as MaintenanceIndexRouteImport } from './routes/maintenance.index'
+import { Route as LeasingIndexRouteImport } from './routes/leasing.index'
+import { Route as FinanceIndexRouteImport } from './routes/finance.index'
+import { Route as CashierIndexRouteImport } from './routes/cashier.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as SuperAdminUsersRouteImport } from './routes/super-admin.users'
 import { Route as SuperAdminTenantsRouteImport } from './routes/super-admin.tenants'
 import { Route as SuperAdminSecurityRouteImport } from './routes/super-admin.security'
+import { Route as SuperAdminPermissionsRouteImport } from './routes/super-admin.permissions'
 import { Route as SuperAdminNotificationsRouteImport } from './routes/super-admin.notifications'
 import { Route as SuperAdminConfigRouteImport } from './routes/super-admin.config'
 import { Route as SuperAdminBillingRouteImport } from './routes/super-admin.billing'
@@ -34,6 +43,16 @@ import { Route as SalesReservationsRouteImport } from './routes/sales.reservatio
 import { Route as SalesListingsRouteImport } from './routes/sales.listings'
 import { Route as SalesContractsRouteImport } from './routes/sales.contracts'
 import { Route as SalesAppointmentsRouteImport } from './routes/sales.appointments'
+import { Route as PropMgrUsersRouteImport } from './routes/prop-mgr.users'
+import { Route as PropMgrUnitsRouteImport } from './routes/prop-mgr.units'
+import { Route as PropMgrPropertiesRouteImport } from './routes/prop-mgr.properties'
+import { Route as PropMgrMaintenanceRouteImport } from './routes/prop-mgr.maintenance'
+import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
+import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
+import { Route as PropMgrFinanceRouteImport } from './routes/prop-mgr.finance'
+import { Route as PropMgrCreateRouteImport } from './routes/prop-mgr.create'
+import { Route as PropMgrAssetsRouteImport } from './routes/prop-mgr.assets'
+import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approvals'
 import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
 import { Route as PortalSettingsRouteImport } from './routes/portal.settings'
 import { Route as PortalPaymentsRouteImport } from './routes/portal.payments'
@@ -44,19 +63,19 @@ import { Route as OwnerStatementsRouteImport } from './routes/owner.statements'
 import { Route as OwnerPropertiesRouteImport } from './routes/owner.properties'
 import { Route as OwnerDistributionsRouteImport } from './routes/owner.distributions'
 import { Route as OwnerApprovalsRouteImport } from './routes/owner.approvals'
-import { Route as HostUsersRouteImport } from './routes/host.users'
-import { Route as HostUnitsRouteImport } from './routes/host.units'
-import { Route as HostPropertiesRouteImport } from './routes/host.properties'
-import { Route as HostMaintenanceRouteImport } from './routes/host.maintenance'
-import { Route as HostLeasingRouteImport } from './routes/host.leasing'
-import { Route as HostLeasesRouteImport } from './routes/host.leases'
-import { Route as HostFinanceRouteImport } from './routes/host.finance'
-import { Route as HostCreateRouteImport } from './routes/host.create'
-import { Route as HostAssetsRouteImport } from './routes/host.assets'
-import { Route as HostApprovalsRouteImport } from './routes/host.approvals'
+import { Route as MaintenanceTicketsRouteImport } from './routes/maintenance.tickets'
+import { Route as MaintenanceInventoryRouteImport } from './routes/maintenance.inventory'
+import { Route as LeasingManageRouteImport } from './routes/leasing.manage'
+import { Route as LeasingCreateRouteImport } from './routes/leasing.create'
+import { Route as FinanceReceivablesRouteImport } from './routes/finance.receivables'
+import { Route as FinanceLedgerRouteImport } from './routes/finance.ledger'
+import { Route as FinanceJournalRouteImport } from './routes/finance.journal'
+import { Route as CashierReceiptsRouteImport } from './routes/cashier.receipts'
+import { Route as CashierPdcRouteImport } from './routes/cashier.pdc'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
 import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
+import { Route as AdminPermissionsRouteImport } from './routes/admin.permissions'
 import { Route as AdminMastersRouteImport } from './routes/admin.masters'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
@@ -64,11 +83,11 @@ import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
 import { Route as AdminFinanceIndexRouteImport } from './routes/admin.finance.index'
+import { Route as PropMgrUnitsPricingRouteImport } from './routes/prop-mgr.units.pricing'
+import { Route as PropMgrManageIdRouteImport } from './routes/prop-mgr.manage.$id'
+import { Route as PropMgrFinanceTransactionsRouteImport } from './routes/prop-mgr.finance.transactions'
 import { Route as PortalCommunityReviewsRouteImport } from './routes/portal.community.reviews'
 import { Route as PortalCommunityEventsRouteImport } from './routes/portal.community.events'
-import { Route as HostUnitsPricingRouteImport } from './routes/host.units.pricing'
-import { Route as HostManageIdRouteImport } from './routes/host.manage.$id'
-import { Route as HostFinanceTransactionsRouteImport } from './routes/host.finance.transactions'
 import { Route as AdminLeasesNewRouteImport } from './routes/admin.leases.new'
 import { Route as AdminFinanceReceiptsRouteImport } from './routes/admin.finance.receipts'
 import { Route as AdminFinancePayablesRouteImport } from './routes/admin.finance.payables'
@@ -90,6 +109,11 @@ const SalesRoute = SalesRouteImport.update({
   path: '/sales',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PropMgrRoute = PropMgrRouteImport.update({
+  id: '/prop-mgr',
+  path: '/prop-mgr',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
@@ -100,14 +124,29 @@ const OwnerRoute = OwnerRouteImport.update({
   path: '/owner',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HostRoute = HostRouteImport.update({
-  id: '/host',
-  path: '/host',
+const MaintenanceRoute = MaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeasingRoute = LeasingRouteImport.update({
+  id: '/leasing',
+  path: '/leasing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GuestRoute = GuestRouteImport.update({
   id: '/guest',
   path: '/guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinanceRoute = FinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CashierRoute = CashierRouteImport.update({
+  id: '/cashier',
+  path: '/cashier',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -130,15 +169,35 @@ const SuperAdminIndexRoute = SuperAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SuperAdminRoute,
 } as any)
+const PropMgrIndexRoute = PropMgrIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PropMgrRoute,
+} as any)
 const PortalIndexRoute = PortalIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PortalRoute,
 } as any)
-const HostIndexRoute = HostIndexRouteImport.update({
+const MaintenanceIndexRoute = MaintenanceIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => HostRoute,
+  getParentRoute: () => MaintenanceRoute,
+} as any)
+const LeasingIndexRoute = LeasingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LeasingRoute,
+} as any)
+const FinanceIndexRoute = FinanceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => FinanceRoute,
+} as any)
+const CashierIndexRoute = CashierIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CashierRoute,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
@@ -158,6 +217,11 @@ const SuperAdminTenantsRoute = SuperAdminTenantsRouteImport.update({
 const SuperAdminSecurityRoute = SuperAdminSecurityRouteImport.update({
   id: '/security',
   path: '/security',
+  getParentRoute: () => SuperAdminRoute,
+} as any)
+const SuperAdminPermissionsRoute = SuperAdminPermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
   getParentRoute: () => SuperAdminRoute,
 } as any)
 const SuperAdminNotificationsRoute = SuperAdminNotificationsRouteImport.update({
@@ -199,6 +263,56 @@ const SalesAppointmentsRoute = SalesAppointmentsRouteImport.update({
   id: '/appointments',
   path: '/appointments',
   getParentRoute: () => SalesRoute,
+} as any)
+const PropMgrUsersRoute = PropMgrUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrUnitsRoute = PropMgrUnitsRouteImport.update({
+  id: '/units',
+  path: '/units',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrPropertiesRoute = PropMgrPropertiesRouteImport.update({
+  id: '/properties',
+  path: '/properties',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrMaintenanceRoute = PropMgrMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrLeasingRoute = PropMgrLeasingRouteImport.update({
+  id: '/leasing',
+  path: '/leasing',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrLeasesRoute = PropMgrLeasesRouteImport.update({
+  id: '/leases',
+  path: '/leases',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrFinanceRoute = PropMgrFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrCreateRoute = PropMgrCreateRouteImport.update({
+  id: '/create',
+  path: '/create',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrAssetsRoute = PropMgrAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrApprovalsRoute = PropMgrApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => PropMgrRoute,
 } as any)
 const PortalTicketsRoute = PortalTicketsRouteImport.update({
   id: '/tickets',
@@ -250,55 +364,50 @@ const OwnerApprovalsRoute = OwnerApprovalsRouteImport.update({
   path: '/approvals',
   getParentRoute: () => OwnerRoute,
 } as any)
-const HostUsersRoute = HostUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => HostRoute,
+const MaintenanceTicketsRoute = MaintenanceTicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => MaintenanceRoute,
 } as any)
-const HostUnitsRoute = HostUnitsRouteImport.update({
-  id: '/units',
-  path: '/units',
-  getParentRoute: () => HostRoute,
+const MaintenanceInventoryRoute = MaintenanceInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => MaintenanceRoute,
 } as any)
-const HostPropertiesRoute = HostPropertiesRouteImport.update({
-  id: '/properties',
-  path: '/properties',
-  getParentRoute: () => HostRoute,
+const LeasingManageRoute = LeasingManageRouteImport.update({
+  id: '/manage',
+  path: '/manage',
+  getParentRoute: () => LeasingRoute,
 } as any)
-const HostMaintenanceRoute = HostMaintenanceRouteImport.update({
-  id: '/maintenance',
-  path: '/maintenance',
-  getParentRoute: () => HostRoute,
-} as any)
-const HostLeasingRoute = HostLeasingRouteImport.update({
-  id: '/leasing',
-  path: '/leasing',
-  getParentRoute: () => HostRoute,
-} as any)
-const HostLeasesRoute = HostLeasesRouteImport.update({
-  id: '/leases',
-  path: '/leases',
-  getParentRoute: () => HostRoute,
-} as any)
-const HostFinanceRoute = HostFinanceRouteImport.update({
-  id: '/finance',
-  path: '/finance',
-  getParentRoute: () => HostRoute,
-} as any)
-const HostCreateRoute = HostCreateRouteImport.update({
+const LeasingCreateRoute = LeasingCreateRouteImport.update({
   id: '/create',
   path: '/create',
-  getParentRoute: () => HostRoute,
+  getParentRoute: () => LeasingRoute,
 } as any)
-const HostAssetsRoute = HostAssetsRouteImport.update({
-  id: '/assets',
-  path: '/assets',
-  getParentRoute: () => HostRoute,
+const FinanceReceivablesRoute = FinanceReceivablesRouteImport.update({
+  id: '/receivables',
+  path: '/receivables',
+  getParentRoute: () => FinanceRoute,
 } as any)
-const HostApprovalsRoute = HostApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
-  getParentRoute: () => HostRoute,
+const FinanceLedgerRoute = FinanceLedgerRouteImport.update({
+  id: '/ledger',
+  path: '/ledger',
+  getParentRoute: () => FinanceRoute,
+} as any)
+const FinanceJournalRoute = FinanceJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
+  getParentRoute: () => FinanceRoute,
+} as any)
+const CashierReceiptsRoute = CashierReceiptsRouteImport.update({
+  id: '/receipts',
+  path: '/receipts',
+  getParentRoute: () => CashierRoute,
+} as any)
+const CashierPdcRoute = CashierPdcRouteImport.update({
+  id: '/pdc',
+  path: '/pdc',
+  getParentRoute: () => CashierRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
@@ -313,6 +422,11 @@ const AdminUnitsRoute = AdminUnitsRouteImport.update({
 const AdminPropertiesRoute = AdminPropertiesRouteImport.update({
   id: '/properties',
   path: '/properties',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPermissionsRoute = AdminPermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminMastersRoute = AdminMastersRouteImport.update({
@@ -350,6 +464,22 @@ const AdminFinanceIndexRoute = AdminFinanceIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminFinanceRoute,
 } as any)
+const PropMgrUnitsPricingRoute = PropMgrUnitsPricingRouteImport.update({
+  id: '/pricing',
+  path: '/pricing',
+  getParentRoute: () => PropMgrUnitsRoute,
+} as any)
+const PropMgrManageIdRoute = PropMgrManageIdRouteImport.update({
+  id: '/manage/$id',
+  path: '/manage/$id',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrFinanceTransactionsRoute =
+  PropMgrFinanceTransactionsRouteImport.update({
+    id: '/transactions',
+    path: '/transactions',
+    getParentRoute: () => PropMgrFinanceRoute,
+  } as any)
 const PortalCommunityReviewsRoute = PortalCommunityReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
@@ -359,21 +489,6 @@ const PortalCommunityEventsRoute = PortalCommunityEventsRouteImport.update({
   id: '/events',
   path: '/events',
   getParentRoute: () => PortalCommunityRoute,
-} as any)
-const HostUnitsPricingRoute = HostUnitsPricingRouteImport.update({
-  id: '/pricing',
-  path: '/pricing',
-  getParentRoute: () => HostUnitsRoute,
-} as any)
-const HostManageIdRoute = HostManageIdRouteImport.update({
-  id: '/manage/$id',
-  path: '/manage/$id',
-  getParentRoute: () => HostRoute,
-} as any)
-const HostFinanceTransactionsRoute = HostFinanceTransactionsRouteImport.update({
-  id: '/transactions',
-  path: '/transactions',
-  getParentRoute: () => HostFinanceRoute,
 } as any)
 const AdminLeasesNewRoute = AdminLeasesNewRouteImport.update({
   id: '/new',
@@ -405,10 +520,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
+  '/cashier': typeof CashierRouteWithChildren
+  '/finance': typeof FinanceRouteWithChildren
   '/guest': typeof GuestRoute
-  '/host': typeof HostRouteWithChildren
+  '/leasing': typeof LeasingRouteWithChildren
+  '/maintenance': typeof MaintenanceRouteWithChildren
   '/owner': typeof OwnerRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
+  '/prop-mgr': typeof PropMgrRouteWithChildren
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
@@ -418,19 +537,19 @@ export interface FileRoutesByFullPath {
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/host/approvals': typeof HostApprovalsRoute
-  '/host/assets': typeof HostAssetsRoute
-  '/host/create': typeof HostCreateRoute
-  '/host/finance': typeof HostFinanceRouteWithChildren
-  '/host/leases': typeof HostLeasesRoute
-  '/host/leasing': typeof HostLeasingRoute
-  '/host/maintenance': typeof HostMaintenanceRoute
-  '/host/properties': typeof HostPropertiesRoute
-  '/host/units': typeof HostUnitsRouteWithChildren
-  '/host/users': typeof HostUsersRoute
+  '/cashier/pdc': typeof CashierPdcRoute
+  '/cashier/receipts': typeof CashierReceiptsRoute
+  '/finance/journal': typeof FinanceJournalRoute
+  '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/receivables': typeof FinanceReceivablesRoute
+  '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/inventory': typeof MaintenanceInventoryRoute
+  '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
   '/owner/distributions': typeof OwnerDistributionsRoute
   '/owner/properties': typeof OwnerPropertiesRoute
@@ -441,6 +560,16 @@ export interface FileRoutesByFullPath {
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
+  '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
+  '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/create': typeof PropMgrCreateRoute
+  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/leases': typeof PropMgrLeasesRoute
+  '/prop-mgr/leasing': typeof PropMgrLeasingRoute
+  '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/properties': typeof PropMgrPropertiesRoute
+  '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
+  '/prop-mgr/users': typeof PropMgrUsersRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -449,23 +578,28 @@ export interface FileRoutesByFullPath {
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
+  '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
   '/super-admin/tenants': typeof SuperAdminTenantsRoute
   '/super-admin/users': typeof SuperAdminUsersRoute
   '/admin/': typeof AdminIndexRoute
-  '/host/': typeof HostIndexRoute
+  '/cashier/': typeof CashierIndexRoute
+  '/finance/': typeof FinanceIndexRoute
+  '/leasing/': typeof LeasingIndexRoute
+  '/maintenance/': typeof MaintenanceIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
   '/admin/finance/coa': typeof AdminFinanceCoaRoute
   '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
   '/admin/finance/payables': typeof AdminFinancePayablesRoute
   '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
-  '/host/finance/transactions': typeof HostFinanceTransactionsRoute
-  '/host/manage/$id': typeof HostManageIdRoute
-  '/host/units/pricing': typeof HostUnitsPricingRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
+  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
+  '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
+  '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesByTo {
@@ -480,19 +614,19 @@ export interface FileRoutesByTo {
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/host/approvals': typeof HostApprovalsRoute
-  '/host/assets': typeof HostAssetsRoute
-  '/host/create': typeof HostCreateRoute
-  '/host/finance': typeof HostFinanceRouteWithChildren
-  '/host/leases': typeof HostLeasesRoute
-  '/host/leasing': typeof HostLeasingRoute
-  '/host/maintenance': typeof HostMaintenanceRoute
-  '/host/properties': typeof HostPropertiesRoute
-  '/host/units': typeof HostUnitsRouteWithChildren
-  '/host/users': typeof HostUsersRoute
+  '/cashier/pdc': typeof CashierPdcRoute
+  '/cashier/receipts': typeof CashierReceiptsRoute
+  '/finance/journal': typeof FinanceJournalRoute
+  '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/receivables': typeof FinanceReceivablesRoute
+  '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/inventory': typeof MaintenanceInventoryRoute
+  '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
   '/owner/distributions': typeof OwnerDistributionsRoute
   '/owner/properties': typeof OwnerPropertiesRoute
@@ -503,6 +637,16 @@ export interface FileRoutesByTo {
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
+  '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
+  '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/create': typeof PropMgrCreateRoute
+  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/leases': typeof PropMgrLeasesRoute
+  '/prop-mgr/leasing': typeof PropMgrLeasingRoute
+  '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/properties': typeof PropMgrPropertiesRoute
+  '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
+  '/prop-mgr/users': typeof PropMgrUsersRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -511,23 +655,28 @@ export interface FileRoutesByTo {
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
+  '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
   '/super-admin/tenants': typeof SuperAdminTenantsRoute
   '/super-admin/users': typeof SuperAdminUsersRoute
   '/admin': typeof AdminIndexRoute
-  '/host': typeof HostIndexRoute
+  '/cashier': typeof CashierIndexRoute
+  '/finance': typeof FinanceIndexRoute
+  '/leasing': typeof LeasingIndexRoute
+  '/maintenance': typeof MaintenanceIndexRoute
   '/portal': typeof PortalIndexRoute
+  '/prop-mgr': typeof PropMgrIndexRoute
   '/super-admin': typeof SuperAdminIndexRoute
   '/admin/finance/coa': typeof AdminFinanceCoaRoute
   '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
   '/admin/finance/payables': typeof AdminFinancePayablesRoute
   '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
-  '/host/finance/transactions': typeof HostFinanceTransactionsRoute
-  '/host/manage/$id': typeof HostManageIdRoute
-  '/host/units/pricing': typeof HostUnitsPricingRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
+  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
+  '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
+  '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/finance': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesById {
@@ -535,10 +684,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
+  '/cashier': typeof CashierRouteWithChildren
+  '/finance': typeof FinanceRouteWithChildren
   '/guest': typeof GuestRoute
-  '/host': typeof HostRouteWithChildren
+  '/leasing': typeof LeasingRouteWithChildren
+  '/maintenance': typeof MaintenanceRouteWithChildren
   '/owner': typeof OwnerRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
+  '/prop-mgr': typeof PropMgrRouteWithChildren
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
@@ -548,19 +701,19 @@ export interface FileRoutesById {
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
-  '/host/approvals': typeof HostApprovalsRoute
-  '/host/assets': typeof HostAssetsRoute
-  '/host/create': typeof HostCreateRoute
-  '/host/finance': typeof HostFinanceRouteWithChildren
-  '/host/leases': typeof HostLeasesRoute
-  '/host/leasing': typeof HostLeasingRoute
-  '/host/maintenance': typeof HostMaintenanceRoute
-  '/host/properties': typeof HostPropertiesRoute
-  '/host/units': typeof HostUnitsRouteWithChildren
-  '/host/users': typeof HostUsersRoute
+  '/cashier/pdc': typeof CashierPdcRoute
+  '/cashier/receipts': typeof CashierReceiptsRoute
+  '/finance/journal': typeof FinanceJournalRoute
+  '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/receivables': typeof FinanceReceivablesRoute
+  '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/inventory': typeof MaintenanceInventoryRoute
+  '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
   '/owner/distributions': typeof OwnerDistributionsRoute
   '/owner/properties': typeof OwnerPropertiesRoute
@@ -571,6 +724,16 @@ export interface FileRoutesById {
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
+  '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
+  '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/create': typeof PropMgrCreateRoute
+  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/leases': typeof PropMgrLeasesRoute
+  '/prop-mgr/leasing': typeof PropMgrLeasingRoute
+  '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/properties': typeof PropMgrPropertiesRoute
+  '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
+  '/prop-mgr/users': typeof PropMgrUsersRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -579,23 +742,28 @@ export interface FileRoutesById {
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
+  '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
   '/super-admin/tenants': typeof SuperAdminTenantsRoute
   '/super-admin/users': typeof SuperAdminUsersRoute
   '/admin/': typeof AdminIndexRoute
-  '/host/': typeof HostIndexRoute
+  '/cashier/': typeof CashierIndexRoute
+  '/finance/': typeof FinanceIndexRoute
+  '/leasing/': typeof LeasingIndexRoute
+  '/maintenance/': typeof MaintenanceIndexRoute
   '/portal/': typeof PortalIndexRoute
+  '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
   '/admin/finance/coa': typeof AdminFinanceCoaRoute
   '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
   '/admin/finance/payables': typeof AdminFinancePayablesRoute
   '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
-  '/host/finance/transactions': typeof HostFinanceTransactionsRoute
-  '/host/manage/$id': typeof HostManageIdRoute
-  '/host/units/pricing': typeof HostUnitsPricingRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
+  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
+  '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
+  '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRouteTypes {
@@ -604,10 +772,14 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/auth'
+    | '/cashier'
+    | '/finance'
     | '/guest'
-    | '/host'
+    | '/leasing'
+    | '/maintenance'
     | '/owner'
     | '/portal'
+    | '/prop-mgr'
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
@@ -617,19 +789,19 @@ export interface FileRouteTypes {
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/permissions'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
-    | '/host/approvals'
-    | '/host/assets'
-    | '/host/create'
-    | '/host/finance'
-    | '/host/leases'
-    | '/host/leasing'
-    | '/host/maintenance'
-    | '/host/properties'
-    | '/host/units'
-    | '/host/users'
+    | '/cashier/pdc'
+    | '/cashier/receipts'
+    | '/finance/journal'
+    | '/finance/ledger'
+    | '/finance/receivables'
+    | '/leasing/create'
+    | '/leasing/manage'
+    | '/maintenance/inventory'
+    | '/maintenance/tickets'
     | '/owner/approvals'
     | '/owner/distributions'
     | '/owner/properties'
@@ -640,6 +812,16 @@ export interface FileRouteTypes {
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
+    | '/prop-mgr/approvals'
+    | '/prop-mgr/assets'
+    | '/prop-mgr/create'
+    | '/prop-mgr/finance'
+    | '/prop-mgr/leases'
+    | '/prop-mgr/leasing'
+    | '/prop-mgr/maintenance'
+    | '/prop-mgr/properties'
+    | '/prop-mgr/units'
+    | '/prop-mgr/users'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -648,23 +830,28 @@ export interface FileRouteTypes {
     | '/super-admin/billing'
     | '/super-admin/config'
     | '/super-admin/notifications'
+    | '/super-admin/permissions'
     | '/super-admin/security'
     | '/super-admin/tenants'
     | '/super-admin/users'
     | '/admin/'
-    | '/host/'
+    | '/cashier/'
+    | '/finance/'
+    | '/leasing/'
+    | '/maintenance/'
     | '/portal/'
+    | '/prop-mgr/'
     | '/super-admin/'
     | '/admin/finance/coa'
     | '/admin/finance/ledger'
     | '/admin/finance/payables'
     | '/admin/finance/receipts'
     | '/admin/leases/new'
-    | '/host/finance/transactions'
-    | '/host/manage/$id'
-    | '/host/units/pricing'
     | '/portal/community/events'
     | '/portal/community/reviews'
+    | '/prop-mgr/finance/transactions'
+    | '/prop-mgr/manage/$id'
+    | '/prop-mgr/units/pricing'
     | '/admin/finance/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -679,19 +866,19 @@ export interface FileRouteTypes {
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/permissions'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
-    | '/host/approvals'
-    | '/host/assets'
-    | '/host/create'
-    | '/host/finance'
-    | '/host/leases'
-    | '/host/leasing'
-    | '/host/maintenance'
-    | '/host/properties'
-    | '/host/units'
-    | '/host/users'
+    | '/cashier/pdc'
+    | '/cashier/receipts'
+    | '/finance/journal'
+    | '/finance/ledger'
+    | '/finance/receivables'
+    | '/leasing/create'
+    | '/leasing/manage'
+    | '/maintenance/inventory'
+    | '/maintenance/tickets'
     | '/owner/approvals'
     | '/owner/distributions'
     | '/owner/properties'
@@ -702,6 +889,16 @@ export interface FileRouteTypes {
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
+    | '/prop-mgr/approvals'
+    | '/prop-mgr/assets'
+    | '/prop-mgr/create'
+    | '/prop-mgr/finance'
+    | '/prop-mgr/leases'
+    | '/prop-mgr/leasing'
+    | '/prop-mgr/maintenance'
+    | '/prop-mgr/properties'
+    | '/prop-mgr/units'
+    | '/prop-mgr/users'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -710,33 +907,42 @@ export interface FileRouteTypes {
     | '/super-admin/billing'
     | '/super-admin/config'
     | '/super-admin/notifications'
+    | '/super-admin/permissions'
     | '/super-admin/security'
     | '/super-admin/tenants'
     | '/super-admin/users'
     | '/admin'
-    | '/host'
+    | '/cashier'
+    | '/finance'
+    | '/leasing'
+    | '/maintenance'
     | '/portal'
+    | '/prop-mgr'
     | '/super-admin'
     | '/admin/finance/coa'
     | '/admin/finance/ledger'
     | '/admin/finance/payables'
     | '/admin/finance/receipts'
     | '/admin/leases/new'
-    | '/host/finance/transactions'
-    | '/host/manage/$id'
-    | '/host/units/pricing'
     | '/portal/community/events'
     | '/portal/community/reviews'
+    | '/prop-mgr/finance/transactions'
+    | '/prop-mgr/manage/$id'
+    | '/prop-mgr/units/pricing'
     | '/admin/finance'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/auth'
+    | '/cashier'
+    | '/finance'
     | '/guest'
-    | '/host'
+    | '/leasing'
+    | '/maintenance'
     | '/owner'
     | '/portal'
+    | '/prop-mgr'
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
@@ -746,19 +952,19 @@ export interface FileRouteTypes {
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/permissions'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
-    | '/host/approvals'
-    | '/host/assets'
-    | '/host/create'
-    | '/host/finance'
-    | '/host/leases'
-    | '/host/leasing'
-    | '/host/maintenance'
-    | '/host/properties'
-    | '/host/units'
-    | '/host/users'
+    | '/cashier/pdc'
+    | '/cashier/receipts'
+    | '/finance/journal'
+    | '/finance/ledger'
+    | '/finance/receivables'
+    | '/leasing/create'
+    | '/leasing/manage'
+    | '/maintenance/inventory'
+    | '/maintenance/tickets'
     | '/owner/approvals'
     | '/owner/distributions'
     | '/owner/properties'
@@ -769,6 +975,16 @@ export interface FileRouteTypes {
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
+    | '/prop-mgr/approvals'
+    | '/prop-mgr/assets'
+    | '/prop-mgr/create'
+    | '/prop-mgr/finance'
+    | '/prop-mgr/leases'
+    | '/prop-mgr/leasing'
+    | '/prop-mgr/maintenance'
+    | '/prop-mgr/properties'
+    | '/prop-mgr/units'
+    | '/prop-mgr/users'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -777,23 +993,28 @@ export interface FileRouteTypes {
     | '/super-admin/billing'
     | '/super-admin/config'
     | '/super-admin/notifications'
+    | '/super-admin/permissions'
     | '/super-admin/security'
     | '/super-admin/tenants'
     | '/super-admin/users'
     | '/admin/'
-    | '/host/'
+    | '/cashier/'
+    | '/finance/'
+    | '/leasing/'
+    | '/maintenance/'
     | '/portal/'
+    | '/prop-mgr/'
     | '/super-admin/'
     | '/admin/finance/coa'
     | '/admin/finance/ledger'
     | '/admin/finance/payables'
     | '/admin/finance/receipts'
     | '/admin/leases/new'
-    | '/host/finance/transactions'
-    | '/host/manage/$id'
-    | '/host/units/pricing'
     | '/portal/community/events'
     | '/portal/community/reviews'
+    | '/prop-mgr/finance/transactions'
+    | '/prop-mgr/manage/$id'
+    | '/prop-mgr/units/pricing'
     | '/admin/finance/'
   fileRoutesById: FileRoutesById
 }
@@ -801,10 +1022,14 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRoute
+  CashierRoute: typeof CashierRouteWithChildren
+  FinanceRoute: typeof FinanceRouteWithChildren
   GuestRoute: typeof GuestRoute
-  HostRoute: typeof HostRouteWithChildren
+  LeasingRoute: typeof LeasingRouteWithChildren
+  MaintenanceRoute: typeof MaintenanceRouteWithChildren
   OwnerRoute: typeof OwnerRouteWithChildren
   PortalRoute: typeof PortalRouteWithChildren
+  PropMgrRoute: typeof PropMgrRouteWithChildren
   SalesRoute: typeof SalesRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SuperAdminRoute: typeof SuperAdminRouteWithChildren
@@ -833,6 +1058,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/prop-mgr': {
+      id: '/prop-mgr'
+      path: '/prop-mgr'
+      fullPath: '/prop-mgr'
+      preLoaderRoute: typeof PropMgrRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portal': {
       id: '/portal'
       path: '/portal'
@@ -847,11 +1079,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/host': {
-      id: '/host'
-      path: '/host'
-      fullPath: '/host'
-      preLoaderRoute: typeof HostRouteImport
+    '/maintenance': {
+      id: '/maintenance'
+      path: '/maintenance'
+      fullPath: '/maintenance'
+      preLoaderRoute: typeof MaintenanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/leasing': {
+      id: '/leasing'
+      path: '/leasing'
+      fullPath: '/leasing'
+      preLoaderRoute: typeof LeasingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/guest': {
@@ -859,6 +1098,20 @@ declare module '@tanstack/react-router' {
       path: '/guest'
       fullPath: '/guest'
       preLoaderRoute: typeof GuestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/finance': {
+      id: '/finance'
+      path: '/finance'
+      fullPath: '/finance'
+      preLoaderRoute: typeof FinanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cashier': {
+      id: '/cashier'
+      path: '/cashier'
+      fullPath: '/cashier'
+      preLoaderRoute: typeof CashierRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -889,6 +1142,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuperAdminIndexRouteImport
       parentRoute: typeof SuperAdminRoute
     }
+    '/prop-mgr/': {
+      id: '/prop-mgr/'
+      path: '/'
+      fullPath: '/prop-mgr/'
+      preLoaderRoute: typeof PropMgrIndexRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
     '/portal/': {
       id: '/portal/'
       path: '/'
@@ -896,12 +1156,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalIndexRouteImport
       parentRoute: typeof PortalRoute
     }
-    '/host/': {
-      id: '/host/'
+    '/maintenance/': {
+      id: '/maintenance/'
       path: '/'
-      fullPath: '/host/'
-      preLoaderRoute: typeof HostIndexRouteImport
-      parentRoute: typeof HostRoute
+      fullPath: '/maintenance/'
+      preLoaderRoute: typeof MaintenanceIndexRouteImport
+      parentRoute: typeof MaintenanceRoute
+    }
+    '/leasing/': {
+      id: '/leasing/'
+      path: '/'
+      fullPath: '/leasing/'
+      preLoaderRoute: typeof LeasingIndexRouteImport
+      parentRoute: typeof LeasingRoute
+    }
+    '/finance/': {
+      id: '/finance/'
+      path: '/'
+      fullPath: '/finance/'
+      preLoaderRoute: typeof FinanceIndexRouteImport
+      parentRoute: typeof FinanceRoute
+    }
+    '/cashier/': {
+      id: '/cashier/'
+      path: '/'
+      fullPath: '/cashier/'
+      preLoaderRoute: typeof CashierIndexRouteImport
+      parentRoute: typeof CashierRoute
     }
     '/admin/': {
       id: '/admin/'
@@ -929,6 +1210,13 @@ declare module '@tanstack/react-router' {
       path: '/security'
       fullPath: '/super-admin/security'
       preLoaderRoute: typeof SuperAdminSecurityRouteImport
+      parentRoute: typeof SuperAdminRoute
+    }
+    '/super-admin/permissions': {
+      id: '/super-admin/permissions'
+      path: '/permissions'
+      fullPath: '/super-admin/permissions'
+      preLoaderRoute: typeof SuperAdminPermissionsRouteImport
       parentRoute: typeof SuperAdminRoute
     }
     '/super-admin/notifications': {
@@ -986,6 +1274,76 @@ declare module '@tanstack/react-router' {
       fullPath: '/sales/appointments'
       preLoaderRoute: typeof SalesAppointmentsRouteImport
       parentRoute: typeof SalesRoute
+    }
+    '/prop-mgr/users': {
+      id: '/prop-mgr/users'
+      path: '/users'
+      fullPath: '/prop-mgr/users'
+      preLoaderRoute: typeof PropMgrUsersRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/units': {
+      id: '/prop-mgr/units'
+      path: '/units'
+      fullPath: '/prop-mgr/units'
+      preLoaderRoute: typeof PropMgrUnitsRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/properties': {
+      id: '/prop-mgr/properties'
+      path: '/properties'
+      fullPath: '/prop-mgr/properties'
+      preLoaderRoute: typeof PropMgrPropertiesRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/maintenance': {
+      id: '/prop-mgr/maintenance'
+      path: '/maintenance'
+      fullPath: '/prop-mgr/maintenance'
+      preLoaderRoute: typeof PropMgrMaintenanceRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/leasing': {
+      id: '/prop-mgr/leasing'
+      path: '/leasing'
+      fullPath: '/prop-mgr/leasing'
+      preLoaderRoute: typeof PropMgrLeasingRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/leases': {
+      id: '/prop-mgr/leases'
+      path: '/leases'
+      fullPath: '/prop-mgr/leases'
+      preLoaderRoute: typeof PropMgrLeasesRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/finance': {
+      id: '/prop-mgr/finance'
+      path: '/finance'
+      fullPath: '/prop-mgr/finance'
+      preLoaderRoute: typeof PropMgrFinanceRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/create': {
+      id: '/prop-mgr/create'
+      path: '/create'
+      fullPath: '/prop-mgr/create'
+      preLoaderRoute: typeof PropMgrCreateRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/assets': {
+      id: '/prop-mgr/assets'
+      path: '/assets'
+      fullPath: '/prop-mgr/assets'
+      preLoaderRoute: typeof PropMgrAssetsRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/approvals': {
+      id: '/prop-mgr/approvals'
+      path: '/approvals'
+      fullPath: '/prop-mgr/approvals'
+      preLoaderRoute: typeof PropMgrApprovalsRouteImport
+      parentRoute: typeof PropMgrRoute
     }
     '/portal/tickets': {
       id: '/portal/tickets'
@@ -1057,75 +1415,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerApprovalsRouteImport
       parentRoute: typeof OwnerRoute
     }
-    '/host/users': {
-      id: '/host/users'
-      path: '/users'
-      fullPath: '/host/users'
-      preLoaderRoute: typeof HostUsersRouteImport
-      parentRoute: typeof HostRoute
+    '/maintenance/tickets': {
+      id: '/maintenance/tickets'
+      path: '/tickets'
+      fullPath: '/maintenance/tickets'
+      preLoaderRoute: typeof MaintenanceTicketsRouteImport
+      parentRoute: typeof MaintenanceRoute
     }
-    '/host/units': {
-      id: '/host/units'
-      path: '/units'
-      fullPath: '/host/units'
-      preLoaderRoute: typeof HostUnitsRouteImport
-      parentRoute: typeof HostRoute
+    '/maintenance/inventory': {
+      id: '/maintenance/inventory'
+      path: '/inventory'
+      fullPath: '/maintenance/inventory'
+      preLoaderRoute: typeof MaintenanceInventoryRouteImport
+      parentRoute: typeof MaintenanceRoute
     }
-    '/host/properties': {
-      id: '/host/properties'
-      path: '/properties'
-      fullPath: '/host/properties'
-      preLoaderRoute: typeof HostPropertiesRouteImport
-      parentRoute: typeof HostRoute
+    '/leasing/manage': {
+      id: '/leasing/manage'
+      path: '/manage'
+      fullPath: '/leasing/manage'
+      preLoaderRoute: typeof LeasingManageRouteImport
+      parentRoute: typeof LeasingRoute
     }
-    '/host/maintenance': {
-      id: '/host/maintenance'
-      path: '/maintenance'
-      fullPath: '/host/maintenance'
-      preLoaderRoute: typeof HostMaintenanceRouteImport
-      parentRoute: typeof HostRoute
-    }
-    '/host/leasing': {
-      id: '/host/leasing'
-      path: '/leasing'
-      fullPath: '/host/leasing'
-      preLoaderRoute: typeof HostLeasingRouteImport
-      parentRoute: typeof HostRoute
-    }
-    '/host/leases': {
-      id: '/host/leases'
-      path: '/leases'
-      fullPath: '/host/leases'
-      preLoaderRoute: typeof HostLeasesRouteImport
-      parentRoute: typeof HostRoute
-    }
-    '/host/finance': {
-      id: '/host/finance'
-      path: '/finance'
-      fullPath: '/host/finance'
-      preLoaderRoute: typeof HostFinanceRouteImport
-      parentRoute: typeof HostRoute
-    }
-    '/host/create': {
-      id: '/host/create'
+    '/leasing/create': {
+      id: '/leasing/create'
       path: '/create'
-      fullPath: '/host/create'
-      preLoaderRoute: typeof HostCreateRouteImport
-      parentRoute: typeof HostRoute
+      fullPath: '/leasing/create'
+      preLoaderRoute: typeof LeasingCreateRouteImport
+      parentRoute: typeof LeasingRoute
     }
-    '/host/assets': {
-      id: '/host/assets'
-      path: '/assets'
-      fullPath: '/host/assets'
-      preLoaderRoute: typeof HostAssetsRouteImport
-      parentRoute: typeof HostRoute
+    '/finance/receivables': {
+      id: '/finance/receivables'
+      path: '/receivables'
+      fullPath: '/finance/receivables'
+      preLoaderRoute: typeof FinanceReceivablesRouteImport
+      parentRoute: typeof FinanceRoute
     }
-    '/host/approvals': {
-      id: '/host/approvals'
-      path: '/approvals'
-      fullPath: '/host/approvals'
-      preLoaderRoute: typeof HostApprovalsRouteImport
-      parentRoute: typeof HostRoute
+    '/finance/ledger': {
+      id: '/finance/ledger'
+      path: '/ledger'
+      fullPath: '/finance/ledger'
+      preLoaderRoute: typeof FinanceLedgerRouteImport
+      parentRoute: typeof FinanceRoute
+    }
+    '/finance/journal': {
+      id: '/finance/journal'
+      path: '/journal'
+      fullPath: '/finance/journal'
+      preLoaderRoute: typeof FinanceJournalRouteImport
+      parentRoute: typeof FinanceRoute
+    }
+    '/cashier/receipts': {
+      id: '/cashier/receipts'
+      path: '/receipts'
+      fullPath: '/cashier/receipts'
+      preLoaderRoute: typeof CashierReceiptsRouteImport
+      parentRoute: typeof CashierRoute
+    }
+    '/cashier/pdc': {
+      id: '/cashier/pdc'
+      path: '/pdc'
+      fullPath: '/cashier/pdc'
+      preLoaderRoute: typeof CashierPdcRouteImport
+      parentRoute: typeof CashierRoute
     }
     '/admin/users': {
       id: '/admin/users'
@@ -1146,6 +1497,13 @@ declare module '@tanstack/react-router' {
       path: '/properties'
       fullPath: '/admin/properties'
       preLoaderRoute: typeof AdminPropertiesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/permissions': {
+      id: '/admin/permissions'
+      path: '/permissions'
+      fullPath: '/admin/permissions'
+      preLoaderRoute: typeof AdminPermissionsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/masters': {
@@ -1197,6 +1555,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFinanceIndexRouteImport
       parentRoute: typeof AdminFinanceRoute
     }
+    '/prop-mgr/units/pricing': {
+      id: '/prop-mgr/units/pricing'
+      path: '/pricing'
+      fullPath: '/prop-mgr/units/pricing'
+      preLoaderRoute: typeof PropMgrUnitsPricingRouteImport
+      parentRoute: typeof PropMgrUnitsRoute
+    }
+    '/prop-mgr/manage/$id': {
+      id: '/prop-mgr/manage/$id'
+      path: '/manage/$id'
+      fullPath: '/prop-mgr/manage/$id'
+      preLoaderRoute: typeof PropMgrManageIdRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/finance/transactions': {
+      id: '/prop-mgr/finance/transactions'
+      path: '/transactions'
+      fullPath: '/prop-mgr/finance/transactions'
+      preLoaderRoute: typeof PropMgrFinanceTransactionsRouteImport
+      parentRoute: typeof PropMgrFinanceRoute
+    }
     '/portal/community/reviews': {
       id: '/portal/community/reviews'
       path: '/reviews'
@@ -1210,27 +1589,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/portal/community/events'
       preLoaderRoute: typeof PortalCommunityEventsRouteImport
       parentRoute: typeof PortalCommunityRoute
-    }
-    '/host/units/pricing': {
-      id: '/host/units/pricing'
-      path: '/pricing'
-      fullPath: '/host/units/pricing'
-      preLoaderRoute: typeof HostUnitsPricingRouteImport
-      parentRoute: typeof HostUnitsRoute
-    }
-    '/host/manage/$id': {
-      id: '/host/manage/$id'
-      path: '/manage/$id'
-      fullPath: '/host/manage/$id'
-      preLoaderRoute: typeof HostManageIdRouteImport
-      parentRoute: typeof HostRoute
-    }
-    '/host/finance/transactions': {
-      id: '/host/finance/transactions'
-      path: '/transactions'
-      fullPath: '/host/finance/transactions'
-      preLoaderRoute: typeof HostFinanceTransactionsRouteImport
-      parentRoute: typeof HostFinanceRoute
     }
     '/admin/leases/new': {
       id: '/admin/leases/new'
@@ -1309,6 +1667,7 @@ interface AdminRouteChildren {
   AdminLeasesRoute: typeof AdminLeasesRouteWithChildren
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminMastersRoute: typeof AdminMastersRoute
+  AdminPermissionsRoute: typeof AdminPermissionsRoute
   AdminPropertiesRoute: typeof AdminPropertiesRoute
   AdminUnitsRoute: typeof AdminUnitsRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -1322,6 +1681,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminLeasesRoute: AdminLeasesRouteWithChildren,
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminMastersRoute: AdminMastersRoute,
+  AdminPermissionsRoute: AdminPermissionsRoute,
   AdminPropertiesRoute: AdminPropertiesRoute,
   AdminUnitsRoute: AdminUnitsRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -1330,61 +1690,68 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface HostFinanceRouteChildren {
-  HostFinanceTransactionsRoute: typeof HostFinanceTransactionsRoute
+interface CashierRouteChildren {
+  CashierPdcRoute: typeof CashierPdcRoute
+  CashierReceiptsRoute: typeof CashierReceiptsRoute
+  CashierIndexRoute: typeof CashierIndexRoute
 }
 
-const HostFinanceRouteChildren: HostFinanceRouteChildren = {
-  HostFinanceTransactionsRoute: HostFinanceTransactionsRoute,
+const CashierRouteChildren: CashierRouteChildren = {
+  CashierPdcRoute: CashierPdcRoute,
+  CashierReceiptsRoute: CashierReceiptsRoute,
+  CashierIndexRoute: CashierIndexRoute,
 }
 
-const HostFinanceRouteWithChildren = HostFinanceRoute._addFileChildren(
-  HostFinanceRouteChildren,
+const CashierRouteWithChildren =
+  CashierRoute._addFileChildren(CashierRouteChildren)
+
+interface FinanceRouteChildren {
+  FinanceJournalRoute: typeof FinanceJournalRoute
+  FinanceLedgerRoute: typeof FinanceLedgerRoute
+  FinanceReceivablesRoute: typeof FinanceReceivablesRoute
+  FinanceIndexRoute: typeof FinanceIndexRoute
+}
+
+const FinanceRouteChildren: FinanceRouteChildren = {
+  FinanceJournalRoute: FinanceJournalRoute,
+  FinanceLedgerRoute: FinanceLedgerRoute,
+  FinanceReceivablesRoute: FinanceReceivablesRoute,
+  FinanceIndexRoute: FinanceIndexRoute,
+}
+
+const FinanceRouteWithChildren =
+  FinanceRoute._addFileChildren(FinanceRouteChildren)
+
+interface LeasingRouteChildren {
+  LeasingCreateRoute: typeof LeasingCreateRoute
+  LeasingManageRoute: typeof LeasingManageRoute
+  LeasingIndexRoute: typeof LeasingIndexRoute
+}
+
+const LeasingRouteChildren: LeasingRouteChildren = {
+  LeasingCreateRoute: LeasingCreateRoute,
+  LeasingManageRoute: LeasingManageRoute,
+  LeasingIndexRoute: LeasingIndexRoute,
+}
+
+const LeasingRouteWithChildren =
+  LeasingRoute._addFileChildren(LeasingRouteChildren)
+
+interface MaintenanceRouteChildren {
+  MaintenanceInventoryRoute: typeof MaintenanceInventoryRoute
+  MaintenanceTicketsRoute: typeof MaintenanceTicketsRoute
+  MaintenanceIndexRoute: typeof MaintenanceIndexRoute
+}
+
+const MaintenanceRouteChildren: MaintenanceRouteChildren = {
+  MaintenanceInventoryRoute: MaintenanceInventoryRoute,
+  MaintenanceTicketsRoute: MaintenanceTicketsRoute,
+  MaintenanceIndexRoute: MaintenanceIndexRoute,
+}
+
+const MaintenanceRouteWithChildren = MaintenanceRoute._addFileChildren(
+  MaintenanceRouteChildren,
 )
-
-interface HostUnitsRouteChildren {
-  HostUnitsPricingRoute: typeof HostUnitsPricingRoute
-}
-
-const HostUnitsRouteChildren: HostUnitsRouteChildren = {
-  HostUnitsPricingRoute: HostUnitsPricingRoute,
-}
-
-const HostUnitsRouteWithChildren = HostUnitsRoute._addFileChildren(
-  HostUnitsRouteChildren,
-)
-
-interface HostRouteChildren {
-  HostApprovalsRoute: typeof HostApprovalsRoute
-  HostAssetsRoute: typeof HostAssetsRoute
-  HostCreateRoute: typeof HostCreateRoute
-  HostFinanceRoute: typeof HostFinanceRouteWithChildren
-  HostLeasesRoute: typeof HostLeasesRoute
-  HostLeasingRoute: typeof HostLeasingRoute
-  HostMaintenanceRoute: typeof HostMaintenanceRoute
-  HostPropertiesRoute: typeof HostPropertiesRoute
-  HostUnitsRoute: typeof HostUnitsRouteWithChildren
-  HostUsersRoute: typeof HostUsersRoute
-  HostIndexRoute: typeof HostIndexRoute
-  HostManageIdRoute: typeof HostManageIdRoute
-}
-
-const HostRouteChildren: HostRouteChildren = {
-  HostApprovalsRoute: HostApprovalsRoute,
-  HostAssetsRoute: HostAssetsRoute,
-  HostCreateRoute: HostCreateRoute,
-  HostFinanceRoute: HostFinanceRouteWithChildren,
-  HostLeasesRoute: HostLeasesRoute,
-  HostLeasingRoute: HostLeasingRoute,
-  HostMaintenanceRoute: HostMaintenanceRoute,
-  HostPropertiesRoute: HostPropertiesRoute,
-  HostUnitsRoute: HostUnitsRouteWithChildren,
-  HostUsersRoute: HostUsersRoute,
-  HostIndexRoute: HostIndexRoute,
-  HostManageIdRoute: HostManageIdRoute,
-}
-
-const HostRouteWithChildren = HostRoute._addFileChildren(HostRouteChildren)
 
 interface OwnerRouteChildren {
   OwnerApprovalsRoute: typeof OwnerApprovalsRoute
@@ -1439,6 +1806,63 @@ const PortalRouteChildren: PortalRouteChildren = {
 const PortalRouteWithChildren =
   PortalRoute._addFileChildren(PortalRouteChildren)
 
+interface PropMgrFinanceRouteChildren {
+  PropMgrFinanceTransactionsRoute: typeof PropMgrFinanceTransactionsRoute
+}
+
+const PropMgrFinanceRouteChildren: PropMgrFinanceRouteChildren = {
+  PropMgrFinanceTransactionsRoute: PropMgrFinanceTransactionsRoute,
+}
+
+const PropMgrFinanceRouteWithChildren = PropMgrFinanceRoute._addFileChildren(
+  PropMgrFinanceRouteChildren,
+)
+
+interface PropMgrUnitsRouteChildren {
+  PropMgrUnitsPricingRoute: typeof PropMgrUnitsPricingRoute
+}
+
+const PropMgrUnitsRouteChildren: PropMgrUnitsRouteChildren = {
+  PropMgrUnitsPricingRoute: PropMgrUnitsPricingRoute,
+}
+
+const PropMgrUnitsRouteWithChildren = PropMgrUnitsRoute._addFileChildren(
+  PropMgrUnitsRouteChildren,
+)
+
+interface PropMgrRouteChildren {
+  PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
+  PropMgrAssetsRoute: typeof PropMgrAssetsRoute
+  PropMgrCreateRoute: typeof PropMgrCreateRoute
+  PropMgrFinanceRoute: typeof PropMgrFinanceRouteWithChildren
+  PropMgrLeasesRoute: typeof PropMgrLeasesRoute
+  PropMgrLeasingRoute: typeof PropMgrLeasingRoute
+  PropMgrMaintenanceRoute: typeof PropMgrMaintenanceRoute
+  PropMgrPropertiesRoute: typeof PropMgrPropertiesRoute
+  PropMgrUnitsRoute: typeof PropMgrUnitsRouteWithChildren
+  PropMgrUsersRoute: typeof PropMgrUsersRoute
+  PropMgrIndexRoute: typeof PropMgrIndexRoute
+  PropMgrManageIdRoute: typeof PropMgrManageIdRoute
+}
+
+const PropMgrRouteChildren: PropMgrRouteChildren = {
+  PropMgrApprovalsRoute: PropMgrApprovalsRoute,
+  PropMgrAssetsRoute: PropMgrAssetsRoute,
+  PropMgrCreateRoute: PropMgrCreateRoute,
+  PropMgrFinanceRoute: PropMgrFinanceRouteWithChildren,
+  PropMgrLeasesRoute: PropMgrLeasesRoute,
+  PropMgrLeasingRoute: PropMgrLeasingRoute,
+  PropMgrMaintenanceRoute: PropMgrMaintenanceRoute,
+  PropMgrPropertiesRoute: PropMgrPropertiesRoute,
+  PropMgrUnitsRoute: PropMgrUnitsRouteWithChildren,
+  PropMgrUsersRoute: PropMgrUsersRoute,
+  PropMgrIndexRoute: PropMgrIndexRoute,
+  PropMgrManageIdRoute: PropMgrManageIdRoute,
+}
+
+const PropMgrRouteWithChildren =
+  PropMgrRoute._addFileChildren(PropMgrRouteChildren)
+
 interface SalesRouteChildren {
   SalesAppointmentsRoute: typeof SalesAppointmentsRoute
   SalesContractsRoute: typeof SalesContractsRoute
@@ -1460,6 +1884,7 @@ interface SuperAdminRouteChildren {
   SuperAdminBillingRoute: typeof SuperAdminBillingRoute
   SuperAdminConfigRoute: typeof SuperAdminConfigRoute
   SuperAdminNotificationsRoute: typeof SuperAdminNotificationsRoute
+  SuperAdminPermissionsRoute: typeof SuperAdminPermissionsRoute
   SuperAdminSecurityRoute: typeof SuperAdminSecurityRoute
   SuperAdminTenantsRoute: typeof SuperAdminTenantsRoute
   SuperAdminUsersRoute: typeof SuperAdminUsersRoute
@@ -1471,6 +1896,7 @@ const SuperAdminRouteChildren: SuperAdminRouteChildren = {
   SuperAdminBillingRoute: SuperAdminBillingRoute,
   SuperAdminConfigRoute: SuperAdminConfigRoute,
   SuperAdminNotificationsRoute: SuperAdminNotificationsRoute,
+  SuperAdminPermissionsRoute: SuperAdminPermissionsRoute,
   SuperAdminSecurityRoute: SuperAdminSecurityRoute,
   SuperAdminTenantsRoute: SuperAdminTenantsRoute,
   SuperAdminUsersRoute: SuperAdminUsersRoute,
@@ -1485,10 +1911,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRoute,
+  CashierRoute: CashierRouteWithChildren,
+  FinanceRoute: FinanceRouteWithChildren,
   GuestRoute: GuestRoute,
-  HostRoute: HostRouteWithChildren,
+  LeasingRoute: LeasingRouteWithChildren,
+  MaintenanceRoute: MaintenanceRouteWithChildren,
   OwnerRoute: OwnerRouteWithChildren,
   PortalRoute: PortalRouteWithChildren,
+  PropMgrRoute: PropMgrRouteWithChildren,
   SalesRoute: SalesRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SuperAdminRoute: SuperAdminRouteWithChildren,

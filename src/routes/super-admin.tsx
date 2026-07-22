@@ -21,7 +21,6 @@ const nav: NavItem[] = [
   { to: "/super-admin/config", label: "Global Config", icon: <Globe className="h-4 w-4" /> },
   { to: "/super-admin/security", label: "Security & Audit", icon: <ShieldCheck className="h-4 w-4" /> },
   { to: "/super-admin/notifications", label: "Notifications", icon: <Bell className="h-4 w-4" /> },
-  { to: "/super-admin/settings", label: "Platform Settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
 const titles: Record<string, string> = {
@@ -33,7 +32,6 @@ const titles: Record<string, string> = {
   "/super-admin/config": "Global Configuration",
   "/super-admin/security": "Security & Audit",
   "/super-admin/notifications": "Notification Center",
-  "/super-admin/settings": "Platform Settings",
 };
 
 export const Route = createFileRoute("/super-admin")({

@@ -44,12 +44,20 @@ function AuthPage() {
         
       if (profile?.role === 'SUPER_ADMIN') {
         navigate({ to: "/super-admin" });
-      } else if (profile?.role === 'HOST') {
-        navigate({ to: "/host" });
+      } else if (profile?.role === 'PROP_MGR' || profile?.role === 'HOST') {
+        navigate({ to: "/prop-mgr" });
       } else if (profile?.role === 'ADMIN') {
         navigate({ to: "/admin" });
+      } else if (profile?.role === 'LEASING') {
+        navigate({ to: "/leasing" });
+      } else if (profile?.role === 'FINANCE') {
+        navigate({ to: "/finance" });
+      } else if (profile?.role === 'CASHIER') {
+        navigate({ to: "/cashier" });
+      } else if (profile?.role === 'MAINTENANCE') {
+        navigate({ to: "/maintenance" });
       } else {
-        navigate({ to: "/guest" });
+        navigate({ to: "/portal" });
       }
     } catch (error: any) {
       toast.error(error.message);
@@ -85,13 +93,17 @@ function AuthPage() {
     }
   };
 
-  const handleMockSignIn = (mockRole: "SUPER_ADMIN" | "ADMIN" | "HOST" | "GUEST" | "SALES" | "OWNER") => {
+  const handleMockSignIn = (mockRole: "SUPER_ADMIN" | "ADMIN" | "PROP_MGR" | "LEASING" | "FINANCE" | "CASHIER" | "MAINTENANCE" | "GUEST" | "SALES" | "OWNER") => {
     toast.success(`Signed in as mock ${mockRole}`);
     switch (mockRole) {
       case "SUPER_ADMIN": navigate({ to: "/super-admin" }); break;
       case "ADMIN": navigate({ to: "/admin" }); break;
-      case "HOST": navigate({ to: "/host" }); break;
-      case "GUEST": navigate({ to: "/guest" }); break;
+      case "PROP_MGR": navigate({ to: "/prop-mgr" }); break;
+      case "LEASING": navigate({ to: "/leasing" }); break;
+      case "FINANCE": navigate({ to: "/finance" }); break;
+      case "CASHIER": navigate({ to: "/cashier" }); break;
+      case "MAINTENANCE": navigate({ to: "/maintenance" }); break;
+      case "GUEST": navigate({ to: "/portal" }); break;
       case "SALES": navigate({ to: "/sales" }); break;
       case "OWNER": navigate({ to: "/owner" }); break;
     }
@@ -288,24 +300,30 @@ function AuthPage() {
                     <span className="bg-card px-2 text-muted-foreground">Demo Accounts</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Button variant="outline" size="sm" onClick={() => handleMockSignIn("GUEST")} className="text-xs">
                     Tenant Portal
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("HOST")} className="text-xs">
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("PROP_MGR")} className="text-xs">
                     Property Mgr
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("ADMIN")} className="text-xs">
+                    Admin
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => handleMockSignIn("SUPER_ADMIN")} className="text-xs font-semibold bg-primary/10 border-primary">
                     Super Admin
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("ADMIN")} className="text-xs">
-                    Tenant Admin
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("LEASING")} className="text-xs">
+                    Leasing
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("SALES")} className="text-xs">
-                    Sales Agent
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("FINANCE")} className="text-xs">
+                    Finance
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("OWNER")} className="text-xs">
-                    Landlord
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("CASHIER")} className="text-xs">
+                    Cashier
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("MAINTENANCE")} className="text-xs">
+                    Maintenance
                   </Button>
                 </div>
               </div>

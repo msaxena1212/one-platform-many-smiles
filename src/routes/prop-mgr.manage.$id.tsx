@@ -12,7 +12,7 @@ import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenance
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 
-export const Route = createFileRoute("/host/manage/$id")({
+export const Route = createFileRoute("/prop-mgr/manage/$id")({
   component: ManageProperty,
 });
 
@@ -254,7 +254,7 @@ function ManageProperty() {
     try {
       await updateProperty(id, { is_active: false });
       toast.success("Listing deactivated.");
-      navigate({ to: "/host" });
+      navigate({ to: "/prop-mgr" });
     } catch (err: any) {
       toast.error("Failed: " + err.message);
     }
@@ -352,7 +352,7 @@ function ManageProperty() {
           <h2 className="text-xl font-semibold">Property not found</h2>
           <p className="text-muted-foreground mt-2">{error}</p>
           <Button asChild className="mt-4">
-            <Link to="/host/properties">Back to Properties</Link>
+            <Link to="/prop-mgr/properties">Back to Properties</Link>
           </Button>
         </div>
       </div>
@@ -364,7 +364,7 @@ function ManageProperty() {
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
-            <Link to="/host/properties"><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
+            <Link to="/prop-mgr/properties"><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
           </Button>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Manage Property</h1>
           <p className="mt-1 text-muted-foreground">{property.title} — {property.city}, {property.country}</p>

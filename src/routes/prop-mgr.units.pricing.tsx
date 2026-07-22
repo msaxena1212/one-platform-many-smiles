@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Plus, Calendar, DollarSign, Trash2 } from 'lucide-react';
 
-export const Route = createFileRoute('/host/units/pricing')({
+export const Route = createFileRoute('/prop-mgr/units/pricing')({
   component: PricingEngine,
 });
 

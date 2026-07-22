@@ -19,7 +19,7 @@ import {
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 
-export const Route = createFileRoute("/host/assets")({
+export const Route = createFileRoute("/prop-mgr/assets")({
   component: AssetsPage,
 });
 

@@ -16,7 +16,7 @@ import {
   type ApprovalRequest
 } from "@/lib/supabase";
 
-export const Route = createFileRoute("/host/approvals")({
+export const Route = createFileRoute("/prop-mgr/approvals")({
   component: ApprovalsPage,
 });
 

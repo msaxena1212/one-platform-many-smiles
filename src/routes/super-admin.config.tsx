@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  Globe, Save, Toggle, Mail, Bell, Shield, Database,
+  Globe, Save, Mail, Bell, Shield, Database,
   Key, Languages, Clock, Upload
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";

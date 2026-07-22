@@ -46,7 +46,7 @@ import {
   voucherDocumentMasters,
 } from "@/lib/reference-data";
 
-export const Route = createFileRoute("/host/leasing")({
+export const Route = createFileRoute("/prop-mgr/leasing")({
   component: LeasingPage,
 });
 

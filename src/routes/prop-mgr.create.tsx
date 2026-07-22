@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 
-export const Route = createFileRoute("/host/create")({
+export const Route = createFileRoute("/prop-mgr/create")({
   component: HostCreateProperty,
 });
 
@@ -312,7 +312,7 @@ function HostCreateProperty() {
       }
 
       toast.success("🎉 Listing published successfully!");
-      navigate({ to: "/host/manage/$id", params: { id: newProperty.id } });
+      navigate({ to: "/prop-mgr/manage/$id", params: { id: newProperty.id } });
     } catch (err: any) {
       toast.error("Failed to create listing: " + err.message);
     } finally {
@@ -324,7 +324,7 @@ function HostCreateProperty() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
-          <Link to="/host/properties"><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
+          <Link to="/prop-mgr/properties"><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
         </Button>
         <div className="flex items-center justify-between">
           <div>

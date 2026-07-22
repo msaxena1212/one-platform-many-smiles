@@ -5,7 +5,7 @@ import { Building, PlusCircle, Users, Wallet, Wrench, ClipboardCheck, Plus, Home
 import { useEffect, useState } from "react";
 import { fetchHostProperties, supabase, type Property } from "@/lib/supabase";
 
-export const Route = createFileRoute("/host/")({
+export const Route = createFileRoute("/prop-mgr/")({
   component: HostDashboard,
 });
 
@@ -83,7 +83,7 @@ function HostDashboard() {
           <p className="text-muted-foreground mt-2">Manage your properties and reservations.</p>
         </div>
         <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Link to="/host/properties"><Plus className="mr-2 h-4 w-4" /> New property</Link>
+          <Link to="/prop-mgr/properties"><Plus className="mr-2 h-4 w-4" /> New property</Link>
         </Button>
       </div>
 
@@ -150,7 +150,7 @@ function HostDashboard() {
               <p className="font-medium">No properties yet</p>
               <p className="text-sm mt-1">Get started by creating your first listing.</p>
               <Button asChild className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground">
-                <Link to="/host/create"><Plus className="mr-2 h-4 w-4" /> Create listing</Link>
+                <Link to="/prop-mgr/create"><Plus className="mr-2 h-4 w-4" /> Create listing</Link>
               </Button>
             </div>
           ) : (
@@ -193,7 +193,7 @@ function HostDashboard() {
                         <td className="p-4 align-middle text-muted-foreground">{property.city}, {property.country}</td>
                         <td className="p-4 align-middle text-right">
                           <Button asChild variant="outline" size="sm">
-                            <Link to="/host/manage/$id" params={{ id: property.id }}>Manage</Link>
+                            <Link to="/prop-mgr/manage/$id" params={{ id: property.id }}>Manage</Link>
                           </Button>
                         </td>
                       </tr>

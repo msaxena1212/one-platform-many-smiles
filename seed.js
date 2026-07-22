@@ -18,7 +18,7 @@ async function seedDatabase() {
 
     await client.query(`
       INSERT INTO public.profiles (id, role, full_name)
-      VALUES ($1, 'HOST', 'Kinan Real Estate')
+      VALUES ($1, 'ADMIN', 'Kinan Real Estate')
       ON CONFLICT (id) DO NOTHING;
     `, [hostId]);
 

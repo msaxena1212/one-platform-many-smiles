@@ -14,7 +14,7 @@ import {
 import { Loader2, Plus, ArrowDownLeft, ArrowUpRight, Receipt, FileText, Banknote, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/host/finance/transactions")({
+export const Route = createFileRoute("/prop-mgr/finance/transactions")({
   component: TransactionsPage,
 });
 

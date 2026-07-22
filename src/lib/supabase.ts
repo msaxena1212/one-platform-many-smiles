@@ -81,7 +81,7 @@ export type Booking = {
 
 export type Profile = {
   id: string;
-  role: 'GUEST' | 'HOST' | 'ADMIN';
+  role: 'GUEST' | 'HOST' | 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'OWNER' | 'PROP_MGR' | 'LEASING' | 'FINANCE' | 'CASHIER' | 'MAINTENANCE' | 'TENANT';
   full_name: string;
   avatar_url: string | null;
 };
@@ -149,6 +149,8 @@ export type Lease = {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  tenant_name?: string;
+  unit_ref?: string;
 };
 
 export type Reservation = {
@@ -978,4 +980,10 @@ export async function fetchERPChartOfAccounts() {
   const { data, error } = await supabase.from('erp_chart_of_accounts').select('*').order('code');
   if (error) throw error;
   return data as ERPChartOfAccount[];
+}
+
+export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
+  const { data, error } = await supabase.from('inventory_parts').insert([payload]).select().single();
+  if (error) throw error;
+  return data as InventoryPart;
 }

@@ -1,0 +1,54 @@
+import { createFileRoute, Outlet, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { LayoutDashboard, LogOut, CreditCard, Receipt } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+export const Route = createFileRoute("/cashier")({
+  component: CashierLayout,
+});
+
+function CashierLayout() {
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth" });
+  };
+
+  return (
+    <div className="min-h-screen bg-muted/30 flex flex-col md:flex-row">
+      {/* Sidebar */}
+      <aside className="w-full md:w-64 bg-background border-r border-border hidden md:flex flex-col">
+        <div className="p-6 border-b border-border flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
+            <CreditCard className="h-4 w-4" />
+          </div>
+          <span className="font-semibold text-lg tracking-tight">Cashier Dashboard</span>
+        </div>
+        <nav className="flex-1 p-4 space-y-1.5">
+          <Link
+            to="/cashier"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors hover:bg-muted [&.active]:bg-primary/10 [&.active]:text-primary"
+          >
+            <LayoutDashboard className="h-4 w-4" /> Overview
+          </Link>
+          <Link to="/cashier/receipts" className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors hover:bg-muted [&.active]:bg-primary/10 [&.active]:text-primary"><Receipt className="h-4 w-4" /> Receipts & Refunds</Link>
+          <Link to="/cashier/pdc" className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors hover:bg-muted [&.active]:bg-primary/10 [&.active]:text-primary"><CreditCard className="h-4 w-4" /> PDC Management</Link>
+        </nav>
+        <div className="p-4 border-t border-border">
+          <Button variant="ghost" className="w-full justify-start gap-3" onClick={handleSignOut}>
+            <LogOut className="h-4 w-4" /> Sign Out
+          </Button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 p-6 md:p-8">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
