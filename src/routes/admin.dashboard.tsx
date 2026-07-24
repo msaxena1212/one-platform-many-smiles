@@ -1,19 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Users, Home, AlertCircle, Clock, CheckCircle } from "lucide-react";
+import { properties, units, leases, tickets } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/admin/dashboard")({
   component: AdminDashboard,
 });
 
 function AdminDashboard() {
+  // Derive real numbers from Qatar property data
+  const totalProps = properties.length;                                           // 23
+  const totalUnits = properties.reduce((a, p) => a + p.units, 0);               // 396 (from Excel)
+  const occupied   = properties.reduce((a, p) => a + Math.round(p.occupancy * p.units), 0);
+  const occPct     = totalUnits > 0 ? Math.round((occupied / totalUnits) * 100) : 0;
+  const openTickets = tickets.filter(t => ["new","assigned","in_progress"].includes(t.status)).length;
+  const expiringLeases = leases.filter(l => l.status === "expiring").length;
+  // Revenue: sum of annual rents from active/expiring leases → monthly estimate
+  const monthlyRev = leases.reduce((a, l) => a + Math.round(l.annualRent / 12), 0);
+
   const kpis = [
-    { label: "Total Properties", value: "24", change: "+2", icon: Home },
-    { label: "Occupied Units", value: "487/556", change: "87%", icon: Users },
-    { label: "Pending Approvals", value: "8", change: "+1", icon: AlertCircle },
-    { label: "Open Tickets", value: "42", change: "-3", icon: Clock },
-    { label: "Completed This Month", value: "156", change: "+12%", icon: CheckCircle },
-    { label: "Revenue (YTD)", value: "₨8.5M", change: "+15%", icon: TrendingUp },
+    { label: "Total Properties",      value: totalProps.toString(),              change: "Doha, Qatar",         icon: Home },
+    { label: "Occupied / Total Units",value: `${occupied} / ${totalUnits}`,      change: `${occPct}% occupied`, icon: Users },
+    { label: "Expiring Leases",       value: expiringLeases.toString(),          change: "Within 90 days",      icon: AlertCircle },
+    { label: "Open Tickets",          value: openTickets.toString(),             change: "Maintenance queue",   icon: Clock },
+    { label: "Monthly Revenue (est)", value: `QAR ${monthlyRev.toLocaleString()}`, change: "From active leases", icon: TrendingUp },
+    { label: "Leases Active",         value: leases.filter(l=>l.status==="active").length.toString(), change: "Current portfolio", icon: CheckCircle },
   ];
 
   return (

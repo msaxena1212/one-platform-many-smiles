@@ -509,14 +509,24 @@ export type RentSchedule = {
 
 export type PDC = {
   id: string;
-  lease_id: string;
+  lease_id?: string;
   cheque_number: string;
-  bank_name: string;
+  bank_name?: string;
+  bank?: string;            // column in pdcs table
   amount: number;
-  deposit_date: string;
-  status: 'held' | 'deposited' | 'cleared' | 'bounced' | 'returned';
-  created_at: string;
-  updated_at: string;
+  deposit_date?: string;
+  status: 'held' | 'deposited' | 'cleared' | 'bounced' | 'returned' | 'ISSUED' | 'In Hand';
+  // Extended fields from "PDC in Hand New" Excel sheet
+  unit_name?: string;
+  property_code?: string;
+  tenant_name?: string;
+  maturity_date?: string;
+  rent_from_date?: string;
+  rent_to_date?: string;
+  sl_no?: number;
+  status_pdc?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type FixedAsset = {
