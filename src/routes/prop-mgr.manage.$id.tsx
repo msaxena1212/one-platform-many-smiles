@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
 import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
+import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/prop-mgr/manage/$id")({
 });
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const ROOM_TYPES = [
   { value: "bedroom", label: "Bedroom" },
@@ -57,6 +59,105 @@ const AMENITIES = [
   { id: "garage", label: "Garage Parking", types: ["villa", "house", "townhouse"] },
 ];
 
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
+}
+
+function inferPropertyType(type: MockProperty["type"]) {
+  switch (type) {
+    case "Villa Compound":
+      return "villa";
+    case "Commercial":
+      return "commercial";
+    case "Mixed Use":
+      return "mixed_use";
+    default:
+      return "apartment";
+  }
+}
+
+function mapMockPropertyToManagedProperty(mockProperty: MockProperty): Property {
+  const propertyUnits = mockUnits.filter((unit) => unit.propertyId === mockProperty.id);
+  const leasedUnits = propertyUnits.filter((unit) => unit.status === "leased");
+  const sampleUnit = propertyUnits[0];
+  const amenities = (mockProperty.amenities_text || "")
+    .split("/")
+    .map((amenity) => amenity.trim().toLowerCase().replace(/\s+/g, "_"))
+    .filter(Boolean);
+
+  return {
+    id: mockProperty.id,
+    host_id: MOCK_HOST_ID,
+    title: mockProperty.name,
+    description: `${mockProperty.property_category || mockProperty.type} in ${mockProperty.city}, ${mockProperty.district}.`,
+    property_type: inferPropertyType(mockProperty.type),
+    address: mockProperty.street_building_name || "",
+    city: mockProperty.city,
+    state: "Doha Municipality",
+    zip_code: "",
+    country: "Qatar",
+    max_guests: sampleUnit ? Math.max(sampleUnit.bedrooms * 2, 2) : 2,
+    bedrooms: sampleUnit?.bedrooms ?? 0,
+    beds: sampleUnit?.bedrooms ?? 0,
+    bathrooms: sampleUnit?.bedrooms ?? 0,
+    base_price_per_night: sampleUnit?.price ?? 0,
+    cleaning_fee: 0,
+    is_active: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+    amenities,
+    room_details: [],
+    property_code: mockProperty.code,
+    property_category: mockProperty.property_category ?? mockProperty.type,
+    ownership_type: mockProperty.ownership_type,
+    area_zone: mockProperty.area_zone,
+    street_building_name: mockProperty.street_building_name,
+    property_manager: mockProperty.property_manager,
+    no_of_floors: Number.parseInt(String(mockProperty.no_of_floors || "0"), 10) || undefined,
+    no_of_units: mockProperty.units,
+    parking_count: mockProperty.parking_count,
+    no_of_elevators: mockProperty.no_of_elevators,
+    municipality_details: {
+      owner_landlord: mockProperty.owner_landlord,
+      district: mockProperty.district,
+      occupancy_rate: Math.round(mockProperty.occupancy * 100),
+      leased_units: leasedUnits.length,
+    },
+  };
+}
+
+function buildMunicipalityPayload(
+  municipalityDetails: string,
+  ownerLandlord: string,
+  amenitiesFields: string[],
+  otherAmenitiesFacilities: string,
+  proposedFields: {
+    propertyCode: string;
+    propertyName: string;
+    costCenterCode: string;
+    costCenterName: string;
+  },
+) {
+  let municipality: any = null;
+  try {
+    municipality = municipalityDetails ? JSON.parse(municipalityDetails) : null;
+  } catch {
+    municipality = municipalityDetails;
+  }
+
+  return {
+    ...(typeof municipality === "object" && municipality !== null ? municipality : {}),
+    owner_landlord: ownerLandlord || undefined,
+    facility_amenities: amenitiesFields.filter(Boolean),
+    other_amenities_facilities: otherAmenitiesFacilities || undefined,
+    change_request: {
+      property_code_new: proposedFields.propertyCode || undefined,
+      property_name_new: proposedFields.propertyName || undefined,
+      cost_center_code_new: proposedFields.costCenterCode || undefined,
+      cost_center_name_new: proposedFields.costCenterName || undefined,
+    },
+  };
+}
+
 function ManageProperty() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -68,6 +169,7 @@ function ManageProperty() {
   });
 
   const [property, setProperty] = useState<Property | null>(null);
+  const [isMockProperty, setIsMockProperty] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [unitsCount, setUnitsCount] = useState<number | null>(null);
   const [occupancyPct, setOccupancyPct] = useState<number | null>(null);
@@ -86,6 +188,38 @@ function ManageProperty() {
   const [address, setAddress] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [propertyType, setPropertyType] = useState<string>("");
+  const [propertyCode, setPropertyCode] = useState("");
+  const [costCenterCode, setCostCenterCode] = useState("");
+  const [costCenterName, setCostCenterName] = useState("");
+  const [proposedPropertyCode, setProposedPropertyCode] = useState("");
+  const [proposedPropertyName, setProposedPropertyName] = useState("");
+  const [proposedCostCenterCode, setProposedCostCenterCode] = useState("");
+  const [proposedCostCenterName, setProposedCostCenterName] = useState("");
+  const [ownershipType, setOwnershipType] = useState("");
+  const [areaZone, setAreaZone] = useState("");
+  const [streetBuildingName, setStreetBuildingName] = useState("");
+  const [plotBuildingNo, setPlotBuildingNo] = useState("");
+  const [titleDeedNo, setTitleDeedNo] = useState("");
+  const [municipalityRefNo, setMunicipalityRefNo] = useState("");
+  const [ownerLandlord, setOwnerLandlord] = useState("");
+  const [propertyManager, setPropertyManager] = useState("");
+  const [noOfFloors, setNoOfFloors] = useState("");
+  const [noOfUnits, setNoOfUnits] = useState("");
+  const [totalBuiltUpAreaSqm, setTotalBuiltUpAreaSqm] = useState("");
+  const [commonAreaSqm, setCommonAreaSqm] = useState("");
+  const [parkingCount, setParkingCount] = useState("");
+  const [noOfElevators, setNoOfElevators] = useState("");
+  const [amenity1, setAmenity1] = useState("");
+  const [amenity2, setAmenity2] = useState("");
+  const [amenity3, setAmenity3] = useState("");
+  const [amenity4, setAmenity4] = useState("");
+  const [amenity5, setAmenity5] = useState("");
+  const [otherAmenitiesFacilities, setOtherAmenitiesFacilities] = useState("");
+  const [completionDate, setCompletionDate] = useState("");
+  const [handoverDate, setHandoverDate] = useState("");
+  const [propertyStatus, setPropertyStatus] = useState("");
+  const [documentsReceived, setDocumentsReceived] = useState(false);
+  const [remarks, setRemarks] = useState("");
   const [kahramaaNumber, setKahramaaNumber] = useState("");
   const [municipalityDetails, setMunicipalityDetails] = useState("");
   const [roomDetails, setRoomDetails] = useState<any[]>([]);
@@ -100,6 +234,61 @@ function ManageProperty() {
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
+  const populateForm = (prop: Property) => {
+    const municipality = (prop.municipality_details || {}) as Record<string, any>;
+    const changeRequest = (municipality.change_request || {}) as Record<string, any>;
+    const facilityAmenities = Array.isArray(municipality.facility_amenities)
+      ? municipality.facility_amenities
+      : [];
+
+    setProperty(prop);
+    setTitle(prop.title);
+    setDescription(prop.description || "");
+    setPrice(prop.base_price_per_night);
+    setCity(prop.city);
+    setState(prop.state || "");
+    setZipCode(prop.zip_code || "");
+    setCountry(prop.country);
+    setAddress(prop.address);
+    setIsActive(prop.is_active);
+    setAmenities(prop.amenities || []);
+    setPropertyType(prop.property_type || "");
+    setPropertyCode(prop.property_code || "");
+    setCostCenterCode(prop.cost_center_code || "");
+    setCostCenterName(prop.cost_center_name || "");
+    setProposedPropertyCode(changeRequest.property_code_new || "");
+    setProposedPropertyName(changeRequest.property_name_new || "");
+    setProposedCostCenterCode(changeRequest.cost_center_code_new || "");
+    setProposedCostCenterName(changeRequest.cost_center_name_new || "");
+    setOwnershipType(prop.ownership_type || "");
+    setAreaZone(prop.area_zone || "");
+    setStreetBuildingName(prop.street_building_name || "");
+    setPlotBuildingNo(prop.plot_building_no || "");
+    setTitleDeedNo(prop.title_deed_no || "");
+    setMunicipalityRefNo(prop.municipality_ref_no || "");
+    setOwnerLandlord(String(municipality.owner_landlord || ""));
+    setPropertyManager(prop.property_manager || "");
+    setNoOfFloors(String(prop.no_of_floors ?? ""));
+    setNoOfUnits(String(prop.no_of_units ?? ""));
+    setTotalBuiltUpAreaSqm(String(prop.total_built_up_area_sqm ?? ""));
+    setCommonAreaSqm(String(prop.common_area_sqm ?? ""));
+    setParkingCount(String(prop.parking_count ?? ""));
+    setNoOfElevators(String(prop.no_of_elevators ?? ""));
+    setAmenity1(facilityAmenities[0] || "");
+    setAmenity2(facilityAmenities[1] || "");
+    setAmenity3(facilityAmenities[2] || "");
+    setAmenity4(facilityAmenities[3] || "");
+    setAmenity5(facilityAmenities[4] || "");
+    setOtherAmenitiesFacilities(String(municipality.other_amenities_facilities || ""));
+    setCompletionDate(prop.completion_date || "");
+    setHandoverDate(prop.handover_date || "");
+    setPropertyStatus(prop.property_status || "");
+    setDocumentsReceived(Boolean(prop.documents_received));
+    setRemarks(prop.remarks || "");
+    setKahramaaNumber((prop as any).kahramaa_number || "");
+    setMunicipalityDetails(JSON.stringify(prop.municipality_details || {}, null, 2));
+  };
+
   useEffect(() => {
     if (isLoaded && !autocompleteService.current) {
       autocompleteService.current = new window.google.maps.places.AutocompleteService();
@@ -109,25 +298,44 @@ function ManageProperty() {
   }, [isLoaded]);
 
   useEffect(() => {
+    if (!isUuid(id)) {
+      const mockProperty = mockProperties.find((item) => item.id === id || item.code === id);
+
+      if (!mockProperty) {
+        setError(`No property matched reference "${id}".`);
+        setLoading(false);
+        return;
+      }
+
+      const mappedProperty = mapMockPropertyToManagedProperty(mockProperty);
+      const propertyUnits = mockUnits.filter((unit) => unit.propertyId === mockProperty.id);
+      const propertyLeases = mockLeases.filter((lease) =>
+        propertyUnits.some((unit) => unit.id === lease.unitId),
+      );
+      const activeLeases = propertyLeases.filter((lease) => lease.status === "active" || lease.status === "expiring").length;
+
+      setIsMockProperty(true);
+      setError(null);
+      populateForm(mappedProperty);
+      setRoomDetails(Array.isArray(mappedProperty.room_details) ? mappedProperty.room_details : []);
+      setBookings([]);
+      setUnitsCount(propertyUnits.length || mockProperty.units || 0);
+      setOccupancyPct(
+        propertyUnits.length
+          ? Math.round((activeLeases / propertyUnits.length) * 100)
+          : Math.round(mockProperty.occupancy * 100),
+      );
+      setLoading(false);
+      return;
+    }
+
+    setIsMockProperty(false);
     Promise.all([
       fetchPropertyById(id),
       fetchHostBookings(MOCK_HOST_ID),
     ])
       .then(([prop, bks]) => {
-        setProperty(prop);
-        setTitle(prop.title);
-        setDescription(prop.description || "");
-        setPrice(prop.base_price_per_night);
-        setCity(prop.city);
-        setState(prop.state || "");
-        setZipCode(prop.zip_code || "");
-        setCountry(prop.country);
-        setAddress(prop.address);
-        setIsActive(prop.is_active);
-        setAmenities(prop.amenities || []);
-        setPropertyType(prop.property_type || "");
-        setKahramaaNumber((prop as any).kahramaa_number || "");
-        setMunicipalityDetails(JSON.stringify((prop as any).municipality_details || {}, null, 2));
+        populateForm(prop);
         
         if (prop.room_details) {
           // Backwards compatibility: Check if old static object, convert to array
@@ -221,10 +429,63 @@ function ManageProperty() {
 
   const handleSave = async () => {
     if (!property) return;
+    const municipalityPayload = buildMunicipalityPayload(
+      municipalityDetails,
+      ownerLandlord,
+      [amenity1, amenity2, amenity3, amenity4, amenity5],
+      otherAmenitiesFacilities,
+      {
+        propertyCode: proposedPropertyCode,
+        propertyName: proposedPropertyName,
+        costCenterCode: proposedCostCenterCode,
+        costCenterName: proposedCostCenterName,
+      },
+    );
+    if (isMockProperty) {
+      setProperty({
+        ...property,
+        title,
+        description,
+        property_type: propertyType || property.property_type,
+        base_price_per_night: price,
+        city,
+        state,
+        zip_code: zipCode,
+        country,
+        address,
+        is_active: isActive,
+        room_details: roomDetails,
+        amenities,
+        property_code: propertyCode || undefined,
+        cost_center_code: costCenterCode || undefined,
+        cost_center_name: costCenterName || undefined,
+        ownership_type: ownershipType || undefined,
+        area_zone: areaZone || undefined,
+        street_building_name: streetBuildingName || undefined,
+        plot_building_no: plotBuildingNo || undefined,
+        title_deed_no: titleDeedNo || undefined,
+        municipality_ref_no: municipalityRefNo || undefined,
+        property_manager: propertyManager || undefined,
+        no_of_floors: noOfFloors ? Number(noOfFloors) : undefined,
+        no_of_units: noOfUnits ? Number(noOfUnits) : undefined,
+        total_built_up_area_sqm: totalBuiltUpAreaSqm ? Number(totalBuiltUpAreaSqm) : undefined,
+        common_area_sqm: commonAreaSqm ? Number(commonAreaSqm) : undefined,
+        parking_count: parkingCount ? Number(parkingCount) : undefined,
+        no_of_elevators: noOfElevators ? Number(noOfElevators) : undefined,
+        completion_date: completionDate || undefined,
+        handover_date: handoverDate || undefined,
+        property_status: propertyStatus || undefined,
+        documents_received: documentsReceived,
+        remarks: remarks || undefined,
+        kahramaa_number: kahramaaNumber || undefined,
+        municipality_details: municipalityPayload,
+      });
+      toast.success("Demo property updated in the current session.");
+      return;
+    }
+
     setSaving(true);
     try {
-      let muni: any = null;
-      try { muni = municipalityDetails ? JSON.parse(municipalityDetails) : null; } catch { muni = municipalityDetails; }
       await updateProperty(property.id, {
         title,
         description,
@@ -238,8 +499,29 @@ function ManageProperty() {
         is_active: isActive,
         room_details: roomDetails,
         amenities,
+        property_code: propertyCode || undefined,
+        cost_center_code: costCenterCode || undefined,
+        cost_center_name: costCenterName || undefined,
+        ownership_type: ownershipType || undefined,
+        area_zone: areaZone || undefined,
+        street_building_name: streetBuildingName || undefined,
+        plot_building_no: plotBuildingNo || undefined,
+        title_deed_no: titleDeedNo || undefined,
+        municipality_ref_no: municipalityRefNo || undefined,
+        property_manager: propertyManager || undefined,
+        no_of_floors: noOfFloors ? Number(noOfFloors) : undefined,
+        no_of_units: noOfUnits ? Number(noOfUnits) : undefined,
+        total_built_up_area_sqm: totalBuiltUpAreaSqm ? Number(totalBuiltUpAreaSqm) : undefined,
+        common_area_sqm: commonAreaSqm ? Number(commonAreaSqm) : undefined,
+        parking_count: parkingCount ? Number(parkingCount) : undefined,
+        no_of_elevators: noOfElevators ? Number(noOfElevators) : undefined,
+        completion_date: completionDate || undefined,
+        handover_date: handoverDate || undefined,
+        property_status: propertyStatus || undefined,
+        documents_received: documentsReceived,
+        remarks: remarks || undefined,
         kahramaa_number: kahramaaNumber || undefined,
-        municipality_details: muni,
+        municipality_details: municipalityPayload,
       });
       toast.success("Property updated successfully!");
     } catch (err: any) {
@@ -251,6 +533,11 @@ function ManageProperty() {
 
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to deactivate this listing?")) return;
+    if (isMockProperty) {
+      toast.success("Demo property marked inactive for this session.");
+      navigate({ to: "/prop-mgr/properties" });
+      return;
+    }
     try {
       await updateProperty(id, { is_active: false });
       toast.success("Listing deactivated.");
@@ -287,6 +574,14 @@ function ManageProperty() {
 
   const handleCreateTicket = async () => {
     if (!ticketTitle) return toast.error("Please enter a title");
+    if (isMockProperty) {
+      toast.success("Maintenance ticket captured for this demo property.");
+      setMaintenanceOpen(false);
+      setTicketTitle("");
+      setTicketDesc("");
+      setTicketUnit("");
+      return;
+    }
     setSubmittingTicket(true);
     try {
       await createMaintenanceTicket({
@@ -457,14 +752,57 @@ function ManageProperty() {
                 <Label>Listing Title</Label>
                 <Input value={title} onChange={e => setTitle(e.target.value)} />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Property Code</Label>
+                  <Input value={propertyCode} onChange={e => setPropertyCode(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Name</Label>
+                  <Input value={title} onChange={e => setTitle(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cost Center Code</Label>
+                  <Input value={costCenterCode} onChange={e => setCostCenterCode(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cost Center Name</Label>
+                  <Input value={costCenterName} onChange={e => setCostCenterName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Code - New</Label>
+                  <Input value={proposedPropertyCode} onChange={e => setProposedPropertyCode(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Name - New</Label>
+                  <Input value={proposedPropertyName} onChange={e => setProposedPropertyName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cost Center Code - New</Label>
+                  <Input value={proposedCostCenterCode} onChange={e => setProposedCostCenterCode(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cost Center Name - New</Label>
+                  <Input value={proposedCostCenterName} onChange={e => setProposedCostCenterName(e.target.value)} />
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label>Description</Label>
                 <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-32" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>Price per night ($)</Label>
-                  <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} />
+                  <Label>Property Type</Label>
+                  <Select value={propertyType} onValueChange={v => setPropertyType(v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {UNIT_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Ownership Type</Label>
+                  <Input value={ownershipType} onChange={e => setOwnershipType(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
@@ -479,25 +817,142 @@ function ManageProperty() {
                 </div>
               </div>
 
-                <div className="grid grid-cols-3 gap-4 pt-4">
-                  <div className="space-y-2">
-                    <Label>Unit Type</Label>
-                    <Select value={propertyType} onValueChange={v => setPropertyType(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {UNIT_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Kahramaa Number</Label>
-                    <Input value={kahramaaNumber} onChange={e => setKahramaaNumber(e.target.value)} placeholder="Kahramaa / DEWA ref" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Municipality Details</Label>
-                    <Input value={municipalityDetails} onChange={e => setMunicipalityDetails(e.target.value)} placeholder="JSON or short text" />
-                  </div>
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Country</Label>
+                  <Input value={country} onChange={e => setCountry(e.target.value)} />
                 </div>
+                <div className="space-y-2">
+                  <Label>City</Label>
+                  <Input value={city} onChange={e => setCity(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Area / Zone</Label>
+                  <Input value={areaZone} onChange={e => setAreaZone(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Street / Building Name</Label>
+                  <Input value={streetBuildingName} onChange={e => setStreetBuildingName(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Plot / Building No.</Label>
+                  <Input value={plotBuildingNo} onChange={e => setPlotBuildingNo(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Title Deed / Registration No.</Label>
+                  <Input value={titleDeedNo} onChange={e => setTitleDeedNo(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Municipality / Building Ref No.</Label>
+                  <Input value={municipalityRefNo} onChange={e => setMunicipalityRefNo(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Owner / Landlord</Label>
+                  <Input value={ownerLandlord} onChange={e => setOwnerLandlord(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Manager</Label>
+                  <Input value={propertyManager} onChange={e => setPropertyManager(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                <div className="space-y-2">
+                  <Label>No. of Floors</Label>
+                  <Input value={noOfFloors} onChange={e => setNoOfFloors(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>No. of Units</Label>
+                  <Input value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Total Built-up Area Sqm</Label>
+                  <Input value={totalBuiltUpAreaSqm} onChange={e => setTotalBuiltUpAreaSqm(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Common Area Sqm</Label>
+                  <Input value={commonAreaSqm} onChange={e => setCommonAreaSqm(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Parking Count</Label>
+                  <Input value={parkingCount} onChange={e => setParkingCount(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>No of Elevator</Label>
+                  <Input value={noOfElevators} onChange={e => setNoOfElevators(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Completion Date</Label>
+                  <Input type="date" value={completionDate} onChange={e => setCompletionDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Handover Date</Label>
+                  <Input type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Status</Label>
+                  <Input value={propertyStatus} onChange={e => setPropertyStatus(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Amenity / Facility 1</Label>
+                  <Input value={amenity1} onChange={e => setAmenity1(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amenity / Facility 2</Label>
+                  <Input value={amenity2} onChange={e => setAmenity2(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amenity / Facility 3</Label>
+                  <Input value={amenity3} onChange={e => setAmenity3(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amenity / Facility 4</Label>
+                  <Input value={amenity4} onChange={e => setAmenity4(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amenity / Facility 5</Label>
+                  <Input value={amenity5} onChange={e => setAmenity5(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Other Amenities / Facilities</Label>
+                  <Input value={otherAmenitiesFacilities} onChange={e => setOtherAmenitiesFacilities(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Kahramaa Number</Label>
+                  <Input value={kahramaaNumber} onChange={e => setKahramaaNumber(e.target.value)} placeholder="Kahramaa / DEWA ref" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Documents Received?</Label>
+                  <select
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    value={documentsReceived ? "yes" : "no"}
+                    onChange={e => setDocumentsReceived(e.target.value === "yes")}
+                  >
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Price per night ($)</Label>
+                  <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-4">
+                <Label>Remarks</Label>
+                <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} className="h-24" />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Municipality Details</Label>
+                <Input value={municipalityDetails} onChange={e => setMunicipalityDetails(e.target.value)} placeholder="JSON or short text" />
+              </div>
 
               <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
                 <div className="space-y-2">

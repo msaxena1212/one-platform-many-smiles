@@ -47,6 +47,16 @@ function TenantsPage() {
   const [form, setForm] = useState({ full_name: "", email: "", plan: "Starter" });
   const [submitting, setSubmitting] = useState(false);
 
+  function makeTenantKey(name: string) {
+    const normalized = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 24);
+
+    return `tenant-${normalized || "org"}-${Date.now().toString().slice(-6)}`;
+  }
+
   useEffect(() => {
     loadTenants();
   }, []);
@@ -87,13 +97,14 @@ function TenantsPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const tenantKey = makeTenantKey(form.full_name);
       const { data, error } = await supabase.auth.signUp({
         email: form.email,
         password: "ChangeMe@2024",
-        options: { data: { full_name: form.full_name, role: "ADMIN" } }
+        options: { data: { full_name: form.full_name, role: "ADMIN", tenant_key: tenantKey, plan: form.plan } }
       });
       if (error) throw error;
-      toast.success(`Tenant "${form.full_name}" created! Temporary password: ChangeMe@2024`);
+      toast.success(`Tenant "${form.full_name}" created with key ${tenantKey}. Temporary password: ChangeMe@2024`);
       setShowAddDialog(false);
       setForm({ full_name: "", email: "", plan: "Starter" });
       loadTenants();

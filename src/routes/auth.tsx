@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { getLandingRouteForRole } from "@/lib/console-config";
+import { clearDemoSession, setDemoSession } from "@/lib/demo-auth";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Loader2, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
@@ -26,6 +28,7 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      clearDemoSession();
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -42,23 +45,7 @@ function AuthPage() {
         .eq('id', data.user.id)
         .single();
         
-      if (profile?.role === 'SUPER_ADMIN') {
-        navigate({ to: "/super-admin" });
-      } else if (profile?.role === 'PROP_MGR' || profile?.role === 'HOST') {
-        navigate({ to: "/prop-mgr" });
-      } else if (profile?.role === 'ADMIN') {
-        navigate({ to: "/admin" });
-      } else if (profile?.role === 'LEASING') {
-        navigate({ to: "/leasing" });
-      } else if (profile?.role === 'FINANCE') {
-        navigate({ to: "/finance" });
-      } else if (profile?.role === 'CASHIER') {
-        navigate({ to: "/cashier" });
-      } else if (profile?.role === 'MAINTENANCE') {
-        navigate({ to: "/maintenance" });
-      } else {
-        navigate({ to: "/portal" });
-      }
+      navigate({ to: getLandingRouteForRole(profile?.role) });
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -93,19 +80,41 @@ function AuthPage() {
     }
   };
 
-  const handleMockSignIn = (mockRole: "SUPER_ADMIN" | "ADMIN" | "PROP_MGR" | "LEASING" | "FINANCE" | "CASHIER" | "MAINTENANCE" | "GUEST" | "SALES" | "OWNER") => {
-    toast.success(`Signed in as mock ${mockRole}`);
-    switch (mockRole) {
-      case "SUPER_ADMIN": navigate({ to: "/super-admin" }); break;
-      case "ADMIN": navigate({ to: "/admin" }); break;
-      case "PROP_MGR": navigate({ to: "/prop-mgr" }); break;
-      case "LEASING": navigate({ to: "/leasing" }); break;
-      case "FINANCE": navigate({ to: "/finance" }); break;
-      case "CASHIER": navigate({ to: "/cashier" }); break;
-      case "MAINTENANCE": navigate({ to: "/maintenance" }); break;
-      case "GUEST": navigate({ to: "/portal" }); break;
-      case "SALES": navigate({ to: "/sales" }); break;
-      case "OWNER": navigate({ to: "/owner" }); break;
+  const handleMockSignIn = async (
+    mockRole: "SUPER_ADMIN" | "ADMIN" | "PROP_MGR" | "LEASING" | "FINANCE" | "CASHIER" | "MAINTENANCE" | "GUEST" | "SALES" | "OWNER"
+  ) => {
+    setLoading(true);
+    try {
+      clearDemoSession();
+      await supabase.auth.signOut({ scope: "local" });
+
+      switch (mockRole) {
+        case "SUPER_ADMIN":
+        case "ADMIN":
+        case "PROP_MGR":
+        case "LEASING":
+        case "FINANCE":
+        case "CASHIER":
+        case "MAINTENANCE":
+        case "GUEST":
+          setDemoSession(mockRole);
+          navigate({ to: getLandingRouteForRole(mockRole) });
+          break;
+        case "SALES":
+          setDemoSession(mockRole);
+          navigate({ to: "/sales" });
+          break;
+        case "OWNER":
+          setDemoSession(mockRole);
+          navigate({ to: "/owner" });
+          break;
+      }
+
+      toast.success(`Signed in as demo ${mockRole}`);
+    } catch (error: any) {
+      toast.error(error.message ?? "Unable to open demo account");
+    } finally {
+      setLoading(false);
     }
   };
 

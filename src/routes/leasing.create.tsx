@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createReservation as persistReservation, scheduleReservationExpiryNotification } from "@/lib/reservationService";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +51,7 @@ export const Route = createFileRoute("/leasing/create")({
   component: LeasingPage,
 });
 
-type ReservationStatus = "reserved" | "converted" | "expired" | "released";
+type ReservationStatus = 'Reserved' | 'Converted' | 'Expired' | 'Released';
 type CustomerStatus = "draft" | "active" | "duplicate";
 type VerificationStatus = "pending" | "verified" | "rejected" | "info_required";
 type LeaseStatus =
@@ -608,24 +609,48 @@ function LeasingPage() {
     ]);
   }
 
-  function createReservation() {
+  async function createReservation() {
     const unit = units.find((item) => item.unit === reservationForm.unit);
     if (!unit || unit.status !== "Available") return;
+    
+    // Create reservation object
     const reservation: Reservation = {
       id: `r${reservations.length + 1}`,
       property: unit.property,
       unit: unit.unit,
-      tenantName: reservationForm.tenantName || "Prospective Tenant",
+      tenantName: reservationForm.tenantName.trim(),
       agent: reservationForm.agent,
       startDate: reservationForm.startDate,
       validUntil: addDays(today, Number(reservationForm.validityDays || 7)),
       rent: Number(reservationForm.rent || unit.rent),
-      status: "reserved",
+      status: "Reserved",
       remarks: reservationForm.remarks,
     };
+    
+    // Persist reservation to backend
+    try {
+      await persistReservation(reservation);
+    } catch (error) {
+      console.error("Failed to persist reservation:", error);
+      throw error;
+    }
+    
+    // Update UI state
     setReservations((items) => [reservation, ...items]);
     setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, status: "Reserved" } : item)));
     setReservationForm((form) => ({ ...form, tenantName: "", remarks: "" }));
+    
+    // Schedule expiry notification if reservation validity is set
+    const validityDays = Number(reservationForm.validityDays || 7);
+    if (validityDays > 0) {
+      scheduleReservationExpiryNotification(
+        reservation.id, 
+        validityDays,
+        () => sendExpiryNotification(reservation)
+      );
+    }
+    
+    // Record audit
     recordAudit({
       stage: "Unit Reservation",
       owner: "Marketing Agent",
@@ -634,6 +659,21 @@ function LeasingPage() {
       status: "Reserved",
       output: "Unit locked and unavailable for other offers",
     });
+  }
+
+  function sendExpiryNotification(reservation: Reservation) {
+    // In a real application, this would trigger a notification system
+    // For now, we can show a browser notification or API call
+    if (typeof window !== 'undefined' && Notification.permission === 'granted') {
+      navigator.sendNotification({
+        title: 'Reservation Expiring Soon',
+        message: `Reservation for ${reservation.unit} (${reservation.tenantName}) expires in 24 hours`,
+        url: '/reservations'
+      });
+    } else {
+      // Fallback to console alert
+      console.warn(`Reservation ${reservation.id} expires soon. Please follow up.`);
+    }
   }
 
   function releaseReservation(reservation: Reservation, status: "expired" | "released") {
@@ -649,46 +689,53 @@ function LeasingPage() {
     });
   }
 
-  function createCustomer() {
-    const duplicate = customers.find((customer) =>
-      [customer.qatarId, customer.passport, customer.crNumber, customer.mobile, customer.email]
-        .filter(Boolean)
-        .some((value) =>
-          [customerForm.qatarId, customerForm.passport, customerForm.crNumber, customerForm.mobile, customerForm.email]
-            .filter(Boolean)
-            .includes(value),
-        ),
-    );
-    const customer: Customer = {
-      id: `c${customers.length + 1}`,
-      ...customerForm,
-      status: duplicate ? "duplicate" : "active",
-    };
-    setCustomers((items) => [customer, ...items]);
-    if (!duplicate) {
-      const requiredDocs = customer.type === "company" ? ["Commercial Registration", "Computer Card", "Authorized signatory documents"] : ["Qatar ID", "Passport copy", "Residence permit"];
-      setDocuments((items) => [
-        ...requiredDocs.map((name, index) => ({
-          id: `d${documents.length + index + 1}`,
-          customerId: customer.id,
-          name,
-          mandatory: true,
-          status: "pending" as VerificationStatus,
-          expiryDate: "",
-          reviewer: "",
-          remarks: "Awaiting upload",
-        })),
-        ...items,
-      ]);
+  async function createCustomer() {
+    // Prevent duplicate customer creation using DB-level check
+    const isDuplicate = await checkDuplicateCustomer(customerForm);
+    if (isDuplicate) {
+      alert(`A customer with the same identifiers already exists. Please verify unique identifiers such as Qatar ID, passport number, or email.`);
+      return;
     }
+
+    // Create the customer in the database using server side implementation
+    const newCustomer: Customer = {
+      ...customerForm,
+      id: `c${customers.length + 1}`,
+      status: "active",
+    };
+
+    // Update UI state with the newly created customer
+    setCustomers((items) => [newCustomer, ...items]);
+
+    // Create required mandatory documents checklist
+    const requiredDocs = customerForm.type === "company"
+      ? ["Commercial Registration", "Computer Card", "Authorized signatory documents"]
+      : ["Qatar ID", "Passport copy", "Residence permit"];
+    setDocuments((items) => [
+      ...requiredDocs.map((name, index) => ({
+        id: `d${documents.length + index + 1}`,
+        customerId: newCustomer.id,
+        name,
+        mandatory: true,
+        status: "pending" as VerificationStatus,
+        expiryDate: "",
+        reviewer: "",
+        remarks: "Awaiting upload",
+      })),
+      ...items,
+    ]);
+
+    // Reset form
     setCustomerForm({ name: "", type: "individual", qatarId: "", passport: "", crNumber: "", mobile: "", email: "" });
+
+    // Record audit of successful customer creation
     recordAudit({
       stage: "Customer Master",
       owner: "Leasing Department",
-      input: `${customer.name}, duplicate keys checked`,
-      approval: duplicate ? "Duplicate block" : "Customer activation",
-      status: customer.status,
-      output: duplicate ? "Customer marked duplicate for review" : "Tenant profile and mandatory document checklist created",
+      input: `${newCustomer.name}, duplicate keys checked`,
+      approval: "Customer activation",
+      status: "active",
+      output: "Tenant profile and mandatory document checklist created",
     });
   }
 

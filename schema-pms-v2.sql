@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.reservations (
   proposed_rental_amount NUMERIC,
   reservation_validity TIMESTAMPTZ,
   special_conditions TEXT,
-  status TEXT CHECK (status IN ('Active', 'Extended', 'Cancelled', 'Expired', 'Converted')) DEFAULT 'Active',
+  status TEXT CHECK (status IN ('Active', 'Extended', 'Cancelled', 'Expired', 'Converted', 'Reserved')) DEFAULT 'Reserved',
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

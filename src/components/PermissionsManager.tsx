@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { Check, X, Shield, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { DEFAULT_ROLE_ACCESS, GLOBAL_MANAGED_ROLES, RBAC_MODULES, TENANT_MANAGED_ROLES, type AppRole, type RbacModule } from "@/lib/rbac";
 import { toast } from "sonner";
 
 interface Permission {
@@ -18,15 +19,8 @@ export function PermissionsManager({ targetTenantId = null }: { targetTenantId?:
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const roles = targetTenantId 
-    ? ["PROP_MGR", "LEASING", "FINANCE", "CASHIER", "MAINTENANCE"] // Admin can only manage sub-roles
-    : ["SUPER_ADMIN", "ADMIN", "PROP_MGR", "LEASING", "FINANCE", "CASHIER", "MAINTENANCE", "TENANT"]; // Super admin manages all
-
-  const modules = [
-    "Tenant Mgmt", "Property CRUD", "Unit Mgmt", "Lease Creation", 
-    "Payment Collection", "Receipt Generation", "Maintenance Tickets", 
-    "Reports & Analytics", "User Management", "HRMS"
-  ];
+  const roles = (targetTenantId ? TENANT_MANAGED_ROLES : GLOBAL_MANAGED_ROLES) as AppRole[];
+  const modules = RBAC_MODULES as readonly RbacModule[];
 
   useEffect(() => {
     loadPermissions();
@@ -53,7 +47,7 @@ export function PermissionsManager({ targetTenantId = null }: { targetTenantId?:
     setLoading(false);
   }
 
-  const togglePermission = (role: string, mod: string) => {
+  const togglePermission = (role: AppRole, mod: RbacModule) => {
     setPermissions(prev => {
       const existing = prev.find(p => p.role_name === role && p.module_id === mod);
       if (existing) {
@@ -138,7 +132,7 @@ export function PermissionsManager({ targetTenantId = null }: { targetTenantId?:
                        perm = permissions.find(p => p.role_name === role && p.module_id === mod && p.tenant_id === null);
                     }
                     
-                    const hasAccess = perm?.has_access ?? false;
+                    const hasAccess = perm?.has_access ?? DEFAULT_ROLE_ACCESS[role][mod];
 
                     return (
                       <td key={role} className="text-center py-2 px-2">

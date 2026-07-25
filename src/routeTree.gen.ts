@@ -50,7 +50,6 @@ import { Route as PropMgrMaintenanceRouteImport } from './routes/prop-mgr.mainte
 import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
 import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
 import { Route as PropMgrFinanceRouteImport } from './routes/prop-mgr.finance'
-import { Route as PropMgrCreateRouteImport } from './routes/prop-mgr.create'
 import { Route as PropMgrAssetsRouteImport } from './routes/prop-mgr.assets'
 import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approvals'
 import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
@@ -297,11 +296,6 @@ const PropMgrLeasesRoute = PropMgrLeasesRouteImport.update({
 const PropMgrFinanceRoute = PropMgrFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
-  getParentRoute: () => PropMgrRoute,
-} as any)
-const PropMgrCreateRoute = PropMgrCreateRouteImport.update({
-  id: '/create',
-  path: '/create',
   getParentRoute: () => PropMgrRoute,
 } as any)
 const PropMgrAssetsRoute = PropMgrAssetsRouteImport.update({
@@ -562,7 +556,6 @@ export interface FileRoutesByFullPath {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/create': typeof PropMgrCreateRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
@@ -639,7 +632,6 @@ export interface FileRoutesByTo {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/create': typeof PropMgrCreateRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
@@ -726,7 +718,6 @@ export interface FileRoutesById {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/create': typeof PropMgrCreateRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
@@ -814,7 +805,6 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
-    | '/prop-mgr/create'
     | '/prop-mgr/finance'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
@@ -891,7 +881,6 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
-    | '/prop-mgr/create'
     | '/prop-mgr/finance'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
@@ -977,7 +966,6 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
-    | '/prop-mgr/create'
     | '/prop-mgr/finance'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
@@ -1322,13 +1310,6 @@ declare module '@tanstack/react-router' {
       path: '/finance'
       fullPath: '/prop-mgr/finance'
       preLoaderRoute: typeof PropMgrFinanceRouteImport
-      parentRoute: typeof PropMgrRoute
-    }
-    '/prop-mgr/create': {
-      id: '/prop-mgr/create'
-      path: '/create'
-      fullPath: '/prop-mgr/create'
-      preLoaderRoute: typeof PropMgrCreateRouteImport
       parentRoute: typeof PropMgrRoute
     }
     '/prop-mgr/assets': {
@@ -1833,7 +1814,6 @@ const PropMgrUnitsRouteWithChildren = PropMgrUnitsRoute._addFileChildren(
 interface PropMgrRouteChildren {
   PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
   PropMgrAssetsRoute: typeof PropMgrAssetsRoute
-  PropMgrCreateRoute: typeof PropMgrCreateRoute
   PropMgrFinanceRoute: typeof PropMgrFinanceRouteWithChildren
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
   PropMgrLeasingRoute: typeof PropMgrLeasingRoute
@@ -1848,7 +1828,6 @@ interface PropMgrRouteChildren {
 const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrApprovalsRoute: PropMgrApprovalsRoute,
   PropMgrAssetsRoute: PropMgrAssetsRoute,
-  PropMgrCreateRoute: PropMgrCreateRoute,
   PropMgrFinanceRoute: PropMgrFinanceRouteWithChildren,
   PropMgrLeasesRoute: PropMgrLeasesRoute,
   PropMgrLeasingRoute: PropMgrLeasingRoute,

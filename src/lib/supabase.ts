@@ -166,7 +166,7 @@ export type Reservation = {
   proposed_rental_amount?: number;
   reservation_validity?: string;
   special_conditions?: string;
-  status: 'Active' | 'Extended' | 'Cancelled' | 'Expired' | 'Converted';
+  status: 'Active' | 'Extended' | 'Cancelled' | 'Expired' | 'Converted' | 'Reserved';
   created_at: string;
   updated_at: string;
 };
