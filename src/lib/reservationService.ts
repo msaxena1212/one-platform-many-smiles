@@ -1,7 +1,4 @@
-import { supabase } from '.';
-import { Reservation } from '@/types/supabase';
-import { Customer } from '@/types/supabase';
-import { createCustomer } from './customerService';
+import { supabase, type Customer, type Reservation } from "./supabase";
 
 /**
  * Create or update a reservation in the database
@@ -27,19 +24,25 @@ export async function createReservation(reservation: Reservation): Promise<Reser
  * Returns true if duplicate found
  */
 export async function checkDuplicateCustomer(customerData: Partial<Customer>): Promise<boolean> {
+  const duplicateClauses = Object.entries(customerData)
+    .filter(([_, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}.eq.${String(value).replace(/,/g, "\\,")}`);
+
+  if (duplicateClauses.length === 0) {
+    return false;
+  }
+
   const { data, error } = await supabase
-    .from('Customers')
-    .select('id')
-    .or(
-      Object.entries(customerData)
-        .filter(([_, value]) => value !== undefined && value !== null && value !== '')
-        .map(([key, value]) => ({
-          [key]: value
-        }))
-    );
-  
-  // For simplicity, check if any rows returned
-  return data && data.length > 0;
+    .from("Customers")
+    .select("id")
+    .or(duplicateClauses.join(","));
+
+  if (error) {
+    console.error("Error checking duplicate customer:", error);
+    return false;
+  }
+
+  return Boolean(data && data.length > 0);
 }
 
 /**
