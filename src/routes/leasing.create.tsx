@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createReservation as persistReservation, scheduleReservationExpiryNotification } from "@/lib/reservationService";
+import { checkExpiringReservationsAndNotify } from "@/lib/notificationService";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -649,6 +650,9 @@ function LeasingPage() {
         () => sendExpiryNotification(reservation)
       );
     }
+    
+    // Trigger immediate check for any reservations that are already expiring
+    checkExpiringReservationsAndNotify();
     
     // Record audit
     recordAudit({
@@ -1319,7 +1323,7 @@ function LeasingPage() {
                   <Select value={createLeaseForm.maintenanceResponsibility} onValueChange={v => setCreateLeaseForm(f => ({ ...f, maintenanceResponsibility: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Owner/Property Manager for major repairs; tenant for misuse">Owner/PM – Major; Tenant – Misuse</SelectItem>
+                      <SelectItem value="Owner/Property Manager for major repairs, tenant for misuse damages">Owner/PM – Major; Tenant – Misuse</SelectItem>
                       <SelectItem value="Tenant">Tenant (Full)</SelectItem>
                       <SelectItem value="Owner">Owner (Full)</SelectItem>
                       <SelectItem value="Shared as per lease clause">Shared as per Clause</SelectItem>

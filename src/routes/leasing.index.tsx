@@ -4,6 +4,8 @@ import { fetchLeases, Lease } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building, Users, FileSignature, ArrowUpRight, ArrowDownRight, Clock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Button } from "@/components/ui/button";
+import { checkExpiringReservationsAndNotify } from "@/lib/notificationService";
 
 export const Route = createFileRoute("/leasing/")({
   component: LeasingDashboard,
@@ -157,7 +159,21 @@ function LeasingDashboard() {
             </div>
           </CardContent>
         </Card>
+    
+      {/* Expiry reservation check button */}
+      <div className="flex justify-center mt-6">
+        <Button onClick={checkExpiringReservationsAndNotify} className="bg-yellow-600 text-white px-4 py-2 rounded">
+          Check Expiring Reservations
+        </Button>
       </div>
+    
+      {/* Set up interval to check every 5 minutes */}
+      useEffect(() => {
+        const intervalId = setInterval(() => {
+          checkExpiringReservationsAndNotify();
+        }, 5 * 60 * 1000);
+        return () => clearInterval(intervalId);
+      }, []);
     </div>
   );
 }
