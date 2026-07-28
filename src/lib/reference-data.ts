@@ -212,14 +212,18 @@ export const leaseStatusMasters = [
   { label: 'Draft', value: 'draft', description: 'Lease created but not ready for signature.' },
   { label: 'Documents Pending', value: 'documents_pending', description: 'Mandatory document checklist is incomplete.' },
   { label: 'Documents Verified', value: 'documents_verified', description: 'Lease may be sent to the tenant for signature.' },
-  { label: 'Tenant Signed - Pending Collection', value: 'tenant_signed_pending_collection', description: 'Tenant signature captured; cashier collection is pending.' },
-  { label: 'Collection Completed', value: 'collection_completed', description: 'Rent/PDC/deposit receipts were generated.' },
-  { label: 'Pending Landlord Signature', value: 'pending_landlord_signature', description: 'Lease package is with landlord or authorized signatory.' },
-  { label: 'Fully Signed', value: 'fully_signed', description: 'Tenant and landlord signatures are complete.' },
-  { label: 'Active', value: 'active', description: 'Keys/check-in complete and unit is occupied.' },
-  { label: 'Renewal Due', value: 'renewal_due', description: 'Lease is within the renewal notification window.' },
+  { label: 'Tenant Signed – Pending Collection & Landlord Signature', value: 'tenant_signed_pending_collection', description: 'Tenant signature captured; cashier collection and landlord signature are pending.' },
+  { label: 'Collection Completed', value: 'collection_completed', description: 'Rent, PDC, deposit and other receipts were generated.' },
+  { label: 'Pending Landlord Signature', value: 'pending_landlord_signature', description: 'Lease package submitted to landlord or authorized signatory for signature.' },
+  { label: 'Fully Signed', value: 'fully_signed', description: 'Tenant and landlord signatures are complete; lease shared with tenant.' },
+  { label: 'Active', value: 'active', description: 'Keys issued, check-in completed and unit is occupied.' },
+  { label: 'Renewal Due', value: 'renewal_due', description: 'Lease is within the 60-day renewal notification window.' },
+  { label: 'Renewed', value: 'renewed', description: 'Lease successfully renewed; new lease period activated.' },
+  { label: 'Non-Renewal', value: 'non_renewal', description: 'Tenant confirmed non-renewal; checkout process initiated.' },
+  { label: 'Expiring', value: 'expiring', description: 'Lease approaching expiry; awaiting renewal or checkout decision.' },
   { label: 'Checkout', value: 'checkout', description: 'Non-renewal move-out workflow is active.' },
-  { label: 'Closed', value: 'closed', description: 'Settlement, refund and unit release are complete.' },
+  { label: 'Terminated', value: 'terminated', description: 'Lease terminated early before natural expiry.' },
+  { label: 'Closed', value: 'closed', description: 'Final settlement, refund and unit release are complete.' },
 ];
 
 export const keyHandoverMasters = [
@@ -249,14 +253,47 @@ export const voucherDocumentMasters = [
 ];
 
 export const leaseLifecycleSteps = [
-  { code: 'reservation', label: 'Reserve Unit', owner: 'Marketing' },
-  { code: 'customer', label: 'Customer Master', owner: 'Leasing' },
-  { code: 'documents', label: 'Verify Docs', owner: 'Leasing' },
-  { code: 'agreement', label: 'Lease Draft', owner: 'Leasing' },
-  { code: 'tenant_signature', label: 'Tenant Sign', owner: 'Tenant' },
-  { code: 'collection', label: 'Collect Rent/PDC', owner: 'Finance' },
-  { code: 'landlord_signature', label: 'Landlord Sign', owner: 'Landlord' },
-  { code: 'handover', label: 'Keys & Check-In', owner: 'Property Manager' },
-  { code: 'renewal', label: 'Renewal Notice', owner: 'Leasing' },
-  { code: 'checkout', label: 'Checkout & Close', owner: 'Finance/PM' },
+  { code: 'reservation',        label: 'Reserve Unit',         owner: 'Marketing Agent' },
+  { code: 'customer',           label: 'Customer Master',      owner: 'Leasing Dept' },
+  { code: 'documents',          label: 'Verify Documents',     owner: 'Leasing Dept' },
+  { code: 'agreement',          label: 'Lease Agreement',      owner: 'Leasing Dept' },
+  { code: 'tenant_signature',   label: 'Tenant Signature',     owner: 'Tenant' },
+  { code: 'collection',         label: 'Collect Rent / PDC',   owner: 'Finance / Cashier' },
+  { code: 'receipts',           label: 'Receipt Generation',   owner: 'Finance / Cashier' },
+  { code: 'landlord_signature', label: 'Landlord Signature',   owner: 'Landlord / Owner' },
+  { code: 'key_notice',         label: 'Key Issue Notice',     owner: 'Leasing Dept' },
+  { code: 'key_handover',       label: 'Key Handover',         owner: 'Property Manager' },
+  { code: 'checkin',            label: 'Check-In',             owner: 'Property Manager' },
+  { code: 'renewal',            label: 'Renewal Notice',       owner: 'Leasing Dept' },
+  { code: 'renewal_process',    label: 'Renewal Process',      owner: 'Leasing Dept' },
+  { code: 'checkout',           label: 'Non-Renewal / Checkout', owner: 'Finance / PM' },
+  { code: 'settlement',         label: 'Deposit Settlement',   owner: 'Finance Dept' },
+];
+
+// PDC cheque status master
+export const pdcStatusMasters = [
+  { label: 'Received',   value: 'received',   description: 'Cheque received from tenant and logged in the system.' },
+  { label: 'Deposited',  value: 'deposited',  description: 'Cheque deposited into the bank for clearing.' },
+  { label: 'Cleared',    value: 'cleared',    description: 'Cheque cleared successfully; funds received.' },
+  { label: 'Returned',   value: 'returned',   description: 'Cheque returned / bounced by the bank.' },
+  { label: 'Replaced',   value: 'replaced',   description: 'Returned cheque replaced with a new cheque.' },
+  { label: 'Cancelled',  value: 'cancelled',  description: 'Cheque cancelled before deposit.' },
+];
+
+// Collection type master – maps to lease_collections.collection_type
+export const collectionTypeMasters = [
+  { label: 'Advance Rent',          value: 'advance_rent',       description: 'Advance rent payment collected at lease start.' },
+  { label: 'Post-Dated Cheques',    value: 'pdc',                description: 'Post-dated cheques for periodic rent payments.' },
+  { label: 'Security Deposit',      value: 'security_deposit',   description: 'Refundable security deposit held for the lease term.' },
+  { label: 'Agency Commission',     value: 'agency_commission',  description: 'One-time commission charged by the marketing / leasing agent.' },
+  { label: 'Admin / Registration',  value: 'admin_charge',       description: 'Administrative, registration or processing charges.' },
+  { label: 'Utility Deposit',       value: 'utility_deposit',    description: 'Refundable deposit held against utility consumption.' },
+  { label: 'Other',                 value: 'other',              description: 'Any other approved collection not covered above.' },
+];
+
+// Unit disposition options after lease closure
+export const unitDispositionMasters = [
+  { label: 'Vacant – Available',          value: 'Vacant - Available',          description: 'Unit cleaned and ready for new tenants.' },
+  { label: 'Vacant – Under Maintenance',  value: 'Vacant - Under Maintenance',  description: 'Unit requires repair or maintenance before re-letting.' },
+  { label: 'Vacant – Reserved',           value: 'Vacant - Reserved',           description: 'Unit already reserved for the next incoming tenant.' },
 ];

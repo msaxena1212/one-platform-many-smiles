@@ -8,11 +8,15 @@ CREATE TABLE IF NOT EXISTS public.lease_reservations (
   unit_ref TEXT NOT NULL,
   prospect_name TEXT NOT NULL,
   marketing_agent TEXT,
+  marketing_agent_contact TEXT,
   proposed_start_date DATE,
+  proposed_end_date DATE,
+  proposed_lease_period TEXT,
   proposed_rent NUMERIC(18,4) NOT NULL DEFAULT 0,
   valid_until DATE NOT NULL,
   status TEXT NOT NULL DEFAULT 'reserved'
-    CHECK (status IN ('reserved','converted','expired','released')),    -- TODO: Add 'pending_landlord_signature' status to reservation workflow for landlord approval tracking  remarks TEXT,
+    CHECK (status IN ('reserved','converted','expired','released')),
+  remarks TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -59,8 +63,8 @@ CREATE TABLE IF NOT EXISTS public.tenant_documents (
   file_url TEXT,
   issue_date DATE,
   expiry_date DATE,
-    status TEXT NOT NULL DEFAULT 'Pending'
-      CHECK (status IN ('Pending','Verified','Rejected','Info_Required')),
+  status TEXT NOT NULL DEFAULT 'Pending'
+    CHECK (status IN ('Pending','Verified','Rejected','Info_Required')),
   reviewer_id UUID,
   reviewer_name TEXT,
   remarks TEXT,
@@ -120,6 +124,9 @@ CREATE TABLE IF NOT EXISTS public.lease_collections (
   amount NUMERIC(18,4) NOT NULL DEFAULT 0,
   payment_method TEXT,
   reference_no TEXT,
+  payer_name TEXT,
+  payment_period TEXT,
+  cashier_name TEXT,
   received_by TEXT,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   status TEXT NOT NULL DEFAULT 'received'
@@ -238,6 +245,7 @@ CREATE TABLE IF NOT EXISTS public.lease_checkouts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lease_id UUID REFERENCES public.leases(id) ON DELETE CASCADE,
   notice_date DATE,
+  notice_submission_date DATE,
   planned_move_out_date DATE NOT NULL,
   required_inspection_date DATE,
   outstanding_rent_or_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
@@ -247,6 +255,10 @@ CREATE TABLE IF NOT EXISTS public.lease_checkouts (
   normal_wear_and_tear TEXT,
   tenant_caused_damages TEXT,
   missing_items TEXT,
+  unreturned_keys_access_cards TEXT,
+  unreturned_items_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
+  cleaning_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
+  restoration_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
   cleaning_restoration_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
   finance_clearance BOOLEAN NOT NULL DEFAULT false,
   utility_clearance BOOLEAN NOT NULL DEFAULT false,
@@ -264,15 +276,24 @@ CREATE TABLE IF NOT EXISTS public.security_deposit_settlements (
   outstanding_rent NUMERIC(18,4) NOT NULL DEFAULT 0,
   damage_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
   utility_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
+  agency_commission_deduction NUMERIC(18,4) NOT NULL DEFAULT 0,
+  admin_charges_deduction NUMERIC(18,4) NOT NULL DEFAULT 0,
+  unreturned_items_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
+  cleaning_restoration_charges NUMERIC(18,4) NOT NULL DEFAULT 0,
   other_deductions NUMERIC(18,4) NOT NULL DEFAULT 0,
   refundable_balance NUMERIC(18,4) GENERATED ALWAYS AS (
-    deposit_received - outstanding_rent - damage_charges - utility_charges - other_deductions
+    deposit_received - outstanding_rent - damage_charges - utility_charges
+    - agency_commission_deduction - admin_charges_deduction
+    - unreturned_items_charges - cleaning_restoration_charges - other_deductions
   ) STORED,
   approval_status TEXT NOT NULL DEFAULT 'draft'
     CHECK (approval_status IN ('draft','pending_approval','approved','paid','rejected')),
+  rejection_reason TEXT,
   approved_by UUID,
   approved_at TIMESTAMPTZ,
   paid_at TIMESTAMPTZ,
+  unit_disposition TEXT
+    CHECK (unit_disposition IN ('Vacant - Available','Vacant - Under Maintenance','Vacant - Reserved')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

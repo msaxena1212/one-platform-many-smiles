@@ -39,12 +39,15 @@ import {
 } from "lucide-react";
 import {
   customerIdentityMasters,
+  collectionTypeMasters,
   documentVerificationMasters,
   keyHandoverMasters,
   leaseLifecycleSteps,
   leaseStatusMasters,
+  pdcStatusMasters,
   reservationStatusMasters,
   securitySettlementMasters,
+  unitDispositionMasters,
   voucherDocumentMasters,
 } from "@/lib/reference-data";
 
@@ -52,8 +55,9 @@ export const Route = createFileRoute("/leasing/create")({
   component: LeasingPage,
 });
 
-type ReservationStatus = 'Reserved' | 'Converted' | 'Expired' | 'Released';
-type CustomerStatus = "draft" | "active" | "duplicate";
+// Aligned with DB CHECK constraint — all lowercase
+type ReservationStatus = "reserved" | "converted" | "expired" | "released";
+type CustomerStatus = "draft" | "active" | "duplicate" | "inactive";
 type VerificationStatus = "pending" | "verified" | "rejected" | "info_required";
 type LeaseStatus =
   | "draft"
@@ -67,9 +71,13 @@ type LeaseStatus =
   | "renewal_due"
   | "renewed"
   | "non_renewal"
+  | "expiring"
   | "checkout"
+  | "terminated"
   | "closed";
 type PdcStatus = "received" | "deposited" | "cleared" | "returned" | "replaced" | "cancelled";
+type SettlementApproval = "draft" | "pending_approval" | "approved" | "paid" | "rejected";
+type CollectionType = "advance_rent" | "pdc" | "security_deposit" | "agency_commission" | "admin_charge" | "utility_deposit" | "other";
 
 type Unit = {
   id: string;
@@ -86,8 +94,14 @@ type Customer = {
   qatarId: string;
   passport: string;
   crNumber: string;
+  nationality: string;
   mobile: string;
   email: string;
+  permanentAddress: string;
+  localAddress: string;
+  authorizedSignatory: string;
+  emergencyContact: string;
+  employerInfo: string;
   status: CustomerStatus;
 };
 
@@ -97,7 +111,10 @@ type Reservation = {
   unit: string;
   tenantName: string;
   agent: string;
+  agentContact: string;
   startDate: string;
+  endDate: string;
+  proposedLeasePeriod: string;
   validUntil: string;
   rent: number;
   status: ReservationStatus;
@@ -110,10 +127,12 @@ type TenantDocument = {
   name: string;
   mandatory: boolean;
   status: VerificationStatus;
+  issueDate: string;
   expiryDate: string;
   reviewer: string;
   remarks: string;
   file?: string;
+  fileUrl?: string;
 };
 
 type Lease = {
@@ -154,6 +173,8 @@ type Pdc = {
   bank: string;
   date: string;
   amount: number;
+  payerName: string;
+  period: string;
   status: PdcStatus;
   file?: string;
 };
@@ -199,6 +220,7 @@ type Inspection = {
   acCondition?: string;
   electricityMeter: string;
   waterMeter: string;
+  chillerMeterReading?: string;
   damages: string;
   pendingMaintenance?: string;
   acknowledged: boolean;
@@ -225,6 +247,7 @@ type CheckoutCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
+  noticeSubmissionDate?: string;
   nonRenewalNotice?: string;
   moveOutDate: string;
   inspectionDate: string;
@@ -232,6 +255,9 @@ type CheckoutCase = {
   outstandingCharges?: string;
   keyReturnRequirements?: string;
   utilityClearanceRequirements?: string;
+  unreturnedItemsCharges: number;
+  cleaningCharges: number;
+  restorationCharges: number;
   financeClearance: boolean;
   utilityClearance: boolean;
   keysReturned: boolean;
@@ -245,10 +271,15 @@ type Settlement = {
   outstandingRent: number;
   damages: number;
   utilityCharges: number;
+  agencyCommissionDeduction: number;
+  adminChargesDeduction: number;
+  unreturnedItemsCharges: number;
+  cleaningRestorationCharges: number;
   otherDeductions: number;
   refundableBalance?: number;
-  unitDisposition?: Unit["status"];
-  approval: "draft" | "pending_approval" | "approved" | "paid";
+  unitDisposition?: string;
+  approval: SettlementApproval;
+  rejectionReason?: string;
 };
 
 type Voucher = {
@@ -292,8 +323,14 @@ const initialCustomers: Customer[] = [
     qatarId: "QID-28475630123",
     passport: "P9823114",
     crNumber: "",
+    nationality: "Indian",
     mobile: "+974 5511 2200",
     email: "hafeez@example.com",
+    permanentAddress: "Chennai, India",
+    localAddress: "Old Salata, Doha, Qatar",
+    authorizedSignatory: "",
+    emergencyContact: "+974 5511 9900 (Spouse)",
+    employerInfo: "ABC Contracting WLL",
     status: "active",
   },
   {
@@ -303,8 +340,14 @@ const initialCustomers: Customer[] = [
     qatarId: "",
     passport: "",
     crNumber: "CR-779214",
+    nationality: "Qatari",
     mobile: "+974 4477 8800",
     email: "accounts@alameen.qa",
+    permanentAddress: "",
+    localAddress: "West Bay, Doha, Qatar",
+    authorizedSignatory: "Mr. Khalid Al Ameen",
+    emergencyContact: "+974 4477 9900",
+    employerInfo: "Al Ameen Real Estate LLC",
     status: "active",
   },
 ];
@@ -316,7 +359,10 @@ const initialReservations: Reservation[] = [
     unit: "AAA - GF2",
     tenantName: "Mr. Abdullah Saleh",
     agent: "Marketing Agent",
+    agentContact: "+974 5566 7788",
     startDate: "2026-08-01",
+    endDate: "2027-07-31",
+    proposedLeasePeriod: "12 months",
     validUntil: "2026-07-22",
     rent: 5500,
     status: "reserved",
@@ -325,11 +371,11 @@ const initialReservations: Reservation[] = [
 ];
 
 const initialDocuments: TenantDocument[] = [
-  { id: "d1", customerId: "c1", name: "Qatar ID", mandatory: true, status: "verified", expiryDate: "2027-04-20", reviewer: "Leasing Dept", remarks: "" },
-  { id: "d2", customerId: "c1", name: "Passport copy", mandatory: true, status: "verified", expiryDate: "2029-12-10", reviewer: "Leasing Dept", remarks: "" },
-  { id: "d3", customerId: "c1", name: "Security deposit proof", mandatory: true, status: "pending", expiryDate: "", reviewer: "", remarks: "Cashier receipt pending" },
-  { id: "d4", customerId: "c2", name: "Commercial Registration", mandatory: true, status: "verified", expiryDate: "2026-12-31", reviewer: "Leasing Dept", remarks: "" },
-  { id: "d5", customerId: "c2", name: "Computer Card", mandatory: true, status: "info_required", expiryDate: "2026-10-10", reviewer: "Leasing Dept", remarks: "Need renewed copy" },
+  { id: "d1", customerId: "c1", name: "Qatar ID", mandatory: true, status: "verified", issueDate: "2021-04-10", expiryDate: "2027-04-20", reviewer: "Leasing Dept", remarks: "" },
+  { id: "d2", customerId: "c1", name: "Passport copy", mandatory: true, status: "verified", issueDate: "2019-12-01", expiryDate: "2029-12-10", reviewer: "Leasing Dept", remarks: "" },
+  { id: "d3", customerId: "c1", name: "Security deposit proof", mandatory: true, status: "pending", issueDate: "", expiryDate: "", reviewer: "", remarks: "Cashier receipt pending" },
+  { id: "d4", customerId: "c2", name: "Commercial Registration", mandatory: true, status: "verified", issueDate: "2021-01-15", expiryDate: "2026-12-31", reviewer: "Leasing Dept", remarks: "" },
+  { id: "d5", customerId: "c2", name: "Computer Card", mandatory: true, status: "info_required", issueDate: "", expiryDate: "2026-10-10", reviewer: "Leasing Dept", remarks: "Need renewed copy" },
 ];
 
 const initialLeases: Lease[] = [
@@ -391,9 +437,9 @@ const initialLeases: Lease[] = [
 ];
 
 const initialPdcs: Pdc[] = [
-  { id: "p1", leaseId: "l1", chequeNo: "CHQ-1001", bank: "QNB", date: "2026-08-01", amount: 5600, status: "received" },
-  { id: "p2", leaseId: "l1", chequeNo: "CHQ-1002", bank: "QNB", date: "2026-09-01", amount: 5600, status: "received" },
-  { id: "p3", leaseId: "l2", chequeNo: "CHQ-2001", bank: "Doha Bank", date: "2026-08-01", amount: 5500, status: "deposited" },
+  { id: "p1", leaseId: "l1", chequeNo: "CHQ-1001", bank: "QNB", date: "2026-08-01", amount: 5600, payerName: "Mr. Hafeez Shaik", period: "Aug 2026", status: "received" },
+  { id: "p2", leaseId: "l1", chequeNo: "CHQ-1002", bank: "QNB", date: "2026-09-01", amount: 5600, payerName: "Mr. Hafeez Shaik", period: "Sep 2026", status: "received" },
+  { id: "p3", leaseId: "l2", chequeNo: "CHQ-2001", bank: "Doha Bank", date: "2026-08-01", amount: 5500, payerName: "M/S. Al Ameen Real Estate", period: "Aug 2026", status: "deposited" },
 ];
 
 const initialVouchers: Voucher[] = [
@@ -501,10 +547,12 @@ function LeasingPage() {
     remarks: "",
   });
 
+  // ── Upload Doc Dialog ─────────────────────────────────────────
   const [uploadDocOpen, setUploadDocOpen] = useState(false);
   const [uploadDocForm, setUploadDocForm] = useState({
     file: "",
     fileName: "",
+    issueDate: "",
     remarks: "",
   });
 
@@ -525,8 +573,13 @@ function LeasingPage() {
   const [collectForm, setCollectForm] = useState({
     paymentMode: "PDC" as "PDC" | "Cash" | "Bank Transfer" | "Guarantee Cheque",
     chequeBank: "",
+    payerName: "",
     depositAmount: "",
     depositMode: "Cash" as string,
+    agencyCommission: "0",
+    adminCharges: "0",
+    utilityDeposit: "0",
+    cashierName: "",
     notes: "",
     receiptFile: "",
   });
@@ -646,7 +699,10 @@ function LeasingPage() {
     unit: "AAA - GF2",
     tenantName: "",
     agent: "Marketing Agent",
+    agentContact: "",
     startDate: addDays(today, 10),
+    endDate: addDays(today, 375),
+    proposedLeasePeriod: "12 months",
     validityDays: "7",
     rent: "5500",
     remarks: "",
@@ -658,8 +714,14 @@ function LeasingPage() {
     qatarId: "",
     passport: "",
     crNumber: "",
+    nationality: "",
     mobile: "",
     email: "",
+    permanentAddress: "",
+    localAddress: "",
+    authorizedSignatory: "",
+    emergencyContact: "",
+    employerInfo: "",
   });
 
   const activeReservations = reservations.filter((item) => item.status === "reserved").length;
@@ -751,17 +813,14 @@ function LeasingPage() {
   }
 
   function sendExpiryNotification(reservation: Reservation) {
-    // In a real application, this would trigger a notification system
-    // For now, we can show a browser notification or API call
-    if (typeof window !== 'undefined' && Notification.permission === 'granted') {
-      navigator.sendNotification({
-        title: 'Reservation Expiring Soon',
-        message: `Reservation for ${reservation.unit} (${reservation.tenantName}) expires in 24 hours`,
-        url: '/reservations'
+    const message = `Reservation for ${reservation.unit} (${reservation.tenantName}) expires on ${reservation.validUntil}. Please extend, convert, or release.`;
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      new Notification("Reservation Expiring Soon", {
+        body: message,
+        icon: "/favicon.ico",
       });
     } else {
-      // Fallback to console alert
-      console.warn(`Reservation ${reservation.id} expires soon. Please follow up.`);
+      console.warn(`[Lease Module] ${message}`);
     }
   }
 
@@ -814,8 +873,8 @@ function LeasingPage() {
       ...items,
     ]);
 
-    // Reset form
-    setCustomerForm({ name: "", type: "individual", qatarId: "", passport: "", crNumber: "", mobile: "", email: "" });
+    // Reset form — include all extended customer fields
+    setCustomerForm({ name: "", type: "individual", qatarId: "", passport: "", crNumber: "", nationality: "", mobile: "", email: "", permanentAddress: "", localAddress: "", authorizedSignatory: "", emergencyContact: "", employerInfo: "" });
 
     // Record audit of successful customer creation
     recordAudit({
@@ -925,7 +984,16 @@ function LeasingPage() {
       alert(`No active customer found for "${reservation.tenantName}". Please create the customer in Customer Master first.`);
       return;
     }
-    const docsVerified = documents.filter((item) => item.customerId === customer.id && item.mandatory).every((item) => item.status === "verified");
+    const mandatoryDocs = documents.filter((item) => item.customerId === customer.id && item.mandatory);
+    const docsVerified = mandatoryDocs.every((item) => item.status === "verified");
+    const pendingDocs = mandatoryDocs.filter((item) => item.status !== "verified").map((d) => d.name).join(", ");
+    // Hard gate: lease cannot be created until all mandatory documents are verified
+    if (!docsVerified) {
+      alert(
+        `Lease Agreement cannot be created until all mandatory documents are verified.\n\nPending: ${pendingDocs}\n\nPlease verify all documents in the Documents tab, or obtain an authorized override before proceeding.`
+      );
+      return;
+    }
     const lease: Lease = {
       id: `l${leases.length + 1}`,
       customerId: customer.id,
@@ -946,7 +1014,7 @@ function LeasingPage() {
       parkingDetails: form.parkingDetails,
       specialConditions: form.specialConditions || reservation.remarks || "No special conditions",
       noticePeriodDays: Number(form.noticePeriodDays) || 60,
-      status: docsVerified ? "documents_verified" : "documents_pending",
+      status: "documents_verified",
       collectionCompleted: false,
     };
     setLeases((items) => [lease, ...items]);
@@ -957,7 +1025,7 @@ function LeasingPage() {
       stage: "Lease Agreement Creation",
       owner: "Leasing Department",
       input: `${lease.tenantName}, ${lease.unit}, ${lease.paymentFrequency}, ${formatMoney(lease.monthlyRent)}`,
-      approval: docsVerified ? "Document gate passed" : "Document gate pending",
+      approval: "Document gate passed — all mandatory documents verified",
       status: lease.status,
       output: "Lease agreement created with rent schedule terms",
     });
@@ -1007,26 +1075,35 @@ function LeasingPage() {
     const nextPdcs = Array.from({ length: lease.pdcCount }, (_, index) => ({
       id: `p${pdcs.length + index + 1}`,
       leaseId: lease.id,
-      chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${index + 1}`,
+      chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
       bank: collectForm.chequeBank || "Tenant Bank",
       date: addDays(new Date(lease.startDate), index * 30),
       amount: lease.monthlyRent,
+      payerName: collectForm.payerName || lease.tenantName,
+      period: `Month ${index + 1}`,
       status: "received" as PdcStatus,
     }));
     setPdcs((items) => [...nextPdcs, ...items]);
+    const agencyAmt = Number(collectForm.agencyCommission) || 0;
+    const adminAmt = Number(collectForm.adminCharges) || 0;
+    const utilityAmt = Number(collectForm.utilityDeposit) || 0;
+    const depAmt = Number(collectForm.depositAmount) || lease.securityDeposit;
     setVouchers((items) => [
       { id: `v${items.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${lease.startDate} to ${lease.endDate}`, debit: "PDC In Hand", credit: `Customer(PDC)-${lease.unit}`, amount: pdcTotal, status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: "Cash In Hand", credit: "Security Deposit Liability", amount: Number(collectForm.depositAmount) || lease.securityDeposit, status: "posted" },
+      { id: `v${items.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: "Cash In Hand", credit: "Security Deposit Liability", amount: depAmt, status: "posted" },
+      ...(agencyAmt > 0 ? [{ id: `v${items.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Agency Commission", receiptNo: `RV-${lease.id}-03`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Agency Commission Income", amount: agencyAmt, status: "posted" as const }] : []),
+      ...(adminAmt > 0 ? [{ id: `v${items.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Admin Charges", receiptNo: `RV-${lease.id}-04`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Admin Charges Income", amount: adminAmt, status: "posted" as const }] : []),
+      ...(utilityAmt > 0 ? [{ id: `v${items.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Utility Deposit", receiptNo: `RV-${lease.id}-05`, method: "Cash", period: "Utility deposit", debit: "Cash In Hand", credit: "Utility Deposit Liability", amount: utilityAmt, status: "posted" as const }] : []),
       ...items,
     ]);
     advanceLease(lease, "collection_completed", { collectionCompleted: true });
     recordAudit({
       stage: "Collection & Receipt Generation",
-      owner: "Finance Cashier",
-      input: `${lease.pdcCount} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}`,
+      owner: `Finance Cashier${collectForm.cashierName ? " – " + collectForm.cashierName : ""}`,
+      input: `${lease.pdcCount} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
-      output: (collectForm.notes || "Rent and deposit receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
+      output: (collectForm.notes || "Rent, deposit and other collection receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
     setCollectOpen(false);
   }
@@ -1098,6 +1175,16 @@ function LeasingPage() {
   function renewLease(renewal: RenewalCase) {
     const oldLease = leases.find((item) => item.id === renewal.leaseId);
     if (!oldLease) return;
+    // Check for tenant documents that may have expired during the previous lease term
+    const expiredDocs = documents
+      .filter((d) => d.customerId === oldLease.customerId && d.mandatory && d.expiryDate && new Date(d.expiryDate) < today)
+      .map((d) => d.name);
+    if (expiredDocs.length > 0) {
+      const proceed = window.confirm(
+        `Warning: The following mandatory documents have expired and should be renewed before activating the new lease period:\n\n${expiredDocs.join(", ")}\n\nProceed with renewal? (You can update documents in the Documents tab.)` 
+      );
+      if (!proceed) return;
+    }
     const renewed: Lease = {
       ...oldLease,
       id: `l${leases.length + 1}`,
@@ -1119,17 +1206,23 @@ function LeasingPage() {
     recordAudit({
       stage: "Lease Renewal Process",
       owner: "Leasing Department",
-      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}`,
+      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
-      output: "Renewed lease linked to previous lease history; renewed period remains traceable in lease module",
+      output: "Renewed lease linked to previous lease history; document review recommended for expired credentials",
     });
   }
 
   function approveSettlement(settlement: Settlement) {
-    const refundable = settlement.depositReceived - settlement.outstandingRent - settlement.damages - settlement.utilityCharges - settlement.otherDeductions;
-    setSettlements((items) => items.map((item) => (item.id === settlement.id ? { ...item, approval: "paid" } : item)));
+    const totalDeductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges
+      + (settlement.agencyCommissionDeduction || 0) + (settlement.adminChargesDeduction || 0)
+      + (settlement.unreturnedItemsCharges || 0) + (settlement.cleaningRestorationCharges || 0)
+      + settlement.otherDeductions;
+    const refundable = settlement.depositReceived - totalDeductions;
+    setSettlements((items) => items.map((item) => (item.id === settlement.id ? { ...item, approval: "paid" as SettlementApproval } : item)));
     setVouchers((items) => [
+      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: Math.max(0, refundable), status: "posted" },
+      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: Math.max(0, refundable), status: "posted" },
       { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: refundable, status: "posted" },
       { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: refundable, status: "posted" },
       ...items,
@@ -1137,54 +1230,18 @@ function LeasingPage() {
     const lease = leases.find((item) => item.id === settlement.leaseId);
     if (lease) {
       setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
-      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: settlement.unitDisposition || "Vacant - Available" } : item)));
+      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition as Unit["status"]) || "Available" } : item)));
     }
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
       owner: "Finance Department",
-      input: `Deposit ${formatMoney(settlement.depositReceived)}, refund ${formatMoney(refundable)}`,
+      input: `Deposit ${formatMoney(settlement.depositReceived)}, deductions ${formatMoney(totalDeductions)}, refund ${formatMoney(refundable)}`,
       approval: "Settlement approval",
       status: "closed",
-      output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Vacant - Available"}, and history retained`,
+      output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Available"}, full history retained`,
     });
   }
 
-  function issueKeyNotice(lease: Lease) {
-    const blocked = !(lease.status === "fully_signed" && lease.collectionCompleted);
-    const notice: KeyNotice = {
-      id: `kn${keyNotices.length + 1}`,
-      leaseId: lease.id,
-      recipient: keyNotifyForm.recipients.join(", "),
-      handoverAt: keyNotifyForm.handoverAt,
-      status: blocked ? "blocked" : "sent",
-      note: keyNotifyForm.note || (blocked ? "Lease must be fully signed and collection completed" : "Key issue approved"),
-    };
-    setKeyNotices((items) => [notice, ...items]);
-    if (!blocked) advanceLease(lease, "active");
-    recordAudit({
-      stage: "Key Issue Notification",
-      owner: "Leasing Department",
-      input: `${lease.tenantName}, ${lease.unit}`,
-      approval: blocked ? "Blocked by lease gate" : "Fully signed and collected",
-      status: notice.status,
-      output: blocked ? notice.note : "Tenant, property manager, security and facility team notified",
-    });
-    setKeyNotifyOpen(false);
-  }
-
-  function completeHandover(lease: Lease) {
-    setHandovers((items) => [
-      {
-        id: `kh${items.length + 1}`,
-        leaseId: lease.id,
-        keys: Number(handoverForm.keys) || 2,
-        accessCards: Number(handoverForm.accessCards) || 2,
-        parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
-        meterInfo: `Elec: ${handoverForm.electricityMeterReading || "—"}, Water: ${handoverForm.waterMeterReading || "—"}`,
-        acknowledged: true,
-        issuedBy: handoverForm.issuedBy,
-      },
-      ...items,
     ]);
     recordAudit({
       stage: "Key Handover",
@@ -1294,6 +1351,7 @@ function LeasingPage() {
         acCondition: checkInForm.acCondition,
         electricityMeter: checkInForm.electricityMeter || "182167",
         waterMeter: checkInForm.waterMeter || "149089",
+        chillerMeterReading: checkInForm.chillerMeterReading || "",
         damages: checkInForm.damages || "None recorded",
         pendingMaintenance: checkInForm.pendingMaintenance || "None",
         acknowledged: true,
@@ -1306,7 +1364,7 @@ function LeasingPage() {
     recordAudit({
       stage: "Check-In Process",
       owner: "Property Manager",
-      input: "Unit condition, fixtures, utilities, photos, damage log and maintenance follow-up",
+      input: "Unit condition, fixtures, utilities, chiller, photos, damage log and maintenance follow-up",
       approval: "Tenant acknowledgement",
       status: "completed",
       output: checkInForm.note || "Check-in report completed, maintenance logged where needed, and unit marked occupied",
