@@ -357,7 +357,7 @@ async function migrate() {
         target_table TEXT NOT NULL,
         requested_by TEXT NOT NULL,
         amount NUMERIC(18,4),
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+        status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Approved','Rejected')),
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

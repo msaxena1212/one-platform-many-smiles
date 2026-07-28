@@ -1,3 +1,36 @@
+/**
+ * Migration Script: PMS v2 Schema Updates
+ * 
+ * Date: 2026-07-28
+ * 
+ * This script applies schema updates for the Property Management System v2.
+ * 
+ * New Columns Added:
+ * - properties.property_category (TEXT)
+ * - properties.year_built (INTEGER)
+ * - properties.total_floors (INTEGER)
+ * - properties.property_status (TEXT) DEFAULT 'Active'
+ * - property_images.category (TEXT) DEFAULT 'Exterior'
+ * - units.unit_number (TEXT)
+ * - units.unit_name (TEXT)
+ * - units.floor_number (TEXT)
+ * - units.unit_type (TEXT)
+ * - units.max_adults (INTEGER) DEFAULT 2
+ * - units.max_children (INTEGER) DEFAULT 0
+ * - units.total_occupancy (INTEGER) DEFAULT 2
+ * - units.base_price_per_night (NUMERIC) DEFAULT 0
+ * - units.weekend_price (NUMERIC)
+ * - units.holiday_price (NUMERIC)
+ * - units.cleaning_fee (NUMERIC) DEFAULT 0
+ * - units.security_deposit (NUMERIC) DEFAULT 0
+ * 
+ * New Status Fields:
+ * - properties.property_status DEFAULT 'Active'
+ * - units.unit_type (REFERENCE)
+ * 
+ * Ensure these fields are reflected in UI status displays and reports.
+ */
+ 
 import { Client } from 'pg';
 
 async function migrate() {
@@ -25,6 +58,7 @@ async function migrate() {
       ADD COLUMN IF NOT EXISTS postal_code TEXT,
       ADD COLUMN IF NOT EXISTS landmark TEXT;
     `);
+    // TODO: Review property_status default value for consistency with other status fields
 
     // 2. Property Images
     await client.query(`

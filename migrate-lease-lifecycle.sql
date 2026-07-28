@@ -12,8 +12,7 @@ CREATE TABLE IF NOT EXISTS public.lease_reservations (
   proposed_rent NUMERIC(18,4) NOT NULL DEFAULT 0,
   valid_until DATE NOT NULL,
   status TEXT NOT NULL DEFAULT 'reserved'
-    CHECK (status IN ('reserved','converted','expired','released')),
-  remarks TEXT,
+    CHECK (status IN ('reserved','converted','expired','released')),    -- TODO: Add 'pending_landlord_signature' status to reservation workflow for landlord approval tracking  remarks TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -60,8 +59,8 @@ CREATE TABLE IF NOT EXISTS public.tenant_documents (
   file_url TEXT,
   issue_date DATE,
   expiry_date DATE,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending','verified','rejected','info_required')),
+    status TEXT NOT NULL DEFAULT 'Pending'
+      CHECK (status IN ('Pending','Verified','Rejected','Info_Required')),
   reviewer_id UUID,
   reviewer_name TEXT,
   remarks TEXT,

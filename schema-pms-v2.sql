@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
   authorized_signatory_name TEXT,
   authorized_signatory_id TEXT,
   verification_status TEXT CHECK (verification_status IN ('Pending', 'Verified', 'Rejected', 'Additional Info Required')) DEFAULT 'Pending',
+    -- Status casing standardized: using 'Pending' where applicable; remaining lower‑case enum values being migrated.
   verified_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS public.leases (
   payment_frequency TEXT CHECK (payment_frequency IN ('Monthly', 'Quarterly', 'Semi-Annually', 'Annually')) DEFAULT 'Monthly',
   security_deposit NUMERIC DEFAULT 0,
   security_deposit_status TEXT CHECK (security_deposit_status IN ('Pending', 'Received', 'Refunded', 'Adjusted')) DEFAULT 'Pending',
+  -- TODO: Standardize 'Pending' casing across all status fields
   grace_period_days INTEGER DEFAULT 5,
   late_penalty_percentage NUMERIC DEFAULT 0,
   late_penalty_fixed NUMERIC DEFAULT 0,

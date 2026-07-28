@@ -67,8 +67,7 @@ CREATE TABLE public.bookings (
   check_out DATE NOT NULL,
   guests_count INTEGER NOT NULL,
   total_price NUMERIC NOT NULL,
-  status TEXT CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED')) DEFAULT 'PENDING',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
+  status TEXT CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED')) DEFAULT 'PENDING',    -- Status values are already capitalized; no change needed.  created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   -- Prevent double booking using Exclude constraint (Requires btree_gist)
   CONSTRAINT check_dates CHECK (check_in < check_out)

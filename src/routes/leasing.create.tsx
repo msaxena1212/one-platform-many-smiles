@@ -163,19 +163,29 @@ type KeyNotice = {
   leaseId: string;
   recipient: string;
   handoverAt: string;
+  handoverTime?: string;
   status: "ready" | "sent" | "blocked";
   note: string;
+  authorizedCollector?: string;
+  keysSummary?: string;
+  staffContact?: string;
+  outstandingRequirements?: string;
 };
 
 type KeyHandover = {
   id: string;
   leaseId: string;
+  handoverAt?: string;
   keys: number;
+  keyType?: string;
   accessCards: number;
   parkingRemotes: number;
+  parkingDeviceDetails?: string;
   meterInfo: string;
   acknowledged: boolean;
   issuedBy: string;
+  collectorName?: string;
+  tenantAcknowledgement?: string;
 };
 
 type Inspection = {
@@ -183,9 +193,14 @@ type Inspection = {
   leaseId: string;
   type: "check_in" | "check_out";
   condition: string;
+  furnitureCondition?: string;
+  fixturesCondition?: string;
+  wallFloorCeilingCondition?: string;
+  acCondition?: string;
   electricityMeter: string;
   waterMeter: string;
   damages: string;
+  pendingMaintenance?: string;
   acknowledged: boolean;
   photos: number;
 };
@@ -198,18 +213,25 @@ type RenewalCase = {
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
+  expiryDate?: string;
+  requiredNoticePeriod?: string;
   lastConfirmationDate: string;
   outstandingObligations: string;
   recipients: string;
+  followUpOwner?: string;
 };
 
 type CheckoutCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
+  nonRenewalNotice?: string;
   moveOutDate: string;
   inspectionDate: string;
   comparisonSummary: string;
+  outstandingCharges?: string;
+  keyReturnRequirements?: string;
+  utilityClearanceRequirements?: string;
   financeClearance: boolean;
   utilityClearance: boolean;
   keysReturned: boolean;
@@ -224,6 +246,8 @@ type Settlement = {
   damages: number;
   utilityCharges: number;
   otherDeductions: number;
+  refundableBalance?: number;
+  unitDisposition?: Unit["status"];
   approval: "draft" | "pending_approval" | "approved" | "paid";
 };
 
@@ -449,6 +473,7 @@ function LeasingPage() {
     selectedLeaseId: "",
     rentIncreasePercent: "5",
     revisedTerms: "5% rent revision; notice period retained",
+    proposedRenewalPeriod: "12 months",
     lastConfirmationDays: "30",
     additionalRecipients: "",
     notes: "",
@@ -529,27 +554,87 @@ function LeasingPage() {
   // ── Keys & Check-In Dialogs ──────────────────────────────────────
   const [keysWorkflowLease, setKeysWorkflowLease] = useState<Lease | null>(null);
   const [keyNotifyOpen, setKeyNotifyOpen] = useState(false);
-  const [keyNotifyForm, setKeyNotifyForm] = useState({ handoverAt: addDays(today, 1), recipients: ["Tenant", "Property Manager", "Security", "Maintenance"], note: "" });
+  const [keyNotifyForm, setKeyNotifyForm] = useState({
+    handoverAt: addDays(today, 1),
+    handoverTime: "10:00",
+    recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"],
+    authorizedCollector: "",
+    keysSummary: "2 metal keys, 2 access cards, 1 parking remote",
+    staffContact: "Property Manager - +974 4400 2200",
+    outstandingRequirements: "None",
+    note: "",
+  });
 
   const [handoverOpen, setHandoverOpen] = useState(false);
-  const [handoverForm, setHandoverForm] = useState({ keys: "2", accessCards: "2", parkingRemotes: "1", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", note: "" });
+  const [handoverForm, setHandoverForm] = useState({
+    handoverAt: addDays(today, 1),
+    handoverTime: "10:00",
+    keys: "2",
+    keyType: "Metal door keys",
+    accessCards: "2",
+    parkingRemotes: "1",
+    parkingDeviceDetails: "Remote for covered parking bay",
+    electricityMeterReading: "",
+    waterMeterReading: "",
+    issuedBy: "Property Manager",
+    collectorName: "",
+    tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.",
+    note: "",
+  });
 
   const [checkInOpen, setCheckInOpen] = useState(false);
-  const [checkInForm, setCheckInForm] = useState({ condition: "Good", electricityMeter: "", waterMeter: "", damages: "", photos: "8", note: "" });
+  const [checkInForm, setCheckInForm] = useState({
+    condition: "Good",
+    furnitureCondition: "Good",
+    fixturesCondition: "Good",
+    wallFloorCeilingCondition: "Good",
+    acCondition: "Operational",
+    electricityMeter: "",
+    waterMeter: "",
+    damages: "",
+    pendingMaintenance: "",
+    photos: "8",
+    note: "",
+  });
 
   // ── Renewals Dialog ──────────────────────────────────────────────
   const [renewalResponseOpen, setRenewalResponseOpen] = useState(false);
   const [selectedRenewal, setSelectedRenewal] = useState<RenewalCase | null>(null);
-  const [renewalResponseForm, setRenewalResponseForm] = useState({ response: "confirm" as "confirm" | "non_renewal", confirmedRent: "", notes: "" });
+  const [renewalResponseForm, setRenewalResponseForm] = useState({ response: "confirm" as "confirm" | "non_renewal", confirmedRent: "", notes: "", updateStatus: "awaiting_response" as RenewalCase["status"] });
 
   // ── Checkout Dialogs ─────────────────────────────────────────────
   const [startCheckoutOpen, setStartCheckoutOpen] = useState(false);
   const [checkoutWorkflowLease, setCheckoutWorkflowLease] = useState<Lease | null>(null);
-  const [startCheckoutForm, setStartCheckoutForm] = useState({ noticeDate: today.toISOString().split("T")[0], moveOutDate: "", inspectionDate: "", notes: "" });
+  const [startCheckoutForm, setStartCheckoutForm] = useState({
+    noticeDate: today.toISOString().split("T")[0],
+    moveOutDate: "",
+    inspectionDate: "",
+    outstandingCharges: "Pending finance confirmation",
+    utilityClearanceRequirements: "Final utility clearance required before checkout closure",
+    keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
+    notes: "",
+  });
 
   const [completeCheckoutOpen, setCompleteCheckoutOpen] = useState(false);
   const [selectedCheckout, setSelectedCheckout] = useState<CheckoutCase | null>(null);
-  const [completeCheckoutForm, setCompleteCheckoutForm] = useState({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false });
+  const [completeCheckoutForm, setCompleteCheckoutForm] = useState({
+    condition: "Repair required",
+    electricityMeter: "",
+    waterMeter: "",
+    damages: "",
+    missingItems: "",
+    cleaningCharges: "0",
+    restorationCharges: "0",
+    outstandingRent: "0",
+    damagesAmount: "650",
+    utilityCharges: "220",
+    otherDeductions: "0",
+    photos: "12",
+    financeClearance: false,
+    utilityClearance: false,
+    keysReturned: false,
+    unitDisposition: "Vacant - Under Maintenance" as Unit["status"],
+  });
 
   // ── PDC Add Dialog ───────────────────────────────────────────────
   const [addPdcOpen, setAddPdcOpen] = useState(false);
@@ -985,11 +1070,14 @@ function LeasingPage() {
         noticeDate: today.toISOString().split("T")[0],
         status: "awaiting_response" as RenewalCase["status"],
         proposedRent: Math.round(lease.monthlyRent * increaseMultiplier),
-        proposedPeriod: `${addDays(new Date(lease.endDate), 1)} to ${addDays(new Date(lease.endDate), 366)}`,
+        proposedPeriod: f.proposedRenewalPeriod || `${addDays(new Date(lease.endDate), 1)} to ${addDays(new Date(lease.endDate), 366)}`,
         revisedTerms: f.revisedTerms || `${f.rentIncreasePercent}% rent revision, ${lease.noticePeriodDays}-day notice period retained`,
+        expiryDate: lease.endDate,
+        requiredNoticePeriod: `${lease.noticePeriodDays} days`,
         lastConfirmationDate: addDays(new Date(lease.endDate), -(Number(f.lastConfirmationDays) || 30)),
         outstandingObligations: "Finance to confirm outstanding rent, PDC and maintenance obligations",
-        recipients: `Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord${f.additionalRecipients ? `, ${f.additionalRecipients}` : ""}`,
+        recipients: `Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord or Authorized Person${f.additionalRecipients ? `, ${f.additionalRecipients}` : ""}`,
+        followUpOwner: "Leasing Department",
       }));
     setRenewals((items) => [...next, ...items]);
     setRenewalNoticeOpen(false);
@@ -1000,7 +1088,7 @@ function LeasingPage() {
         input: `Leases expiring within 60 days; ${f.rentIncreasePercent}% increase proposed`,
         approval: "Automatic rule + manual override",
         status: "notified",
-        output: `${next.length} renewal notice(s) generated with proposed terms and recipients`,
+        output: `${next.length} renewal notice(s) generated at least 60 days before expiry with proposed terms and recipients`,
       });
     } else {
       alert("No leases are due for renewal within 60 days, or notices have already been generated.");
@@ -1034,7 +1122,7 @@ function LeasingPage() {
       input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}`,
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
-      output: "Renewed lease linked to previous lease history",
+      output: "Renewed lease linked to previous lease history; renewed period remains traceable in lease module",
     });
   }
 
@@ -1049,7 +1137,7 @@ function LeasingPage() {
     const lease = leases.find((item) => item.id === settlement.leaseId);
     if (lease) {
       setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
-      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Available" } : item)));
+      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: settlement.unitDisposition || "Vacant - Available" } : item)));
     }
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
@@ -1057,7 +1145,7 @@ function LeasingPage() {
       input: `Deposit ${formatMoney(settlement.depositReceived)}, refund ${formatMoney(refundable)}`,
       approval: "Settlement approval",
       status: "closed",
-      output: "Refund processed, lease closed, unit released and history retained",
+      output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Vacant - Available"}, and history retained`,
     });
   }
 
@@ -1136,6 +1224,96 @@ function LeasingPage() {
     setCheckInOpen(false);
   }
 
+  function issueDetailedKeyNotice(lease: Lease) {
+    const blocked = !(lease.status === "fully_signed" && lease.collectionCompleted);
+    const notice: KeyNotice = {
+      id: `kn${keyNotices.length + 1}`,
+      leaseId: lease.id,
+      recipient: keyNotifyForm.recipients.join(", "),
+      handoverAt: keyNotifyForm.handoverAt,
+      handoverTime: keyNotifyForm.handoverTime,
+      status: blocked ? "blocked" : "sent",
+      note: keyNotifyForm.note || (blocked ? "Lease must be fully signed and collection completed" : "Key issue approved"),
+      authorizedCollector: keyNotifyForm.authorizedCollector || lease.tenantName,
+      keysSummary: keyNotifyForm.keysSummary,
+      staffContact: keyNotifyForm.staffContact,
+      outstandingRequirements: keyNotifyForm.outstandingRequirements || "None",
+    };
+    setKeyNotices((items) => [notice, ...items]);
+    recordAudit({
+      stage: "Key Issue Notification",
+      owner: "Leasing Department",
+      input: `${lease.tenantName}, ${lease.property}, ${lease.unit}, start ${lease.startDate}, handover ${keyNotifyForm.handoverAt} ${keyNotifyForm.handoverTime}`,
+      approval: blocked ? "Blocked by lease gate" : "Fully signed and collected",
+      status: notice.status,
+      output: blocked ? notice.note : `Tenant, PM, staff and support teams notified; collector ${notice.authorizedCollector}; outstanding: ${notice.outstandingRequirements}`,
+    });
+    setKeyNotifyOpen(false);
+  }
+
+  function completeDetailedHandover(lease: Lease) {
+    setHandovers((items) => [
+      {
+        id: `kh${items.length + 1}`,
+        leaseId: lease.id,
+        handoverAt: `${handoverForm.handoverAt} ${handoverForm.handoverTime}`,
+        keys: Number(handoverForm.keys) || 2,
+        keyType: handoverForm.keyType || "Metal door keys",
+        accessCards: Number(handoverForm.accessCards) || 2,
+        parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
+        parkingDeviceDetails: handoverForm.parkingDeviceDetails || "None",
+        meterInfo: `Elec: ${handoverForm.electricityMeterReading || "-"}, Water: ${handoverForm.waterMeterReading || "-"}`,
+        acknowledged: true,
+        issuedBy: handoverForm.issuedBy,
+        collectorName: handoverForm.collectorName || lease.tenantName,
+        tenantAcknowledgement: handoverForm.tenantAcknowledgement || "Tenant acknowledged receipt",
+      },
+      ...items,
+    ]);
+    recordAudit({
+      stage: "Key Handover",
+      owner: "Property Manager",
+      input: `${lease.unit}, ${handoverForm.keys} ${handoverForm.keyType}, ${handoverForm.accessCards} cards, ${handoverForm.parkingRemotes} parking devices`,
+      approval: "Tenant and staff acknowledgement",
+      status: "acknowledged",
+      output: handoverForm.note || `Handover recorded for ${handoverForm.collectorName || lease.tenantName}`,
+    });
+    setHandoverOpen(false);
+  }
+
+  function completeDetailedCheckIn(lease: Lease) {
+    setInspections((items) => [
+      {
+        id: `ci${items.length + 1}`,
+        leaseId: lease.id,
+        type: "check_in",
+        condition: checkInForm.condition,
+        furnitureCondition: checkInForm.furnitureCondition,
+        fixturesCondition: checkInForm.fixturesCondition,
+        wallFloorCeilingCondition: checkInForm.wallFloorCeilingCondition,
+        acCondition: checkInForm.acCondition,
+        electricityMeter: checkInForm.electricityMeter || "182167",
+        waterMeter: checkInForm.waterMeter || "149089",
+        damages: checkInForm.damages || "None recorded",
+        pendingMaintenance: checkInForm.pendingMaintenance || "None",
+        acknowledged: true,
+        photos: Number(checkInForm.photos) || 8,
+      },
+      ...items,
+    ]);
+    advanceLease(lease, "active");
+    setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Occupied" } : item)));
+    recordAudit({
+      stage: "Check-In Process",
+      owner: "Property Manager",
+      input: "Unit condition, fixtures, utilities, photos, damage log and maintenance follow-up",
+      approval: "Tenant acknowledgement",
+      status: "completed",
+      output: checkInForm.note || "Check-in report completed, maintenance logged where needed, and unit marked occupied",
+    });
+    setCheckInOpen(false);
+  }
+
   function startCheckout(lease: Lease) {
     setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "checkout" } : item)));
     setCheckouts((items) => [
@@ -1146,6 +1324,10 @@ function LeasingPage() {
         moveOutDate: startCheckoutForm.moveOutDate || lease.endDate,
         inspectionDate: startCheckoutForm.inspectionDate || addDays(new Date(lease.endDate), -3),
         comparisonSummary: "Pending final comparison with original check-in report",
+        nonRenewalNotice: startCheckoutForm.notes || "Tenant non-renewal notice received",
+        outstandingCharges: startCheckoutForm.outstandingCharges,
+        utilityClearanceRequirements: startCheckoutForm.utilityClearanceRequirements,
+        keyReturnRequirements: startCheckoutForm.keyReturnRequirements,
         financeClearance: false,
         utilityClearance: false,
         keysReturned: false,
@@ -1156,10 +1338,10 @@ function LeasingPage() {
     recordAudit({
       stage: "Non-Renewal & Check-Out",
       owner: "Leasing Department",
-      input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${startCheckoutForm.moveOutDate}`,
+      input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${startCheckoutForm.moveOutDate}, inspection ${startCheckoutForm.inspectionDate}`,
       approval: "Tenant non-renewal notice",
       status: "planned",
-      output: startCheckoutForm.notes || "Checkout case opened",
+      output: startCheckoutForm.notes || "Checkout case opened with finance, utility and key-return requirements",
     });
     setStartCheckoutOpen(false);
   }
@@ -1177,6 +1359,7 @@ function LeasingPage() {
             keysReturned: completeCheckoutForm.keysReturned,
             status: "ready_for_settlement",
             comparisonSummary: "Normal wear separated from tenant-caused damages",
+            outstandingCharges: completeCheckoutForm.outstandingRent,
           }
           : item,
       ),
@@ -1190,6 +1373,7 @@ function LeasingPage() {
         electricityMeter: completeCheckoutForm.electricityMeter || "182207",
         waterMeter: completeCheckoutForm.waterMeter || "149129",
         damages: completeCheckoutForm.damages || "None",
+        pendingMaintenance: `Missing items: ${completeCheckoutForm.missingItems || "None"}; cleaning/restoration charges captured`,
         acknowledged: true,
         photos: Number(completeCheckoutForm.photos) || 12,
       },
@@ -1203,7 +1387,9 @@ function LeasingPage() {
         outstandingRent: Number(completeCheckoutForm.outstandingRent) || 0,
         damages: Number(completeCheckoutForm.damagesAmount) || 0,
         utilityCharges: Number(completeCheckoutForm.utilityCharges) || 0,
-        otherDeductions: Number(completeCheckoutForm.otherDeductions) || 0,
+        otherDeductions: (Number(completeCheckoutForm.otherDeductions) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0),
+        refundableBalance: lease.securityDeposit - ((Number(completeCheckoutForm.outstandingRent) || 0) + (Number(completeCheckoutForm.damagesAmount) || 0) + (Number(completeCheckoutForm.utilityCharges) || 0) + (Number(completeCheckoutForm.otherDeductions) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0)),
+        unitDisposition: completeCheckoutForm.unitDisposition,
         approval: "pending_approval",
       },
       ...items,
@@ -1211,10 +1397,10 @@ function LeasingPage() {
     recordAudit({
       stage: "Check-Out Inspection",
       owner: "Property Manager",
-      input: "Condition, meters, keys, utilities, damages",
+      input: "Condition, meters, keys, utilities, damages, missing items, cleaning/restoration review",
       approval: "Tenant acknowledgement",
       status: "ready_for_settlement",
-      output: "Settlement draft created with deductions",
+      output: "Settlement draft created with damages, utilities, cleaning/restoration and unit-disposition recommendation",
     });
     setCompleteCheckoutOpen(false);
   }
@@ -1793,6 +1979,9 @@ function LeasingPage() {
             <Field label="Planned Handover Date">
               <Input type="date" value={keyNotifyForm.handoverAt} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverAt: e.target.value }))} />
             </Field>
+            <Field label="Planned Handover Time">
+              <Input type="time" value={keyNotifyForm.handoverTime} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverTime: e.target.value }))} />
+            </Field>
             <Field label="Recipients">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1801,7 +1990,7 @@ function LeasingPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-[300px]">
-                  {["Tenant", "Property Manager", "Security", "Maintenance", "Facility Management", "Landlord"].map(role => (
+                  {["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance", "Facility Management"].map(role => (
                     <DropdownMenuCheckboxItem
                       key={role}
                       checked={keyNotifyForm.recipients.includes(role)}
@@ -1820,13 +2009,25 @@ function LeasingPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </Field>
+            <Field label="Authorized Person Collecting Keys">
+              <Input value={keyNotifyForm.authorizedCollector} onChange={e => setKeyNotifyForm(f => ({ ...f, authorizedCollector: e.target.value }))} placeholder="Tenant or approved representative" />
+            </Field>
+            <Field label="Keys / Access Items Summary">
+              <Input value={keyNotifyForm.keysSummary} onChange={e => setKeyNotifyForm(f => ({ ...f, keysSummary: e.target.value }))} placeholder="2 keys, 2 cards, 1 parking remote" />
+            </Field>
+            <Field label="Outstanding Requirements">
+              <Input value={keyNotifyForm.outstandingRequirements} onChange={e => setKeyNotifyForm(f => ({ ...f, outstandingRequirements: e.target.value }))} placeholder="None" />
+            </Field>
+            <Field label="Property Manager / Staff Contact">
+              <Input value={keyNotifyForm.staffContact} onChange={e => setKeyNotifyForm(f => ({ ...f, staffContact: e.target.value }))} placeholder="Name and contact details" />
+            </Field>
             <Field label="Special Instructions / Note">
               <Textarea rows={2} value={keyNotifyForm.note} onChange={e => setKeyNotifyForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special access or coordination instructions..." />
             </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setKeyNotifyOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && issueKeyNotice(keysWorkflowLease)}><Bell className="mr-2 h-4 w-4" /> Send Notification</Button>
+            <Button onClick={() => keysWorkflowLease && issueDetailedKeyNotice(keysWorkflowLease)}><Bell className="mr-2 h-4 w-4" /> Send Notification</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1839,15 +2040,22 @@ function LeasingPage() {
             <DialogDescription>Record key issue details for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Handover Date"><Input type="date" value={handoverForm.handoverAt} onChange={e => setHandoverForm(f => ({ ...f, handoverAt: e.target.value }))} /></Field>
+              <Field label="Handover Time"><Input type="time" value={handoverForm.handoverTime} onChange={e => setHandoverForm(f => ({ ...f, handoverTime: e.target.value }))} /></Field>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Keys Issued"><Input type="number" value={handoverForm.keys} onChange={e => setHandoverForm(f => ({ ...f, keys: e.target.value }))} /></Field>
               <Field label="Access Cards"><Input type="number" value={handoverForm.accessCards} onChange={e => setHandoverForm(f => ({ ...f, accessCards: e.target.value }))} /></Field>
               <Field label="Parking Remotes"><Input type="number" value={handoverForm.parkingRemotes} onChange={e => setHandoverForm(f => ({ ...f, parkingRemotes: e.target.value }))} /></Field>
             </div>
+            <Field label="Key Type / Description"><Input value={handoverForm.keyType} onChange={e => setHandoverForm(f => ({ ...f, keyType: e.target.value }))} placeholder="Metal door keys / smart key / access FOB" /></Field>
+            <Field label="Authorized Collector Name"><Input value={handoverForm.collectorName} onChange={e => setHandoverForm(f => ({ ...f, collectorName: e.target.value }))} placeholder="Tenant or approved representative" /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Electricity Meter Reading"><Input value={handoverForm.electricityMeterReading} onChange={e => setHandoverForm(f => ({ ...f, electricityMeterReading: e.target.value }))} placeholder="e.g. 182167" /></Field>
               <Field label="Water Meter Reading"><Input value={handoverForm.waterMeterReading} onChange={e => setHandoverForm(f => ({ ...f, waterMeterReading: e.target.value }))} placeholder="e.g. 149089" /></Field>
             </div>
+            <Field label="Parking Remote / Access Device Details"><Input value={handoverForm.parkingDeviceDetails} onChange={e => setHandoverForm(f => ({ ...f, parkingDeviceDetails: e.target.value }))} placeholder="Remote serial, parking bay, gate tag, etc." /></Field>
             <Field label="Issued By">
               <Select value={handoverForm.issuedBy} onValueChange={v => setHandoverForm(f => ({ ...f, issuedBy: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1858,13 +2066,16 @@ function LeasingPage() {
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="Tenant Acknowledgement">
+              <Textarea rows={2} value={handoverForm.tenantAcknowledgement} onChange={e => setHandoverForm(f => ({ ...f, tenantAcknowledgement: e.target.value }))} placeholder="Acknowledgement text or signature note..." />
+            </Field>
             <Field label="Notes / Observations">
               <Textarea rows={2} value={handoverForm.note} onChange={e => setHandoverForm(f => ({ ...f, note: e.target.value }))} placeholder="Any notes on handover..." />
             </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setHandoverOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && completeHandover(keysWorkflowLease)}><Key className="mr-2 h-4 w-4" /> Confirm Handover</Button>
+            <Button onClick={() => keysWorkflowLease && completeDetailedHandover(keysWorkflowLease)}><Key className="mr-2 h-4 w-4" /> Confirm Handover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1889,6 +2100,14 @@ function LeasingPage() {
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
+              <Field label="Furniture / Appliance Condition"><Input value={checkInForm.furnitureCondition} onChange={e => setCheckInForm(f => ({ ...f, furnitureCondition: e.target.value }))} placeholder="Good / N/A / list issues" /></Field>
+              <Field label="Fixtures & Fittings"><Input value={checkInForm.fixturesCondition} onChange={e => setCheckInForm(f => ({ ...f, fixturesCondition: e.target.value }))} placeholder="Good / minor wear" /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Walls / Floors / Doors / Windows"><Input value={checkInForm.wallFloorCeilingCondition} onChange={e => setCheckInForm(f => ({ ...f, wallFloorCeilingCondition: e.target.value }))} placeholder="Fresh paint, clean flooring, etc." /></Field>
+              <Field label="Air-Conditioning"><Input value={checkInForm.acCondition} onChange={e => setCheckInForm(f => ({ ...f, acCondition: e.target.value }))} placeholder="Operational / service due" /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Electricity Meter"><Input value={checkInForm.electricityMeter} onChange={e => setCheckInForm(f => ({ ...f, electricityMeter: e.target.value }))} placeholder="e.g. 182167" /></Field>
               <Field label="Water Meter"><Input value={checkInForm.waterMeter} onChange={e => setCheckInForm(f => ({ ...f, waterMeter: e.target.value }))} placeholder="e.g. 149089" /></Field>
             </div>
@@ -1896,13 +2115,16 @@ function LeasingPage() {
             <Field label="Damages / Remarks">
               <Textarea rows={2} value={checkInForm.damages} onChange={e => setCheckInForm(f => ({ ...f, damages: e.target.value }))} placeholder="Existing marks, pending items..." />
             </Field>
+            <Field label="Pending Maintenance Work">
+              <Textarea rows={2} value={checkInForm.pendingMaintenance} onChange={e => setCheckInForm(f => ({ ...f, pendingMaintenance: e.target.value }))} placeholder="Any open maintenance issues to assign..." />
+            </Field>
             <Field label="Additional Notes">
               <Textarea rows={2} value={checkInForm.note} onChange={e => setCheckInForm(f => ({ ...f, note: e.target.value }))} placeholder="Tenant observations, signed acknowledgement..." />
             </Field>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCheckInOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && completeCheckIn(keysWorkflowLease)}><ClipboardCheck className="mr-2 h-4 w-4" /> Complete Check-In</Button>
+            <Button onClick={() => keysWorkflowLease && completeDetailedCheckIn(keysWorkflowLease)}><ClipboardCheck className="mr-2 h-4 w-4" /> Complete Check-In</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2308,12 +2530,12 @@ function LeasingPage() {
                     `${lease.tenantName} / ${lease.unit}`,
                     <StatusBadge key="status" value={lease.status} />,
                     notice ? <StatusBadge key="notice" value={notice.status} /> : "-",
-                    handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "-",
-                    checkIn ? `${checkIn.condition}, ${checkIn.photos} photos` : "-",
+                    handover ? `${handover.keys} ${handover.keyType || "keys"}, ${handover.accessCards} cards` : "-",
+                    checkIn ? `${checkIn.condition}, ${checkIn.photos} photos, maintenance: ${checkIn.pendingMaintenance || "None"}` : "-",
                     <div key="actions" className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), recipients: ["Tenant", "Property Manager", "Security", "Maintenance"], note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
-                      <Button size="sm" variant="outline" disabled={lease.status !== "active"} onClick={() => { setKeysWorkflowLease(lease); setHandoverForm({ keys: "2", accessCards: "2", parkingRemotes: "1", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", note: "" }); setHandoverOpen(true); }}>Handover</Button>
-                      <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", electricityMeter: handover?.meterInfo || "", waterMeter: "", damages: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), handoverTime: "10:00", recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"], authorizedCollector: lease.tenantName, keysSummary: "2 metal keys, 2 access cards, 1 parking remote", staffContact: "Property Manager - +974 4400 2200", outstandingRequirements: "None", note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
+                      <Button size="sm" variant="outline" disabled={!(notice && notice.status === "sent")} onClick={() => { setKeysWorkflowLease(lease); setHandoverForm({ handoverAt: notice?.handoverAt || addDays(today, 1), handoverTime: notice?.handoverTime || "10:00", keys: "2", keyType: "Metal door keys", accessCards: "2", parkingRemotes: "1", parkingDeviceDetails: "Remote for covered parking bay", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", collectorName: notice?.authorizedCollector || lease.tenantName, tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.", note: "" }); setHandoverOpen(true); }}>Handover</Button>
+                      <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: "", waterMeter: "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
                     </div>,
                   ];
                 })}
