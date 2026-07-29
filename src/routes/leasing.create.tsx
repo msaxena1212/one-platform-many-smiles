@@ -155,6 +155,7 @@ type Lease = {
   parkingDetails: string;
   specialConditions: string;
   noticePeriodDays: number;
+  renewalTerms?: string;
   status: LeaseStatus;
   tenantSignedAt?: string;
   landlordSignedAt?: string;
@@ -666,6 +667,9 @@ function LeasingPage() {
     utilityClearanceRequirements: "Final utility clearance required before checkout closure",
     keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
     notes: "",
+    missingItems: "",
+    cleaningCharges: "0",
+    restorationCharges: "0",
   });
 
   const [completeCheckoutOpen, setCompleteCheckoutOpen] = useState(false);
@@ -1241,17 +1245,6 @@ function LeasingPage() {
       output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Available"}, full history retained`,
     });
   }
-
-    ]);
-    recordAudit({
-      stage: "Key Handover",
-      owner: "Property Manager",
-      input: `${lease.unit}, keys/access cards/parking remote, meter readings`,
-      approval: "Tenant and staff acknowledgement",
-      status: "acknowledged",
-      output: handoverForm.note || "Key handover form completed",
-    });
-    setHandoverOpen(false);
   }
 
   function completeCheckIn(lease: Lease) {
@@ -2624,7 +2617,7 @@ function LeasingPage() {
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setRenewals((items) => items.map((item) => item.id === renewal.id ? { ...item, status: "under_discussion" } : item))}>Discuss</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "" }); setRenewalResponseOpen(true); }}>Renew</Button>
-                      {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
+                      {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "", outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", missingItems: "", cleaningCharges: "0", restorationCharges: "0" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
                     </div>,
                   ];
                 })}

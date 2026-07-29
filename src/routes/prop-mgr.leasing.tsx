@@ -100,6 +100,7 @@ type Reservation = {
   rent: number;
   status: ReservationStatus;
   remarks: string;
+  proposedEndDate?: string;
 };
 
 type TenantDocument = {
@@ -611,6 +612,9 @@ function LeasingPage() {
     utilityClearanceRequirements: "Final utility clearance required before checkout closure",
     keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
     notes: "",
+    missingItems: "",
+    cleaningCharges: "0",
+    restorationCharges: "0",
   });
 
   const [completeCheckoutOpen, setCompleteCheckoutOpen] = useState(false);
@@ -647,6 +651,7 @@ function LeasingPage() {
     startDate: addDays(today, 10),
     validityDays: "7",
     rent: "5500",
+    proposedEndDate: "",
     remarks: "",
   });
 
@@ -707,6 +712,7 @@ function LeasingPage() {
       rent: Number(reservationForm.rent || unit.rent),
       status: "reserved",
       remarks: reservationForm.remarks,
+      proposedEndDate: reservationForm.proposedEndDate,
     };
     setReservations((items) => [reservation, ...items]);
     setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, status: "Reserved" } : item)));
@@ -1047,6 +1053,16 @@ function LeasingPage() {
   function renewLease(renewal: RenewalCase) {
     const oldLease = leases.find((item) => item.id === renewal.leaseId);
     if (!oldLease) return;
+    // Check for tenant documents that may have expired during the previous lease term
+    const expiredDocs = documents
+      .filter((d) => d.customerId === oldLease.customerId && d.mandatory && d.expiryDate && new Date(d.expiryDate) < today)
+      .map((d) => d.name);
+    if (expiredDocs.length > 0) {
+      const proceed = window.confirm(
+        `Warning: The following mandatory documents have expired and should be renewed before activating the new lease period:\n\n${expiredDocs.join(", ")}\n\nProceed with renewal? (You can update documents in the Documents tab.)` 
+      );
+      if (!proceed) return;
+    }
     const renewed: Lease = {
       ...oldLease,
       id: `l${leases.length + 1}`,
@@ -1068,10 +1084,10 @@ function LeasingPage() {
     recordAudit({
       stage: "Lease Renewal Process",
       owner: "Leasing Department",
-      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}`,
+      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
-      output: "Renewed lease linked to previous lease history; renewed period remains traceable in lease module",
+      output: "Renewed lease linked to previous lease history; document review recommended for expired credentials",
     });
   }
 

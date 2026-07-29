@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.lease_reservations (
   valid_until DATE NOT NULL,
   status TEXT NOT NULL DEFAULT 'reserved'
     CHECK (status IN ('reserved','converted','expired','released')),
-  remarks TEXT,
+  remarks TEXT
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

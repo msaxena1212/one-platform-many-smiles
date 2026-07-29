@@ -19,6 +19,8 @@ export async function createReservation(reservation: Reservation): Promise<Reser
   return data as Reservation;
 }
 
+// Removed duplicate checkDuplicateCustomer function - exists in customerService.ts
+
 /**
  * Schedule expiry notification for a reservation.
  * Returns a notification ID string.
