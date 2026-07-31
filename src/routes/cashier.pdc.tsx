@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type ElementType } from "react";
-import { fetchPDCs, PDC, updatePDC } from "@/lib/supabase";
+import { fetchPDCs, type PDC, updatePDC } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, CreditCard, Building2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Search, CreditCard, Building2, AlertCircle, CheckCircle2, Clock, Wifi } from "lucide-react";
+import { useAppData, type PmsPdc } from "@/lib/app-data-context";
 
 export const Route = createFileRoute("/cashier/pdc")({
   head: () => ({ meta: [{ title: "PDC Management - ZYNO Property Management" }] }),
@@ -74,23 +75,40 @@ function formatQAR(amount?: number) {
 }
 
 function CashierPDCs() {
-  const [pdcs, setPdcs] = useState<PDC[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { pdcs: ctxPdcs, leases, setPdcs: setCtxPdcs, syncing } = useAppData();
+  const [dbPdcs, setDbPdcs] = useState<PDC[]>([]);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
   useEffect(() => {
-    loadPDCs();
+    fetchPDCs().then(d => setDbPdcs(d || [])).catch(() => {});
   }, []);
 
-  async function loadPDCs() {
-    setLoading(true);
-    fetchPDCs().then((result) => setPdcs(result)).finally(() => setLoading(false));
-  }
+  // Merge context PDCs (primary, real-time) with any extra DB PDCs
+  const ctxAsDbPdcs: PDC[] = ctxPdcs.map(p => ({
+    id: p.id,
+    lease_id: p.leaseId,
+    cheque_number: p.chequeNo,
+    bank_name: p.bank,
+    bank: p.bank,
+    amount: p.amount,
+    deposit_date: p.date,
+    status: (p.status === 'received' ? 'held' : p.status) as PDC['status'],
+    tenant_name: leases.find(l => l.id === p.leaseId)?.tenantName,
+    unit_name: leases.find(l => l.id === p.leaseId)?.unit,
+    maturity_date: p.date,
+    created_at: p.date,
+  }));
+  const dbOnlyPdcs = dbPdcs.filter(d => !ctxPdcs.some(c => c.id === d.id));
+  const pdcs = [...ctxAsDbPdcs, ...dbOnlyPdcs];
 
   async function handleMark(id: string, status: PDC["status"]) {
-    await updatePDC(id, status);
-    loadPDCs();
+    // Update in context
+    setCtxPdcs(prev => prev.map(p => p.id === id ? { ...p, status: status as PmsPdc['status'] } : p));
+    // Also persist to Supabase DB if it's a DB record
+    if (dbPdcs.some(d => d.id === id)) {
+      updatePDC(id, status).catch(console.warn);
+    }
   }
 
   const bank = (pdc: PDC) => pdc.bank || pdc.bank_name || "-";

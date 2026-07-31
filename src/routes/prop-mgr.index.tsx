@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building, PlusCircle, Users, Wallet, Wrench, ClipboardCheck, Plus, Home, Inbox, CalendarIcon, Loader2, BarChart } from "lucide-react";
+import { Building, PlusCircle, Users, Wallet, Wrench, ClipboardCheck, Plus, Home, Inbox, CalendarIcon, Loader2, BarChart, Package } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchHostProperties, supabase, type Property } from "@/lib/supabase";
 
@@ -21,7 +21,9 @@ function HostDashboard() {
     units: 0,
     activeLeases: 0,
     monthlyRevenue: 0,
-    pendingTickets: 0
+    pendingTickets: 0,
+    assetsCount: 0,
+    employeesCount: 0
   });
   const [loading, setLoading] = useState(true);
 
@@ -57,12 +59,27 @@ function HostDashboard() {
         const { count: unitCount } = await supabase.from('units').select('*', { count: 'exact', head: true }).eq('host_id', hostId);
         const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).eq('host_id', hostId).eq('lease_status', 'ACTIVE');
         
+        const { data: propData } = await supabase.from('properties').select('id').eq('host_id', hostId);
+        const propIds = propData?.map(p => p.id) || [];
+        
+        let assetsCount = 0;
+        let empIds = new Set();
+        if (propIds.length > 0) {
+          const { data: assetsData } = await supabase.from('assets').select('id, assigned_employee_id').in('assigned_property_id', propIds);
+          if (assetsData) {
+            assetsCount = assetsData.length;
+            assetsData.forEach(a => { if (a.assigned_employee_id) empIds.add(a.assigned_employee_id) });
+          }
+        }
+        
         setStats({
           properties: propCount || 0,
           units: unitCount || 0,
           activeLeases: leaseCount || 0,
-          monthlyRevenue: 0, // Would be calculated from leases
-          pendingTickets: 0
+          monthlyRevenue: 0, 
+          pendingTickets: 0,
+          assetsCount: assetsCount,
+          employeesCount: empIds.size
         });
       } catch (e) {
         console.warn("Could not load full stats, using defaults/partial");
@@ -82,8 +99,8 @@ function HostDashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Welcome back, {hostName}</h1>
           <p className="text-muted-foreground mt-2">Manage your properties and reservations.</p>
         </div>
-        <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
-          <Link to="/prop-mgr/properties"><Plus className="mr-2 h-4 w-4" /> New property</Link>
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => alert("Create property coming soon!")}>
+          <Plus className="mr-2 h-4 w-4" /> New property
         </Button>
       </div>
 
@@ -131,6 +148,26 @@ function HostDashboard() {
             <p className="text-xs text-muted-foreground">Within next 7 days</p>
           </CardContent>
         </Card>
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Linked Assets</CardTitle>
+            <Package className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{stats.assetsCount}</div>
+            <p className="text-xs text-muted-foreground">Assigned to your properties</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Assigned Staff</CardTitle>
+            <Users className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{stats.employeesCount}</div>
+            <p className="text-xs text-muted-foreground">Employees linked to assets</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Properties Table */}
@@ -149,8 +186,8 @@ function HostDashboard() {
               <Home className="mx-auto h-12 w-12 mb-4 opacity-30" />
               <p className="font-medium">No properties yet</p>
               <p className="text-sm mt-1">Get started by creating your first listing.</p>
-              <Button asChild className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground">
-                <Link to="/prop-mgr/create"><Plus className="mr-2 h-4 w-4" /> Create listing</Link>
+              <Button className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => alert("Create property coming soon!")}>
+                <Plus className="mr-2 h-4 w-4" /> Create listing
               </Button>
             </div>
           ) : (
@@ -192,8 +229,8 @@ function HostDashboard() {
                         <td className="p-4 align-middle">${property.base_price_per_night}</td>
                         <td className="p-4 align-middle text-muted-foreground">{property.city}, {property.country}</td>
                         <td className="p-4 align-middle text-right">
-                          <Button asChild variant="outline" size="sm">
-                            <Link to="/prop-mgr/manage/$id" params={{ id: property.id }}>Manage</Link>
+                          <Button variant="outline" size="sm" onClick={() => alert("Manage property coming soon!")}>
+                            Manage
                           </Button>
                         </td>
                       </tr>

@@ -1245,7 +1245,6 @@ function LeasingPage() {
       output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Available"}, full history retained`,
     });
   }
-  }
 
   function completeCheckIn(lease: Lease) {
     setInspections((items) => [
@@ -2644,7 +2643,7 @@ function LeasingPage() {
                     `Finance ${checkout.financeClearance ? "OK" : "Pending"}, Utility ${checkout.utilityClearance ? "OK" : "Pending"}, Keys ${checkout.keysReturned ? "Returned" : "Pending"}`,
                     checkout.comparisonSummary,
                     <StatusBadge key="status" value={checkout.status} />,
-                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
+                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Vacant - Under Maintenance" }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
                   ];
                 })}
               />

@@ -8,9 +8,11 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AppDataProvider } from "../lib/app-data-context";
 
 function NotFoundComponent() {
   return (
@@ -86,12 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@ZYNO" },
     ],
-    links: [
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-    ],
+    links: [{ rel: "stylesheet", href: appCss }],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -113,16 +110,17 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-import { Toaster } from "sonner";
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <Toaster position="top-center" richColors />
+      {/* AppDataProvider — single Supabase-backed real-time store shared across all roles */}
+      <AppDataProvider>
+        {/* Required: nested routes render here */}
+        <Outlet />
+        <Toaster position="top-center" richColors />
+      </AppDataProvider>
     </QueryClientProvider>
   );
 }

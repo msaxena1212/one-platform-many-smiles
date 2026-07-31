@@ -247,6 +247,17 @@ export async function fetchHostProperties(hostId: string) {
   return data as Property[];
 }
 
+/** Fetch all properties (Admin View) */
+export async function fetchAllProperties() {
+  const { data, error } = await supabase
+    .from('properties')
+    .select('*, property_images(image_url, is_primary)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as Property[];
+}
+
 /** Create a new property listing */
 export async function createProperty(payload: Omit<Property, 'id' | 'created_at' | 'property_images'>) {
   const { data, error } = await supabase
@@ -457,6 +468,51 @@ export type MaterialUsage = {
   created_at: string;
 };
 
+export type PropertyImage = {
+  id: string;
+  property_id: string;
+  image_url: string;
+  is_primary: boolean;
+  display_order: number;
+};
+
+// HRMS Assets
+export type Asset = {
+  id: string;
+  asset_code?: string;
+  asset_name: string;
+  category?: string;
+  subcategory?: string;
+  brand?: string;
+  model?: string;
+  serial_number?: string;
+  ownership_type?: string;
+  purchase_date?: string;
+  supplier?: string;
+  purchase_cost?: number;
+  warranty_expiry_date?: string;
+  warranty_status?: string;
+  department_id?: string;
+  assigned_property_id?: string;
+  assigned_unit_id?: string;
+  assigned_employee_id?: string;
+  assignment_date?: string;
+  asset_condition?: string;
+  asset_status?: string;
+  life_of_asset?: number;
+  opening_cost?: number;
+  last_service_date?: string;
+  next_service_date?: string;
+  remarks?: string;
+  created_at: string;
+  updated_at: string;
+  
+  // Joins
+  departments?: { name: string };
+  employees?: { first_name: string; last_name: string };
+  properties?: { title: string };
+};
+
 export async function fetchMaintenanceTickets(filters?: { property_id?: string; host_id?: string }) {
   let query = supabase
     .from('maintenance_tickets')
@@ -529,6 +585,7 @@ export type PDC = {
   updated_at?: string;
 };
 
+// Old FixedAsset Type (Deprecated in favor of HRMS Asset, keeping for legacy compatibility if needed elsewhere)
 export type FixedAsset = {
   id: string;
   property_id: string;
@@ -544,6 +601,29 @@ export type FixedAsset = {
   created_at: string;
   updated_at: string;
 };
+
+// --- HRMS Assets API ---
+export async function fetchAssets(filters?: { property_id?: string; employee_id?: string }) {
+  let query = supabase.from('assets').select('*, departments(name), employees(first_name, last_name), properties(title)').order('created_at', { ascending: false });
+  if (filters?.property_id) query = query.eq('assigned_property_id', filters.property_id);
+  if (filters?.employee_id) query = query.eq('assigned_employee_id', filters.employee_id);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data as Asset[];
+}
+
+export async function createAsset(payload: Partial<Asset>) {
+  const { data, error } = await supabase.from('assets').insert(payload).select().single();
+  if (error) throw error;
+  return data as Asset;
+}
+
+export async function updateAsset(id: string, payload: Partial<Asset>) {
+  const { data, error } = await supabase.from('assets').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  if (error) throw error;
+  return data as Asset;
+}
+
 
 export type ApprovalRequest = {
   id: string;

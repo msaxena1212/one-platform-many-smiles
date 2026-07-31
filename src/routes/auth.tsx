@@ -30,8 +30,8 @@ function AuthPage() {
     try {
       clearDemoSession();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: email.trim(),
+        password: password.trim(),
       });
 
       if (error) throw error;
@@ -39,15 +39,20 @@ function AuthPage() {
       toast.success("Successfully signed in");
       
       // Route based on role
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', data.user.id)
         .single();
         
+      if (profileError) {
+         toast.error(`Profile Error: ${profileError.message}`);
+         return;
+      }
+        
       navigate({ to: getLandingRouteForRole(profile?.role) });
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(`Auth Error: ${error.message || JSON.stringify(error)}`);
     } finally {
       setLoading(false);
     }

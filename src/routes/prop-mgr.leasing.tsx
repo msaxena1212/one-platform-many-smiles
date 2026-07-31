@@ -180,11 +180,23 @@ type KeyHandover = {
   accessCards: number;
   parkingRemotes: number;
   parkingDeviceDetails?: string;
+  electricityMeterReading?: string;
+  waterMeterReading?: string;
   meterInfo: string;
+  unitCondition?: string;
+  cleanliness?: string;
+  acWorking?: boolean;
+  plumbingOk?: boolean;
+  electricalOk?: boolean;
+  doorsWindowsOk?: boolean;
+  idVerified?: boolean;
+  photosTaken?: number;
   acknowledged: boolean;
   issuedBy: string;
   collectorName?: string;
+  collectorIdNumber?: string;
   tenantAcknowledgement?: string;
+  note?: string;
 };
 
 type Inspection = {
@@ -281,6 +293,7 @@ const initialUnits: Unit[] = [
   { id: "u2", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", status: "Occupied", rent: 5100 },
   { id: "u3", property: "Old Salata - Residence No:13", unit: "Old Salata 2 - Flat04", status: "Available", rent: 4300 },
   { id: "u4", property: "Old Salata - Residence No:23", unit: "AAA - Flat21", status: "Occupied", rent: 6400 },
+  { id: "u5", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", status: "Occupied", rent: 4000 },
 ];
 
 const initialCustomers: Customer[] = [
@@ -304,6 +317,17 @@ const initialCustomers: Customer[] = [
     crNumber: "CR-779214",
     mobile: "+974 4477 8800",
     email: "accounts@alameen.qa",
+    status: "active",
+  },
+  {
+    id: "c3",
+    name: "Vivek Viswakumaran Nair",
+    type: "individual",
+    qatarId: "QID-ARRS01-52",
+    passport: "",
+    crNumber: "",
+    mobile: "+974 4448 5111",
+    email: "vivek@example.com",
     status: "active",
   },
 ];
@@ -387,18 +411,84 @@ const initialLeases: Lease[] = [
     sharedWithTenant: true,
     collectionCompleted: true,
   },
+  {
+    // ARRS01-LES-25-52-0 — Receipt Acknowledgement dated 23-DEC-25
+    id: "l3",
+    customerId: "c3",
+    reservationId: "",
+    property: "Regency Residence Al Sadd 1",
+    unit: "ARRS01-B00-F00-AG01",
+    tenantName: "Vivek Viswakumaran Nair",
+    startDate: "2026-01-01",
+    endDate: "2026-12-31",
+    monthlyRent: 4000,
+    securityDeposit: 4000, // QR 1,000 cash + 2× QR 1,500 PDC
+    pdcCount: 12,
+    paymentFrequency: "monthly",
+    gracePeriodDays: 5,
+    penalties: "Returned cheque charges apply; late payment penalty after grace period",
+    maintenanceResponsibility: "Property Manager for major repairs",
+    utilityResponsibility: "Tenant",
+    parkingDetails: "Covered parking bay",
+    specialConditions: "Location code ARRS01-B00-F00-AG01; PO Box 9012",
+    noticePeriodDays: 60,
+    status: "fully_signed",
+    tenantSignedAt: "2025-12-23",
+    landlordSignedAt: "2025-12-23",
+    signedDocument: "ARRS01-LES-25-52-0-signed.pdf",
+    receivedBy: "Ms. MerricSuibai Murla",
+    landlordPackageSubmittedAt: "2025-12-23",
+    sharedWithTenant: true,
+    collectionCompleted: true,
+  },
 ];
 
 const initialPdcs: Pdc[] = [
   { id: "p1", leaseId: "l1", chequeNo: "CHQ-1001", bank: "QNB", date: "2026-08-01", amount: 5600, status: "received" },
   { id: "p2", leaseId: "l1", chequeNo: "CHQ-1002", bank: "QNB", date: "2026-09-01", amount: 5600, status: "received" },
   { id: "p3", leaseId: "l2", chequeNo: "CHQ-2001", bank: "Doha Bank", date: "2026-08-01", amount: 5500, status: "deposited" },
+  // Vivek Viswakumaran Nair — ARRS01-LES-25-52-0 (Security Deposits)
+  { id: "p4", leaseId: "l3", chequeNo: "25631298", bank: "Cash", date: "2025-12-23", amount: 1000, status: "cleared" },   // Deposit S/No.1 — Cash
+  { id: "p5", leaseId: "l3", chequeNo: "01000069", bank: "CBQ", date: "2026-01-05", amount: 1500, status: "received" },    // Deposit S/No.2 — PDC
+  { id: "p6", leaseId: "l3", chequeNo: "01000070", bank: "CBQ", date: "2026-02-05", amount: 1500, status: "received" },    // Deposit S/No.3 — PDC
+  // Vivek — Rent PDCs (S/No.4–15)
+  { id: "p7",  leaseId: "l3", chequeNo: "01000049", bank: "CBQ", date: "2026-01-05", amount: 4000, status: "deposited" },  // Jan 2026
+  { id: "p8",  leaseId: "l3", chequeNo: "01000050", bank: "CBQ", date: "2026-02-05", amount: 4000, status: "deposited" },  // Feb 2026
+  { id: "p9",  leaseId: "l3", chequeNo: "01000059", bank: "CBQ", date: "2026-03-05", amount: 4000, status: "deposited" },  // Mar 2026
+  { id: "p10", leaseId: "l3", chequeNo: "01000060", bank: "CBQ", date: "2026-04-05", amount: 4000, status: "deposited" },  // Apr 2026
+  { id: "p11", leaseId: "l3", chequeNo: "01000061", bank: "CBQ", date: "2026-05-05", amount: 4000, status: "deposited" },  // May 2026
+  { id: "p12", leaseId: "l3", chequeNo: "01000062", bank: "CBQ", date: "2026-06-05", amount: 4000, status: "deposited" },  // Jun 2026
+  { id: "p13", leaseId: "l3", chequeNo: "01000063", bank: "CBQ", date: "2026-07-05", amount: 4000, status: "received" },   // Jul 2026
+  { id: "p14", leaseId: "l3", chequeNo: "01000064", bank: "CBQ", date: "2026-08-05", amount: 4000, status: "received" },   // Aug 2026
+  { id: "p15", leaseId: "l3", chequeNo: "01000065", bank: "CBQ", date: "2026-09-05", amount: 4000, status: "received" },   // Sep 2026
+  { id: "p16", leaseId: "l3", chequeNo: "01000066", bank: "CBQ", date: "2026-10-05", amount: 4000, status: "received" },   // Oct 2026
+  { id: "p17", leaseId: "l3", chequeNo: "01000067", bank: "CBQ", date: "2026-11-05", amount: 4000, status: "received" },   // Nov 2026
+  { id: "p18", leaseId: "l3", chequeNo: "01000068", bank: "CBQ", date: "2026-12-05", amount: 4000, status: "received" },   // Dec 2026
 ];
 
 const initialVouchers: Voucher[] = [
+  // ── L1: Mr. Hafeez Shaik / AAA - Flat16 ──────────────────────────────
   { id: "v1", leaseId: "l1", name: "Receipts Voucher - Rent", receiptNo: "RV-2025-1001", method: "PDC", period: "Oct 2025 - Sep 2026", debit: "PDC In Hand", credit: "Customer(PDC)-AAA Flat16", amount: 67200, status: "posted" },
   { id: "v2", leaseId: "l1", name: "Receipts Voucher - Deposit", receiptNo: "RV-2025-1002", method: "Cash", period: "Security deposit", debit: "Cash In Hand", credit: "Security Deposit Liability", amount: 5100, status: "posted" },
   { id: "v3", leaseId: "l1", name: "Rental Income Doc", receiptNo: "RID-2025-1001", method: "Batch", period: "Oct 2025", debit: "Receivable-AAA Flat16", credit: "Rental Income", amount: 5600, status: "draft" },
+  // ── L3: Vivek Viswakumaran Nair / ARRS01-B00-F00-AG01 ───────────────
+  // Acknowledgement No. ARE-RT-25-3962-0 | Collection Date: 23-DEC-25
+  { id: "v4", leaseId: "l3", name: "Receipt Voucher - Security Deposit (Cash)", receiptNo: "ARE-RT-25-3962-0", method: "Cash", period: "Security Deposit", debit: "Cash In Hand", credit: "Security Deposit Liability-AG01", amount: 1000, status: "posted" },
+  { id: "v5", leaseId: "l3", name: "Receipt Voucher - Security Deposit (PDC)", receiptNo: "ARE-RT-25-3962-1", method: "PDC", period: "Security Deposit", debit: "PDC In Hand", credit: "Customer(PDC)-AG01", amount: 3000, status: "posted" },
+  { id: "v6", leaseId: "l3", name: "Receipt Voucher - Rent (PDC)", receiptNo: "ARE-RT-25-3962-2", method: "PDC", period: "Jan 2026 - Dec 2026", debit: "PDC In Hand", credit: "Customer(PDC)-AG01", amount: 48000, status: "posted" },
+  { id: "v7", leaseId: "l3", name: "Deposit Voucher - Jan Rent (CBQ)", receiptNo: "DV-L3-2601", method: "PDC", period: "Jan 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v8", leaseId: "l3", name: "Deposit Voucher - Feb Rent (CBQ)", receiptNo: "DV-L3-2602", method: "PDC", period: "Feb 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v9", leaseId: "l3", name: "Deposit Voucher - Mar Rent (CBQ)", receiptNo: "DV-L3-2603", method: "PDC", period: "Mar 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v10", leaseId: "l3", name: "Deposit Voucher - Apr Rent (CBQ)", receiptNo: "DV-L3-2604", method: "PDC", period: "Apr 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v11", leaseId: "l3", name: "Deposit Voucher - May Rent (CBQ)", receiptNo: "DV-L3-2605", method: "PDC", period: "May 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v12", leaseId: "l3", name: "Deposit Voucher - Jun Rent (CBQ)", receiptNo: "DV-L3-2606", method: "PDC", period: "Jun 2026", debit: "Bank Account-CBQ", credit: "PDC In Hand", amount: 4000, status: "posted" },
+  { id: "v13", leaseId: "l3", name: "Rental Income Doc - Jan 2026", receiptNo: "RI-L3-2601", method: "Batch", period: "Jan 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v14", leaseId: "l3", name: "Rental Income Doc - Feb 2026", receiptNo: "RI-L3-2602", method: "Batch", period: "Feb 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v15", leaseId: "l3", name: "Rental Income Doc - Mar 2026", receiptNo: "RI-L3-2603", method: "Batch", period: "Mar 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v16", leaseId: "l3", name: "Rental Income Doc - Apr 2026", receiptNo: "RI-L3-2604", method: "Batch", period: "Apr 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v17", leaseId: "l3", name: "Rental Income Doc - May 2026", receiptNo: "RI-L3-2605", method: "Batch", period: "May 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v18", leaseId: "l3", name: "Rental Income Doc - Jun 2026", receiptNo: "RI-L3-2606", method: "Batch", period: "Jun 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "posted" },
+  { id: "v19", leaseId: "l3", name: "Rental Income Doc - Jul 2026", receiptNo: "RI-L3-2607", method: "Batch", period: "Jul 2026", debit: "Receivable-AG01", credit: "Rental Income-AG01", amount: 4000, status: "draft" },
 ];
 
 function addDays(date: Date, days: number) {
@@ -565,6 +655,9 @@ function LeasingPage() {
   });
 
   const [handoverOpen, setHandoverOpen] = useState(false);
+  const [handoverViewOpen, setHandoverViewOpen] = useState(false);
+  const [selectedHandover, setSelectedHandover] = useState<KeyHandover | null>(null);
+  const [handoverActiveTab, setHandoverActiveTab] = useState("details");
   const [handoverForm, setHandoverForm] = useState({
     handoverAt: addDays(today, 1),
     handoverTime: "10:00",
@@ -577,6 +670,15 @@ function LeasingPage() {
     waterMeterReading: "",
     issuedBy: "Property Manager",
     collectorName: "",
+    collectorIdNumber: "",
+    unitCondition: "Good",
+    cleanliness: "Clean",
+    acWorking: true,
+    plumbingOk: true,
+    electricalOk: true,
+    doorsWindowsOk: true,
+    idVerified: true,
+    photosTaken: "6",
     tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.",
     note: "",
   });
@@ -1102,7 +1204,7 @@ function LeasingPage() {
     const lease = leases.find((item) => item.id === settlement.leaseId);
     if (lease) {
       setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
-      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: settlement.unitDisposition || "Vacant - Available" } : item)));
+      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition || "Vacant - Under Maintenance") as Unit["status"] } : item)));
     }
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
@@ -1137,27 +1239,42 @@ function LeasingPage() {
     setKeyNotifyOpen(false);
   }
 
-  function completeHandover(lease: Lease) {
-    setHandovers((items) => [
-      {
-        id: `kh${items.length + 1}`,
-        leaseId: lease.id,
-        keys: Number(handoverForm.keys) || 2,
-        accessCards: Number(handoverForm.accessCards) || 2,
-        parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
-        meterInfo: `Elec: ${handoverForm.electricityMeterReading || "—"}, Water: ${handoverForm.waterMeterReading || "—"}`,
-        acknowledged: true,
-        issuedBy: handoverForm.issuedBy,
-      },
-      ...items,
-    ]);
+  function completeDetailedHandoverAction(lease: Lease) {
+    const newHandover: KeyHandover = {
+      id: `kh${Date.now()}`,
+      leaseId: lease.id,
+      handoverAt: `${handoverForm.handoverAt} ${handoverForm.handoverTime}`,
+      keys: Number(handoverForm.keys) || 2,
+      keyType: handoverForm.keyType || "Metal door keys",
+      accessCards: Number(handoverForm.accessCards) || 2,
+      parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
+      parkingDeviceDetails: handoverForm.parkingDeviceDetails || "None",
+      electricityMeterReading: handoverForm.electricityMeterReading,
+      waterMeterReading: handoverForm.waterMeterReading,
+      meterInfo: `Elec: ${handoverForm.electricityMeterReading || "-"}, Water: ${handoverForm.waterMeterReading || "-"}`,
+      unitCondition: handoverForm.unitCondition,
+      cleanliness: handoverForm.cleanliness,
+      acWorking: handoverForm.acWorking,
+      plumbingOk: handoverForm.plumbingOk,
+      electricalOk: handoverForm.electricalOk,
+      doorsWindowsOk: handoverForm.doorsWindowsOk,
+      idVerified: handoverForm.idVerified,
+      photosTaken: Number(handoverForm.photosTaken) || 6,
+      acknowledged: true,
+      issuedBy: handoverForm.issuedBy,
+      collectorName: handoverForm.collectorName || lease.tenantName,
+      collectorIdNumber: handoverForm.collectorIdNumber,
+      tenantAcknowledgement: handoverForm.tenantAcknowledgement || "Tenant acknowledged receipt",
+      note: handoverForm.note,
+    };
+    setHandovers((items) => [newHandover, ...items]);
     recordAudit({
       stage: "Key Handover",
       owner: "Property Manager",
-      input: `${lease.unit}, keys/access cards/parking remote, meter readings`,
-      approval: "Tenant and staff acknowledgement",
+      input: `${lease.unit} · ${handoverForm.keys}× ${handoverForm.keyType} · ${handoverForm.accessCards}× cards · ${handoverForm.parkingRemotes}× parking devices`,
+      approval: `ID verified: ${handoverForm.idVerified ? "Yes" : "No"} · Tenant acknowledgement captured`,
       status: "acknowledged",
-      output: handoverForm.note || "Key handover form completed",
+      output: handoverForm.note || `Handover recorded for ${handoverForm.collectorName || lease.tenantName} — Elec: ${handoverForm.electricityMeterReading || "-"}, Water: ${handoverForm.waterMeterReading || "-"}`,
     });
     setHandoverOpen(false);
   }
@@ -1216,35 +1333,7 @@ function LeasingPage() {
     setKeyNotifyOpen(false);
   }
 
-  function completeDetailedHandover(lease: Lease) {
-    setHandovers((items) => [
-      {
-        id: `kh${items.length + 1}`,
-        leaseId: lease.id,
-        handoverAt: `${handoverForm.handoverAt} ${handoverForm.handoverTime}`,
-        keys: Number(handoverForm.keys) || 2,
-        keyType: handoverForm.keyType || "Metal door keys",
-        accessCards: Number(handoverForm.accessCards) || 2,
-        parkingRemotes: Number(handoverForm.parkingRemotes) || 1,
-        parkingDeviceDetails: handoverForm.parkingDeviceDetails || "None",
-        meterInfo: `Elec: ${handoverForm.electricityMeterReading || "-"}, Water: ${handoverForm.waterMeterReading || "-"}`,
-        acknowledged: true,
-        issuedBy: handoverForm.issuedBy,
-        collectorName: handoverForm.collectorName || lease.tenantName,
-        tenantAcknowledgement: handoverForm.tenantAcknowledgement || "Tenant acknowledged receipt",
-      },
-      ...items,
-    ]);
-    recordAudit({
-      stage: "Key Handover",
-      owner: "Property Manager",
-      input: `${lease.unit}, ${handoverForm.keys} ${handoverForm.keyType}, ${handoverForm.accessCards} cards, ${handoverForm.parkingRemotes} parking devices`,
-      approval: "Tenant and staff acknowledgement",
-      status: "acknowledged",
-      output: handoverForm.note || `Handover recorded for ${handoverForm.collectorName || lease.tenantName}`,
-    });
-    setHandoverOpen(false);
-  }
+  // (unified into completeDetailedHandoverAction above)
 
   function completeDetailedCheckIn(lease: Lease) {
     setInspections((items) => [
@@ -1999,48 +2088,327 @@ function LeasingPage() {
 
       {/* ── KEY HANDOVER DIALOG ───────────────────────────────── */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <span className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2"><Key className="h-5 w-5 text-primary" /></span>
+              Key Handover Certificate
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              <span className="font-medium text-foreground">{keysWorkflowLease?.tenantName}</span> · {keysWorkflowLease?.unit} · {keysWorkflowLease?.property}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Tab navigation inside dialog */}
+          <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
+            {(["details", "condition", "checklist", "acknowledgement"] as const).map((tab) => (
+              <button
+                key={tab}
+                className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  handoverActiveTab === tab
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setHandoverActiveTab(tab)}
+                type="button"
+              >
+                {tab === "details" && "🔑 Details"}
+                {tab === "condition" && "🏠 Condition"}
+                {tab === "checklist" && "✅ Checklist"}
+                {tab === "acknowledgement" && "📝 Acknowledgement"}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-4 py-2">
+            {/* TAB: DETAILS */}
+            {handoverActiveTab === "details" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Handover Date &amp; Time</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Date"><Input type="date" value={handoverForm.handoverAt} onChange={e => setHandoverForm(f => ({ ...f, handoverAt: e.target.value }))} /></Field>
+                    <Field label="Time"><Input type="time" value={handoverForm.handoverTime} onChange={e => setHandoverForm(f => ({ ...f, handoverTime: e.target.value }))} /></Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Keys &amp; Access Items</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Keys Issued"><Input type="number" min="0" value={handoverForm.keys} onChange={e => setHandoverForm(f => ({ ...f, keys: e.target.value }))} /></Field>
+                    <Field label="Access Cards"><Input type="number" min="0" value={handoverForm.accessCards} onChange={e => setHandoverForm(f => ({ ...f, accessCards: e.target.value }))} /></Field>
+                    <Field label="Parking Remotes"><Input type="number" min="0" value={handoverForm.parkingRemotes} onChange={e => setHandoverForm(f => ({ ...f, parkingRemotes: e.target.value }))} /></Field>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <Field label="Key Type / Description"><Input value={handoverForm.keyType} onChange={e => setHandoverForm(f => ({ ...f, keyType: e.target.value }))} placeholder="Metal door keys / smart key / FOB" /></Field>
+                    <Field label="Parking Device Details"><Input value={handoverForm.parkingDeviceDetails} onChange={e => setHandoverForm(f => ({ ...f, parkingDeviceDetails: e.target.value }))} placeholder="Remote serial, bay #, gate tag" /></Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Meter Readings at Handover</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="⚡ Electricity Meter"><Input value={handoverForm.electricityMeterReading} onChange={e => setHandoverForm(f => ({ ...f, electricityMeterReading: e.target.value }))} placeholder="e.g. 182167 kWh" /></Field>
+                    <Field label="💧 Water Meter"><Input value={handoverForm.waterMeterReading} onChange={e => setHandoverForm(f => ({ ...f, waterMeterReading: e.target.value }))} placeholder="e.g. 149089 m³" /></Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Issued By</p>
+                  <Field label="Issuing Officer">
+                    <Select value={handoverForm.issuedBy} onValueChange={v => setHandoverForm(f => ({ ...f, issuedBy: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Property Manager">Property Manager</SelectItem>
+                        <SelectItem value="Security">Security</SelectItem>
+                        <SelectItem value="Admin">Admin</SelectItem>
+                        <SelectItem value="Leasing Agent">Leasing Agent</SelectItem>
+                        <SelectItem value="Facility Manager">Facility Manager</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: CONDITION */}
+            {handoverActiveTab === "condition" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Condition at Handover</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Overall Condition">
+                      <Select value={handoverForm.unitCondition} onValueChange={v => setHandoverForm(f => ({ ...f, unitCondition: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Excellent">Excellent</SelectItem>
+                          <SelectItem value="Good">Good</SelectItem>
+                          <SelectItem value="Fair">Fair</SelectItem>
+                          <SelectItem value="Needs Attention">Needs Attention</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Cleanliness">
+                      <Select value={handoverForm.cleanliness} onValueChange={v => setHandoverForm(f => ({ ...f, cleanliness: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Spotless">Spotless</SelectItem>
+                          <SelectItem value="Clean">Clean</SelectItem>
+                          <SelectItem value="Acceptable">Acceptable</SelectItem>
+                          <SelectItem value="Needs Cleaning">Needs Cleaning</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">System &amp; Fixture Checks</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: "acWorking" as const, label: "🌀 Air Conditioning" },
+                      { key: "plumbingOk" as const, label: "🚿 Plumbing / Water" },
+                      { key: "electricalOk" as const, label: "💡 Electrical" },
+                      { key: "doorsWindowsOk" as const, label: "🚪 Doors &amp; Windows" },
+                    ]).map(({ key, label }) => (
+                      <label key={key} className="flex cursor-pointer items-center gap-2 rounded-md border bg-background p-3 hover:bg-muted/50">
+                        <input
+                          type="checkbox"
+                          checked={handoverForm[key]}
+                          onChange={e => setHandoverForm(f => ({ ...f, [key]: e.target.checked }))}
+                          className="h-4 w-4 rounded accent-primary"
+                        />
+                        <span className="text-sm font-medium" dangerouslySetInnerHTML={{ __html: label }} />
+                        <span className={`ml-auto text-xs font-semibold ${handoverForm[key] ? "text-green-600" : "text-red-500"}`}>
+                          {handoverForm[key] ? "OK" : "Issue"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <Field label="Photos Taken">
+                  <Input type="number" min="0" value={handoverForm.photosTaken} onChange={e => setHandoverForm(f => ({ ...f, photosTaken: e.target.value }))} placeholder="Number of photos documented" />
+                </Field>
+
+                <Field label="Notes / Observations">
+                  <Textarea rows={3} value={handoverForm.note} onChange={e => setHandoverForm(f => ({ ...f, note: e.target.value }))} placeholder="Any observations, pending items, special remarks..." />
+                </Field>
+              </div>
+            )}
+
+            {/* TAB: CHECKLIST */}
+            {handoverActiveTab === "checklist" && (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">
+                  ⚠️ All items below must be verified before confirming handover.
+                </div>
+                {[
+                  { label: "Lease is fully signed by tenant and landlord", check: true },
+                  { label: "Security deposit / collection is fully completed", check: true },
+                  { label: "Key Issue Notice has been sent to tenant", check: !!(keysWorkflowLease && handoverForm.collectorName) },
+                  { label: "Meter readings recorded (electricity &amp; water)", check: !!(handoverForm.electricityMeterReading && handoverForm.waterMeterReading) },
+                  { label: "Keys, access cards and parking remotes counted &amp; ready", check: Number(handoverForm.keys) > 0 },
+                  { label: "Unit condition verified and documented", check: !!(handoverForm.unitCondition) },
+                  { label: "Collector ID verified", check: handoverForm.idVerified },
+                  { label: "Photos taken and on file", check: Number(handoverForm.photosTaken) > 0 },
+                  { label: "Tenant acknowledgement text / signature captured", check: !!(handoverForm.tenantAcknowledgement) },
+                ].map(({ label, check }, i) => (
+                  <div key={i} className={`flex items-start gap-3 rounded-lg border p-3 ${
+                    check ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"
+                  }`}>
+                    <span className={`mt-0.5 text-base ${check ? "text-green-600" : "text-orange-500"}`}>{check ? "✅" : "⏳"}</span>
+                    <span className="text-sm" dangerouslySetInnerHTML={{ __html: label }} />
+                  </div>
+                ))}
+
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Collector Identity Verification</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Collector Name"><Input value={handoverForm.collectorName} onChange={e => setHandoverForm(f => ({ ...f, collectorName: e.target.value }))} placeholder="Tenant or authorised representative" /></Field>
+                    <Field label="Collector ID / Passport No."><Input value={handoverForm.collectorIdNumber} onChange={e => setHandoverForm(f => ({ ...f, collectorIdNumber: e.target.value }))} placeholder="Qatar ID / Passport" /></Field>
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={handoverForm.idVerified}
+                      onChange={e => setHandoverForm(f => ({ ...f, idVerified: e.target.checked }))}
+                      className="h-4 w-4 rounded accent-primary"
+                    />
+                    <span className="text-sm font-medium">ID document sighted and verified ✓</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: ACKNOWLEDGEMENT */}
+            {handoverActiveTab === "acknowledgement" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-blue-50 p-4 text-sm text-blue-800">
+                  <p className="font-semibold">📜 Digital Acknowledgement</p>
+                  <p className="mt-1">The collector confirms receipt of all keys and access items in the condition stated. This record serves as the official handover certificate.</p>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Handover Summary</p>
+                  <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <span className="text-muted-foreground">Unit</span><span className="font-medium">{keysWorkflowLease?.unit}</span>
+                    <span className="text-muted-foreground">Date / Time</span><span className="font-medium">{handoverForm.handoverAt} {handoverForm.handoverTime}</span>
+                    <span className="text-muted-foreground">Keys</span><span className="font-medium">{handoverForm.keys}× {handoverForm.keyType}</span>
+                    <span className="text-muted-foreground">Access Cards</span><span className="font-medium">{handoverForm.accessCards}</span>
+                    <span className="text-muted-foreground">Parking Remotes</span><span className="font-medium">{handoverForm.parkingRemotes}</span>
+                    <span className="text-muted-foreground">Electricity Meter</span><span className="font-medium">{handoverForm.electricityMeterReading || "—"}</span>
+                    <span className="text-muted-foreground">Water Meter</span><span className="font-medium">{handoverForm.waterMeterReading || "—"}</span>
+                    <span className="text-muted-foreground">Unit Condition</span><span className="font-medium">{handoverForm.unitCondition}</span>
+                    <span className="text-muted-foreground">Collector</span><span className="font-medium">{handoverForm.collectorName || keysWorkflowLease?.tenantName}</span>
+                    <span className="text-muted-foreground">ID Verified</span><span className={`font-medium ${handoverForm.idVerified ? "text-green-600" : "text-red-500"}`}>{handoverForm.idVerified ? "Yes ✓" : "No ✗"}</span>
+                    <span className="text-muted-foreground">Issued By</span><span className="font-medium">{handoverForm.issuedBy}</span>
+                    <span className="text-muted-foreground">Photos</span><span className="font-medium">{handoverForm.photosTaken}</span>
+                  </div>
+                </div>
+
+                <Field label="Tenant Acknowledgement Statement">
+                  <Textarea
+                    rows={3}
+                    value={handoverForm.tenantAcknowledgement}
+                    onChange={e => setHandoverForm(f => ({ ...f, tenantAcknowledgement: e.target.value }))}
+                    placeholder="I, [Tenant Name], acknowledge receipt of the above keys and access items..."
+                  />
+                </Field>
+
+                <div className="rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">📸 Signature / Photo Upload</p>
+                  <p className="mt-1">Physical signature sheet should be scanned and uploaded to the document store after handover.</p>
+                  <Button variant="outline" size="sm" className="mt-2">Upload Signed Form</Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 pt-2 border-t">
+            <Button variant="outline" onClick={() => setHandoverOpen(false)}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => setHandoverActiveTab(handoverActiveTab === "details" ? "condition" : handoverActiveTab === "condition" ? "checklist" : "acknowledgement")}
+              disabled={handoverActiveTab === "acknowledgement"}
+            >
+              Next →
+            </Button>
+            <Button
+              onClick={() => keysWorkflowLease && completeDetailedHandoverAction(keysWorkflowLease)}
+              disabled={!handoverForm.electricityMeterReading || !handoverForm.waterMeterReading || !handoverForm.collectorName}
+              className="gap-2"
+            >
+              <Key className="h-4 w-4" /> Confirm Handover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── VIEW HANDOVER DETAIL DIALOG ──────────────────────────── */}
+      <Dialog open={handoverViewOpen} onOpenChange={setHandoverViewOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Key className="h-5 w-5 text-primary" /> Key Handover</DialogTitle>
-            <DialogDescription>Record key issue details for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center rounded-full bg-green-100 p-2"><Key className="h-5 w-5 text-green-600" /></span>
+              Handover Certificate
+            </DialogTitle>
+            <DialogDescription>Official key handover record</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Handover Date"><Input type="date" value={handoverForm.handoverAt} onChange={e => setHandoverForm(f => ({ ...f, handoverAt: e.target.value }))} /></Field>
-              <Field label="Handover Time"><Input type="time" value={handoverForm.handoverTime} onChange={e => setHandoverForm(f => ({ ...f, handoverTime: e.target.value }))} /></Field>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Keys Issued"><Input type="number" value={handoverForm.keys} onChange={e => setHandoverForm(f => ({ ...f, keys: e.target.value }))} /></Field>
-              <Field label="Access Cards"><Input type="number" value={handoverForm.accessCards} onChange={e => setHandoverForm(f => ({ ...f, accessCards: e.target.value }))} /></Field>
-              <Field label="Parking Remotes"><Input type="number" value={handoverForm.parkingRemotes} onChange={e => setHandoverForm(f => ({ ...f, parkingRemotes: e.target.value }))} /></Field>
-            </div>
-            <Field label="Key Type / Description"><Input value={handoverForm.keyType} onChange={e => setHandoverForm(f => ({ ...f, keyType: e.target.value }))} placeholder="Metal door keys / smart key / access FOB" /></Field>
-            <Field label="Authorized Collector Name"><Input value={handoverForm.collectorName} onChange={e => setHandoverForm(f => ({ ...f, collectorName: e.target.value }))} placeholder="Tenant or approved representative" /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Electricity Meter Reading"><Input value={handoverForm.electricityMeterReading} onChange={e => setHandoverForm(f => ({ ...f, electricityMeterReading: e.target.value }))} placeholder="e.g. 182167" /></Field>
-              <Field label="Water Meter Reading"><Input value={handoverForm.waterMeterReading} onChange={e => setHandoverForm(f => ({ ...f, waterMeterReading: e.target.value }))} placeholder="e.g. 149089" /></Field>
-            </div>
-            <Field label="Parking Remote / Access Device Details"><Input value={handoverForm.parkingDeviceDetails} onChange={e => setHandoverForm(f => ({ ...f, parkingDeviceDetails: e.target.value }))} placeholder="Remote serial, parking bay, gate tag, etc." /></Field>
-            <Field label="Issued By">
-              <Select value={handoverForm.issuedBy} onValueChange={v => setHandoverForm(f => ({ ...f, issuedBy: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Property Manager">Property Manager</SelectItem>
-                  <SelectItem value="Security">Security</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Tenant Acknowledgement">
-              <Textarea rows={2} value={handoverForm.tenantAcknowledgement} onChange={e => setHandoverForm(f => ({ ...f, tenantAcknowledgement: e.target.value }))} placeholder="Acknowledgement text or signature note..." />
-            </Field>
-            <Field label="Notes / Observations">
-              <Textarea rows={2} value={handoverForm.note} onChange={e => setHandoverForm(f => ({ ...f, note: e.target.value }))} placeholder="Any notes on handover..." />
-            </Field>
-          </div>
+          {selectedHandover && (() => {
+            const lease = leases.find(l => l.id === selectedHandover.leaseId);
+            return (
+              <div className="space-y-3">
+                <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-center gap-2 text-green-800 text-sm font-medium">
+                  <CheckCircle2 className="h-4 w-4" /> Keys successfully handed over
+                </div>
+                <div className="rounded-lg border p-4 space-y-1 text-sm">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <span className="text-muted-foreground">Tenant</span><span className="font-medium">{lease?.tenantName}</span>
+                    <span className="text-muted-foreground">Unit</span><span className="font-medium">{lease?.unit}</span>
+                    <span className="text-muted-foreground">Date / Time</span><span className="font-medium">{selectedHandover.handoverAt}</span>
+                    <span className="text-muted-foreground">Keys</span><span className="font-medium">{selectedHandover.keys}× {selectedHandover.keyType || "keys"}</span>
+                    <span className="text-muted-foreground">Access Cards</span><span className="font-medium">{selectedHandover.accessCards}</span>
+                    <span className="text-muted-foreground">Parking Remotes</span><span className="font-medium">{selectedHandover.parkingRemotes}</span>
+                    {selectedHandover.parkingDeviceDetails && (
+                      <><span className="text-muted-foreground">Parking Device</span><span className="font-medium">{selectedHandover.parkingDeviceDetails}</span></>
+                    )}
+                    <span className="text-muted-foreground">Elec. Meter</span><span className="font-medium">{selectedHandover.electricityMeterReading || "—"}</span>
+                    <span className="text-muted-foreground">Water Meter</span><span className="font-medium">{selectedHandover.waterMeterReading || "—"}</span>
+                    <span className="text-muted-foreground">Unit Condition</span><span className="font-medium">{selectedHandover.unitCondition || "—"}</span>
+                    <span className="text-muted-foreground">Cleanliness</span><span className="font-medium">{selectedHandover.cleanliness || "—"}</span>
+                    <span className="text-muted-foreground">Collector</span><span className="font-medium">{selectedHandover.collectorName}</span>
+                    {selectedHandover.collectorIdNumber && (
+                      <><span className="text-muted-foreground">Collector ID</span><span className="font-medium">{selectedHandover.collectorIdNumber}</span></>
+                    )}
+                    <span className="text-muted-foreground">ID Verified</span>
+                    <span className={`font-medium ${selectedHandover.idVerified ? "text-green-600" : "text-red-500"}`}>{selectedHandover.idVerified ? "Yes ✓" : "No ✗"}</span>
+                    <span className="text-muted-foreground">Issued By</span><span className="font-medium">{selectedHandover.issuedBy}</span>
+                    <span className="text-muted-foreground">Photos</span><span className="font-medium">{selectedHandover.photosTaken ?? "—"}</span>
+                  </div>
+                </div>
+                {selectedHandover.note && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Notes</p>
+                    <p>{selectedHandover.note}</p>
+                  </div>
+                )}
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Tenant Acknowledgement</p>
+                  <p className="italic">{selectedHandover.tenantAcknowledgement}</p>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  <div className={`rounded border p-2 text-center ${selectedHandover.acWorking ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🌀 A/C<br />{selectedHandover.acWorking ? "OK" : "Issue"}</div>
+                  <div className={`rounded border p-2 text-center ${selectedHandover.plumbingOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🚿 Plumb.<br />{selectedHandover.plumbingOk ? "OK" : "Issue"}</div>
+                  <div className={`rounded border p-2 text-center ${selectedHandover.electricalOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>💡 Elec.<br />{selectedHandover.electricalOk ? "OK" : "Issue"}</div>
+                  <div className={`rounded border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🚪 Doors<br />{selectedHandover.doorsWindowsOk ? "OK" : "Issue"}</div>
+                </div>
+              </div>
+            );
+          })()}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setHandoverOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && completeDetailedHandover(keysWorkflowLease)}><Key className="mr-2 h-4 w-4" /> Confirm Handover</Button>
+            <Button variant="outline" onClick={() => setHandoverViewOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => { window.print(); }} className="gap-2"><Key className="h-4 w-4" /> Print Certificate</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2494,13 +2862,33 @@ function LeasingPage() {
                   return [
                     `${lease.tenantName} / ${lease.unit}`,
                     <StatusBadge key="status" value={lease.status} />,
-                    notice ? <StatusBadge key="notice" value={notice.status} /> : "-",
-                    handover ? `${handover.keys} ${handover.keyType || "keys"}, ${handover.accessCards} cards` : "-",
-                    checkIn ? `${checkIn.condition}, ${checkIn.photos} photos, maintenance: ${checkIn.pendingMaintenance || "None"}` : "-",
+                    notice ? (
+                      <div key="notice" className="flex flex-col gap-1">
+                        <StatusBadge value={notice.status} />
+                        {notice.handoverAt && <span className="text-xs text-muted-foreground">{notice.handoverAt} {notice.handoverTime}</span>}
+                      </div>
+                    ) : "-",
+                    handover ? (
+                      <div key="handover" className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
+                        <span className="text-xs text-muted-foreground">{handover.keys}× {handover.keyType || "keys"} · {handover.accessCards} cards</span>
+                        {handover.handoverAt && <span className="text-xs text-muted-foreground">{handover.handoverAt}</span>}
+                      </div>
+                    ) : "-",
+                    checkIn ? (
+                      <div key="checkin" className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-100 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
+                        <span className="text-xs text-muted-foreground">{checkIn.condition} · {checkIn.photos} photos</span>
+                      </div>
+                    ) : "-",
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), handoverTime: "10:00", recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"], authorizedCollector: lease.tenantName, keysSummary: "2 metal keys, 2 access cards, 1 parking remote", staffContact: "Property Manager - +974 4400 2200", outstandingRequirements: "None", note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
-                      <Button size="sm" variant="outline" disabled={!(notice && notice.status === "sent")} onClick={() => { setKeysWorkflowLease(lease); setHandoverForm({ handoverAt: notice?.handoverAt || addDays(today, 1), handoverTime: notice?.handoverTime || "10:00", keys: "2", keyType: "Metal door keys", accessCards: "2", parkingRemotes: "1", parkingDeviceDetails: "Remote for covered parking bay", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", collectorName: notice?.authorizedCollector || lease.tenantName, tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.", note: "" }); setHandoverOpen(true); }}>Handover</Button>
-                      <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: "", waterMeter: "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
+                      {handover ? (
+                        <Button size="sm" variant="outline" className="border-green-300 text-green-700 hover:bg-green-50" onClick={() => { setSelectedHandover(handover); setHandoverViewOpen(true); }}>View</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setHandoverActiveTab("details"); setHandoverForm({ handoverAt: notice?.handoverAt || addDays(today, 1), handoverTime: notice?.handoverTime || "10:00", keys: "2", keyType: "Metal door keys", accessCards: "2", parkingRemotes: "1", parkingDeviceDetails: "Remote for covered parking bay", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", collectorName: notice?.authorizedCollector || lease.tenantName, collectorIdNumber: "", unitCondition: "Good", cleanliness: "Clean", acWorking: true, plumbingOk: true, electricalOk: true, doorsWindowsOk: true, idVerified: true, photosTaken: "6", tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.", note: "" }); setHandoverOpen(true); }}>Handover</Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: handover?.electricityMeterReading || "", waterMeter: handover?.waterMeterReading || "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
                     </div>,
                   ];
                 })}
@@ -2530,8 +2918,8 @@ function LeasingPage() {
                     <StatusBadge key="status" value={renewal.status} />,
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setRenewals((items) => items.map((item) => item.id === renewal.id ? { ...item, status: "under_discussion" } : item))}>Discuss</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "" }); setRenewalResponseOpen(true); }}>Renew</Button>
-                      {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "", updateStatus: "awaiting_response" }); setRenewalResponseOpen(true); }}>Renew</Button>
+                      {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", notes: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
                     </div>,
                   ];
                 })}
@@ -2558,7 +2946,7 @@ function LeasingPage() {
                     `Finance ${checkout.financeClearance ? "OK" : "Pending"}, Utility ${checkout.utilityClearance ? "OK" : "Pending"}, Keys ${checkout.keysReturned ? "Returned" : "Pending"}`,
                     checkout.comparisonSummary,
                     <StatusBadge key="status" value={checkout.status} />,
-                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
+                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Vacant - Under Maintenance" }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
                   ];
                 })}
               />

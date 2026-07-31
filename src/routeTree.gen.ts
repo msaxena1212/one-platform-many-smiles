@@ -78,20 +78,17 @@ import { Route as AdminPermissionsRouteImport } from './routes/admin.permissions
 import { Route as AdminMastersRouteImport } from './routes/admin.masters'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
+import { Route as AdminHrmsRouteImport } from './routes/admin.hrms'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
-import { Route as AdminFinanceIndexRouteImport } from './routes/admin.finance.index'
+import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
 import { Route as PropMgrUnitsPricingRouteImport } from './routes/prop-mgr.units.pricing'
 import { Route as PropMgrManageIdRouteImport } from './routes/prop-mgr.manage.$id'
 import { Route as PropMgrFinanceTransactionsRouteImport } from './routes/prop-mgr.finance.transactions'
 import { Route as PortalCommunityReviewsRouteImport } from './routes/portal.community.reviews'
 import { Route as PortalCommunityEventsRouteImport } from './routes/portal.community.events'
 import { Route as AdminLeasesNewRouteImport } from './routes/admin.leases.new'
-import { Route as AdminFinanceReceiptsRouteImport } from './routes/admin.finance.receipts'
-import { Route as AdminFinancePayablesRouteImport } from './routes/admin.finance.payables'
-import { Route as AdminFinanceLedgerRouteImport } from './routes/admin.finance.ledger'
-import { Route as AdminFinanceCoaRouteImport } from './routes/admin.finance.coa'
 
 const SuperAdminRoute = SuperAdminRouteImport.update({
   id: '/super-admin',
@@ -438,6 +435,11 @@ const AdminLeasesRoute = AdminLeasesRouteImport.update({
   path: '/leases',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminHrmsRoute = AdminHrmsRouteImport.update({
+  id: '/hrms',
+  path: '/hrms',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFinanceRoute = AdminFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
@@ -453,10 +455,10 @@ const AdminAuditLogsRoute = AdminAuditLogsRouteImport.update({
   path: '/audit-logs',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminFinanceIndexRoute = AdminFinanceIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AdminFinanceRoute,
+const AdminAssetsRoute = AdminAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => AdminRoute,
 } as any)
 const PropMgrUnitsPricingRoute = PropMgrUnitsPricingRouteImport.update({
   id: '/pricing',
@@ -489,26 +491,6 @@ const AdminLeasesNewRoute = AdminLeasesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AdminLeasesRoute,
 } as any)
-const AdminFinanceReceiptsRoute = AdminFinanceReceiptsRouteImport.update({
-  id: '/receipts',
-  path: '/receipts',
-  getParentRoute: () => AdminFinanceRoute,
-} as any)
-const AdminFinancePayablesRoute = AdminFinancePayablesRouteImport.update({
-  id: '/payables',
-  path: '/payables',
-  getParentRoute: () => AdminFinanceRoute,
-} as any)
-const AdminFinanceLedgerRoute = AdminFinanceLedgerRouteImport.update({
-  id: '/ledger',
-  path: '/ledger',
-  getParentRoute: () => AdminFinanceRoute,
-} as any)
-const AdminFinanceCoaRoute = AdminFinanceCoaRouteImport.update({
-  id: '/coa',
-  path: '/coa',
-  getParentRoute: () => AdminFinanceRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -525,9 +507,11 @@ export interface FileRoutesByFullPath {
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
+  '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
-  '/admin/finance': typeof AdminFinanceRouteWithChildren
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/hrms': typeof AdminHrmsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -583,17 +567,12 @@ export interface FileRoutesByFullPath {
   '/portal/': typeof PortalIndexRoute
   '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
-  '/admin/finance/coa': typeof AdminFinanceCoaRoute
-  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
-  '/admin/finance/payables': typeof AdminFinancePayablesRoute
-  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
-  '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -602,8 +581,11 @@ export interface FileRoutesByTo {
   '/owner': typeof OwnerRouteWithChildren
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/hrms': typeof AdminHrmsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -659,17 +641,12 @@ export interface FileRoutesByTo {
   '/portal': typeof PortalIndexRoute
   '/prop-mgr': typeof PropMgrIndexRoute
   '/super-admin': typeof SuperAdminIndexRoute
-  '/admin/finance/coa': typeof AdminFinanceCoaRoute
-  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
-  '/admin/finance/payables': typeof AdminFinancePayablesRoute
-  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
-  '/admin/finance': typeof AdminFinanceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -687,9 +664,11 @@ export interface FileRoutesById {
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
+  '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
-  '/admin/finance': typeof AdminFinanceRouteWithChildren
+  '/admin/finance': typeof AdminFinanceRoute
+  '/admin/hrms': typeof AdminHrmsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -745,17 +724,12 @@ export interface FileRoutesById {
   '/portal/': typeof PortalIndexRoute
   '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
-  '/admin/finance/coa': typeof AdminFinanceCoaRoute
-  '/admin/finance/ledger': typeof AdminFinanceLedgerRoute
-  '/admin/finance/payables': typeof AdminFinancePayablesRoute
-  '/admin/finance/receipts': typeof AdminFinanceReceiptsRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
-  '/admin/finance/': typeof AdminFinanceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -774,9 +748,11 @@ export interface FileRouteTypes {
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
+    | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
     | '/admin/finance'
+    | '/admin/hrms'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -832,17 +808,12 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/prop-mgr/'
     | '/super-admin/'
-    | '/admin/finance/coa'
-    | '/admin/finance/ledger'
-    | '/admin/finance/payables'
-    | '/admin/finance/receipts'
     | '/admin/leases/new'
     | '/portal/community/events'
     | '/portal/community/reviews'
     | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
-    | '/admin/finance/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -851,8 +822,11 @@ export interface FileRouteTypes {
     | '/owner'
     | '/sales'
     | '/sitemap.xml'
+    | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
+    | '/admin/finance'
+    | '/admin/hrms'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -908,17 +882,12 @@ export interface FileRouteTypes {
     | '/portal'
     | '/prop-mgr'
     | '/super-admin'
-    | '/admin/finance/coa'
-    | '/admin/finance/ledger'
-    | '/admin/finance/payables'
-    | '/admin/finance/receipts'
     | '/admin/leases/new'
     | '/portal/community/events'
     | '/portal/community/reviews'
     | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
-    | '/admin/finance'
   id:
     | '__root__'
     | '/'
@@ -935,9 +904,11 @@ export interface FileRouteTypes {
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
+    | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
     | '/admin/finance'
+    | '/admin/hrms'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -993,17 +964,12 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/prop-mgr/'
     | '/super-admin/'
-    | '/admin/finance/coa'
-    | '/admin/finance/ledger'
-    | '/admin/finance/payables'
-    | '/admin/finance/receipts'
     | '/admin/leases/new'
     | '/portal/community/events'
     | '/portal/community/reviews'
     | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
-    | '/admin/finance/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1508,6 +1474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLeasesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/hrms': {
+      id: '/admin/hrms'
+      path: '/hrms'
+      fullPath: '/admin/hrms'
+      preLoaderRoute: typeof AdminHrmsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/finance': {
       id: '/admin/finance'
       path: '/finance'
@@ -1529,12 +1502,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAuditLogsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/finance/': {
-      id: '/admin/finance/'
-      path: '/'
-      fullPath: '/admin/finance/'
-      preLoaderRoute: typeof AdminFinanceIndexRouteImport
-      parentRoute: typeof AdminFinanceRoute
+    '/admin/assets': {
+      id: '/admin/assets'
+      path: '/assets'
+      fullPath: '/admin/assets'
+      preLoaderRoute: typeof AdminAssetsRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/prop-mgr/units/pricing': {
       id: '/prop-mgr/units/pricing'
@@ -1578,56 +1551,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLeasesNewRouteImport
       parentRoute: typeof AdminLeasesRoute
     }
-    '/admin/finance/receipts': {
-      id: '/admin/finance/receipts'
-      path: '/receipts'
-      fullPath: '/admin/finance/receipts'
-      preLoaderRoute: typeof AdminFinanceReceiptsRouteImport
-      parentRoute: typeof AdminFinanceRoute
-    }
-    '/admin/finance/payables': {
-      id: '/admin/finance/payables'
-      path: '/payables'
-      fullPath: '/admin/finance/payables'
-      preLoaderRoute: typeof AdminFinancePayablesRouteImport
-      parentRoute: typeof AdminFinanceRoute
-    }
-    '/admin/finance/ledger': {
-      id: '/admin/finance/ledger'
-      path: '/ledger'
-      fullPath: '/admin/finance/ledger'
-      preLoaderRoute: typeof AdminFinanceLedgerRouteImport
-      parentRoute: typeof AdminFinanceRoute
-    }
-    '/admin/finance/coa': {
-      id: '/admin/finance/coa'
-      path: '/coa'
-      fullPath: '/admin/finance/coa'
-      preLoaderRoute: typeof AdminFinanceCoaRouteImport
-      parentRoute: typeof AdminFinanceRoute
-    }
   }
 }
-
-interface AdminFinanceRouteChildren {
-  AdminFinanceCoaRoute: typeof AdminFinanceCoaRoute
-  AdminFinanceLedgerRoute: typeof AdminFinanceLedgerRoute
-  AdminFinancePayablesRoute: typeof AdminFinancePayablesRoute
-  AdminFinanceReceiptsRoute: typeof AdminFinanceReceiptsRoute
-  AdminFinanceIndexRoute: typeof AdminFinanceIndexRoute
-}
-
-const AdminFinanceRouteChildren: AdminFinanceRouteChildren = {
-  AdminFinanceCoaRoute: AdminFinanceCoaRoute,
-  AdminFinanceLedgerRoute: AdminFinanceLedgerRoute,
-  AdminFinancePayablesRoute: AdminFinancePayablesRoute,
-  AdminFinanceReceiptsRoute: AdminFinanceReceiptsRoute,
-  AdminFinanceIndexRoute: AdminFinanceIndexRoute,
-}
-
-const AdminFinanceRouteWithChildren = AdminFinanceRoute._addFileChildren(
-  AdminFinanceRouteChildren,
-)
 
 interface AdminLeasesRouteChildren {
   AdminLeasesNewRoute: typeof AdminLeasesNewRoute
@@ -1642,9 +1567,11 @@ const AdminLeasesRouteWithChildren = AdminLeasesRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
+  AdminAssetsRoute: typeof AdminAssetsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
-  AdminFinanceRoute: typeof AdminFinanceRouteWithChildren
+  AdminFinanceRoute: typeof AdminFinanceRoute
+  AdminHrmsRoute: typeof AdminHrmsRoute
   AdminLeasesRoute: typeof AdminLeasesRouteWithChildren
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminMastersRoute: typeof AdminMastersRoute
@@ -1656,9 +1583,11 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAssetsRoute: AdminAssetsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminDashboardRoute: AdminDashboardRoute,
-  AdminFinanceRoute: AdminFinanceRouteWithChildren,
+  AdminFinanceRoute: AdminFinanceRoute,
+  AdminHrmsRoute: AdminHrmsRoute,
   AdminLeasesRoute: AdminLeasesRouteWithChildren,
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminMastersRoute: AdminMastersRoute,

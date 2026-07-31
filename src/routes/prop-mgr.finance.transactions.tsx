@@ -26,45 +26,31 @@ const VOUCHER_TYPES = [
   { value: "Payment", label: "Payment Voucher", icon: ArrowUpRight, color: "text-orange-600 bg-orange-50" },
 ];
 
-// Demo transactions from the Accounts-Transactions sheet
+// Demo transactions — fully synced with leasing module (incl. Vivek Viswakumaran Nair ARRS01-LES-25-52-0)
 const DEMO_TRANSACTIONS = [
-  {
-    id: 'd1', voucher_no: 'RV-001', voucher_type: 'Receipt', voucher_date: '2025-10-01', total_amount: 67200, notes: 'Receipt Voucher - Rent (PDC)',
-    erp_journal_entries: [
-      { id: 'j1', account_name: 'PDC In Hand', debit: 67200, credit: 0 },
-      { id: 'j2', account_name: 'Customer(PDC)-AAA Flat16', debit: 0, credit: 67200 },
-    ]
-  },
-  {
-    id: 'd2', voucher_no: 'RV-002', voucher_type: 'Receipt', voucher_date: '2025-10-01', total_amount: 5100, notes: 'Receipt Voucher - Deposit (Cash)',
-    erp_journal_entries: [
-      { id: 'j3', account_name: 'Cash In Hand', debit: 5100, credit: 0 },
-      { id: 'j4', account_name: 'Deposit-Customer-AAA Flat16', debit: 0, credit: 5100 },
-    ]
-  },
-  {
-    id: 'd3', voucher_no: 'DV-001', voucher_type: 'Deposit', voucher_date: '2025-11-01', total_amount: 5600, notes: 'Deposit Voucher - PDC (Nov)',
-    erp_journal_entries: [
-      { id: 'j5', account_name: 'Bank Account', debit: 5600, credit: 0 },
-      { id: 'j6', account_name: 'PDC In Hand', debit: 0, credit: 5600 },
-      { id: 'j7', account_name: 'Customer(PDC)-AAA Flat16', debit: 5600, credit: 0 },
-      { id: 'j8', account_name: 'Receivable-AAA Flat16', debit: 0, credit: 5600 },
-    ]
-  },
-  {
-    id: 'd4', voucher_no: 'RI-001', voucher_type: 'Rent Income', voucher_date: '2025-11-01', total_amount: 5600, notes: 'Revenue Generation - Nov 2025',
-    erp_journal_entries: [
-      { id: 'j9', account_name: 'Receivable-AAA Flat16', debit: 5600, credit: 0 },
-      { id: 'j10', account_name: 'Rental Income', debit: 0, credit: 5600 },
-    ]
-  },
-  {
-    id: 'd5', voucher_no: 'DV-002', voucher_type: 'Deposit', voucher_date: '2025-11-01', total_amount: 5100, notes: 'Deposit Voucher - Cash (Nov)',
-    erp_journal_entries: [
-      { id: 'j11', account_name: 'Bank Account', debit: 5100, credit: 0 },
-      { id: 'j12', account_name: 'Cash In Hand', debit: 0, credit: 5100 },
-    ]
-  },
+  // ── L1: Mr. Hafeez Shaik / AAA - Flat16 ─────────────────────────────────────
+  { id: 'd1', voucher_no: 'RV-001', voucher_type: 'Receipt',     voucher_date: '2025-10-01', total_amount: 67200, notes: 'Receipt Voucher - Rent (PDC) | Hafeez Shaik / AAA-Flat16',          erp_journal_entries: [{ id: 'j1', account_name: 'PDC In Hand', debit: 67200, credit: 0 }, { id: 'j2', account_name: 'Customer(PDC)-AAA Flat16', debit: 0, credit: 67200 }] },
+  { id: 'd2', voucher_no: 'RV-002', voucher_type: 'Receipt',     voucher_date: '2025-10-01', total_amount: 5100,  notes: 'Receipt Voucher - Security Deposit (Cash) | Hafeez Shaik',           erp_journal_entries: [{ id: 'j3', account_name: 'Cash In Hand', debit: 5100, credit: 0 }, { id: 'j4', account_name: 'Security Deposit Liability', debit: 0, credit: 5100 }] },
+  { id: 'd3', voucher_no: 'DV-001', voucher_type: 'Deposit',     voucher_date: '2025-11-01', total_amount: 5600,  notes: 'Deposit Voucher - PDC Nov 2025 | Hafeez Shaik',                      erp_journal_entries: [{ id: 'j5', account_name: 'Bank Account', debit: 5600, credit: 0 }, { id: 'j6', account_name: 'PDC In Hand', debit: 0, credit: 5600 }, { id: 'j7', account_name: 'Customer(PDC)-AAA Flat16', debit: 5600, credit: 0 }, { id: 'j8', account_name: 'Receivable-AAA Flat16', debit: 0, credit: 5600 }] },
+  { id: 'd4', voucher_no: 'RI-001',  voucher_type: 'Rent Income', voucher_date: '2025-11-01', total_amount: 5600,  notes: 'Rental Income - Nov 2025 | Hafeez Shaik / AAA-Flat16',               erp_journal_entries: [{ id: 'j9', account_name: 'Receivable-AAA Flat16', debit: 5600, credit: 0 }, { id: 'j10', account_name: 'Rental Income', debit: 0, credit: 5600 }] },
+  { id: 'd5', voucher_no: 'DV-002', voucher_type: 'Deposit',     voucher_date: '2025-11-01', total_amount: 5100,  notes: 'Deposit Voucher - Cash Deposit to Bank | Hafeez Shaik',              erp_journal_entries: [{ id: 'j11', account_name: 'Bank Account', debit: 5100, credit: 0 }, { id: 'j12', account_name: 'Cash In Hand', debit: 0, credit: 5100 }] },
+  // ── L3: Vivek Viswakumaran Nair / ARRS01-B00-F00-AG01 ───────────────────────
+  // Acknowledgement No. ARE-RT-25-3962-0 | Collection Date: 23-DEC-25
+  { id: 'd6',  voucher_no: 'ARE-RT-25-3962-0', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 1000,  notes: 'Receipt Voucher - Security Deposit Cash QR1,000 | Vivek Nair / ARRS01-AG01 | Ref: 25631298',          erp_journal_entries: [{ id: 'j13', account_name: 'Cash In Hand', debit: 1000, credit: 0 }, { id: 'j14', account_name: 'Security Deposit Liability-AG01', debit: 0, credit: 1000 }] },
+  { id: 'd7',  voucher_no: 'ARE-RT-25-3962-1', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 3000,  notes: 'Receipt Voucher - Security Deposit PDC 2×QR1,500 | Vivek Nair | CBQ #01000069, #01000070',          erp_journal_entries: [{ id: 'j15', account_name: 'PDC In Hand', debit: 3000, credit: 0 }, { id: 'j16', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 3000 }] },
+  { id: 'd8',  voucher_no: 'ARE-RT-25-3962-2', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 48000, notes: 'Receipt Voucher - Rent 12×PDC QR4,000 | Vivek Nair | CBQ #01000049–01000068',                      erp_journal_entries: [{ id: 'j17', account_name: 'PDC In Hand', debit: 48000, credit: 0 }, { id: 'j18', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 48000 }] },
+  { id: 'd9',  voucher_no: 'DV-L3-2601', voucher_type: 'Deposit',     voucher_date: '2026-01-05', total_amount: 4000, notes: 'Deposit Voucher - Jan 2026 Rent PDC | CBQ #01000049', erp_journal_entries: [{ id: 'j19', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j20', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j21', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j22', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd10', voucher_no: 'RI-L3-2601',  voucher_type: 'Rent Income', voucher_date: '2026-01-01', total_amount: 4000, notes: 'Rental Income - Jan 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j23', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j24', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd11', voucher_no: 'DV-L3-2602', voucher_type: 'Deposit',     voucher_date: '2026-02-05', total_amount: 4000, notes: 'Deposit Voucher - Feb 2026 Rent PDC | CBQ #01000050', erp_journal_entries: [{ id: 'j25', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j26', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j27', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j28', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd12', voucher_no: 'RI-L3-2602',  voucher_type: 'Rent Income', voucher_date: '2026-02-01', total_amount: 4000, notes: 'Rental Income - Feb 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j29', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j30', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd13', voucher_no: 'DV-L3-2603', voucher_type: 'Deposit',     voucher_date: '2026-03-05', total_amount: 4000, notes: 'Deposit Voucher - Mar 2026 Rent PDC | CBQ #01000059', erp_journal_entries: [{ id: 'j31', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j32', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j33', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j34', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd14', voucher_no: 'RI-L3-2603',  voucher_type: 'Rent Income', voucher_date: '2026-03-01', total_amount: 4000, notes: 'Rental Income - Mar 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j35', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j36', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd15', voucher_no: 'DV-L3-2604', voucher_type: 'Deposit',     voucher_date: '2026-04-05', total_amount: 4000, notes: 'Deposit Voucher - Apr 2026 Rent PDC | CBQ #01000060', erp_journal_entries: [{ id: 'j37', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j38', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j39', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j40', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd16', voucher_no: 'RI-L3-2604',  voucher_type: 'Rent Income', voucher_date: '2026-04-01', total_amount: 4000, notes: 'Rental Income - Apr 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j41', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j42', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd17', voucher_no: 'DV-L3-2605', voucher_type: 'Deposit',     voucher_date: '2026-05-05', total_amount: 4000, notes: 'Deposit Voucher - May 2026 Rent PDC | CBQ #01000061', erp_journal_entries: [{ id: 'j43', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j44', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j45', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j46', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd18', voucher_no: 'RI-L3-2605',  voucher_type: 'Rent Income', voucher_date: '2026-05-01', total_amount: 4000, notes: 'Rental Income - May 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j47', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j48', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd19', voucher_no: 'DV-L3-2606', voucher_type: 'Deposit',     voucher_date: '2026-06-05', total_amount: 4000, notes: 'Deposit Voucher - Jun 2026 Rent PDC | CBQ #01000062', erp_journal_entries: [{ id: 'j49', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j50', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j51', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j52', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd20', voucher_no: 'RI-L3-2606',  voucher_type: 'Rent Income', voucher_date: '2026-06-01', total_amount: 4000, notes: 'Rental Income - Jun 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j53', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j54', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
 ];
 
 function TransactionsPage() {

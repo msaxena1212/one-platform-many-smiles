@@ -1,0 +1,28 @@
+import { Client } from 'pg';
+import fs from 'fs';
+import path from 'path';
+
+async function runSchema() {
+  const connectionString = "postgresql://postgres.rnebpqnzignwjeukgztz:ZZaM4YMKu80iCTa2@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres";
+  const client = new Client({ connectionString });
+  
+  try {
+    console.log("Connecting to Supabase...");
+    await client.connect();
+    
+    console.log("Reading schema-hrms.sql...");
+    const schemaPath = path.join(process.cwd(), 'schema-hrms.sql');
+    const sql = fs.readFileSync(schemaPath, 'utf8');
+    
+    console.log("Executing HRMS schema...");
+    await client.query(sql);
+    
+    console.log("HRMS Schema applied successfully!");
+  } catch (error) {
+    console.error("Error applying schema:", error);
+  } finally {
+    await client.end();
+  }
+}
+
+runSchema();

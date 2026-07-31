@@ -1,17 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  fetchERPVouchers, createERPVoucher,
-  type ERPVoucher
-} from "@/lib/supabase";
-import { Loader2, Plus, ArrowDownLeft, ArrowUpRight, Receipt, FileText, Banknote, RotateCcw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { fetchERPVouchers, createERPVoucher, type ERPVoucher } from "@/lib/supabase";
+import { useAppData } from "@/lib/app-data-context";
+import { Loader2, Plus, ChevronDown, ChevronUp, ArrowDownLeft, ArrowUpRight, Receipt, FileText, Banknote, RotateCcw, Wifi } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/finance/journal")({
@@ -19,11 +18,11 @@ export const Route = createFileRoute("/finance/journal")({
 });
 
 const VOUCHER_TYPES = [
-  { value: "Receipt", label: "Receipt Voucher", icon: ArrowDownLeft, color: "text-green-600 bg-green-50" },
-  { value: "Deposit", label: "Deposit Voucher", icon: Banknote, color: "text-blue-600 bg-blue-50" },
-  { value: "Cheque Return", label: "Cheque Returned", icon: RotateCcw, color: "text-red-600 bg-red-50" },
-  { value: "Rent Income", label: "Rent Income", icon: Receipt, color: "text-emerald-600 bg-emerald-50" },
-  { value: "Payment", label: "Payment Voucher", icon: ArrowUpRight, color: "text-orange-600 bg-orange-50" },
+  { value: "Receipt",      label: "Receipt Voucher",  icon: ArrowDownLeft, color: "text-green-600 bg-green-50" },
+  { value: "Deposit",      label: "Deposit Voucher",  icon: Banknote,      color: "text-blue-600 bg-blue-50" },
+  { value: "Cheque Return",label: "Cheque Returned",  icon: RotateCcw,     color: "text-red-600 bg-red-50" },
+  { value: "Rent Income",  label: "Rent Income",      icon: Receipt,       color: "text-emerald-600 bg-emerald-50" },
+  { value: "Payment",      label: "Payment Voucher",  icon: ArrowUpRight,  color: "text-orange-600 bg-orange-50" },
 ];
 
 // Demo transactions from the Accounts-Transactions sheet
@@ -65,11 +64,49 @@ const DEMO_TRANSACTIONS = [
       { id: 'j12', account_name: 'Cash In Hand', debit: 0, credit: 5100 },
     ]
   },
+  // ── L3: Vivek Viswakumaran Nair / ARRS01-B00-F00-AG01 ─────────────────────
+  // Acknowledgement No. ARE-RT-25-3962-0 | Collection Date: 23-DEC-25
+  {
+    id: 'd6', voucher_no: 'ARE-RT-25-3962-0', voucher_type: 'Receipt', voucher_date: '2025-12-23', total_amount: 1000,
+    notes: 'Receipt Voucher - Security Deposit Cash | Vivek Nair / ARRS01-AG01 | Ref: 25631298',
+    erp_journal_entries: [
+      { id: 'j13', account_name: 'Cash In Hand', debit: 1000, credit: 0 },
+      { id: 'j14', account_name: 'Security Deposit Liability-AG01', debit: 0, credit: 1000 },
+    ]
+  },
+  {
+    id: 'd7', voucher_no: 'ARE-RT-25-3962-1', voucher_type: 'Receipt', voucher_date: '2025-12-23', total_amount: 3000,
+    notes: 'Receipt Voucher - Security Deposit PDC (2×QR1,500) | Vivek Nair | CBQ #01000069, #01000070',
+    erp_journal_entries: [
+      { id: 'j15', account_name: 'PDC In Hand', debit: 3000, credit: 0 },
+      { id: 'j16', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 3000 },
+    ]
+  },
+  {
+    id: 'd8', voucher_no: 'ARE-RT-25-3962-2', voucher_type: 'Receipt', voucher_date: '2025-12-23', total_amount: 48000,
+    notes: 'Receipt Voucher - Rent 12×PDC QR4,000 | Vivek Nair | CBQ #01000049–01000068',
+    erp_journal_entries: [
+      { id: 'j17', account_name: 'PDC In Hand', debit: 48000, credit: 0 },
+      { id: 'j18', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 48000 },
+    ]
+  },
+  { id: 'd9',  voucher_no: 'DV-L3-2601', voucher_type: 'Deposit',     voucher_date: '2026-01-05', total_amount: 4000, notes: 'Deposit Voucher - Jan 2026 Rent PDC | CBQ #01000049', erp_journal_entries: [{ id: 'j19', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j20', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j21', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j22', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd10', voucher_no: 'RI-L3-2601',  voucher_type: 'Rent Income', voucher_date: '2026-01-01', total_amount: 4000, notes: 'Rental Income - Jan 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j23', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j24', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd11', voucher_no: 'DV-L3-2602', voucher_type: 'Deposit',     voucher_date: '2026-02-05', total_amount: 4000, notes: 'Deposit Voucher - Feb 2026 Rent PDC | CBQ #01000050', erp_journal_entries: [{ id: 'j25', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j26', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j27', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j28', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd12', voucher_no: 'RI-L3-2602',  voucher_type: 'Rent Income', voucher_date: '2026-02-01', total_amount: 4000, notes: 'Rental Income - Feb 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j29', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j30', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd13', voucher_no: 'DV-L3-2603', voucher_type: 'Deposit',     voucher_date: '2026-03-05', total_amount: 4000, notes: 'Deposit Voucher - Mar 2026 Rent PDC | CBQ #01000059', erp_journal_entries: [{ id: 'j31', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j32', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j33', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j34', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd14', voucher_no: 'RI-L3-2603',  voucher_type: 'Rent Income', voucher_date: '2026-03-01', total_amount: 4000, notes: 'Rental Income - Mar 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j35', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j36', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd15', voucher_no: 'DV-L3-2604', voucher_type: 'Deposit',     voucher_date: '2026-04-05', total_amount: 4000, notes: 'Deposit Voucher - Apr 2026 Rent PDC | CBQ #01000060', erp_journal_entries: [{ id: 'j37', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j38', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j39', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j40', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd16', voucher_no: 'RI-L3-2604',  voucher_type: 'Rent Income', voucher_date: '2026-04-01', total_amount: 4000, notes: 'Rental Income - Apr 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j41', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j42', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd17', voucher_no: 'DV-L3-2605', voucher_type: 'Deposit',     voucher_date: '2026-05-05', total_amount: 4000, notes: 'Deposit Voucher - May 2026 Rent PDC | CBQ #01000061', erp_journal_entries: [{ id: 'j43', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j44', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j45', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j46', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd18', voucher_no: 'RI-L3-2605',  voucher_type: 'Rent Income', voucher_date: '2026-05-01', total_amount: 4000, notes: 'Rental Income - May 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j47', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j48', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd19', voucher_no: 'DV-L3-2606', voucher_type: 'Deposit',     voucher_date: '2026-06-05', total_amount: 4000, notes: 'Deposit Voucher - Jun 2026 Rent PDC | CBQ #01000062', erp_journal_entries: [{ id: 'j49', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j50', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j51', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j52', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
+  { id: 'd20', voucher_no: 'RI-L3-2606',  voucher_type: 'Rent Income', voucher_date: '2026-06-01', total_amount: 4000, notes: 'Rental Income - Jun 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j53', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j54', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
 ];
 
 function TransactionsPage() {
-  const [vouchers, setVouchers] = useState<ERPVoucher[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { vouchers: ctxVouchers, setVouchers: setCtxVouchers, syncing } = useAppData();
+  const [dbVouchers, setDbVouchers] = useState<ERPVoucher[]>([]);
   const [activeType, setActiveType] = useState("all");
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -84,29 +121,40 @@ function TransactionsPage() {
     { account_name: "", debit: 0, credit: 0 },
   ]);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchERPVouchers();
-      // Merge with demo data if empty
-      if (!data || data.length === 0) {
-        setVouchers(DEMO_TRANSACTIONS as any);
-      } else {
-        setVouchers([...(DEMO_TRANSACTIONS as any), ...data]);
-      }
-    } catch (e) {
-      setVouchers(DEMO_TRANSACTIONS as any);
-    } finally { setLoading(false); }
-  }
+  useEffect(() => {
+    // Load any additional vouchers from Supabase DB (not in context)
+    fetchERPVouchers()
+      .then(data => setDbVouchers(data || []))
+      .catch(() => {});
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  // Build context vouchers in ERPVoucher shape for display
+  const ctxAsErp: ERPVoucher[] = ctxVouchers.map(v => ({
+    id: v.id,
+    voucher_no: v.receiptNo,
+    voucher_type: (v.name.includes('Deposit') ? 'Deposit' :
+                   v.name.includes('Rent Income') || v.name.includes('Rental Income') ? 'Rent Income' :
+                   'Receipt') as ERPVoucher['voucher_type'],
+    voucher_date: '',
+    total_amount: v.amount,
+    notes: `${v.name} | ${v.period} | ${v.debit} → ${v.credit}`,
+    created_at: '',
+    erp_journal_entries: [
+      { id: v.id + '-dr', voucher_id: v.id, account_name: v.debit,  debit: v.amount, credit: 0,        created_at: '' },
+      { id: v.id + '-cr', voucher_id: v.id, account_name: v.credit, debit: 0,        credit: v.amount, created_at: '' },
+    ],
+  }));
 
-  const filtered = activeType === "all"
-    ? vouchers
-    : vouchers.filter(v => v.voucher_type === activeType);
+  // DEMO + context take priority; DB extras appended (dedup by voucher_no)
+  const ctxNos = new Set(ctxVouchers.map(v => v.receiptNo));
+  const dbExtras = dbVouchers.filter(d => !ctxNos.has(d.voucher_no));
+  const vouchers: ERPVoucher[] = [...ctxAsErp, ...DEMO_TRANSACTIONS as any, ...dbExtras];
 
+  const filtered = activeType === "all" ? vouchers : vouchers.filter(v => v.voucher_type === activeType);
   const totalDr = filtered.reduce((s, v) => s + (v.erp_journal_entries || []).reduce((a, l) => a + Number(l.debit || 0), 0), 0);
   const totalCr = filtered.reduce((s, v) => s + (v.erp_journal_entries || []).reduce((a, l) => a + Number(l.credit || 0), 0), 0);
+
+  useEffect(() => {}, []);
 
   async function handleCreate() {
     if (!vForm.voucher_no || !vForm.voucher_type) return toast.error("Voucher No and Type are required");
