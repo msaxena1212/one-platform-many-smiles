@@ -636,7 +636,7 @@ function LeasingPage() {
     note: "",
   });
 
-  const [checkInOpen, setCheckInOpen] = useState(false);
+  
   const [checkInForm, setCheckInForm] = useState({
     condition: "Good",
     furnitureCondition: "Good",

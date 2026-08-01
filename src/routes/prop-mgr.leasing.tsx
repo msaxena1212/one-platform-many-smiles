@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { useAppData } from "@/lib/app-data-context";
 import {
   AlertCircle,
   BadgeCheck,
@@ -506,31 +507,31 @@ function formatMoney(value: number) {
 }
 
 function LeasingPage() {
-  const [units, setUnits] = useState<Unit[]>(initialUnits);
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
-  const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
+  const {
+    units,
+    setUnits,
+    customers,
+    setCustomers,
+    reservations,
+    setReservations,
+    leases,
+    setLeases,
+    pdcs,
+    setPdcs,
+    vouchers,
+    setVouchers,
+    keyNotices,
+    setKeyNotices,
+    handovers,
+    setHandovers,
+    auditEvents,
+    setAuditEvents,
+  } = useAppData();
   const [documents, setDocuments] = useState<TenantDocument[]>(initialDocuments);
-  const [leases, setLeases] = useState<Lease[]>(initialLeases);
-  const [pdcs, setPdcs] = useState<Pdc[]>(initialPdcs);
-  const [keyNotices, setKeyNotices] = useState<KeyNotice[]>([]);
-  const [handovers, setHandovers] = useState<KeyHandover[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [renewals, setRenewals] = useState<RenewalCase[]>([]);
   const [checkouts, setCheckouts] = useState<CheckoutCase[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [vouchers, setVouchers] = useState<Voucher[]>(initialVouchers);
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([
-    {
-      id: "a1",
-      stage: "Receipt Generation",
-      owner: "Finance",
-      input: "Lease L1, PDC schedule, security deposit",
-      approval: "Cashier posting",
-      status: "Posted",
-      output: "Rent and deposit receipts available for print/email/share",
-      at: "2025-09-24",
-    },
-  ]);
   const [busyAction, setBusyAction] = useState("");
 
   // ── Dialog States ──────────────────────────────────────────────
@@ -614,6 +615,7 @@ function LeasingPage() {
   const [collectForm, setCollectForm] = useState({
     paymentMode: "PDC" as "PDC" | "Cash" | "Bank Transfer" | "Guarantee Cheque",
     chequeBank: "",
+    chequeEntries: "",
     depositAmount: "",
     depositMode: "Cash" as string,
     notes: "",
@@ -679,6 +681,12 @@ function LeasingPage() {
     doorsWindowsOk: true,
     idVerified: true,
     photosTaken: "6",
+    handoverPhotos: "",
+    checklistDocument: "",
+    assetChecklist: "",
+    financeConfirmed: false,
+    propertyManagerConfirmed: true,
+    tenantConfirmed: false,
     tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.",
     note: "",
   });
@@ -731,9 +739,11 @@ function LeasingPage() {
     restorationCharges: "0",
     outstandingRent: "0",
     damagesAmount: "650",
-    utilityCharges: "220",
-    otherDeductions: "0",
     photos: "12",
+    checkoutPhotos: "",
+    checkoutReportFile: "",
+    handoverConditionSummary: "",
+    finalConditionSummary: "",
     financeClearance: false,
     utilityClearance: false,
     keysReturned: false,
@@ -1060,8 +1070,23 @@ function LeasingPage() {
   function submitCollect() {
     if (!signatureWorkflowLease) return;
     const lease = signatureWorkflowLease;
-    const pdcTotal = lease.monthlyRent * lease.pdcCount;
-    const nextPdcs = Array.from({ length: lease.pdcCount }, (_, index) => ({
+    const manualPdcs = collectForm.chequeEntries
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, index) => {
+        const [chequeNo, bank, date, amount] = line.split("|").map((part) => part.trim());
+        return {
+          id: `p${pdcs.length + index + 1}`,
+          leaseId: lease.id,
+          chequeNo: chequeNo || `PDC-${lease.unit.replace(/\W/g, "")}-${index + 1}`,
+          bank: bank || collectForm.chequeBank || "Tenant Bank",
+          date: date || addDays(new Date(lease.startDate), index * 30),
+          amount: Number(amount) || lease.monthlyRent,
+          status: "received" as PdcStatus,
+        };
+      });
+    const nextPdcs = manualPdcs.length > 0 ? manualPdcs : Array.from({ length: lease.pdcCount }, (_, index) => ({
       id: `p${pdcs.length + index + 1}`,
       leaseId: lease.id,
       chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${index + 1}`,
@@ -1070,6 +1095,7 @@ function LeasingPage() {
       amount: lease.monthlyRent,
       status: "received" as PdcStatus,
     }));
+    const pdcTotal = nextPdcs.reduce((sum, pdc) => sum + pdc.amount, 0);
     setPdcs((items) => [...nextPdcs, ...items]);
     setVouchers((items) => [
       { id: `v${items.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${lease.startDate} to ${lease.endDate}`, debit: "PDC In Hand", credit: `Customer(PDC)-${lease.unit}`, amount: pdcTotal, status: "posted" },
@@ -1080,7 +1106,7 @@ function LeasingPage() {
     recordAudit({
       stage: "Collection & Receipt Generation",
       owner: "Finance Cashier",
-      input: `${lease.pdcCount} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}`,
+      input: `${nextPdcs.length} cheque(s) recorded, deposit ${collectForm.depositMode}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
       output: (collectForm.notes || "Rent and deposit receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
@@ -1183,6 +1209,7 @@ function LeasingPage() {
     };
     setLeases((items) => [renewed, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
     setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed" } : item)));
+    setPdcs((items) => items.filter((item) => item.leaseId !== renewed.id));
     recordAudit({
       stage: "Lease Renewal Process",
       owner: "Leasing Department",
@@ -1265,7 +1292,15 @@ function LeasingPage() {
       collectorName: handoverForm.collectorName || lease.tenantName,
       collectorIdNumber: handoverForm.collectorIdNumber,
       tenantAcknowledgement: handoverForm.tenantAcknowledgement || "Tenant acknowledged receipt",
-      note: handoverForm.note,
+      note: [
+        handoverForm.note,
+        handoverForm.assetChecklist ? `Asset Checklist: ${handoverForm.assetChecklist}` : "",
+        handoverForm.checklistDocument ? `Checklist Doc: ${handoverForm.checklistDocument}` : "",
+        handoverForm.handoverPhotos ? `Photos: ${handoverForm.handoverPhotos}` : "",
+        `Finance Confirmed: ${handoverForm.financeConfirmed ? "Yes" : "No"}`,
+        `PM Confirmed: ${handoverForm.propertyManagerConfirmed ? "Yes" : "No"}`,
+        `Tenant Confirmed: ${handoverForm.tenantConfirmed ? "Yes" : "No"}`,
+      ].filter(Boolean).join(" | "),
     };
     setHandovers((items) => [newHandover, ...items]);
     recordAudit({
@@ -1423,11 +1458,11 @@ function LeasingPage() {
         id: `coi${items.length + 1}`,
         leaseId: lease.id,
         type: "check_out",
-        condition: completeCheckoutForm.condition,
+        condition: `${completeCheckoutForm.condition} | Handover: ${completeCheckoutForm.handoverConditionSummary || "Not recorded"} | Final: ${completeCheckoutForm.finalConditionSummary || "Not recorded"}`,
         electricityMeter: completeCheckoutForm.electricityMeter || "182207",
         waterMeter: completeCheckoutForm.waterMeter || "149129",
         damages: completeCheckoutForm.damages || "None",
-        pendingMaintenance: `Missing items: ${completeCheckoutForm.missingItems || "None"}; cleaning/restoration charges captured`,
+        pendingMaintenance: `Missing items: ${completeCheckoutForm.missingItems || "None"}; checkout photos: ${completeCheckoutForm.checkoutPhotos || "None"}; report: ${completeCheckoutForm.checkoutReportFile || "Pending"}`,
         acknowledged: true,
         photos: Number(completeCheckoutForm.photos) || 12,
       },
@@ -1440,9 +1475,9 @@ function LeasingPage() {
         depositReceived: lease.securityDeposit,
         outstandingRent: Number(completeCheckoutForm.outstandingRent) || 0,
         damages: Number(completeCheckoutForm.damagesAmount) || 0,
-        utilityCharges: Number(completeCheckoutForm.utilityCharges) || 0,
-        otherDeductions: (Number(completeCheckoutForm.otherDeductions) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0),
-        refundableBalance: lease.securityDeposit - ((Number(completeCheckoutForm.outstandingRent) || 0) + (Number(completeCheckoutForm.damagesAmount) || 0) + (Number(completeCheckoutForm.utilityCharges) || 0) + (Number(completeCheckoutForm.otherDeductions) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0)),
+        utilityCharges: 0,
+        otherDeductions: (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0),
+        refundableBalance: lease.securityDeposit - ((Number(completeCheckoutForm.outstandingRent) || 0) + (Number(completeCheckoutForm.damagesAmount) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0)),
         unitDisposition: completeCheckoutForm.unitDisposition,
         approval: "pending_approval",
       },
@@ -1454,7 +1489,7 @@ function LeasingPage() {
       input: "Condition, meters, keys, utilities, damages, missing items, cleaning/restoration review",
       approval: "Tenant acknowledgement",
       status: "ready_for_settlement",
-      output: "Settlement draft created with damages, utilities, cleaning/restoration and unit-disposition recommendation",
+      output: "Settlement draft created with damages, cleaning/restoration and unit-disposition recommendation",
     });
     setCompleteCheckoutOpen(false);
   }

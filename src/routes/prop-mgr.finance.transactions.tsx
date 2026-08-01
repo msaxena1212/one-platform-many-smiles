@@ -1,18 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  fetchERPVouchers, createERPVoucher,
-  type ERPVoucher
-} from "@/lib/supabase";
-import { Loader2, Plus, ArrowDownLeft, ArrowUpRight, Receipt, FileText, Banknote, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import { useAppData } from "@/lib/app-data-context";
+import { ArrowDownLeft, ArrowUpRight, Receipt, Banknote, RotateCcw, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/prop-mgr/finance/transactions")({
   component: TransactionsPage,
@@ -26,121 +17,63 @@ const VOUCHER_TYPES = [
   { value: "Payment", label: "Payment Voucher", icon: ArrowUpRight, color: "text-orange-600 bg-orange-50" },
 ];
 
-// Demo transactions — fully synced with leasing module (incl. Vivek Viswakumaran Nair ARRS01-LES-25-52-0)
-const DEMO_TRANSACTIONS = [
-  // ── L1: Mr. Hafeez Shaik / AAA - Flat16 ─────────────────────────────────────
-  { id: 'd1', voucher_no: 'RV-001', voucher_type: 'Receipt',     voucher_date: '2025-10-01', total_amount: 67200, notes: 'Receipt Voucher - Rent (PDC) | Hafeez Shaik / AAA-Flat16',          erp_journal_entries: [{ id: 'j1', account_name: 'PDC In Hand', debit: 67200, credit: 0 }, { id: 'j2', account_name: 'Customer(PDC)-AAA Flat16', debit: 0, credit: 67200 }] },
-  { id: 'd2', voucher_no: 'RV-002', voucher_type: 'Receipt',     voucher_date: '2025-10-01', total_amount: 5100,  notes: 'Receipt Voucher - Security Deposit (Cash) | Hafeez Shaik',           erp_journal_entries: [{ id: 'j3', account_name: 'Cash In Hand', debit: 5100, credit: 0 }, { id: 'j4', account_name: 'Security Deposit Liability', debit: 0, credit: 5100 }] },
-  { id: 'd3', voucher_no: 'DV-001', voucher_type: 'Deposit',     voucher_date: '2025-11-01', total_amount: 5600,  notes: 'Deposit Voucher - PDC Nov 2025 | Hafeez Shaik',                      erp_journal_entries: [{ id: 'j5', account_name: 'Bank Account', debit: 5600, credit: 0 }, { id: 'j6', account_name: 'PDC In Hand', debit: 0, credit: 5600 }, { id: 'j7', account_name: 'Customer(PDC)-AAA Flat16', debit: 5600, credit: 0 }, { id: 'j8', account_name: 'Receivable-AAA Flat16', debit: 0, credit: 5600 }] },
-  { id: 'd4', voucher_no: 'RI-001',  voucher_type: 'Rent Income', voucher_date: '2025-11-01', total_amount: 5600,  notes: 'Rental Income - Nov 2025 | Hafeez Shaik / AAA-Flat16',               erp_journal_entries: [{ id: 'j9', account_name: 'Receivable-AAA Flat16', debit: 5600, credit: 0 }, { id: 'j10', account_name: 'Rental Income', debit: 0, credit: 5600 }] },
-  { id: 'd5', voucher_no: 'DV-002', voucher_type: 'Deposit',     voucher_date: '2025-11-01', total_amount: 5100,  notes: 'Deposit Voucher - Cash Deposit to Bank | Hafeez Shaik',              erp_journal_entries: [{ id: 'j11', account_name: 'Bank Account', debit: 5100, credit: 0 }, { id: 'j12', account_name: 'Cash In Hand', debit: 0, credit: 5100 }] },
-  // ── L3: Vivek Viswakumaran Nair / ARRS01-B00-F00-AG01 ───────────────────────
-  // Acknowledgement No. ARE-RT-25-3962-0 | Collection Date: 23-DEC-25
-  { id: 'd6',  voucher_no: 'ARE-RT-25-3962-0', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 1000,  notes: 'Receipt Voucher - Security Deposit Cash QR1,000 | Vivek Nair / ARRS01-AG01 | Ref: 25631298',          erp_journal_entries: [{ id: 'j13', account_name: 'Cash In Hand', debit: 1000, credit: 0 }, { id: 'j14', account_name: 'Security Deposit Liability-AG01', debit: 0, credit: 1000 }] },
-  { id: 'd7',  voucher_no: 'ARE-RT-25-3962-1', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 3000,  notes: 'Receipt Voucher - Security Deposit PDC 2×QR1,500 | Vivek Nair | CBQ #01000069, #01000070',          erp_journal_entries: [{ id: 'j15', account_name: 'PDC In Hand', debit: 3000, credit: 0 }, { id: 'j16', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 3000 }] },
-  { id: 'd8',  voucher_no: 'ARE-RT-25-3962-2', voucher_type: 'Receipt',     voucher_date: '2025-12-23', total_amount: 48000, notes: 'Receipt Voucher - Rent 12×PDC QR4,000 | Vivek Nair | CBQ #01000049–01000068',                      erp_journal_entries: [{ id: 'j17', account_name: 'PDC In Hand', debit: 48000, credit: 0 }, { id: 'j18', account_name: 'Customer(PDC)-AG01', debit: 0, credit: 48000 }] },
-  { id: 'd9',  voucher_no: 'DV-L3-2601', voucher_type: 'Deposit',     voucher_date: '2026-01-05', total_amount: 4000, notes: 'Deposit Voucher - Jan 2026 Rent PDC | CBQ #01000049', erp_journal_entries: [{ id: 'j19', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j20', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j21', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j22', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd10', voucher_no: 'RI-L3-2601',  voucher_type: 'Rent Income', voucher_date: '2026-01-01', total_amount: 4000, notes: 'Rental Income - Jan 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j23', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j24', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd11', voucher_no: 'DV-L3-2602', voucher_type: 'Deposit',     voucher_date: '2026-02-05', total_amount: 4000, notes: 'Deposit Voucher - Feb 2026 Rent PDC | CBQ #01000050', erp_journal_entries: [{ id: 'j25', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j26', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j27', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j28', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd12', voucher_no: 'RI-L3-2602',  voucher_type: 'Rent Income', voucher_date: '2026-02-01', total_amount: 4000, notes: 'Rental Income - Feb 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j29', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j30', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd13', voucher_no: 'DV-L3-2603', voucher_type: 'Deposit',     voucher_date: '2026-03-05', total_amount: 4000, notes: 'Deposit Voucher - Mar 2026 Rent PDC | CBQ #01000059', erp_journal_entries: [{ id: 'j31', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j32', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j33', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j34', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd14', voucher_no: 'RI-L3-2603',  voucher_type: 'Rent Income', voucher_date: '2026-03-01', total_amount: 4000, notes: 'Rental Income - Mar 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j35', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j36', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd15', voucher_no: 'DV-L3-2604', voucher_type: 'Deposit',     voucher_date: '2026-04-05', total_amount: 4000, notes: 'Deposit Voucher - Apr 2026 Rent PDC | CBQ #01000060', erp_journal_entries: [{ id: 'j37', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j38', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j39', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j40', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd16', voucher_no: 'RI-L3-2604',  voucher_type: 'Rent Income', voucher_date: '2026-04-01', total_amount: 4000, notes: 'Rental Income - Apr 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j41', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j42', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd17', voucher_no: 'DV-L3-2605', voucher_type: 'Deposit',     voucher_date: '2026-05-05', total_amount: 4000, notes: 'Deposit Voucher - May 2026 Rent PDC | CBQ #01000061', erp_journal_entries: [{ id: 'j43', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j44', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j45', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j46', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd18', voucher_no: 'RI-L3-2605',  voucher_type: 'Rent Income', voucher_date: '2026-05-01', total_amount: 4000, notes: 'Rental Income - May 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j47', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j48', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd19', voucher_no: 'DV-L3-2606', voucher_type: 'Deposit',     voucher_date: '2026-06-05', total_amount: 4000, notes: 'Deposit Voucher - Jun 2026 Rent PDC | CBQ #01000062', erp_journal_entries: [{ id: 'j49', account_name: 'Bank Account-CBQ', debit: 4000, credit: 0 }, { id: 'j50', account_name: 'PDC In Hand', debit: 0, credit: 4000 }, { id: 'j51', account_name: 'Customer(PDC)-AG01', debit: 4000, credit: 0 }, { id: 'j52', account_name: 'Receivable-AG01', debit: 0, credit: 4000 }] },
-  { id: 'd20', voucher_no: 'RI-L3-2606',  voucher_type: 'Rent Income', voucher_date: '2026-06-01', total_amount: 4000, notes: 'Rental Income - Jun 2026 | Vivek Nair / AG01', erp_journal_entries: [{ id: 'j53', account_name: 'Receivable-AG01', debit: 4000, credit: 0 }, { id: 'j54', account_name: 'Rental Income-AG01', debit: 0, credit: 4000 }] },
-];
+function toVoucherType(name: string) {
+  if (name.includes("Deposit")) return "Deposit";
+  if (name.includes("Cheque Return")) return "Cheque Return";
+  if (name.includes("Rent Income") || name.includes("Rental Income")) return "Rent Income";
+  if (name.includes("Payment")) return "Payment";
+  return "Receipt";
+}
 
 function TransactionsPage() {
-  const [vouchers, setVouchers] = useState<ERPVoucher[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { vouchers } = useAppData();
   const [activeType, setActiveType] = useState("all");
-  const [showNew, setShowNew] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const [vForm, setVForm] = useState({
-    voucher_no: "", voucher_type: "Receipt" as ERPVoucher["voucher_type"],
-    voucher_date: new Date().toISOString().slice(0, 10), total_amount: 0, notes: "",
-  });
-  const [lines, setLines] = useState([
-    { account_name: "", debit: 0, credit: 0 },
-    { account_name: "", debit: 0, credit: 0 },
-  ]);
+  const normalized = vouchers.map((voucher) => ({
+    id: voucher.id,
+    voucher_no: voucher.receiptNo ?? voucher.id,
+    voucher_type: toVoucherType(voucher.name),
+    amount: voucher.amount,
+    notes: `${voucher.name}${voucher.period ? ` | ${voucher.period}` : ""}`,
+    entries: [
+      { id: `${voucher.id}-dr`, account_name: voucher.debit, debit: voucher.amount, credit: 0 },
+      { id: `${voucher.id}-cr`, account_name: voucher.credit, debit: 0, credit: voucher.amount },
+    ],
+  }));
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchERPVouchers();
-      // Merge with demo data if empty
-      if (!data || data.length === 0) {
-        setVouchers(DEMO_TRANSACTIONS as any);
-      } else {
-        setVouchers([...(DEMO_TRANSACTIONS as any), ...data]);
-      }
-    } catch (e) {
-      setVouchers(DEMO_TRANSACTIONS as any);
-    } finally { setLoading(false); }
-  }
-
-  useEffect(() => { load(); }, []);
-
-  const filtered = activeType === "all"
-    ? vouchers
-    : vouchers.filter(v => v.voucher_type === activeType);
-
-  const totalDr = filtered.reduce((s, v) => s + (v.erp_journal_entries || []).reduce((a, l) => a + Number(l.debit || 0), 0), 0);
-  const totalCr = filtered.reduce((s, v) => s + (v.erp_journal_entries || []).reduce((a, l) => a + Number(l.credit || 0), 0), 0);
-
-  async function handleCreate() {
-    if (!vForm.voucher_no || !vForm.voucher_type) return toast.error("Voucher No and Type are required");
-    const drTotal = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
-    const crTotal = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
-    if (Math.abs(drTotal - crTotal) > 0.01) return toast.error(`Journal is not balanced! Dr: ${drTotal} ≠ Cr: ${crTotal}`);
-    setSaving(true);
-    try {
-      await createERPVoucher({ ...vForm }, lines.filter(l => l.account_name));
-      toast.success("Voucher created successfully!");
-      setShowNew(false);
-      await load();
-    } catch (e: any) {
-      toast.error("Failed: " + e.message);
-    } finally { setSaving(false); }
-  }
-
-  const vTypeInfo = (type: string) => VOUCHER_TYPES.find(t => t.value === type) || VOUCHER_TYPES[0];
+  const filtered = activeType === "all" ? normalized : normalized.filter((voucher) => voucher.voucher_type === activeType);
+  const totalDr = filtered.reduce((sum, voucher) => sum + voucher.entries.reduce((acc, entry) => acc + entry.debit, 0), 0);
+  const totalCr = filtered.reduce((sum, voucher) => sum + voucher.entries.reduce((acc, entry) => acc + entry.credit, 0), 0);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Finance Transactions</h2>
-          <p className="text-sm text-muted-foreground">Vouchers, Journal Entries & Accounting Ledger</p>
+          <p className="text-sm text-muted-foreground">Shared vouchers generated by leasing, cashier, and finance flows.</p>
         </div>
-        <Button onClick={() => setShowNew(true)}>
-          <Plus className="h-4 w-4 mr-2" /> New Voucher
+        <Button disabled>
+          <Plus className="h-4 w-4 mr-2" />
+          New Voucher
         </Button>
       </div>
 
-      {/* Voucher Type Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {VOUCHER_TYPES.map(vt => {
-          const count = vouchers.filter(v => v.voucher_type === vt.value).length;
-          const total = vouchers.filter(v => v.voucher_type === vt.value).reduce((s, v) => s + Number(v.total_amount || 0), 0);
+        {VOUCHER_TYPES.map((voucherType) => {
+          const count = normalized.filter((voucher) => voucher.voucher_type === voucherType.value).length;
+          const total = normalized.filter((voucher) => voucher.voucher_type === voucherType.value).reduce((sum, voucher) => sum + voucher.amount, 0);
           return (
             <Card
-              key={vt.value}
-              className={`cursor-pointer transition-all border-2 ${activeType === vt.value ? 'border-primary' : 'border-border hover:border-primary/30'}`}
-              onClick={() => setActiveType(activeType === vt.value ? 'all' : vt.value)}
+              key={voucherType.value}
+              className={`cursor-pointer transition-all border-2 ${activeType === voucherType.value ? "border-primary" : "border-border hover:border-primary/30"}`}
+              onClick={() => setActiveType(activeType === voucherType.value ? "all" : voucherType.value)}
             >
               <CardContent className="p-4">
-                <div className={`inline-flex items-center justify-center rounded-lg p-2 mb-2 ${vt.color}`}>
-                  <vt.icon className="h-4 w-4" />
+                <div className={`inline-flex items-center justify-center rounded-lg p-2 mb-2 ${voucherType.color}`}>
+                  <voucherType.icon className="h-4 w-4" />
                 </div>
-                <div className="text-xs font-medium text-muted-foreground">{vt.label}</div>
+                <div className="text-xs font-medium text-muted-foreground">{voucherType.label}</div>
                 <div className="text-lg font-bold mt-1">{count}</div>
                 <div className="text-xs text-muted-foreground">QR {total.toLocaleString()}</div>
               </CardContent>
@@ -149,7 +82,6 @@ function TransactionsPage() {
         })}
       </div>
 
-      {/* Summary Bar */}
       <div className="flex gap-6 px-4 py-3 bg-muted/30 rounded-xl border border-border text-sm">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">Total Dr:</span>
@@ -159,49 +91,35 @@ function TransactionsPage() {
           <span className="text-muted-foreground">Total Cr:</span>
           <span className="font-semibold text-red-600">QR {totalCr.toLocaleString()}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">Balance:</span>
-          <span className={`font-semibold ${Math.abs(totalDr - totalCr) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
-            {Math.abs(totalDr - totalCr) < 0.01 ? '✓ Balanced' : `QR ${(totalDr - totalCr).toLocaleString()} Unbalanced`}
-          </span>
-        </div>
         <div className="ml-auto text-muted-foreground">{filtered.length} vouchers shown</div>
       </div>
 
-      {/* Vouchers List */}
       <Card>
         <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">No transactions found</div>
           ) : (
             <div className="divide-y divide-border">
-              {filtered.map(v => {
-                const info = vTypeInfo(v.voucher_type);
-                const isExpanded = expandedId === v.id;
-                const entries = v.erp_journal_entries || [];
+              {filtered.map((voucher) => {
+                const info = VOUCHER_TYPES.find((item) => item.value === voucher.voucher_type) || VOUCHER_TYPES[0];
+                const isExpanded = expandedId === voucher.id;
                 return (
-                  <div key={v.id}>
-                    <div
-                      className="flex items-center gap-4 px-5 py-4 hover:bg-muted/10 cursor-pointer transition-colors"
-                      onClick={() => setExpandedId(isExpanded ? null : v.id)}
-                    >
+                  <div key={voucher.id}>
+                    <div className="flex items-center gap-4 px-5 py-4 hover:bg-muted/10 cursor-pointer transition-colors" onClick={() => setExpandedId(isExpanded ? null : voucher.id)}>
                       <div className={`flex items-center justify-center rounded-lg h-9 w-9 flex-shrink-0 ${info.color}`}>
                         <info.icon className="h-4 w-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm">{v.voucher_no}</div>
-                        <div className="text-xs text-muted-foreground">{info.label} · {v.voucher_date}</div>
-                        {v.notes && <div className="text-xs text-muted-foreground mt-0.5 truncate">{v.notes}</div>}
+                        <div className="font-semibold text-sm">{voucher.voucher_no}</div>
+                        <div className="text-xs text-muted-foreground">{info.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">{voucher.notes}</div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <div className="font-semibold text-sm">QR {Number(v.total_amount || 0).toLocaleString()}</div>
-                        <div className="text-xs text-muted-foreground">{entries.length} lines</div>
+                        <div className="font-semibold text-sm">QR {voucher.amount.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">{voucher.entries.length} lines</div>
                       </div>
-                      <div className="text-muted-foreground text-xs ml-2">{isExpanded ? '▲' : '▼'}</div>
                     </div>
-                    {isExpanded && entries.length > 0 && (
+                    {isExpanded && (
                       <div className="bg-muted/5 border-t border-border">
                         <table className="w-full text-sm">
                           <thead>
@@ -212,26 +130,13 @@ function TransactionsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {entries.map((e: any, i: number) => (
-                              <tr key={e.id || i} className="border-b border-border/50 last:border-0">
-                                <td className="px-10 py-2 text-sm">{e.account_name}</td>
-                                <td className="px-6 py-2 text-right font-mono text-sm text-blue-600">
-                                  {Number(e.debit || 0) > 0 ? Number(e.debit).toLocaleString() : '—'}
-                                </td>
-                                <td className="px-6 py-2 text-right font-mono text-sm text-red-600">
-                                  {Number(e.credit || 0) > 0 ? Number(e.credit).toLocaleString() : '—'}
-                                </td>
+                            {voucher.entries.map((entry) => (
+                              <tr key={entry.id} className="border-b border-border/50 last:border-0">
+                                <td className="px-10 py-2 text-sm">{entry.account_name}</td>
+                                <td className="px-6 py-2 text-right font-mono text-sm text-blue-600">{entry.debit > 0 ? entry.debit.toLocaleString() : "-"}</td>
+                                <td className="px-6 py-2 text-right font-mono text-sm text-red-600">{entry.credit > 0 ? entry.credit.toLocaleString() : "-"}</td>
                               </tr>
                             ))}
-                            <tr className="bg-muted/20">
-                              <td className="px-10 py-2 text-xs font-semibold text-muted-foreground">TOTAL</td>
-                              <td className="px-6 py-2 text-right font-mono text-sm font-semibold text-blue-700">
-                                {entries.reduce((s: number, e: any) => s + Number(e.debit || 0), 0).toLocaleString()}
-                              </td>
-                              <td className="px-6 py-2 text-right font-mono text-sm font-semibold text-red-700">
-                                {entries.reduce((s: number, e: any) => s + Number(e.credit || 0), 0).toLocaleString()}
-                              </td>
-                            </tr>
                           </tbody>
                         </table>
                       </div>
@@ -243,109 +148,6 @@ function TransactionsPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* New Voucher Dialog */}
-      <Dialog open={showNew} onOpenChange={setShowNew}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>New Finance Voucher</DialogTitle>
-            <DialogDescription>Create a double-entry journal voucher. Debit must equal Credit.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Voucher No *</Label>
-                <Input value={vForm.voucher_no} onChange={e => setVForm(f => ({ ...f, voucher_no: e.target.value }))} placeholder="e.g. RV-2026-001" />
-              </div>
-              <div className="space-y-1">
-                <Label>Voucher Type *</Label>
-                <Select value={vForm.voucher_type} onValueChange={v => setVForm(f => ({ ...f, voucher_type: v as any }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {VOUCHER_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Voucher Date *</Label>
-                <Input type="date" value={vForm.voucher_date} onChange={e => setVForm(f => ({ ...f, voucher_date: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Total Amount (QR)</Label>
-                <Input type="number" value={vForm.total_amount || ''} onChange={e => setVForm(f => ({ ...f, total_amount: Number(e.target.value) }))} />
-              </div>
-              <div className="col-span-2 space-y-1">
-                <Label>Notes / Narration</Label>
-                <Input value={vForm.notes} onChange={e => setVForm(f => ({ ...f, notes: e.target.value }))} placeholder="Description of this transaction" />
-              </div>
-            </div>
-
-            {/* Journal Lines */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Journal Entries</Label>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setLines(l => [...l, { account_name: '', debit: 0, credit: 0 }])}>
-                  + Add Line
-                </Button>
-              </div>
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/20">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs text-muted-foreground font-medium">Account Name</th>
-                      <th className="px-3 py-2 text-right text-xs text-muted-foreground font-medium">Dr (QR)</th>
-                      <th className="px-3 py-2 text-right text-xs text-muted-foreground font-medium">Cr (QR)</th>
-                      <th className="w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line, i) => (
-                      <tr key={i} className="border-t border-border">
-                        <td className="px-2 py-1">
-                          <Input value={line.account_name} onChange={e => setLines(ls => ls.map((l, j) => j === i ? { ...l, account_name: e.target.value } : l))} className="h-8 text-sm" placeholder="e.g. PDC In Hand" />
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <Input type="number" value={line.debit || ''} onChange={e => setLines(ls => ls.map((l, j) => j === i ? { ...l, debit: Number(e.target.value) } : l))} className="h-8 text-sm text-right w-28" />
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <Input type="number" value={line.credit || ''} onChange={e => setLines(ls => ls.map((l, j) => j === i ? { ...l, credit: Number(e.target.value) } : l))} className="h-8 text-sm text-right w-28" />
-                        </td>
-                        <td className="px-2 py-1">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500" onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}>✕</Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-muted/10 border-t-2 border-border">
-                    <tr>
-                      <td className="px-3 py-2 text-xs font-semibold text-muted-foreground">TOTAL</td>
-                      <td className="px-3 py-2 text-right font-mono text-sm font-semibold text-blue-600">{lines.reduce((s, l) => s + Number(l.debit || 0), 0).toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right font-mono text-sm font-semibold text-red-600">{lines.reduce((s, l) => s + Number(l.credit || 0), 0).toLocaleString()}</td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              {(() => {
-                const dr = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
-                const cr = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
-                return Math.abs(dr - cr) > 0.01 ? (
-                  <p className="text-xs text-red-500 mt-1">⚠ Not balanced — Dr ({dr}) ≠ Cr ({cr})</p>
-                ) : dr > 0 ? (
-                  <p className="text-xs text-green-600 mt-1">✓ Balanced</p>
-                ) : null;
-              })()}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Post Voucher
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
