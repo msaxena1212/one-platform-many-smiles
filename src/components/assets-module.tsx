@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -11,12 +12,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2
 } from "lucide-react";
-import { fetchAssets, createAsset, updateAsset, type Asset } from "@/lib/supabase";
+import { fetchAssets, createAsset, updateAsset, fetchProperties, fetchUnits, createProperty, updateProperty, createUnit, updateUnit, type Asset, type Property, type Unit } from "@/lib/supabase";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 
 export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -27,16 +30,32 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [transferForm, setTransferForm] = useState({ assigned_property_id: "", assigned_employee_id: "" });
 
   const [form, setForm] = useState({
-    asset_name: "", category: "Furniture", assigned_property_id: "", purchase_date: "", asset_code: "", autoBarcode: true,
-    purchase_cost: "", opening_cost: "", life_of_asset: "20", asset_status: "Available"
+    asset_name: "",
+    category: "Furniture",
+    assigned_property_id: "",
+    assigned_unit_id: "",
+    purchase_date: "",
+    asset_code: "",
+    autoBarcode: true,
+    purchase_cost: "",
+    opening_cost: "",
+    life_of_asset: "20",
+    asset_status: "Available"
   });
+  const [propertyDialogOpen, setPropertyDialogOpen] = useState(false);
+  const [propertyDialogMode, setPropertyDialogMode] = useState<"create" | "edit">("create");
+  const [propertyForm, setPropertyForm] = useState({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+  const [unitDialogOpen, setUnitDialogOpen] = useState(false);
+  const [unitDialogMode, setUnitDialogMode] = useState<"create" | "edit">("create");
+  const [unitForm, setUnitForm] = useState({ property_id: "", unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // In a real scenario, for prop-mgr we might filter by their properties using host_id on the backend
-      const data = await fetchAssets();
+      const [data, propertiesData, unitsData] = await Promise.all([fetchAssets(), fetchProperties(), fetchUnits()]);
       setAssets(data || []);
+      setProperties(propertiesData || []);
+      setUnits(unitsData || []);
     } catch (e: any) { console.error(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -55,6 +74,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         asset_name: form.asset_name,
         category: form.category,
         asset_code: finalBarcode,
+        assigned_property_id: form.assigned_property_id || undefined,
+        assigned_unit_id: form.assigned_unit_id || undefined,
         purchase_date: form.purchase_date || new Date().toISOString().split("T")[0],
         purchase_cost: Number(form.purchase_cost) || 0,
         opening_cost: Number(form.opening_cost || form.purchase_cost) || 0,
@@ -62,7 +83,19 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         asset_status: form.asset_status,
       });
       setShowNew(false);
-      setForm({ asset_name: "", category: "Furniture", assigned_property_id: "", purchase_date: "", asset_code: "", autoBarcode: true, purchase_cost: "", opening_cost: "", life_of_asset: "20", asset_status: "Available" });
+      setForm({
+        asset_name: "",
+        category: "Furniture",
+        assigned_property_id: "",
+        assigned_unit_id: "",
+        purchase_date: "",
+        asset_code: "",
+        autoBarcode: true,
+        purchase_cost: "",
+        opening_cost: "",
+        life_of_asset: "20",
+        asset_status: "Available"
+      });
       await load();
     } catch (e: any) { 
       console.error(e.message);
@@ -80,6 +113,85 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const handleImport = () => alert("Import functionality would open a dialog to upload an Excel file and sync data.");
 
   const filtered = activeTab === "all" ? assets : assets.filter(a => a.asset_status?.toLowerCase() === activeTab);
+  const selectedPropertyUnits = form.assigned_property_id ? units.filter(u => u.property_id === form.assigned_property_id) : [];
+
+  async function saveProperty() {
+    if (!propertyForm.title.trim()) return alert("Property title is required.");
+    try {
+      let saved: Property;
+      if (propertyDialogMode === "edit" && form.assigned_property_id) {
+        saved = await updateProperty(form.assigned_property_id, {
+          ...propertyForm,
+          max_guests: Number(propertyForm.max_guests) || 1,
+          bedrooms: Number(propertyForm.bedrooms) || 1,
+          beds: Number(propertyForm.beds) || 1,
+          bathrooms: Number(propertyForm.bathrooms) || 1,
+          base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
+          cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
+        });
+        setProperties((items) => items.map((item) => (item.id === saved.id ? saved : item)));
+      } else {
+        saved = await createProperty({
+          title: propertyForm.title,
+          description: propertyForm.address || null,
+          property_type: propertyForm.property_type,
+          address: propertyForm.address,
+          city: propertyForm.city,
+          state: "",
+          zip_code: "",
+          country: propertyForm.country,
+          max_guests: Number(propertyForm.max_guests) || 1,
+          bedrooms: Number(propertyForm.bedrooms) || 1,
+          beds: Number(propertyForm.beds) || 1,
+          bathrooms: Number(propertyForm.bathrooms) || 1,
+          base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
+          cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
+          is_active: true,
+          room_details: {},
+          amenities: [],
+        } as any);
+        setProperties((items) => [saved, ...items]);
+      }
+      setForm((f) => ({ ...f, assigned_property_id: saved.id, assigned_unit_id: "" }));
+      setPropertyDialogOpen(false);
+      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+      await load();
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to save property: ${err.message}`);
+    }
+  }
+
+  async function saveUnit() {
+    if (!unitForm.property_id) return alert("Please select a property for the unit.");
+    if (!unitForm.unit_ref.trim()) return alert("Unit reference is required.");
+    try {
+      let saved: Unit;
+      if (unitDialogMode === "edit" && form.assigned_unit_id) {
+        saved = await updateUnit(form.assigned_unit_id, {
+          ...unitForm,
+          price: Number(unitForm.price) || 0,
+        });
+        setUnits((items) => items.map((item) => (item.id === saved.id ? saved : item)));
+      } else {
+        saved = await createUnit({
+          property_id: unitForm.property_id,
+          unit_ref: unitForm.unit_ref,
+          room_type: unitForm.room_type,
+          status: unitForm.status,
+          price: Number(unitForm.price) || 0,
+        });
+        setUnits((items) => [saved, ...items]);
+      }
+      setForm((f) => ({ ...f, assigned_unit_id: saved.id, assigned_property_id: saved.property_id }));
+      setUnitDialogOpen(false);
+      setUnitForm({ property_id: form.assigned_property_id || "", unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
+      await load();
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to save unit: ${err.message}`);
+    }
+  }
   const searched = searchQuery ? filtered.filter(a => a.asset_code?.toLowerCase().includes(searchQuery.toLowerCase()) || a.asset_name.toLowerCase().includes(searchQuery.toLowerCase())) : filtered;
 
   return (
@@ -261,6 +373,72 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="property" className="text-right">Assigned Property</Label>
+                <div className="col-span-3 space-y-2">
+                  <Select value={form.assigned_property_id} onValueChange={(value) => setForm(f => ({ ...f, assigned_property_id: value, assigned_unit_id: "" }))}>
+                    <SelectTrigger><SelectValue placeholder="Select property" /></SelectTrigger>
+                    <SelectContent>
+                      {properties.map((property) => (
+                        <SelectItem key={property.id} value={property.id}>{property.title}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => {
+                      setPropertyDialogMode("create");
+                      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+                      setPropertyDialogOpen(true);
+                    }}>Add Property</Button>
+                    <Button type="button" variant="outline" size="sm" disabled={!form.assigned_property_id} onClick={() => {
+                      const selected = properties.find((property) => property.id === form.assigned_property_id);
+                      if (!selected) return;
+                      setPropertyDialogMode("edit");
+                      setPropertyForm({
+                        title: selected.title,
+                        address: selected.address || "",
+                        city: selected.city || "",
+                        country: selected.country || "Qatar",
+                        property_type: selected.property_type || "apartment",
+                        max_guests: String(selected.max_guests || 1),
+                        bedrooms: String(selected.bedrooms || 1),
+                        beds: String(selected.beds || 1),
+                        bathrooms: String(selected.bathrooms || 1),
+                        base_price_per_night: String(selected.base_price_per_night || 0),
+                        cleaning_fee: String(selected.cleaning_fee || 0),
+                      });
+                      setPropertyDialogOpen(true);
+                    }}>Edit Property</Button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="unit" className="text-right">Assigned Unit</Label>
+                <div className="col-span-3 space-y-2">
+                  <Select value={form.assigned_unit_id} onValueChange={(value) => setForm(f => ({ ...f, assigned_unit_id: value }))} disabled={!form.assigned_property_id}>
+                    <SelectTrigger><SelectValue placeholder={form.assigned_property_id ? "Select unit" : "Select property first"} /></SelectTrigger>
+                    <SelectContent>
+                      {selectedPropertyUnits.map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id}>{unit.unit_ref || `Unit ${unit.id}`}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={!form.assigned_property_id} onClick={() => {
+                      setUnitDialogMode("create");
+                      setUnitForm({ property_id: form.assigned_property_id, unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
+                      setUnitDialogOpen(true);
+                    }}>Add Unit</Button>
+                    <Button type="button" variant="outline" size="sm" disabled={!form.assigned_unit_id} onClick={() => {
+                      const selected = units.find((unit) => unit.id === form.assigned_unit_id);
+                      if (!selected) return;
+                      setUnitDialogMode("edit");
+                      setUnitForm({ property_id: selected.property_id, unit_ref: selected.unit_ref || "", room_type: selected.room_type || "Flat", status: selected.status || "Available", price: String(selected.price || 0) });
+                      setUnitDialogOpen(true);
+                    }}>Edit Unit</Button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="barcode" className="text-right">Barcode/Code</Label>
                 <div className="col-span-3 flex items-center gap-2">
                   <Input id="barcode" disabled={form.autoBarcode} placeholder="Auto-generated" value={form.asset_code} onChange={e => setForm({...form, asset_code: e.target.value})} />
@@ -284,6 +462,95 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
               <Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : null} Add Asset</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Property Dialog */}
+      <Dialog open={propertyDialogOpen} onOpenChange={setPropertyDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{propertyDialogMode === "edit" ? "Edit Property" : "Add Property"}</DialogTitle>
+            <DialogDescription>{propertyDialogMode === "edit" ? "Update the selected property details." : "Add a property to assign this asset to."}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="propTitle" className="text-right">Title</Label>
+              <Input id="propTitle" className="col-span-3" value={propertyForm.title} onChange={e => setPropertyForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="propCity" className="text-right">City</Label>
+              <Input id="propCity" className="col-span-3" value={propertyForm.city} onChange={e => setPropertyForm(f => ({ ...f, city: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="propAddress" className="text-right">Address</Label>
+              <Textarea id="propAddress" className="col-span-3" value={propertyForm.address} onChange={e => setPropertyForm(f => ({ ...f, address: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="propType" className="text-right">Type</Label>
+              <Select value={propertyForm.property_type} onValueChange={v => setPropertyForm(f => ({ ...f, property_type: v }))}>
+                <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['apartment', 'villa', 'commercial', 'townhouse'].map((option) => (
+                    <SelectItem key={option} value={option}>{option}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPropertyDialogOpen(false)}>Cancel</Button>
+            <Button onClick={saveProperty}>{propertyDialogMode === "edit" ? "Update Property" : "Save Property"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unit Dialog */}
+      <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>{unitDialogMode === "edit" ? "Edit Unit" : "Add Unit"}</DialogTitle>
+            <DialogDescription>{unitDialogMode === "edit" ? "Update the selected unit details." : "Add a unit to assign this asset to."}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="unitProperty" className="text-right">Property</Label>
+              <Select value={unitForm.property_id} onValueChange={v => setUnitForm(f => ({ ...f, property_id: v }))}>
+                <SelectTrigger className="col-span-3"><SelectValue placeholder="Select property" /></SelectTrigger>
+                <SelectContent>
+                  {properties.map((property) => (
+                    <SelectItem key={property.id} value={property.id}>{property.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="unitRef" className="text-right">Unit Reference</Label>
+              <Input id="unitRef" className="col-span-3" value={unitForm.unit_ref} onChange={e => setUnitForm(f => ({ ...f, unit_ref: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="roomType" className="text-right">Room Type</Label>
+              <Input id="roomType" className="col-span-3" value={unitForm.room_type} onChange={e => setUnitForm(f => ({ ...f, room_type: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="unitPrice" className="text-right">Price</Label>
+              <Input id="unitPrice" type="number" min="0" className="col-span-3" value={unitForm.price} onChange={e => setUnitForm(f => ({ ...f, price: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="unitStatus" className="text-right">Status</Label>
+              <Select value={unitForm.status} onValueChange={v => setUnitForm(f => ({ ...f, status: v }))}>
+                <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['Available', 'Occupied', 'Maintenance'].map((option) => (
+                    <SelectItem key={option} value={option}>{option}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnitDialogOpen(false)}>Cancel</Button>
+            <Button onClick={saveUnit}>{unitDialogMode === "edit" ? "Update Unit" : "Save Unit"}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useAppData } from "@/lib/app-data-context";
+import { fetchAssets, updateAsset, type Asset as SupabaseAsset } from "@/lib/supabase";
+import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
 import {
   AlertCircle,
   BadgeCheck,
@@ -22,6 +24,7 @@ import {
   ClipboardCheck,
   CreditCard,
   DoorOpen,
+  Download,
   FileCheck2,
   FileSignature,
   Key,
@@ -32,6 +35,7 @@ import {
   Receipt,
   RefreshCw,
   ShieldCheck,
+  Upload,
   UserPlus,
   Wallet,
   XCircle,
@@ -85,8 +89,14 @@ type Customer = {
   qatarId: string;
   passport: string;
   crNumber: string;
+  nationality: string;
   mobile: string;
   email: string;
+  permanentAddress: string;
+  localAddress: string;
+  authorizedSignatory: string;
+  emergencyContact: string;
+  employerInfo: string;
   status: CustomerStatus;
 };
 
@@ -156,6 +166,14 @@ type Pdc = {
   amount: number;
   status: PdcStatus;
   file?: string;
+};
+
+type PdcRow = {
+  chequeNo: string;
+  bank: string;
+  amount: string;
+  maturityDate: string;
+  file: string;
 };
 
 type KeyNotice = {
@@ -296,6 +314,28 @@ const initialUnits: Unit[] = [
   { id: "u4", property: "Old Salata - Residence No:23", unit: "AAA - Flat21", status: "Occupied", rent: 6400 },
   { id: "u5", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", status: "Occupied", rent: 4000 },
 ];
+
+function createSampleAssetsForUnits(units: Unit[]) {
+  const categories = ["Furniture", "Electronics", "Appliance", "Safety", "Housekeeping", "IT"];
+  return units.flatMap((unit) =>
+    Array.from({ length: 20 }, (_, index) => {
+      const category = categories[index % categories.length];
+      const isPropertyOnly = index < 3;
+      return {
+        id: `demo-${unit.id}-${index + 1}`,
+        asset_name: `${category} Item ${index + 1}`,
+        asset_code: `${unit.unit.replace(/\W/g, "").slice(0, 10).toUpperCase()}-${index + 1}`,
+        category,
+        asset_condition: index % 5 === 0 ? "Fair" : "Good",
+        remarks: index % 5 === 0 ? "Needs attention" : "Operational",
+        assigned_property_id: unit.id,
+        assigned_unit_id: isPropertyOnly ? undefined : unit.id,
+        created_at: today.toISOString(),
+        updated_at: today.toISOString(),
+      } as SupabaseAsset;
+    }),
+  );
+}
 
 const initialCustomers: Customer[] = [
   {
@@ -600,6 +640,118 @@ function LeasingPage() {
 
   // ── Signature Workflow Dialogs ─────────────────────────────────
   const [signatureWorkflowLease, setSignatureWorkflowLease] = useState<Lease | null>(null);
+  const [assets, setAssets] = useState<SupabaseAsset[]>([]);
+  const [assetChanges, setAssetChanges] = useState<Record<string, { condition: string; imageFileName: string }>>({});
+  const [assetLoading, setAssetLoading] = useState(false);
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
+
+  async function loadAssets() {
+    setAssetLoading(true);
+    try {
+      const data = await fetchAssets();
+      const allAssets = Array.isArray(data) && data.length > 0 ? data : createSampleAssetsForUnits(units);
+      setAssets(allAssets || []);
+      const initial = Object.fromEntries((allAssets || []).map((asset) => [asset.id, {
+        condition: asset.asset_condition || "Good",
+        imageFileName: "",
+      }]));
+      setAssetChanges(initial);
+    } catch (error) {
+      console.error("Failed to load assets", error);
+      const fallback = createSampleAssetsForUnits(units);
+      setAssets(fallback);
+      const initial = Object.fromEntries(fallback.map((asset) => [asset.id, {
+        condition: asset.asset_condition || "Good",
+        imageFileName: "",
+      }]));
+      setAssetChanges(initial);
+    } finally {
+      setAssetLoading(false);
+    }
+  }
+
+  async function saveAssetUpdate(assetId: string) {
+    const change = assetChanges[assetId];
+    if (!change) return;
+    try {
+      if (assetId.startsWith("demo-")) {
+        setAssets((items) =>
+          items.map((asset) =>
+            asset.id === assetId
+              ? {
+                  ...asset,
+                  asset_condition: change.condition,
+                  remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : asset.remarks,
+                }
+              : asset,
+          ),
+        );
+      } else {
+        await updateAsset(assetId, {
+          asset_condition: change.condition,
+          remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : undefined,
+        });
+        await loadAssets();
+      }
+      alert("Asset update saved.");
+    } catch (error) {
+      console.error("Failed to save asset update", error);
+      alert("Unable to save asset update. Please try again.");
+    }
+  }
+
+  async function saveAllAssetUpdates() {
+    const entries = Object.entries(assetChanges);
+    if (entries.length === 0) return;
+    try {
+      const demoEntries = entries.filter(([assetId]) => assetId.startsWith("demo-"));
+      const realEntries = entries.filter(([assetId]) => !assetId.startsWith("demo-"));
+
+      if (demoEntries.length > 0) {
+        setAssets((items) =>
+          items.map((asset) => {
+            const change = assetChanges[asset.id];
+            if (!asset.id.startsWith("demo-") || !change) return asset;
+            return {
+              ...asset,
+              asset_condition: change.condition,
+              remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : asset.remarks,
+            };
+          }),
+        );
+      }
+
+      if (realEntries.length > 0) {
+        await Promise.all(realEntries.map(([assetId, change]) => updateAsset(assetId, {
+          asset_condition: change.condition,
+          remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : undefined,
+        })));
+        await loadAssets();
+      }
+      alert("Asset updates saved.");
+    } catch (error) {
+      console.error("Failed to save asset updates", error);
+      alert("Unable to save asset updates. Please try again.");
+    }
+  }
+
+  function updateAssetChange(assetId: string, partial: Partial<{ condition: string; imageFileName: string }>) {
+    setAssetChanges((prev) => ({
+      ...prev,
+      [assetId]: { ...prev[assetId], ...partial },
+    }));
+  }
+
+  const handoverAssets = useMemo(() => {
+    if (!keysWorkflowLease) return assets;
+    const unit = units.find((item) => item.unit === keysWorkflowLease.unit);
+    if (!unit) return assets;
+    const filtered = assets.filter((asset) => asset.assigned_unit_id === unit.id || asset.assigned_property_id === unit.id);
+    return filtered.length > 0 ? filtered : assets;
+  }, [assets, keysWorkflowLease, units]);
 
   // Tenant Sign
   const [tenantSignOpen, setTenantSignOpen] = useState(false);
@@ -632,6 +784,13 @@ function LeasingPage() {
     proofFile: "",
   });
 
+  const [uploadAgreementOpen, setUploadAgreementOpen] = useState(false);
+  const [uploadAgreementForm, setUploadAgreementForm] = useState({
+    file: "",
+    fileName: "",
+    remarks: "",
+  });
+
   // Landlord Sign
   const [landlordSignOpen, setLandlordSignOpen] = useState(false);
   const [landlordSignForm, setLandlordSignForm] = useState({
@@ -659,7 +818,7 @@ function LeasingPage() {
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverViewOpen, setHandoverViewOpen] = useState(false);
   const [selectedHandover, setSelectedHandover] = useState<KeyHandover | null>(null);
-  const [handoverActiveTab, setHandoverActiveTab] = useState("details");
+  const [handoverActiveTab, setHandoverActiveTab] = useState<"details" | "condition" | "assets" | "checklist" | "acknowledgement">("details");
   const [handoverForm, setHandoverForm] = useState({
     handoverAt: addDays(today, 1),
     handoverTime: "10:00",
@@ -691,7 +850,6 @@ function LeasingPage() {
     note: "",
   });
 
-  const [checkInOpen, setCheckInOpen] = useState(false);
   const [checkInForm, setCheckInForm] = useState({
     condition: "Good",
     furnitureCondition: "Good",
@@ -753,7 +911,9 @@ function LeasingPage() {
   // ── PDC Add Dialog ───────────────────────────────────────────────
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [pdcLeaseId, setPdcLeaseId] = useState("");
-  const [pdcForm, setPdcForm] = useState({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
+  const [pdcRows, setPdcRows] = useState<PdcRow[]>(() =>
+    Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" }))
+  );
 
 
   const [reservationForm, setReservationForm] = useState({
@@ -773,8 +933,14 @@ function LeasingPage() {
     qatarId: "",
     passport: "",
     crNumber: "",
+    nationality: "",
     mobile: "",
     email: "",
+    permanentAddress: "",
+    localAddress: "",
+    authorizedSignatory: "",
+    emergencyContact: "",
+    employerInfo: "",
   });
 
   const activeReservations = reservations.filter((item) => item.status === "reserved").length;
@@ -852,46 +1018,75 @@ function LeasingPage() {
     });
   }
 
-  function createCustomer() {
-    const duplicate = customers.find((customer) =>
+  function isCustomerDuplicate(form: Omit<Customer, "id" | "status">) {
+    const identifiers = [form.qatarId, form.passport, form.crNumber, form.mobile, form.email].filter(Boolean);
+    if (identifiers.length === 0) {
+      return false;
+    }
+
+    return customers.some((customer) =>
       [customer.qatarId, customer.passport, customer.crNumber, customer.mobile, customer.email]
         .filter(Boolean)
-        .some((value) =>
-          [customerForm.qatarId, customerForm.passport, customerForm.crNumber, customerForm.mobile, customerForm.email]
-            .filter(Boolean)
-            .includes(value),
-        ),
+        .some((value) => identifiers.includes(value)),
     );
+  }
+
+  function createCustomer() {
+    if (!customerForm.name.trim()) {
+      alert("Please enter a customer name before saving.");
+      return;
+    }
+
+    if (isCustomerDuplicate(customerForm)) {
+      alert("A customer with the same Qatar ID, passport, CR number, mobile, or email already exists. Please verify unique identifiers before saving.");
+      return;
+    }
+
     const customer: Customer = {
       id: `c${customers.length + 1}`,
       ...customerForm,
-      status: duplicate ? "duplicate" : "active",
+      status: "active",
     };
     setCustomers((items) => [customer, ...items]);
-    if (!duplicate) {
-      const requiredDocs = customer.type === "company" ? ["Commercial Registration", "Computer Card", "Authorized signatory documents"] : ["Qatar ID", "Passport copy", "Residence permit"];
-      setDocuments((items) => [
-        ...requiredDocs.map((name, index) => ({
-          id: `d${documents.length + index + 1}`,
-          customerId: customer.id,
-          name,
-          mandatory: true,
-          status: "pending" as VerificationStatus,
-          expiryDate: "",
-          reviewer: "",
-          remarks: "Awaiting upload",
-        })),
-        ...items,
-      ]);
-    }
-    setCustomerForm({ name: "", type: "individual", qatarId: "", passport: "", crNumber: "", mobile: "", email: "" });
+
+    const requiredDocs = customer.type === "company" ? ["Commercial Registration", "Computer Card", "Authorized signatory documents"] : ["Qatar ID", "Passport copy", "Residence permit"];
+    setDocuments((items) => [
+      ...requiredDocs.map((name, index) => ({
+        id: `d${documents.length + index + 1}`,
+        customerId: customer.id,
+        name,
+        mandatory: true,
+        status: "pending" as VerificationStatus,
+        issueDate: "",
+        expiryDate: "",
+        reviewer: "",
+        remarks: "Awaiting upload",
+      })),
+      ...items,
+    ]);
+
+    setCustomerForm({
+      name: "",
+      type: "individual",
+      qatarId: "",
+      passport: "",
+      crNumber: "",
+      nationality: "",
+      mobile: "",
+      email: "",
+      permanentAddress: "",
+      localAddress: "",
+      authorizedSignatory: "",
+      emergencyContact: "",
+      employerInfo: "",
+    });
     recordAudit({
       stage: "Customer Master",
       owner: "Leasing Department",
       input: `${customer.name}, duplicate keys checked`,
-      approval: duplicate ? "Duplicate block" : "Customer activation",
-      status: customer.status,
-      output: duplicate ? "Customer marked duplicate for review" : "Tenant profile and mandatory document checklist created",
+      approval: "Customer activation",
+      status: "active",
+      output: "Tenant profile and mandatory document checklist created",
     });
   }
 
@@ -1130,6 +1325,52 @@ function LeasingPage() {
     setSubmitLandlordOpen(false);
   }
 
+  async function downloadLeaseAgreement(lease: Lease) {
+    try {
+      const blob = await generateLeaseAgreementBlob({
+        tenantName: lease.tenantName,
+        landlordName: "Landlord",
+        propertyAddress: lease.property,
+        unit: lease.unit,
+        startDate: lease.startDate,
+        endDate: lease.endDate,
+        monthlyRent: lease.monthlyRent,
+        securityDeposit: lease.securityDeposit,
+        depositNonRefundable: "QR 0 or as agreed",
+        leaseNo: `LES-${lease.id}`,
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${lease.tenantName.replace(/\W+/g, "-")}-${lease.unit}-Lease-Agreement.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to generate lease agreement PDF. Please try again.");
+    }
+  }
+
+  function submitUploadAgreement() {
+    if (!signatureWorkflowLease) return;
+    advanceLease(signatureWorkflowLease, "fully_signed", {
+      landlordSignedAt: today.toISOString().split("T")[0],
+      signedDocument: uploadAgreementForm.fileName || uploadAgreementForm.file,
+      sharedWithTenant: true,
+    });
+    recordAudit({
+      stage: "Upload Agreement",
+      owner: "Leasing Department",
+      input: `Uploaded agreement file ${uploadAgreementForm.fileName || uploadAgreementForm.file}`,
+      approval: "Agreement upload",
+      status: "fully_signed",
+      output: uploadAgreementForm.remarks || "Lease agreement uploaded and recorded.",
+    });
+    setUploadAgreementOpen(false);
+  }
+
   function submitLandlordSign() {
     if (!signatureWorkflowLease) return;
     advanceLease(signatureWorkflowLease, "fully_signed", {
@@ -1266,6 +1507,13 @@ function LeasingPage() {
     setKeyNotifyOpen(false);
   }
 
+  const handoverTabOrder = ["details", "condition", "assets", "checklist", "acknowledgement"];
+
+  function getNextHandoverTab(current: typeof handoverTabOrder[number]) {
+    const index = handoverTabOrder.indexOf(current);
+    return index >= 0 && index < handoverTabOrder.length - 1 ? handoverTabOrder[index + 1] : current;
+  }
+
   function completeDetailedHandoverAction(lease: Lease) {
     const newHandover: KeyHandover = {
       id: `kh${Date.now()}`,
@@ -1338,7 +1586,12 @@ function LeasingPage() {
       status: "completed",
       output: checkInForm.note || "Check-in report completed and unit marked occupied",
     });
-    setCheckInOpen(false);
+    setHandoverOpen(false);
+  }
+
+  function completeHandoverAndCheckIn(lease: Lease) {
+    completeDetailedHandoverAction(lease);
+    completeDetailedCheckIn(lease);
   }
 
   function issueDetailedKeyNotice(lease: Lease) {
@@ -1400,7 +1653,7 @@ function LeasingPage() {
       status: "completed",
       output: checkInForm.note || "Check-in report completed, maintenance logged where needed, and unit marked occupied",
     });
-    setCheckInOpen(false);
+    setHandoverOpen(false);
   }
 
   function startCheckout(lease: Lease) {
@@ -1495,30 +1748,45 @@ function LeasingPage() {
   }
 
   function addManualPdc() {
-    if (!pdcLeaseId || !pdcForm.chequeNo || !pdcForm.file) {
-      alert("Please fill all required fields, including the PDC document upload.");
+    const validRows = pdcRows.filter((row) => row.chequeNo || row.bank || row.amount || row.file);
+    if (!pdcLeaseId) {
+      alert("Please select a lease before adding PDC details.");
       return;
     }
-    const pdc: Pdc = {
-      id: `p${pdcs.length + 1}`,
+    if (validRows.length === 0) {
+      alert("Please enter at least one PDC line before saving.");
+      return;
+    }
+
+    const invalidRow = validRows.find(
+      (row) => !row.chequeNo || !row.bank || !row.amount || !row.maturityDate || !row.file,
+    );
+    if (invalidRow) {
+      alert("Please fill all required fields for every PDC row you have started.");
+      return;
+    }
+
+    const newPdcs: Pdc[] = validRows.map((row, index) => ({
+      id: `p${pdcs.length + index + 1}`,
       leaseId: pdcLeaseId,
-      chequeNo: pdcForm.chequeNo,
-      bank: pdcForm.bank,
-      date: pdcForm.date,
-      amount: Number(pdcForm.amount) || 0,
+      chequeNo: row.chequeNo,
+      bank: row.bank,
+      date: row.maturityDate,
+      amount: Number(row.amount) || 0,
       status: "received",
-      file: pdcForm.file,
-    };
-    setPdcs((items) => [pdc, ...items]);
+      file: row.file,
+    }));
+
+    setPdcs((items) => [...newPdcs, ...items]);
     recordAudit({
-      stage: "PDC Added Manually",
+      stage: "PDC Bulk Added",
       owner: "Finance",
-      input: `Cheque ${pdc.chequeNo}, ${pdc.bank}, ${formatMoney(pdc.amount)}`,
-      approval: "Manual entry",
+      input: `${newPdcs.length} PDC cheque(s) recorded for lease ${pdcLeaseId}`,
+      approval: "Manual bulk entry",
       status: "received",
-      output: "PDC recorded in system",
+      output: `${newPdcs.length} PDCs recorded into the system for lease ${pdcLeaseId}`,
     });
-    setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
+    setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" })));
     setPdcLeaseId("");
     setAddPdcOpen(false);
   }
@@ -2023,6 +2291,32 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ── UPLOAD AGREEMENT DIALOG ───────────────────────────── */}
+      <Dialog open={uploadAgreementOpen} onOpenChange={setUploadAgreementOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Upload className="h-5 w-5 text-primary" /> Upload Agreement</DialogTitle>
+            <DialogDescription>Upload the signed lease agreement document and mark the lease as fully signed.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Field label="Upload Agreement File">
+              <Input type="file" onChange={e => setUploadAgreementForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
+              {uploadAgreementForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {uploadAgreementForm.file}</p>}
+            </Field>
+            <Field label="Saved File Name (Optional)">
+              <Input value={uploadAgreementForm.fileName} onChange={e => setUploadAgreementForm(f => ({ ...f, fileName: e.target.value }))} placeholder="Custom name for uploaded agreement" />
+            </Field>
+            <Field label="Remarks">
+              <Textarea rows={2} value={uploadAgreementForm.remarks} onChange={e => setUploadAgreementForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes..." />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadAgreementOpen(false)}>Cancel</Button>
+            <Button onClick={submitUploadAgreement}><Upload className="mr-2 h-4 w-4" /> Confirm Upload</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── LANDLORD SIGN DIALOG ───────────────────────────── */}
       <Dialog open={landlordSignOpen} onOpenChange={setLandlordSignOpen}>
         <DialogContent>
@@ -2127,7 +2421,7 @@ function LeasingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <span className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2"><Key className="h-5 w-5 text-primary" /></span>
-              Key Handover Certificate
+              Handover & Check-In Workflow
             </DialogTitle>
             <DialogDescription className="text-sm">
               <span className="font-medium text-foreground">{keysWorkflowLease?.tenantName}</span> · {keysWorkflowLease?.unit} · {keysWorkflowLease?.property}
@@ -2136,7 +2430,7 @@ function LeasingPage() {
 
           {/* Tab navigation inside dialog */}
           <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-            {(["details", "condition", "checklist", "acknowledgement"] as const).map((tab) => (
+            {handoverTabOrder.map((tab) => (
               <button
                 key={tab}
                 className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
@@ -2147,8 +2441,9 @@ function LeasingPage() {
                 onClick={() => setHandoverActiveTab(tab)}
                 type="button"
               >
-                {tab === "details" && "🔑 Details"}
+                {tab === "details" && "🔑 Handover Details"}
                 {tab === "condition" && "🏠 Condition"}
+                {tab === "assets" && "📦 Assets"}
                 {tab === "checklist" && "✅ Checklist"}
                 {tab === "acknowledgement" && "📝 Acknowledgement"}
               </button>
@@ -2272,7 +2567,61 @@ function LeasingPage() {
               </div>
             )}
 
-            {/* TAB: CHECKLIST */}
+            {handoverActiveTab === "assets" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assets List</p>
+                  {assetLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading assets…</p>
+                  ) : handoverAssets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No assets assigned to this unit yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {handoverAssets.map((asset) => {
+                        const change = assetChanges[asset.id] || { condition: asset.asset_condition || "Good", imageFileName: "" };
+                        return (
+                          <div key={asset.id} className="rounded-lg border bg-background p-3">
+                            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                              <div>
+                                <div className="text-sm font-semibold">{asset.asset_name}</div>
+                                <div className="text-xs text-muted-foreground">{asset.asset_code || asset.category || "Asset"}</div>
+                              </div>
+                              <Field label="Condition">
+                                <Select value={change.condition} onValueChange={(v) => updateAssetChange(asset.id, { condition: v })}>
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Excellent">Excellent</SelectItem>
+                                    <SelectItem value="Good">Good</SelectItem>
+                                    <SelectItem value="Fair">Fair</SelectItem>
+                                    <SelectItem value="Needs Attention">Needs Attention</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
+                              <Field label="Upload Asset Image">
+                                <Input type="file" onChange={e => updateAssetChange(asset.id, { imageFileName: e.target.files?.[0]?.name || "" })} />
+                                {change.imageFileName && <p className="text-xs text-muted-foreground mt-1">Selected: {change.imageFileName}</p>}
+                              </Field>
+                              <Field label="Current Remarks">
+                                <Textarea rows={2} value={asset.remarks || ""} readOnly />
+                              </Field>
+                            </div>
+                            <div className="flex justify-end mt-3">
+                              <Button size="sm" variant="outline" onClick={() => saveAssetUpdate(asset.id)}>Save Asset</Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {handoverAssets.length > 0 && (
+                  <Button size="sm" variant="secondary" onClick={saveAllAssetUpdates}>Save All Asset Updates</Button>
+                )}
+              </div>
+            )}
+
             {handoverActiveTab === "checklist" && (
               <div className="space-y-3">
                 <div className="rounded-lg border bg-amber-50 p-3 text-sm text-amber-800">
@@ -2315,6 +2664,7 @@ function LeasingPage() {
                 </div>
               </div>
             )}
+
 
             {/* TAB: ACKNOWLEDGEMENT */}
             {handoverActiveTab === "acknowledgement" && (
@@ -2364,17 +2714,17 @@ function LeasingPage() {
             <Button variant="outline" onClick={() => setHandoverOpen(false)}>Cancel</Button>
             <Button
               variant="outline"
-              onClick={() => setHandoverActiveTab(handoverActiveTab === "details" ? "condition" : handoverActiveTab === "condition" ? "checklist" : "acknowledgement")}
-              disabled={handoverActiveTab === "acknowledgement"}
+              onClick={() => setHandoverActiveTab(getNextHandoverTab(handoverActiveTab))}
+              disabled={handoverActiveTab === handoverTabOrder[handoverTabOrder.length - 1]}
             >
               Next →
             </Button>
             <Button
-              onClick={() => keysWorkflowLease && completeDetailedHandoverAction(keysWorkflowLease)}
+              onClick={() => keysWorkflowLease && completeHandoverAndCheckIn(keysWorkflowLease)}
               disabled={!handoverForm.electricityMeterReading || !handoverForm.waterMeterReading || !handoverForm.collectorName}
               className="gap-2"
             >
-              <Key className="h-4 w-4" /> Confirm Handover
+              <Key className="h-4 w-4" /> Confirm Handover & Check-In
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2444,55 +2794,6 @@ function LeasingPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setHandoverViewOpen(false)}>Close</Button>
             <Button variant="outline" onClick={() => { window.print(); }} className="gap-2"><Key className="h-4 w-4" /> Print Certificate</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── CHECK-IN DIALOG ───────────────────────────────────── */}
-      <Dialog open={checkInOpen} onOpenChange={setCheckInOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-primary" /> Check-In Inspection</DialogTitle>
-            <DialogDescription>Record unit condition and meter readings at the start of tenancy for {keysWorkflowLease?.tenantName}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Overall Condition">
-              <Select value={checkInForm.condition} onValueChange={v => setCheckInForm(f => ({ ...f, condition: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Excellent">Excellent</SelectItem>
-                  <SelectItem value="Good">Good</SelectItem>
-                  <SelectItem value="Fair">Fair</SelectItem>
-                  <SelectItem value="Needs Repair">Needs Repair</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Furniture / Appliance Condition"><Input value={checkInForm.furnitureCondition} onChange={e => setCheckInForm(f => ({ ...f, furnitureCondition: e.target.value }))} placeholder="Good / N/A / list issues" /></Field>
-              <Field label="Fixtures & Fittings"><Input value={checkInForm.fixturesCondition} onChange={e => setCheckInForm(f => ({ ...f, fixturesCondition: e.target.value }))} placeholder="Good / minor wear" /></Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Walls / Floors / Doors / Windows"><Input value={checkInForm.wallFloorCeilingCondition} onChange={e => setCheckInForm(f => ({ ...f, wallFloorCeilingCondition: e.target.value }))} placeholder="Fresh paint, clean flooring, etc." /></Field>
-              <Field label="Air-Conditioning"><Input value={checkInForm.acCondition} onChange={e => setCheckInForm(f => ({ ...f, acCondition: e.target.value }))} placeholder="Operational / service due" /></Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Electricity Meter"><Input value={checkInForm.electricityMeter} onChange={e => setCheckInForm(f => ({ ...f, electricityMeter: e.target.value }))} placeholder="e.g. 182167" /></Field>
-              <Field label="Water Meter"><Input value={checkInForm.waterMeter} onChange={e => setCheckInForm(f => ({ ...f, waterMeter: e.target.value }))} placeholder="e.g. 149089" /></Field>
-            </div>
-            <Field label="No. of Photos Taken"><Input type="number" value={checkInForm.photos} onChange={e => setCheckInForm(f => ({ ...f, photos: e.target.value }))} /></Field>
-            <Field label="Damages / Remarks">
-              <Textarea rows={2} value={checkInForm.damages} onChange={e => setCheckInForm(f => ({ ...f, damages: e.target.value }))} placeholder="Existing marks, pending items..." />
-            </Field>
-            <Field label="Pending Maintenance Work">
-              <Textarea rows={2} value={checkInForm.pendingMaintenance} onChange={e => setCheckInForm(f => ({ ...f, pendingMaintenance: e.target.value }))} placeholder="Any open maintenance issues to assign..." />
-            </Field>
-            <Field label="Additional Notes">
-              <Textarea rows={2} value={checkInForm.note} onChange={e => setCheckInForm(f => ({ ...f, note: e.target.value }))} placeholder="Tenant observations, signed acknowledgement..." />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCheckInOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && completeDetailedCheckIn(keysWorkflowLease)}><ClipboardCheck className="mr-2 h-4 w-4" /> Complete Check-In</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2621,20 +2922,53 @@ function LeasingPage() {
                 </SelectContent>
               </Select>
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque No."><Input value={pdcForm.chequeNo} onChange={e => setPdcForm(f => ({ ...f, chequeNo: e.target.value }))} placeholder="e.g. PDC-GF1-001" /></Field>
-              <Field label="Bank"><Input value={pdcForm.bank} onChange={e => setPdcForm(f => ({ ...f, bank: e.target.value }))} placeholder="e.g. QNB" /></Field>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="mb-2 text-sm font-semibold">Enter up to 12 PDC rows</p>
+              <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground mb-2">
+                <span className="col-span-3">Cheque No.</span>
+                <span className="col-span-3">Bank</span>
+                <span className="col-span-2">Maturity</span>
+                <span className="col-span-2">Amount</span>
+                <span className="col-span-2">Document</span>
+              </div>
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-2">
+                {pdcRows.map((row, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center text-sm">
+                    <Input
+                      className="col-span-3"
+                      value={row.chequeNo}
+                      onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, chequeNo: e.target.value } : item))}
+                      placeholder={`PDC-${idx + 1}`}
+                    />
+                    <Input
+                      className="col-span-3"
+                      value={row.bank}
+                      onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, bank: e.target.value } : item))}
+                      placeholder="Bank"
+                    />
+                    <Input
+                      className="col-span-2"
+                      type="date"
+                      value={row.maturityDate}
+                      onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, maturityDate: e.target.value } : item))}
+                    />
+                    <Input
+                      className="col-span-2"
+                      type="number"
+                      value={row.amount}
+                      onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, amount: e.target.value } : item))}
+                      placeholder="Amount"
+                    />
+                    <Input
+                      className="col-span-2"
+                      type="file"
+                      onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, file: e.target.files?.[0]?.name || "" } : item))}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque Date"><Input type="date" value={pdcForm.date} onChange={e => setPdcForm(f => ({ ...f, date: e.target.value }))} /></Field>
-              <Field label="Amount (QR)"><Input type="number" value={pdcForm.amount} onChange={e => setPdcForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 5600" /></Field>
-            </div>
-            <div className="pt-2">
-              <Field label="Upload PDC Document *">
-                <Input type="file" onChange={e => setPdcForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
-                {pdcForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {pdcForm.file}</p>}
-              </Field>
-            </div>
+            <div className="text-sm text-muted-foreground">Leave rows blank to skip them. Only fully completed rows will be saved.</div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddPdcOpen(false)}>Cancel</Button>
@@ -2744,13 +3078,28 @@ function LeasingPage() {
                     <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
                   </Select>
                 </Field>
-                <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
-                <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
-                <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
+                {customerForm.type === "individual" ? (
+                  <>
+                    <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
+                    <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
+                    <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
+                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
+                    <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
+                    <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
+                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
+                    <Field label="Company / Operational Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
+                  </>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
                   <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
                 </div>
+                <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
+                <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
                 <Button className="w-full" onClick={() => withBusy("customer", createCustomer)}>
                   {busyAction === "customer" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
                   Save Customer
@@ -2867,12 +3216,10 @@ function LeasingPage() {
                     `${lease.startDate} to ${lease.endDate}`,
                     formatMoney(lease.securityDeposit),
                     <StatusBadge key="status" value={lease.status} />,
-                    `Tenant: ${lease.tenantSignedAt || "-"}; file: ${lease.signedDocument || "-"}; received by: ${lease.receivedBy || "-"}; landlord package: ${lease.landlordPackageSubmittedAt || "-"}; shared: ${lease.sharedWithTenant ? "Yes" : "No"}`,
+                    `Agreement: ${lease.signedDocument || "-"}; shared: ${lease.sharedWithTenant ? "Yes" : "No"}`,
                     <div key="actions" className="flex flex-wrap justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setTenantSignForm({ signedAt: today.toISOString().split("T")[0], signedDocument: "", receivedBy: "Leasing Department", remarks: "" }); setTenantSignOpen(true); }}>Tenant Sign</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", notes: "", receiptFile: "" }); setCollectOpen(true); }}>Collect</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setSubmitLandlordForm({ submittedTo: "", submittedAt: today.toISOString().split("T")[0], docsSent: "Email", notes: "", proofFile: "" }); setSubmitLandlordOpen(true); }}>Submit Landlord</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setLandlordSignForm({ signedAt: today.toISOString().split("T")[0], signedBy: "", signedDocument: "", sharedWithTenant: true, remarks: "" }); setLandlordSignOpen(true); }}>Landlord Sign</Button>
+                      <Button size="sm" variant="outline" onClick={() => downloadLeaseAgreement(lease)}><Download className="mr-2 h-4 w-4" />Download Agreement</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setUploadAgreementForm({ file: "", fileName: "", remarks: "" }); setUploadAgreementOpen(true); }}><Download className="mr-2 h-4 w-4" />Upload Agreement</Button>
                     </div>,
                   ];
                 })}
@@ -2920,10 +3267,55 @@ function LeasingPage() {
                       <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), handoverTime: "10:00", recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"], authorizedCollector: lease.tenantName, keysSummary: "2 metal keys, 2 access cards, 1 parking remote", staffContact: "Property Manager - +974 4400 2200", outstandingRequirements: "None", note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
                       {handover ? (
                         <Button size="sm" variant="outline" className="border-green-300 text-green-700 hover:bg-green-50" onClick={() => { setSelectedHandover(handover); setHandoverViewOpen(true); }}>View</Button>
-                      ) : (
-                        <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setHandoverActiveTab("details"); setHandoverForm({ handoverAt: notice?.handoverAt || addDays(today, 1), handoverTime: notice?.handoverTime || "10:00", keys: "2", keyType: "Metal door keys", accessCards: "2", parkingRemotes: "1", parkingDeviceDetails: "Remote for covered parking bay", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", collectorName: notice?.authorizedCollector || lease.tenantName, collectorIdNumber: "", unitCondition: "Good", cleanliness: "Clean", acWorking: true, plumbingOk: true, electricalOk: true, doorsWindowsOk: true, idVerified: true, photosTaken: "6", tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.", note: "" }); setHandoverOpen(true); }}>Handover</Button>
-                      )}
-                      <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: handover?.electricityMeterReading || "", waterMeter: handover?.waterMeterReading || "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
+                      ) : null}
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setKeysWorkflowLease(lease);
+                        setHandoverActiveTab("details");
+                        setHandoverForm({
+                          handoverAt: notice?.handoverAt || addDays(today, 1),
+                          handoverTime: notice?.handoverTime || "10:00",
+                          keys: "2",
+                          keyType: "Metal door keys",
+                          accessCards: "2",
+                          parkingRemotes: "1",
+                          parkingDeviceDetails: "Remote for covered parking bay",
+                          electricityMeterReading: handover?.electricityMeterReading || "",
+                          waterMeterReading: handover?.waterMeterReading || "",
+                          issuedBy: "Property Manager",
+                          collectorName: notice?.authorizedCollector || lease.tenantName,
+                          collectorIdNumber: "",
+                          unitCondition: "Good",
+                          cleanliness: "Clean",
+                          acWorking: true,
+                          plumbingOk: true,
+                          electricalOk: true,
+                          doorsWindowsOk: true,
+                          idVerified: true,
+                          photosTaken: "6",
+                          handoverPhotos: "",
+                          checklistDocument: "",
+                          assetChecklist: "",
+                          financeConfirmed: false,
+                          propertyManagerConfirmed: true,
+                          tenantConfirmed: false,
+                          tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.",
+                          note: "",
+                        });
+                        setCheckInForm({
+                          condition: "Good",
+                          furnitureCondition: "Good",
+                          fixturesCondition: "Good",
+                          wallFloorCeilingCondition: "Good",
+                          acCondition: "Operational",
+                          electricityMeter: handover?.electricityMeterReading || "",
+                          waterMeter: handover?.waterMeterReading || "",
+                          damages: "",
+                          pendingMaintenance: "",
+                          photos: "8",
+                          note: "",
+                        });
+                        setHandoverOpen(true);
+                      }}>Handover & Check-In</Button>
                     </div>,
                   ];
                 })}
@@ -3013,8 +3405,12 @@ function LeasingPage() {
                   <CardTitle>Detailed Voucher Accounting</CardTitle>
                   <CardDescription>Named financial documents model rent receipt, deposit, PDC clearance, cheque return, rental income and settlement.</CardDescription>
                 </div>
-                <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" }); setAddPdcOpen(true); }}>
-                  <Receipt className="mr-2 h-4 w-4" /> Add PDC
+                <Button size="sm" onClick={() => {
+                  setPdcLeaseId(leases[0]?.id || "");
+                  setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" })));
+                  setAddPdcOpen(true);
+                }}>
+                  <Receipt className="mr-2 h-4 w-4" /> Add PDC(s)
                 </Button>
               </div>
             </CardHeader>

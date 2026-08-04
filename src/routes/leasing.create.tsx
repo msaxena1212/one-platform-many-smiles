@@ -841,25 +841,38 @@ function LeasingPage() {
     });
   }
 
+  function isCustomerDuplicate(form: Omit<Customer, "id" | "status">) {
+    const identifiers = [form.qatarId, form.passport, form.crNumber, form.mobile, form.email].filter(Boolean);
+    if (identifiers.length === 0) {
+      return false;
+    }
+
+    return customers.some((customer) =>
+      [customer.qatarId, customer.passport, customer.crNumber, customer.mobile, customer.email]
+        .filter(Boolean)
+        .some((value) => identifiers.includes(value)),
+    );
+  }
+
   async function createCustomer() {
-    // Prevent duplicate customer creation using DB-level check
-    const isDuplicate = await checkDuplicateCustomer(customerForm);
-    if (isDuplicate) {
-      alert(`A customer with the same identifiers already exists. Please verify unique identifiers such as Qatar ID, passport number, or email.`);
+    if (!customerForm.name.trim()) {
+      alert("Please enter a customer name before saving.");
       return;
     }
 
-    // Create the customer in the database using server side implementation
+    if (isCustomerDuplicate(customerForm)) {
+      alert("A customer with the same Qatar ID, passport, CR number, mobile, or email already exists. Please verify unique identifiers before saving.");
+      return;
+    }
+
     const newCustomer: Customer = {
       ...customerForm,
       id: `c${customers.length + 1}`,
       status: "active",
     };
 
-    // Update UI state with the newly created customer
     setCustomers((items) => [newCustomer, ...items]);
 
-    // Create required mandatory documents checklist
     const requiredDocs = customerForm.type === "company"
       ? ["Commercial Registration", "Computer Card", "Authorized signatory documents"]
       : ["Qatar ID", "Passport copy", "Residence permit"];
@@ -870,6 +883,7 @@ function LeasingPage() {
         name,
         mandatory: true,
         status: "pending" as VerificationStatus,
+        issueDate: "",
         expiryDate: "",
         reviewer: "",
         remarks: "Awaiting upload",
@@ -877,10 +891,22 @@ function LeasingPage() {
       ...items,
     ]);
 
-    // Reset form — include all extended customer fields
-    setCustomerForm({ name: "", type: "individual", qatarId: "", passport: "", crNumber: "", nationality: "", mobile: "", email: "", permanentAddress: "", localAddress: "", authorizedSignatory: "", emergencyContact: "", employerInfo: "" });
+    setCustomerForm({
+      name: "",
+      type: "individual",
+      qatarId: "",
+      passport: "",
+      crNumber: "",
+      nationality: "",
+      mobile: "",
+      email: "",
+      permanentAddress: "",
+      localAddress: "",
+      authorizedSignatory: "",
+      emergencyContact: "",
+      employerInfo: "",
+    });
 
-    // Record audit of successful customer creation
     recordAudit({
       stage: "Customer Master",
       owner: "Leasing Department",
@@ -2426,13 +2452,26 @@ function LeasingPage() {
                     <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
                   </Select>
                 </Field>
-                <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
-                <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
-                <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
+                {customerForm.type === "individual" ? (
+                  <>
+                    <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
+                    <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
+                  </>
+                ) : (
+                  <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
                   <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
                 </div>
+                <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
+                <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
+                <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
+                {customerForm.type === "company" && (
+                  <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
+                )}
+                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
+                <Field label="Employer / Department"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
                 <Button className="w-full" onClick={() => withBusy("customer", createCustomer)}>
                   {busyAction === "customer" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
                   Save Customer

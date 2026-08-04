@@ -402,9 +402,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3">
                     {[
                       ['Tenant Name', selectedUnit.current_tenant],
-                      ['Contract Start', selectedUnit.contract_start_date?.slice(0,10)],
-                      ['Contract End', selectedUnit.contract_end_date?.slice(0,10)],
-                      ['Handover Date', selectedUnit.handover_date?.slice(0,10)],
                     ].map(([l, v]) => (
                       <div key={l as string}>
                         <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{l}</div>
@@ -659,24 +656,15 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Current Tenant</Label>
-                  <Input value={form.current_tenant || ''} onChange={e => setF('current_tenant', e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Contract Start</Label>
-                  <Input type="date" value={form.contract_start_date || ''} onChange={e => setF('contract_start_date', e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Contract End</Label>
-                  <Input type="date" value={form.contract_end_date || ''} onChange={e => setF('contract_end_date', e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Current Rent (QR)</Label>
-                  <Input type="number" value={form.current_rent || ''} onChange={e => setF('current_rent', Number(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Handover Date</Label>
-                  <Input type="date" value={form.handover_date || ''} onChange={e => setF('handover_date', e.target.value)} />
+                  <Label>Maintenance Responsibility</Label>
+                  <Select value={form.maintenance_responsibility} onValueChange={v => setF('maintenance_responsibility', v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {(maintenanceResp.length ? maintenanceResp : [{id:'Property Manager',label:'Property Manager'},{id:'Owner',label:'Owner'},{id:'Tenant',label:'Tenant'}]).map(m => (
+                        <SelectItem key={m.id} value={m.label}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex items-center gap-2 col-span-2">
                   <input type="checkbox" id="docs_received" checked={!!form.documents_received} onChange={e => setF('documents_received', e.target.checked)} className="h-4 w-4" />

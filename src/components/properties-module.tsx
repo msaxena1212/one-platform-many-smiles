@@ -286,18 +286,6 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
               <Label>Bathrooms</Label>
               <Input type="number" value={form.bathrooms} onChange={(e) => setForm((prev) => ({ ...prev, bathrooms: e.target.value }))} />
             </div>
-            <div className="space-y-2">
-              <Label>Max Guests</Label>
-              <Input type="number" value={form.max_guests} onChange={(e) => setForm((prev) => ({ ...prev, max_guests: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Base Rate</Label>
-              <Input type="number" value={form.base_price_per_night} onChange={(e) => setForm((prev) => ({ ...prev, base_price_per_night: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Cleaning Fee</Label>
-              <Input type="number" value={form.cleaning_fee} onChange={(e) => setForm((prev) => ({ ...prev, cleaning_fee: e.target.value }))} />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
