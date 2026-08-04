@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd \"e:\\\\Port\\\\Property Management System\"; node -e 'const xlsx=require\\(\"xlsx\"\\); const path=require\\(\"path\"\\); const wb=xlsx\\.readFile\\(path\\.join\\(process\\.cwd\\(\\),\"Asset Master\\.xlsx\"\\)\\); console\\.log\\(\"Sheets:\", wb\\.SheetNames\\); for\\(const name of wb\\.SheetNames\\)\\{ const sheet=wb\\.Sheets\\[name\\]; const rows=xlsx\\.utils\\.sheet_to_json\\(sheet,\\{header:1,blankrows:false,defval:\"\"\\}\\); console\\.log\\(\"Sheet\", name, \"rows\", rows\\.length\\); console\\.log\\(\"Headers:\", rows\\[0\\]\\); console\\.log\\(\"Sample row:\", rows\\[1\\]\\); \\}'$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
