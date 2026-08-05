@@ -10,11 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
 import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
+import { buildPropertyPayload } from "@/lib/property-master";
 import { toast } from "sonner";
 import { useJsApiLoader } from "@react-google-maps/api";
 
 export const Route = createFileRoute("/prop-mgr/manage/$id")({
-  component: ManageProperty,
+  component: PropMgrManageProperty,
 });
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -30,10 +31,14 @@ const ROOM_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const UNIT_TYPES = [
-  { value: 'FLAT', label: 'Flat' },
-  { value: 'SHOP', label: 'Shop' },
-  { value: 'COMPOUND', label: 'Compound' },
+const PROPERTY_TYPES = [
+  { value: "apartment", label: "Apartment" },
+  { value: "villa", label: "Villa" },
+  { value: "house", label: "House" },
+  { value: "studio", label: "Studio" },
+  { value: "townhouse", label: "Townhouse" },
+  { value: "commercial", label: "Commercial" },
+  { value: "mixed_use", label: "Mixed Use" },
 ];
 
 const AMENITIES = [
@@ -125,41 +130,18 @@ function mapMockPropertyToManagedProperty(mockProperty: MockProperty): Property 
   };
 }
 
-function buildMunicipalityPayload(
-  municipalityDetails: string,
-  ownerLandlord: string,
-  amenitiesFields: string[],
-  otherAmenitiesFacilities: string,
-  proposedFields: {
-    propertyCode: string;
-    propertyName: string;
-    costCenterCode: string;
-    costCenterName: string;
-  },
-) {
-  let municipality: any = null;
-  try {
-    municipality = municipalityDetails ? JSON.parse(municipalityDetails) : null;
-  } catch {
-    municipality = municipalityDetails;
-  }
-
-  return {
-    ...(typeof municipality === "object" && municipality !== null ? municipality : {}),
-    owner_landlord: ownerLandlord || undefined,
-    facility_amenities: amenitiesFields.filter(Boolean),
-    other_amenities_facilities: otherAmenitiesFacilities || undefined,
-    change_request: {
-      property_code_new: proposedFields.propertyCode || undefined,
-      property_name_new: proposedFields.propertyName || undefined,
-      cost_center_code_new: proposedFields.costCenterCode || undefined,
-      cost_center_name_new: proposedFields.costCenterName || undefined,
-    },
-  };
+function PropMgrManageProperty() {
+  const { id } = Route.useParams();
+  return <ManagePropertyPage basePath="/prop-mgr" id={id} />;
 }
 
-function ManageProperty() {
-  const { id } = Route.useParams();
+export function ManagePropertyPage({
+  basePath,
+  id,
+}: {
+  basePath: "/admin" | "/owner" | "/prop-mgr";
+  id: string;
+}) {
   const navigate = useNavigate();
 
   const { isLoaded } = useJsApiLoader({
@@ -189,6 +171,7 @@ function ManageProperty() {
   const [isActive, setIsActive] = useState(true);
   const [propertyType, setPropertyType] = useState<string>("");
   const [propertyCode, setPropertyCode] = useState("");
+  const [propertyCategory, setPropertyCategory] = useState("");
   const [costCenterCode, setCostCenterCode] = useState("");
   const [costCenterName, setCostCenterName] = useState("");
   const [proposedPropertyCode, setProposedPropertyCode] = useState("");
@@ -254,6 +237,7 @@ function ManageProperty() {
     setAmenities(prop.amenities || []);
     setPropertyType(prop.property_type || "");
     setPropertyCode(prop.property_code || "");
+    setPropertyCategory(prop.property_category || "");
     setCostCenterCode(prop.cost_center_code || "");
     setCostCenterName(prop.cost_center_name || "");
     setProposedPropertyCode(changeRequest.property_code_new || "");
@@ -429,21 +413,62 @@ function ManageProperty() {
 
   const handleSave = async () => {
     if (!property) return;
-    const municipalityPayload = buildMunicipalityPayload(
-      municipalityDetails,
-      ownerLandlord,
-      [amenity1, amenity2, amenity3, amenity4, amenity5],
+    const payload = buildPropertyPayload({
+      title,
+      description,
+      propertyType: propertyType || property.property_type,
+      address,
+      city,
+      state,
+      zipCode,
+      country,
+      basePricePerNight: price,
+      maxGuests: property.max_guests,
+      bedrooms: property.bedrooms,
+      beds: property.beds,
+      bathrooms: property.bathrooms,
+      cleaningFee: property.cleaning_fee,
+      isActive,
+      roomDetails,
+      amenities,
+      propertyCode,
+      costCenterCode,
+      costCenterName,
+      propertyCategory,
+      ownershipType,
+      areaZone,
+      streetBuildingName,
+      plotBuildingNo,
+      titleDeedNo,
+      municipalityRefNo,
+      propertyManager,
+      noOfFloors,
+      noOfUnits,
+      totalBuiltUpAreaSqm,
+      commonAreaSqm,
+      parkingCount,
+      noOfElevators,
+      amenityFields: [amenity1, amenity2, amenity3, amenity4, amenity5],
       otherAmenitiesFacilities,
-      {
+      completionDate,
+      handoverDate,
+      propertyStatus,
+      documentsReceived,
+      remarks,
+      kahramaaNumber,
+      municipalityDetails,
+      proposedFields: {
         propertyCode: proposedPropertyCode,
         propertyName: proposedPropertyName,
         costCenterCode: proposedCostCenterCode,
         costCenterName: proposedCostCenterName,
       },
-    );
+      ownerLandlord,
+    });
     if (isMockProperty) {
       setProperty({
         ...property,
+        ...payload,
         title,
         description,
         property_type: propertyType || property.property_type,
@@ -456,29 +481,7 @@ function ManageProperty() {
         is_active: isActive,
         room_details: roomDetails,
         amenities,
-        property_code: propertyCode || undefined,
-        cost_center_code: costCenterCode || undefined,
-        cost_center_name: costCenterName || undefined,
-        ownership_type: ownershipType || undefined,
-        area_zone: areaZone || undefined,
-        street_building_name: streetBuildingName || undefined,
-        plot_building_no: plotBuildingNo || undefined,
-        title_deed_no: titleDeedNo || undefined,
-        municipality_ref_no: municipalityRefNo || undefined,
-        property_manager: propertyManager || undefined,
-        no_of_floors: noOfFloors ? Number(noOfFloors) : undefined,
-        no_of_units: noOfUnits ? Number(noOfUnits) : undefined,
-        total_built_up_area_sqm: totalBuiltUpAreaSqm ? Number(totalBuiltUpAreaSqm) : undefined,
-        common_area_sqm: commonAreaSqm ? Number(commonAreaSqm) : undefined,
-        parking_count: parkingCount ? Number(parkingCount) : undefined,
-        no_of_elevators: noOfElevators ? Number(noOfElevators) : undefined,
-        completion_date: completionDate || undefined,
-        handover_date: handoverDate || undefined,
-        property_status: propertyStatus || undefined,
-        documents_received: documentsReceived,
-        remarks: remarks || undefined,
-        kahramaa_number: kahramaaNumber || undefined,
-        municipality_details: municipalityPayload,
+        property_category: propertyCategory,
       });
       toast.success("Demo property updated in the current session.");
       return;
@@ -486,43 +489,7 @@ function ManageProperty() {
 
     setSaving(true);
     try {
-      await updateProperty(property.id, {
-        title,
-        description,
-        property_type: propertyType || property.property_type,
-        base_price_per_night: price,
-        city,
-        state,
-        zip_code: zipCode,
-        country,
-        address,
-        is_active: isActive,
-        room_details: roomDetails,
-        amenities,
-        property_code: propertyCode || undefined,
-        cost_center_code: costCenterCode || undefined,
-        cost_center_name: costCenterName || undefined,
-        ownership_type: ownershipType || undefined,
-        area_zone: areaZone || undefined,
-        street_building_name: streetBuildingName || undefined,
-        plot_building_no: plotBuildingNo || undefined,
-        title_deed_no: titleDeedNo || undefined,
-        municipality_ref_no: municipalityRefNo || undefined,
-        property_manager: propertyManager || undefined,
-        no_of_floors: noOfFloors ? Number(noOfFloors) : undefined,
-        no_of_units: noOfUnits ? Number(noOfUnits) : undefined,
-        total_built_up_area_sqm: totalBuiltUpAreaSqm ? Number(totalBuiltUpAreaSqm) : undefined,
-        common_area_sqm: commonAreaSqm ? Number(commonAreaSqm) : undefined,
-        parking_count: parkingCount ? Number(parkingCount) : undefined,
-        no_of_elevators: noOfElevators ? Number(noOfElevators) : undefined,
-        completion_date: completionDate || undefined,
-        handover_date: handoverDate || undefined,
-        property_status: propertyStatus || undefined,
-        documents_received: documentsReceived,
-        remarks: remarks || undefined,
-        kahramaa_number: kahramaaNumber || undefined,
-        municipality_details: municipalityPayload,
-      });
+      await updateProperty(property.id, payload as Partial<Omit<Property, "id" | "created_at" | "property_images">>);
       toast.success("Property updated successfully!");
     } catch (err: any) {
       toast.error("Failed to save: " + err.message);
@@ -535,7 +502,7 @@ function ManageProperty() {
     if (!confirm("Are you sure you want to deactivate this listing?")) return;
     if (isMockProperty) {
       toast.success("Demo property marked inactive for this session.");
-      navigate({ to: "/prop-mgr/properties" });
+      navigate({ to: `${basePath}/properties` });
       return;
     }
     try {
@@ -647,7 +614,7 @@ function ManageProperty() {
           <h2 className="text-xl font-semibold">Property not found</h2>
           <p className="text-muted-foreground mt-2">{error}</p>
           <Button asChild className="mt-4">
-            <Link to="/prop-mgr/properties">Back to Properties</Link>
+            <Link to={`${basePath}/properties`}>Back to Properties</Link>
           </Button>
         </div>
       </div>
@@ -659,7 +626,7 @@ function ManageProperty() {
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
-            <Link to="/prop-mgr/properties"><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
+            <Link to={`${basePath}/properties`}><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
           </Button>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Manage Property</h1>
           <p className="mt-1 text-muted-foreground">{property.title} — {property.city}, {property.country}</p>
@@ -796,9 +763,13 @@ function ManageProperty() {
                   <Select value={propertyType} onValueChange={v => setPropertyType(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {UNIT_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+                      {PROPERTY_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Category</Label>
+                  <Input value={propertyCategory} onChange={e => setPropertyCategory(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Ownership Type</Label>

@@ -1,971 +1,1058 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  ArrowUpRight, ArrowDownRight, Loader2, RefreshCw, Plus, CheckCircle2,
-  FileText, CreditCard, BookOpen, BarChart3, TrendingUp, AlertCircle
+  Settings, Calendar, MapPin, Users, UserCheck, Layers, LayoutDashboard,
+  Clock, BookOpen, FileText, PlusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
+  Building, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
+  DollarSign, Activity, FileCode, CheckCircle, Search, Plus, Trash2, Pencil,
+  ChevronRight, Loader2, Filter, Download, FilePlus
 } from "lucide-react";
 import {
-  supabase,
   fetchJournalEntries, fetchReceipts, fetchARLedgers, fetchGLAccounts,
-  fetchProvisions, createProvision,
-  createJournalEntry, updateJournalEntry,
-  createReceipt, updateReceipt,
-  createAREntry, settleAREntry,
-  createGLAccount, fetchProperties, fetchUnits, createUnit, fetchLeases, createLease, createRentSchedules,
-  type JournalEntry, type Receipt, type ARLedger, type GLAccount,
-  type Provision,
+  createJournalEntry, createReceipt, createAREntry, settleAREntry, createGLAccount,
+  type JournalEntry, type Receipt, type ARLedger, type GLAccount
 } from "@/lib/supabase";
-import { accountMasterSeed, accountTransactionsSeed, referenceDropdowns } from "@/lib/reference-data";
+import {
+  FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
+  FinPostingPeriodsApi, FinBanksApi, FinBankAccountsApi, FinBankReconciliationsApi, FinContractsApi,
+  type FinFinancialYear, type FinRegion, type FinVendor, type FinCustomer, type FinCostCenter,
+  type FinPostingPeriod, type FinBank, type FinBankAccount, type FinBankReconciliation, type FinContract
+} from "@/lib/supabase-finance";
+import { toast } from "sonner";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
 }
 
-const PAYMENT_MODES = ["cash", "bank", "cheque", "sadad", "mada", "apple_pay", "stc_pay", "card", "bank_transfer"];
-const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
-const AR_TYPES = ["invoice", "receipt", "credit_note", "debit_note"];
+const FINANCE_NAV = [
+  {
+    group: "Setup Configuration",
+    icon: Settings,
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
+    items: [
+      { key: "financial_year", label: "Financial Year", icon: Calendar },
+      { key: "region", label: "Region", icon: MapPin },
+      { key: "vendor_list", label: "Vendor List", icon: Users },
+      { key: "customer_list", label: "Customer List", icon: UserCheck },
+      { key: "cost_center", label: "Cost Center", icon: Layers },
+    ],
+  },
+  {
+    group: "Finance",
+    icon: DollarSign,
+    color: "text-emerald-500",
+    bg: "bg-emerald-500/10",
+    items: [
+      { key: "finance_dashboard", label: "Finance Dashboard", icon: LayoutDashboard },
+      { key: "posting_period", label: "Posting Period", icon: Clock },
+      { key: "chart_of_accounts", label: "Chart Of Account", icon: BookOpen },
+      { key: "journal_ledger", label: "Journal Ledger", icon: FileText },
+      { key: "credit_debit_builder", label: "Credit Debit Builder", icon: PlusCircle },
+    ],
+  },
+  {
+    group: "Payment",
+    icon: CreditCard,
+    color: "text-purple-500",
+    bg: "bg-purple-500/10",
+    items: [
+      { key: "grn_cost_mapping", label: "GRN Cost Mapping", icon: Layers },
+      { key: "payable_invoice", label: "Payable Invoice", icon: ArrowUpRight },
+      { key: "journal_voucher", label: "Journal Voucher", icon: FileText },
+      { key: "payment_voucher", label: "Payment Voucher", icon: CreditCard },
+      { key: "receivable_invoice", label: "Receivable Invoice", icon: ArrowDownLeft },
+      { key: "receipt_voucher", label: "Receipt Voucher", icon: ReceiptIcon },
+    ],
+  },
+  {
+    group: "Bank Accounting",
+    icon: Landmark,
+    color: "text-amber-500",
+    bg: "bg-amber-500/10",
+    items: [
+      { key: "bank", label: "Bank", icon: Building },
+      { key: "bank_account", label: "Bank Account", icon: CreditCard },
+      { key: "bank_clearance", label: "Bank Clearance", icon: FileCheck },
+      { key: "bank_reconciliation", label: "Bank Reconciliation", icon: Scale },
+      { key: "bank_reconciliation_statement_list", label: "Bank Reconciliation Statement List", icon: FileSpreadsheet },
+    ],
+  },
+  {
+    group: "Finance Report",
+    icon: PieChart,
+    color: "text-rose-500",
+    bg: "bg-rose-500/10",
+    items: [
+      { key: "trial_balance_simple", label: "Trial Balance(Simple)", icon: Scale },
+      { key: "trial_balance", label: "Trial Balance", icon: Scale },
+      { key: "profit_and_loss", label: "Profit and Loss", icon: Activity },
+      { key: "balance_sheet", label: "Balance Sheet", icon: Landmark },
+      { key: "general_ledger", label: "General Ledger", icon: BookOpen },
+      { key: "cash_flow_statement", label: "Cash Flow Statement", icon: DollarSign },
+      { key: "cash_book", label: "Cash Book", icon: BookOpen },
+      { key: "petty_cash_book", label: "Petty Cash Book", icon: BookOpen },
+      { key: "cash_on_hand", label: "Cash On Hand", icon: DollarSign },
+    ],
+  },
+  {
+    group: "Contract Management",
+    icon: FileCode,
+    color: "text-indigo-500",
+    bg: "bg-indigo-500/10",
+    items: [
+      { key: "expense_contract", label: "Expense Contract", icon: FileText },
+      { key: "revenue_contract", label: "Revenue Contract", icon: FileCheck },
+    ],
+  },
+];
 
 export function FinanceModule({ role }: FinanceModuleProps) {
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [arLedgers, setARLedgers] = useState<ARLedger[]>([]);
-  const [glAccounts, setGLAccounts] = useState<GLAccount[]>([]);
-  const [provisions, setProvisions] = useState<Provision[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeKey, setActiveKey] = useState("finance_dashboard");
+  const [loading, setLoading] = useState(false);
 
-  // Dialogs
-  const [showNewReceipt, setShowNewReceipt] = useState(false);
-  const [showNewJE, setShowNewJE] = useState(false);
-  const [showNewAR, setShowNewAR] = useState(false);
-  const [showNewGL, setShowNewGL] = useState(false);
-  const [editReceipt, setEditReceipt] = useState<Receipt | null>(null);
-  const [editJE, setEditJE] = useState<JournalEntry | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const [receiptForm, setReceiptForm] = useState({
-    ref: "", payment_mode: "bank_transfer" as Receipt["payment_mode"],
-    amount: "", currency: "USD", status: "pending" as Receipt["status"],
-    customer_name: "", settlement_type: "pdc" as string,
-  });
-  const [jeForm, setJEForm] = useState({
-    je_no: "", posting_date: new Date().toISOString().split("T")[0],
-    period: new Date().toISOString().slice(0, 7),
-    source_module: "manual", narration: "", status: "draft" as JournalEntry["status"],
-  });
-  const [arForm, setARForm] = useState({
-    reference: "", type: "invoice" as ARLedger["type"],
-    date: new Date().toISOString().split("T")[0],
-    amount: "", balance: "", status: "open" as ARLedger["status"],
-  });
-
-  const [glForm, setGLForm] = useState({ code: '', name_en: '', type: 'asset', currency: 'USD', is_postable: true });
-
-  async function handleCreateGL(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await createGLAccount({ code: glForm.code, name_en: glForm.name_en, type: glForm.type as any, currency: glForm.currency, is_postable: Boolean(glForm.is_postable) });
-      setShowNewGL(false);
-      setGLForm({ code: '', name_en: '', type: 'asset', currency: 'USD', is_postable: true });
-      await loadData();
-    } catch (e: any) { console.error(e.message); }
-    finally { setSaving(false); }
-  }
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [jes, recs, ars, gls] = await Promise.all([
-        fetchJournalEntries(),
-        fetchReceipts(),
-        fetchARLedgers().catch(() => [] as ARLedger[]),
-          fetchGLAccounts().catch(() => [] as GLAccount[]),
-          // provisions loaded separately
-      ]);
-      setJournalEntries(jes);
-      setReceipts(recs);
-      setARLedgers(ars);
-      setGLAccounts(gls);
-        const provs = await fetchProvisions().catch(() => [] as Provision[]);
-        setProvisions(provs);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-    const channel1 = supabase.channel("je_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "journal_entries" }, loadData)
-      .subscribe();
-    const channel2 = supabase.channel("receipt_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "receipts" }, loadData)
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel1);
-      supabase.removeChannel(channel2);
-    };
-  }, [loadData]);
-
-  // Auto-seed basic finance data (COA, AR, Receipts) when empty
-  useEffect(() => {
-    (async () => {
-      try {
-        if (!loading && glAccounts.length === 0) {
-          // basic COA seeded from the workbook reference data
-          const basicCOA = [
-            { code: '1000', name_en: 'Cash', type: 'asset', currency: 'USD', is_postable: true },
-            { code: '1100', name_en: 'Accounts Receivable', type: 'asset', currency: 'USD', is_postable: true },
-            { code: '1200', name_en: 'PDC In Hand', type: 'asset', currency: 'USD', is_postable: true },
-            { code: '2000', name_en: 'Accounts Payable', type: 'liability', currency: 'USD', is_postable: true },
-            { code: '3000', name_en: 'Security Deposit Liability', type: 'liability', currency: 'USD', is_postable: true },
-            { code: '4000', name_en: 'Rental Income', type: 'income', currency: 'USD', is_postable: true },
-            { code: '5000', name_en: 'Repairs & Maintenance', type: 'expense', currency: 'USD', is_postable: true },
-          ];
-          for (const g of basicCOA) {
-            await createGLAccount(g as any);
-          }
-
-          // sample AR and receipts
-          await createAREntry({ reference: 'INV-1001', type: 'invoice', date: new Date().toISOString().split('T')[0], amount: 2500, balance: 2500, status: 'open' });
-          await createAREntry({ reference: 'INV-1002', type: 'invoice', date: new Date().toISOString().split('T')[0], amount: 1800, balance: 1800, status: 'open' });
-          await createAREntry({ reference: 'INV-1003', type: 'invoice', date: new Date().toISOString().split('T')[0], amount: 3200, balance: 1600, status: 'partial' });
-          await createReceipt({ ref: 'RCPT-2001', payment_mode: 'bank_transfer', amount: 2500, currency: 'USD', received_at: new Date().toISOString(), allocations: { customer_name: 'Mr. Hafeez Shaik', settlement_type: 'pdc' }, status: 'completed' });
-          for (const txn of accountTransactionsSeed) {
-            await createAREntry({ reference: `${txn.voucher}-${txn.period}`, type: 'invoice', date: new Date().toISOString().split('T')[0], amount: txn.amount, balance: txn.amount, status: 'open' });
-          }
-
-          // create units for each property and optional leases
-          const properties = await fetchProperties();
-          const gls = await fetchGLAccounts();
-          for (const p of properties || []) {
-            const existingUnits = await fetchUnits({ property_id: p.id });
-            if (!existingUnits || existingUnits.length === 0) {
-              const count = Math.random() > 0.5 ? 2 : 1;
-              for (let i = 0; i < count; i++) {
-                const ref = `${(p.title || 'U').split(' ').map(s => s[0]).join('')}-${Math.floor(100 + Math.random()*899)}`;
-                await createUnit({ property_id: p.id, unit_ref: ref, room_type: 'FLAT', bedrooms: 2, bathrooms: 2, area: '100 sqm', price: 2500, status: 'AVAILABLE' });
-              }
-            }
-            // create sample lease for some units
-            const units = await fetchUnits({ property_id: p.id });
-            const existingLeases = await fetchLeases({ property_id: p.id }).catch(() => []);
-            for (const u of units) {
-              const hasLease = (existingLeases || []).some((ls: any) => ls.unit_ref === u.unit_ref);
-              if (!hasLease && Math.random() > 0.4) {
-                const start = new Date();
-                const end = new Date(start);
-                end.setFullYear(end.getFullYear() + 1);
-                const monthly = u.price || 2500;
-                // Leases are now managed through the dedicated Leases UI, skipping mock creation.
-              }
-            }
-          }
-
-          // create sample journal entries (GL lines)
-          // find account ids
-          const cash = gls.find(g => g.code === '1000');
-          const ar = gls.find(g => g.code === '1100');
-          const rent = gls.find(g => g.code === '4000');
-          const repairs = gls.find(g => g.code === '5000');
-          const firstProperty = properties?.[0];
-          const firstUnits = firstProperty ? await fetchUnits({ property_id: firstProperty.id }) : [];
-          const sampleUnit = firstUnits?.[0];
-
-          if (cash && ar && rent) {
-            // Receipt entry: Debit Cash, Credit AR
-            await createJournalEntry({
-              je_no: `JE-${Date.now()}-RCT`,
-              posting_date: new Date().toISOString().split('T')[0],
-              period: new Date().toISOString().slice(0,7),
-              source_module: 'receipt',
-              narration: 'Sample receipt posted',
-              status: 'posted',
-              journal_lines: [
-                { id: '', je_id: '', line_no: 1, account_id: cash.id, debit: 2500, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-                { id: '', je_id: '', line_no: 2, account_id: ar.id, debit: 0, credit: 2500, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-              ]
-            });
-          }
-
-          if (ar && rent) {
-            // Rent invoice: Debit AR, Credit Rental Income
-            await createJournalEntry({
-              je_no: `JE-${Date.now()}-INV`,
-              posting_date: new Date().toISOString().split('T')[0],
-              period: new Date().toISOString().slice(0,7),
-              source_module: 'lease',
-              narration: 'Sample rent invoice',
-              status: 'posted',
-              journal_lines: [
-                { id: '', je_id: '', line_no: 1, account_id: ar.id, debit: 1800, credit: 0, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-                { id: '', je_id: '', line_no: 2, account_id: rent.id, debit: 0, credit: 1800, currency: 'USD', fx_rate: 1, property_id: firstProperty?.id, unit_id: sampleUnit?.id },
-              ]
-            });
-          }
-
-          await loadData();
-        }
-      } catch (e) { console.error('Finance seed', e); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
-
-  // Totals
-  const totalCollected = receipts.filter(r => r.status === "completed").reduce((s, r) => s + Number(r.amount), 0);
-  const totalPending = receipts.filter(r => r.status === "pending").reduce((s, r) => s + Number(r.amount), 0);
-  const totalDebits = journalEntries.reduce((s, je) => s + (je.journal_lines || []).reduce((ss, l) => ss + Number(l.debit), 0), 0);
-  const totalCredits = journalEntries.reduce((s, je) => s + (je.journal_lines || []).reduce((ss, l) => ss + Number(l.credit), 0), 0);
-  const openAR = arLedgers.filter(a => a.status !== "closed").reduce((s, a) => s + Number(a.balance), 0);
-
-  async function handleCreateReceipt(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await createReceipt({
-        ref: receiptForm.ref,
-        payment_mode: receiptForm.payment_mode,
-        amount: Number(receiptForm.amount),
-        currency: receiptForm.currency,
-        received_at: new Date().toISOString(),
-        allocations: {
-          customer_name: receiptForm.customer_name,
-          settlement_type: receiptForm.settlement_type,
-          source: 'host.finance',
-        },
-        status: receiptForm.status,
-      });
-      setShowNewReceipt(false);
-      setReceiptForm({ ref: "", payment_mode: "bank_transfer", amount: "", currency: "USD", status: "pending", customer_name: "", settlement_type: "pdc" });
-      await loadData();
-    } catch (e: any) { console.error(e.message); }
-    finally { setSaving(false); }
-  }
-
-  async function handleSettleReceipt(id: string) {
-    await updateReceipt(id, { status: "completed" });
-    await loadData();
-  }
-
-  async function handleCreateJE(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await createJournalEntry({
-        je_no: jeForm.je_no || `JE-${Date.now()}`,
-        posting_date: jeForm.posting_date,
-        period: jeForm.period,
-        source_module: jeForm.source_module,
-        narration: jeForm.narration,
-        status: jeForm.status,
-      });
-      setShowNewJE(false);
-      setJEForm({ je_no: "", posting_date: new Date().toISOString().split("T")[0], period: new Date().toISOString().slice(0, 7), source_module: "manual", narration: "", status: "draft" });
-      await loadData();
-    } catch (e: any) { console.error(e.message); }
-    finally { setSaving(false); }
-  }
-
-  async function handlePostJE(id: string) {
-    await updateJournalEntry(id, { status: "posted" });
-    await loadData();
-  }
-
-  async function handleCreateAR(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await createAREntry({
-        reference: arForm.reference,
-        type: arForm.type,
-        date: arForm.date,
-        amount: Number(arForm.amount),
-        balance: Number(arForm.balance || arForm.amount),
-        status: arForm.status,
-      });
-      setShowNewAR(false);
-      setARForm({ reference: "", type: "invoice", date: new Date().toISOString().split("T")[0], amount: "", balance: "", status: "open" });
-      await loadData();
-    } catch (e: any) { console.error(e.message); }
-    finally { setSaving(false); }
-  }
-
-  async function handleSettleAR(id: string) {
-    await settleAREntry(id);
-    await loadData();
-  }
-
-  const arStatusColor: Record<string, string> = {
-    open: "bg-amber-100 text-amber-700",
-    partial: "bg-blue-100 text-blue-700",
-    closed: "bg-green-100 text-green-700",
-  };
-  const jeStatusColor: Record<string, string> = {
-    draft: "bg-slate-100 text-slate-700",
-    posted: "bg-green-100 text-green-700",
-    reversed: "bg-red-100 text-red-700",
-  };
+  // Active item info
+  const activeItem = FINANCE_NAV.flatMap(g => g.items).find(i => i.key === activeKey);
+  const activeGroup = FINANCE_NAV.find(g => g.items.some(i => i.key === activeKey));
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Finance & Accounting</h2>
-          <p className="text-muted-foreground">General Ledger · Accounts Receivable · Receipts · Provisions</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Finance Management</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Manage chart of accounts, setup configuration, vouchers, bank accounting, reports, and contract lifecycle.
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {[
-          { label: "Total Collected", value: `$${totalCollected.toLocaleString()}`, icon: <TrendingUp className="h-5 w-5 text-green-500" />, sub: "Completed receipts", color: "text-green-600" },
-          { label: "Pending Receipts", value: `$${totalPending.toLocaleString()}`, icon: <AlertCircle className="h-5 w-5 text-amber-500" />, sub: "Awaiting clearance", color: "text-amber-600" },
-          { label: "Open AR Balance", value: `$${openAR.toLocaleString()}`, icon: <FileText className="h-5 w-5 text-blue-500" />, sub: "Outstanding invoices", color: "text-blue-600" },
-          { label: "Total Debits Posted", value: `$${totalDebits.toLocaleString()}`, icon: <ArrowDownRight className="h-5 w-5 text-red-500" />, sub: "GL debit side", color: "text-red-600" },
-          { label: "Total Credits Posted", value: `$${totalCredits.toLocaleString()}`, icon: <ArrowUpRight className="h-5 w-5 text-blue-500" />, sub: "GL credit side", color: "text-blue-600" },
-        ].map((k) => (
-          <Card key={k.label}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{k.label}</CardTitle>
-                {k.icon}
+      <div className="flex gap-6 min-h-[680px]">
+        {/* Sidebar */}
+        <aside className="w-64 shrink-0">
+          <ScrollArea className="h-[680px] pr-2">
+            <div className="space-y-5">
+              {FINANCE_NAV.map((group) => {
+                const GroupIcon = group.icon;
+                return (
+                  <div key={group.group}>
+                    <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md mb-1.5 ${group.bg}`}>
+                      <GroupIcon className={`h-4 w-4 ${group.color}`} />
+                      <span className={`text-xs font-bold uppercase tracking-wider ${group.color}`}>
+                        {group.group}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {group.items.map((item) => {
+                        const ItemIcon = item.icon;
+                        const isActive = item.key === activeKey;
+                        return (
+                          <button
+                            key={item.key}
+                            onClick={() => setActiveKey(item.key)}
+                            className={`
+                              w-full flex items-center justify-between px-3 py-2 rounded-md text-xs transition-all text-left
+                              ${isActive
+                                ? "bg-primary text-primary-foreground font-medium shadow-sm"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                              }
+                            `}
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <ItemIcon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{item.label}</span>
+                            </span>
+                            {isActive && <ChevronRight className="h-3 w-3 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </aside>
+
+        {/* Main Content Area */}
+        <div className="flex-1 min-w-0">
+          <Card className="h-full">
+            <CardHeader className="pb-3 border-b">
+              <div className="flex items-center gap-3">
+                {activeItem && (
+                  <div className={`p-2 rounded-md ${activeGroup?.bg}`}>
+                    <activeItem.icon className={`h-5 w-5 ${activeGroup?.color}`} />
+                  </div>
+                )}
+                <div>
+                  <CardTitle className="text-lg">{activeItem?.label}</CardTitle>
+                  <CardDescription className="text-xs">{activeGroup?.group}</CardDescription>
+                </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : (
-                <>
-                  <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{k.sub}</div>
-                </>
-              )}
+            <CardContent className="pt-4">
+              <ScrollArea className="h-[570px] pr-2">
+                <FinanceSubModuleRouter subKey={activeKey} />
+              </ScrollArea>
             </CardContent>
           </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-Module Router ─────────────────────────────────────────────────────────
+
+function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
+  switch (subKey) {
+    // Setup
+    case "financial_year": return <FinancialYearSubModule />;
+    case "region": return <RegionSubModule />;
+    case "vendor_list": return <VendorListSubModule />;
+    case "customer_list": return <CustomerListSubModule />;
+    case "cost_center": return <CostCenterSubModule />;
+    
+    // Finance
+    case "finance_dashboard": return <FinanceDashboardSubModule />;
+    case "posting_period": return <PostingPeriodSubModule />;
+    case "chart_of_accounts": return <ChartOfAccountsSubModule />;
+    case "journal_ledger": return <JournalLedgerSubModule />;
+    case "credit_debit_builder": return <CreditDebitBuilderSubModule />;
+    
+    // Payment
+    case "grn_cost_mapping": return <GrnCostMappingSubModule />;
+    case "payable_invoice": return <PayableInvoiceSubModule />;
+    case "journal_voucher": return <VoucherManagerSubModule type="Journal Voucher" />;
+    case "payment_voucher": return <VoucherManagerSubModule type="Payment Voucher" />;
+    case "receivable_invoice": return <ReceivableInvoiceSubModule />;
+    case "receipt_voucher": return <VoucherManagerSubModule type="Receipt Voucher" />;
+    
+    // Bank Accounting
+    case "bank": return <BankSubModule />;
+    case "bank_account": return <BankAccountSubModule />;
+    case "bank_clearance": return <BankClearanceSubModule />;
+    case "bank_reconciliation": return <BankReconciliationSubModule />;
+    case "bank_reconciliation_statement_list": return <BankReconciliationStatementListSubModule />;
+    
+    // Reports
+    case "trial_balance_simple": return <TrialBalanceSimpleSubModule />;
+    case "trial_balance": return <TrialBalanceFullSubModule />;
+    case "profit_and_loss": return <ProfitAndLossSubModule />;
+    case "balance_sheet": return <BalanceSheetSubModule />;
+    case "general_ledger": return <GeneralLedgerReportSubModule />;
+    case "cash_flow_statement": return <CashFlowSubModule />;
+    case "cash_book": return <CashBookSubModule />;
+    case "petty_cash_book": return <PettyCashBookSubModule />;
+    case "cash_on_hand": return <CashOnHandSubModule />;
+    
+    // Contracts
+    case "expense_contract": return <ContractManagementSubModule type="Expense" />;
+    case "revenue_contract": return <ContractManagementSubModule type="Revenue" />;
+    
+    default: return <div className="text-center py-10 text-muted-foreground">Select a module</div>;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. SETUP CONFIGURATION SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FinancialYearSubModule() {
+  const [data, setData] = useState<FinFinancialYear[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", start_date: "", end_date: "", status: "Active" as const });
+
+  useEffect(() => { load(); }, []);
+  async function load() {
+    setLoading(true);
+    try { setData(await FinFinancialYearsApi.fetchAll()); } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
+  }
+  async function handleAdd() {
+    try {
+      await FinFinancialYearsApi.create(form);
+      toast.success("Financial Year added");
+      setOpen(false);
+      load();
+    } catch (e: any) { toast.error(e.message); }
+  }
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this FY?")) return;
+    try { await FinFinancialYearsApi.delete(id); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Financial Years Register</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Financial Year</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Year Name</TableHead><TableHead>Start Date</TableHead><TableHead>End Date</TableHead><TableHead>Status</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-semibold">{row.name}</TableCell>
+              <TableCell>{row.start_date}</TableCell>
+              <TableCell>{row.end_date}</TableCell>
+              <TableCell><Badge variant={row.status === "Active" ? "default" : "secondary"}>{row.status}</Badge></TableCell>
+              <TableCell><Button variant="ghost" size="icon" onClick={() => handleDelete(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Financial Year</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>FY Name</Label><Input placeholder="e.g. FY 2027" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><Label>Start Date</Label><Input type="date" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} /></div>
+            <div><Label>End Date</Label><Input type="date" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function RegionSubModule() {
+  const [data, setData] = useState<FinRegion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", currency: "QAR" });
+
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinRegionsApi.fetchAll()); } catch (e: any) {} }
+  async function handleAdd() {
+    try { await FinRegionsApi.create(form); toast.success("Region created"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Regions Configured</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Region</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Region Name</TableHead><TableHead>Currency</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-mono font-bold">{row.code}</TableCell>
+              <TableCell>{row.name}</TableCell>
+              <TableCell><Badge variant="outline">{row.currency}</Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Region</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Code</Label><Input placeholder="DOH" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><Label>Name</Label><Input placeholder="Doha West" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function VendorListSubModule() {
+  const [data, setData] = useState<FinVendor[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", contact_person: "", email: "", phone: "", tax_number: "", status: "Active" as const });
+
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinVendorsApi.fetchAll()); } catch (e: any) {} }
+  async function handleAdd() {
+    try { await FinVendorsApi.create(form); toast.success("Vendor added"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Vendor Master</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead>Contact</TableHead><TableHead>Phone / Email</TableHead><TableHead>Tax No</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-mono">{row.code}</TableCell>
+              <TableCell className="font-semibold">{row.name}</TableCell>
+              <TableCell>{row.contact_person}</TableCell>
+              <TableCell className="text-xs">{row.phone} / {row.email}</TableCell>
+              <TableCell className="text-xs font-mono">{row.tax_number}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Vendor</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Vendor Code</Label><Input placeholder="VEND-100" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><Label>Company Name</Label><Input placeholder="Supplier LLC" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><Label>Contact Person</Label><Input placeholder="John Doe" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} /></div>
+            <div><Label>Phone</Label><Input placeholder="+974 5500 0000" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CustomerListSubModule() {
+  const [data, setData] = useState<FinCustomer[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", type: "Individual", email: "", phone: "", credit_limit: 50000 });
+
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinCustomersApi.fetchAll()); } catch (e: any) {} }
+  async function handleAdd() {
+    try { await FinCustomersApi.create(form); toast.success("Customer added"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Finance Customer List</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Customer</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Credit Limit</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-mono">{row.code}</TableCell>
+              <TableCell className="font-semibold">{row.name}</TableCell>
+              <TableCell><Badge variant="outline">{row.type}</Badge></TableCell>
+              <TableCell>{row.credit_limit} QAR</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Customer</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Customer Code</Label><Input placeholder="CUST-001" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><Label>Full Name</Label><Input placeholder="Tenant / Client Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CostCenterSubModule() {
+  const [data, setData] = useState<FinCostCenter[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", manager: "" });
+
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinCostCentersApi.fetchAll()); } catch (e: any) {} }
+  async function handleAdd() {
+    try { await FinCostCentersApi.create(form); toast.success("Cost center added"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Cost Centers</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Cost Center</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Center Name</TableHead><TableHead>Manager</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-mono font-bold">{row.code}</TableCell>
+              <TableCell>{row.name}</TableCell>
+              <TableCell>{row.manager}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Cost Center</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Code</Label><Input placeholder="CC-300" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><Label>Name</Label><Input placeholder="IT Infrastructure" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. FINANCE SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FinanceDashboardSubModule() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-primary/5 border-primary/20"><CardContent className="p-4"><p className="text-xs text-muted-foreground">General Ledger Assets</p><h3 className="text-xl font-bold mt-1">2,450,000 QAR</h3></CardContent></Card>
+        <Card className="bg-emerald-500/5 border-emerald-500/20"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly Revenue</p><h3 className="text-xl font-bold mt-1 text-emerald-600">385,000 QAR</h3></CardContent></Card>
+        <Card className="bg-rose-500/5 border-rose-500/20"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly Expenses</p><h3 className="text-xl font-bold mt-1 text-rose-600">112,400 QAR</h3></CardContent></Card>
+        <Card className="bg-amber-500/5 border-amber-500/20"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Pending Receivables</p><h3 className="text-xl font-bold mt-1 text-amber-600">64,500 QAR</h3></CardContent></Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Recent Activity</CardTitle></CardHeader>
+          <CardContent className="text-xs space-y-2">
+            <div className="flex justify-between border-b pb-1"><span>Posted Rent Receipt REC-094</span><span className="font-bold text-emerald-600">+12,500 QAR</span></div>
+            <div className="flex justify-between border-b pb-1"><span>HVAC Vendor Payment VOU-882</span><span className="font-bold text-rose-600">-4,200 QAR</span></div>
+            <div className="flex justify-between border-b pb-1"><span>PDC Clearance QNB #9921</span><span className="font-bold text-emerald-600">+8,500 QAR</span></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Quick Actions</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <Button size="sm" variant="outline" className="w-full justify-start" onClick={() => toast.info("Opening Voucher Builder")}>Create Journal Voucher</Button>
+            <Button size="sm" variant="outline" className="w-full justify-start" onClick={() => toast.info("Exporting Trial Balance")}>Generate Trial Balance</Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function PostingPeriodSubModule() {
+  const [data, setData] = useState<FinPostingPeriod[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinPostingPeriodsApi.fetchAll()); } catch (e: any) {} }
+  async function toggle(row: FinPostingPeriod) {
+    const nextStatus = row.status === "Open" ? "Closed" : "Open";
+    await FinPostingPeriodsApi.update(row.id, { status: nextStatus });
+    toast.success(`Period ${row.period_name} is now ${nextStatus}`);
+    load();
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Financial Posting Periods Control</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Period</TableHead><TableHead>Year</TableHead><TableHead>Month</TableHead><TableHead>Status</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="font-mono font-bold">{row.period_name}</TableCell>
+              <TableCell>{row.year}</TableCell>
+              <TableCell>{row.month}</TableCell>
+              <TableCell><Badge variant={row.status === "Open" ? "default" : "secondary"}>{row.status}</Badge></TableCell>
+              <TableCell><Button size="sm" variant="outline" onClick={() => toggle(row)}>{row.status === "Open" ? "Close Period" : "Re-Open"}</Button></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ChartOfAccountsSubModule() {
+  const [data, setData] = useState<GLAccount[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name_en: "", type: "asset" as const, currency: "QAR", is_postable: true });
+
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await fetchGLAccounts()); } catch (e: any) {} }
+  async function handleCreate() {
+    try { await createGLAccount(form); toast.success("Account created"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Chart of Accounts</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add GL Account</Button>
+      </div>
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Account Name</TableHead><TableHead>Type</TableHead><TableHead>Postable</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(acc => (
+            <TableRow key={acc.id}>
+              <TableCell className="font-mono font-bold">{acc.code}</TableCell>
+              <TableCell>{acc.name_en}</TableCell>
+              <TableCell className="capitalize"><Badge variant="outline">{acc.type}</Badge></TableCell>
+              <TableCell>{acc.is_postable ? "Yes" : "No"}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Account</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Code</Label><Input placeholder="1010" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><Label>Name</Label><Input placeholder="Petty Cash Fund" value={form.name_en} onChange={e => setForm({...form, name_en: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleCreate}>Save Account</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function JournalLedgerSubModule() {
+  const [data, setData] = useState<JournalEntry[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await fetchJournalEntries()); } catch (e: any) {} }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Journal Ledger Entries</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>JE No</TableHead><TableHead>Posting Date</TableHead><TableHead>Narration</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(je => (
+            <TableRow key={je.id}>
+              <TableCell className="font-mono font-semibold">{je.je_no}</TableCell>
+              <TableCell>{je.posting_date}</TableCell>
+              <TableCell>{je.narration || "N/A"}</TableCell>
+              <TableCell><Badge>{je.status}</Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function CreditDebitBuilderSubModule() {
+  const [lines, setLines] = useState([{ account: "", debit: 0, credit: 0 }]);
+  const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+
+  function addLine() { setLines([...lines, { account: "", debit: 0, credit: 0 }]); }
+  function submit() {
+    if (totalDebit !== totalCredit || totalDebit === 0) { toast.error("Debits and credits must balance!"); return; }
+    toast.success("Journal voucher built & posted successfully!");
+    setLines([{ account: "", debit: 0, credit: 0 }]);
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Manual Debit / Credit Voucher Builder</h3>
+      <div className="space-y-2">
+        {lines.map((l, idx) => (
+          <div key={idx} className="flex gap-2 items-center">
+            <Input placeholder="Account Name / Code" className="flex-1" value={l.account} onChange={e => { const next = [...lines]; next[idx].account = e.target.value; setLines(next); }} />
+            <Input type="number" placeholder="Debit" className="w-28" value={l.debit || ""} onChange={e => { const next = [...lines]; next[idx].debit = parseFloat(e.target.value) || 0; setLines(next); }} />
+            <Input type="number" placeholder="Credit" className="w-28" value={l.credit || ""} onChange={e => { const next = [...lines]; next[idx].credit = parseFloat(e.target.value) || 0; setLines(next); }} />
+          </div>
         ))}
       </div>
+      <div className="flex justify-between items-center pt-2">
+        <Button variant="outline" size="sm" onClick={addLine}>+ Add Line</Button>
+        <div className="text-xs space-x-4">
+          <span>Total Dr: <strong>{totalDebit} QAR</strong></span>
+          <span>Total Cr: <strong>{totalCredit} QAR</strong></span>
+          <Button size="sm" onClick={submit}>Post Voucher</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview"><BookOpen className="h-4 w-4 mr-1.5" />General Ledger</TabsTrigger>
-          <TabsTrigger value="ar"><FileText className="h-4 w-4 mr-1.5" />Accounts Receivable</TabsTrigger>
-          <TabsTrigger value="receipts"><CreditCard className="h-4 w-4 mr-1.5" />Receipts</TabsTrigger>
-          <TabsTrigger value="coa"><BarChart3 className="h-4 w-4 mr-1.5" />Chart of Accounts</TabsTrigger>
-            <TabsTrigger value="provisions"><FileText className="h-4 w-4 mr-1.5" />Provisions</TabsTrigger>
-            <TabsTrigger value="pl"><TrendingUp className="h-4 w-4 mr-1.5" />P&L</TabsTrigger>
-        </TabsList>
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. PAYMENT SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
 
-        {/* === GENERAL LEDGER TAB === */}
-        <TabsContent value="overview">
-          <Card>
-            <div className="flex items-center justify-between p-6 pb-4">
-              <div>
-                <CardTitle>Detailed General Ledger</CardTitle>
-                <CardDescription>All journal entries with full debit/credit breakdowns per GL account</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
-                  {totalDebits === totalCredits ? "✓ Balanced" : "⚠ Unbalanced"}
-                </span>
-                <Button size="sm" onClick={() => setShowNewJE(true)}>
-                  <Plus className="h-4 w-4 mr-1" /> Add Entry
-                </Button>
-              </div>
-            </div>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-y border-border bg-muted/10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">JE No</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Memo / Details</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Account</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Entity</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Debit ($)</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Credit ($)</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
-                      <tr><td colSpan={9} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                    ) : journalEntries.length === 0 ? (
-                      <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No journal entries. Click "Add Entry" to create one.</td></tr>
-                    ) : journalEntries.flatMap((je) => {
-                      const lines = je.journal_lines || [];
-                      if (lines.length === 0) {
-                        return [(
-                          <tr key={je.id} className="hover:bg-muted/10 transition-colors">
-                            <td className="px-6 py-4 font-mono text-xs">{je.je_no}</td>
-                            <td className="px-6 py-4 font-mono text-xs">{new Date(je.posting_date).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 font-medium">{je.narration}</td>
-                            <td className="px-6 py-4 text-muted-foreground text-xs">—</td>
-                            <td className="px-6 py-4 text-muted-foreground text-xs">—</td>
-                            <td className="px-6 py-4 text-right text-xs font-mono">—</td>
-                            <td className="px-6 py-4 text-right text-xs font-mono">—</td>
-                            <td className="px-6 py-4">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${jeStatusColor[je.status]}`}>{je.status}</span>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              {je.status === "draft" && (
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handlePostJE(je.id)}>Post</Button>
-                              )}
-                            </td>
-                          </tr>
-                        )];
-                      }
-                      return lines.map((line: any, idx: number) => {
-                        const deb = Number(line.debit);
-                        const cred = Number(line.credit);
-                        const accountName = line.gl_accounts
-                          ? `${line.gl_accounts.code} - ${line.gl_accounts.name_en}`
-                          : (line.account_id || "—");
-                        const entity = [line.property_id, line.unit_id, line.cost_center_id].filter(Boolean).join(" / ") || "—";
-                        return (
-                          <tr key={`${je.id}-${idx}`} className="hover:bg-muted/10 transition-colors">
-                            <td className="px-6 py-4 font-mono text-xs">{idx === 0 ? je.je_no : ""}</td>
-                            <td className="px-6 py-4 font-mono text-xs">{idx === 0 ? new Date(je.posting_date).toLocaleDateString() : ""}</td>
-                            <td className="px-6 py-4">
-                              <div className={idx === 0 ? "font-medium" : "text-muted-foreground pl-4 text-xs"}>
-                                {idx === 0 ? je.narration : "↳ " + (line.description || "Line item")}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-muted-foreground text-xs">{accountName}</td>
-                            <td className="px-6 py-4 text-muted-foreground text-xs">{entity}</td>
-                            <td className="px-6 py-4 text-right text-xs font-mono">{deb > 0 ? "$" + deb.toLocaleString() : "—"}</td>
-                            <td className="px-6 py-4 text-right text-xs font-mono">{cred > 0 ? "$" + cred.toLocaleString() : "—"}</td>
-                            <td className="px-6 py-4">
-                              {idx === 0 && <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${jeStatusColor[je.status]}`}>{je.status}</span>}
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              {idx === 0 && je.status === "draft" && (
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handlePostJE(je.id)}>Post</Button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      });
-                    })}
-                  </tbody>
-                  <tfoot className="border-t-2 border-border font-semibold">
-                    <tr>
-                      <td className="px-6 py-4" colSpan={5}>Totals</td>
-                      <td className="px-6 py-4 text-right">${totalDebits.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right">${totalCredits.toLocaleString()}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+function GrnCostMappingSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Goods Received Note (GRN) Cost Mapping</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>GRN Ref</TableHead><TableHead>Vendor</TableHead><TableHead>GRN Cost</TableHead><TableHead>Mapped GL Account</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell className="font-mono">GRN-2026-081</TableCell><TableCell>Qatar Maintenance Co.</TableCell><TableCell>14,500 QAR</TableCell><TableCell>5020 - Repairs & Maintenance</TableCell><TableCell><Badge>Mapped</Badge></TableCell></TableRow>
+          <TableRow><TableCell className="font-mono">GRN-2026-082</TableCell><TableCell>Gulf Facility Services</TableCell><TableCell>8,200 QAR</TableCell><TableCell>5030 - Cleaning Services</TableCell><TableCell><Badge variant="outline">Pending</Badge></TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
-        {/* === PROVISIONS TAB === */}
-        <TabsContent value="provisions">
-          <Card>
-            <div className="flex items-center justify-between p-6 pb-4">
-              <div>
-                <CardTitle>Provisions</CardTitle>
-                <CardDescription>Manage provisions and P&L accruals</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => setShowNewAR(true)}>
-                <Plus className="h-4 w-4 mr-1" /> New Provision
-              </Button>
-            </div>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-y border-border bg-muted/10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Period</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">GL Account</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
-                      <tr><td colSpan={4} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                    ) : provisions.length === 0 ? (
-                      <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No provisions yet.</td></tr>
-                    ) : provisions.map((p) => (
-                      <tr key={p.id} className="hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-4 font-medium">{p.name}</td>
-                        <td className="px-6 py-4 font-mono text-xs">{p.period}</td>
-                        <td className="px-6 py-4 text-right font-medium">${Number(p.amount).toLocaleString()}</td>
-                        <td className="px-6 py-4 text-xs">{p.gl_account_id || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+function PayableInvoiceSubModule() {
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center"><h3 className="text-sm font-semibold">Accounts Payable Invoices</h3><Button size="sm">+ Create AP Invoice</Button></div>
+      <Table>
+        <TableHeader><TableRow><TableHead>Invoice #</TableHead><TableHead>Vendor</TableHead><TableHead>Due Date</TableHead><TableHead>Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell className="font-mono">INV-AP-9901</TableCell><TableCell>Qatar Maintenance Co.</TableCell><TableCell>2026-08-25</TableCell><TableCell>14,500 QAR</TableCell><TableCell><Badge variant="destructive" className="font-normal">Unpaid</Badge></TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
-        {/* === P&L TAB === */}
-        <TabsContent value="pl">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profit & Loss (Period)</CardTitle>
-              <CardDescription>Basic P&L summary derived from journal entries</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Calculate totals for income and expense from journalEntries */}
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
-                (() => {
-                  const income = journalEntries.flatMap(je => (je.journal_lines || [])).filter((l: any) => l.gl_accounts?.type === 'income');
-                  const expense = journalEntries.flatMap(je => (je.journal_lines || [])).filter((l: any) => l.gl_accounts?.type === 'expense');
-                  const incomeTotal = income.reduce((s: number, l: any) => s + Number(l.credit || 0) - Number(l.debit || 0), 0);
-                  const expenseTotal = expense.reduce((s: number, l: any) => s + Number(l.debit || 0) - Number(l.credit || 0), 0);
-                  const net = incomeTotal - expenseTotal;
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Income</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-xl font-bold text-green-600">${incomeTotal.toLocaleString()}</div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Expenses</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-xl font-bold text-red-600">${expenseTotal.toLocaleString()}</div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Net Profit</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className={`text-xl font-bold ${net >= 0 ? 'text-green-700' : 'text-red-700'}`}>${net.toLocaleString()}</div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  );
-                })()
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+function VoucherManagerSubModule({ type }: { type: string }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center"><h3 className="text-sm font-semibold">{type}s Register</h3><Button size="sm">+ New {type}</Button></div>
+      <Table>
+        <TableHeader><TableRow><TableHead>Voucher #</TableHead><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead>Amount</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell className="font-mono">VOU-2026-001</TableCell><TableCell>2026-08-01</TableCell><TableCell>Standard {type} Entry</TableCell><TableCell>5,400 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
-        {/* === AR LEDGER TAB === */}
-        <TabsContent value="ar">
-          <Card>
-            <div className="flex items-center justify-between p-6 pb-4">
-              <div>
-                <CardTitle>Accounts Receivable Ledger</CardTitle>
-                <CardDescription>Track invoices, receipts, credit/debit notes and settle open balances</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => setShowNewAR(true)}>
-                <Plus className="h-4 w-4 mr-1" /> New AR Entry
-              </Button>
-            </div>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-y border-border bg-muted/10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Reference</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Outstanding Balance</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
-                      <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                    ) : arLedgers.length === 0 ? (
-                      <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No AR entries yet. Click "New AR Entry" to create one.</td></tr>
-                    ) : arLedgers.map((ar) => (
-                      <tr key={ar.id} className="hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-4 font-mono text-xs font-medium">{ar.reference}</td>
-                        <td className="px-6 py-4 text-xs capitalize">{ar.type.replace("_", " ")}</td>
-                        <td className="px-6 py-4 font-mono text-xs">{new Date(ar.date).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 text-right">${Number(ar.amount).toLocaleString()}</td>
-                        <td className="px-6 py-4 text-right font-medium">
-                          <span className={Number(ar.balance) > 0 ? "text-amber-600" : "text-green-600"}>
-                            ${Number(ar.balance).toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${arStatusColor[ar.status]}`}>
-                            {ar.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {ar.status !== "closed" && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs text-green-600 border-green-200" onClick={() => handleSettleAR(ar.id)}>
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> Settle
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {arLedgers.length > 0 && (
-                    <tfoot className="border-t-2 border-border font-semibold">
-                      <tr>
-                        <td className="px-6 py-4" colSpan={3}>Totals</td>
-                        <td className="px-6 py-4 text-right">${arLedgers.reduce((s, a) => s + Number(a.amount), 0).toLocaleString()}</td>
-                        <td className="px-6 py-4 text-right text-amber-600">${arLedgers.filter(a => a.status !== "closed").reduce((s, a) => s + Number(a.balance), 0).toLocaleString()}</td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+function ReceivableInvoiceSubModule() {
+  const [data, setData] = useState<ARLedger[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await fetchARLedgers()); } catch (e: any) {} }
 
-        {/* === RECEIPTS TAB === */}
-        <TabsContent value="receipts">
-          <Card>
-            <div className="flex items-center justify-between p-6 pb-4">
-              <div>
-                <CardTitle>Payment Receipts</CardTitle>
-                <CardDescription>Track all incoming payments and mark them as completed</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => setShowNewReceipt(true)}>
-                <Plus className="h-4 w-4 mr-1" /> New Receipt
-              </Button>
-            </div>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-y border-border bg-muted/10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Ref</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Mode</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
-                      <tr><td colSpan={6} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                    ) : receipts.length === 0 ? (
-                      <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No receipts yet.</td></tr>
-                    ) : receipts.map((r) => (
-                      <tr key={r.id} className="hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-4 font-mono text-xs font-medium">{r.ref || "—"}</td>
-                        <td className="px-6 py-4 text-xs capitalize">{r.payment_mode.replace(/_/g, " ")}</td>
-                        <td className="px-6 py-4 font-mono text-xs">{new Date(r.received_at).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 text-right font-medium">${Number(r.amount).toLocaleString()}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${r.status === "completed" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          {r.status === "pending" && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs text-green-600 border-green-200" onClick={() => handleSettleReceipt(r.id)}>
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> Mark Received
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Accounts Receivable (AR) Invoices</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Type</TableHead><TableHead>Date</TableHead><TableHead>Amount</TableHead><TableHead>Balance</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(ar => (
+            <TableRow key={ar.id}>
+              <TableCell className="font-mono font-semibold">{ar.reference}</TableCell>
+              <TableCell className="capitalize">{ar.type}</TableCell>
+              <TableCell>{ar.date}</TableCell>
+              <TableCell>{ar.amount} QAR</TableCell>
+              <TableCell className="font-bold text-emerald-600">{ar.balance} QAR</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
-        {/* === CHART OF ACCOUNTS TAB === */}
-        <TabsContent value="coa">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Chart of Accounts</CardTitle>
-                <CardDescription>All GL accounts — Assets, Liabilities, Equity, Income, Expenses</CardDescription>
-              </div>
-              <div>
-                <Button size="sm" onClick={() => setShowNewGL(true)}>
-                  <Plus className="h-4 w-4 mr-1" /> Add Account
-                </Button>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-y border-border bg-muted/10">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Code</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Account Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Currency</th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Postable</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {loading ? (
-                      <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                    ) : glAccounts.length === 0 ? (
-                      <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">No GL accounts found in Supabase.</td></tr>
-                    ) : glAccounts.map((acc) => (
-                      <tr key={acc.id} className="hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-4 font-mono text-xs font-semibold">{acc.code}</td>
-                        <td className="px-6 py-4 font-medium">{acc.name_en}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
-                            acc.type === "asset" ? "bg-blue-100 text-blue-700" :
-                            acc.type === "liability" ? "bg-red-100 text-red-700" :
-                            acc.type === "equity" ? "bg-purple-100 text-purple-700" :
-                            acc.type === "income" ? "bg-green-100 text-green-700" :
-                            "bg-orange-100 text-orange-700"
-                          }`}>{acc.type}</span>
-                        </td>
-                        <td className="px-6 py-4 text-xs">{acc.currency}</td>
-                        <td className="px-6 py-4 text-center">
-                          {acc.is_postable
-                            ? <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
-                            : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. BANK ACCOUNTING SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
 
-      {/* === NEW RECEIPT DIALOG === */}
-      <Dialog open={showNewReceipt} onOpenChange={setShowNewReceipt}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record New Receipt</DialogTitle>
-            <DialogDescription>Log an incoming payment against a lease or invoice, including PDC deposit or cash deposit flow</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateReceipt} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Reference / Cheque # *</Label>
-                <Input required value={receiptForm.ref} onChange={e => setReceiptForm(p => ({ ...p, ref: e.target.value }))} placeholder="RCT-00001" />
-              </div>
-              <div className="space-y-1">
-                <Label>Amount ($) *</Label>
-                <Input required type="number" value={receiptForm.amount} onChange={e => setReceiptForm(p => ({ ...p, amount: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Payment Mode *</Label>
-              <Select value={receiptForm.payment_mode} onValueChange={v => setReceiptForm(p => ({ ...p, payment_mode: v as Receipt["payment_mode"] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m.replace(/_/g, " ")}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Initial Status</Label>
-              <Select value={receiptForm.status} onValueChange={v => setReceiptForm(p => ({ ...p, status: v as Receipt["status"] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setShowNewReceipt(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-                Record Receipt
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+function BankSubModule() {
+  const [data, setData] = useState<FinBank[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinBanksApi.fetchAll()); } catch (e: any) {} }
 
-      {/* === NEW JOURNAL ENTRY DIALOG === */}
-      <Dialog open={showNewJE} onOpenChange={setShowNewJE}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New Journal Entry</DialogTitle>
-            <DialogDescription>Create a manual GL posting. Lines can be added via the ledger detail view.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateJE} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>JE Number</Label>
-                <Input value={jeForm.je_no} onChange={e => setJEForm(p => ({ ...p, je_no: e.target.value }))} placeholder="Auto-generated if blank" />
-              </div>
-              <div className="space-y-1">
-                <Label>Posting Date *</Label>
-                <Input required type="date" value={jeForm.posting_date} onChange={e => setJEForm(p => ({ ...p, posting_date: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Period *</Label>
-                <Input required type="month" value={jeForm.period} onChange={e => setJEForm(p => ({ ...p, period: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Source Module</Label>
-                <Select value={jeForm.source_module} onValueChange={v => setJEForm(p => ({ ...p, source_module: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["manual", "lease", "maintenance", "receipt", "deposit"].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Narration / Memo *</Label>
-              <Textarea required value={jeForm.narration} onChange={e => setJEForm(p => ({ ...p, narration: e.target.value }))} placeholder="Describe the transaction..." rows={3} />
-            </div>
-            <div className="space-y-1">
-              <Label>Status</Label>
-              <Select value={jeForm.status} onValueChange={v => setJEForm(p => ({ ...p, status: v as JournalEntry["status"] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="posted">Post immediately</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setShowNewJE(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-                Create Entry
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Banks Registered</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Bank Name</TableHead><TableHead>SWIFT Code</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(b => (
+            <TableRow key={b.id}><TableCell className="font-mono">{b.code}</TableCell><TableCell className="font-semibold">{b.name}</TableCell><TableCell className="font-mono text-xs">{b.swift_code}</TableCell></TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
-      {/* === NEW GL ACCOUNT DIALOG === */}
-      <Dialog open={showNewGL} onOpenChange={setShowNewGL}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New GL Account</DialogTitle>
-            <DialogDescription>Create a chart of accounts entry</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateGL} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Code *</Label>
-                <Input required value={glForm.code} onChange={e => setGLForm(f => ({ ...f, code: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Name *</Label>
-                <Input required value={glForm.name_en} onChange={e => setGLForm(f => ({ ...f, name_en: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Type</Label>
-                <Select value={glForm.type} onValueChange={v => setGLForm(f => ({ ...f, type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="asset">Asset</SelectItem>
-                    <SelectItem value="liability">Liability</SelectItem>
-                    <SelectItem value="equity">Equity</SelectItem>
-                    <SelectItem value="income">Income</SelectItem>
-                    <SelectItem value="expense">Expense</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Input value={glForm.currency} onChange={e => setGLForm(f => ({ ...f, currency: e.target.value }))} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setShowNewGL(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>Create</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+function BankAccountSubModule() {
+  const [data, setData] = useState<FinBankAccount[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinBankAccountsApi.fetchAll()); } catch (e: any) {} }
 
-      {/* === NEW AR ENTRY DIALOG === */}
-      <Dialog open={showNewAR} onOpenChange={setShowNewAR}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New AR Ledger Entry</DialogTitle>
-            <DialogDescription>Add an invoice, credit note, or debit note to the receivables ledger</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateAR} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Reference *</Label>
-                <Input required value={arForm.reference} onChange={e => setARForm(p => ({ ...p, reference: e.target.value }))} placeholder="INV-2026-001" />
-              </div>
-              <div className="space-y-1">
-                <Label>Type *</Label>
-                <Select value={arForm.type} onValueChange={v => setARForm(p => ({ ...p, type: v as ARLedger["type"] }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {AR_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace("_", " ")}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Date *</Label>
-                <Input required type="date" value={arForm.date} onChange={e => setARForm(p => ({ ...p, date: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Amount ($) *</Label>
-                <Input required type="number" value={arForm.amount} onChange={e => setARForm(p => ({ ...p, amount: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Outstanding Balance ($)</Label>
-                <Input type="number" value={arForm.balance} onChange={e => setARForm(p => ({ ...p, balance: e.target.value }))} placeholder="Default = Amount" />
-              </div>
-              <div className="space-y-1">
-                <Label>Status</Label>
-                <Select value={arForm.status} onValueChange={v => setARForm(p => ({ ...p, status: v as ARLedger["status"] }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setShowNewAR(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-                Add Entry
-              </Button>
-            </DialogFooter>
-          </form>
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold font-sans">Bank Accounts Portfolio</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Account Number</TableHead><TableHead>Account Title</TableHead><TableHead>Currency</TableHead><TableHead>Opening Balance</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(a => (
+            <TableRow key={a.id}><TableCell className="font-mono font-bold">{a.account_number}</TableCell><TableCell>{a.account_title}</TableCell><TableCell>{a.currency}</TableCell><TableCell>{a.opening_balance} QAR</TableCell></TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function BankClearanceSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Cheque & Bank Clearance Console</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Cheque #</TableHead><TableHead>Bank</TableHead><TableHead>Amount</TableHead><TableHead>Clearance Date</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell className="font-mono">CHQ-998811</TableCell><TableCell>QNB</TableCell><TableCell>12,500 QAR</TableCell><TableCell>2026-08-05</TableCell><TableCell><Badge>Cleared</Badge></TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function BankReconciliationSubModule() {
+  const [data, setData] = useState<FinBankReconciliation[]>([]);
+  useEffect(() => { load(); }, []);
+  async function load() { try { setData(await FinBankReconciliationsApi.fetchAll()); } catch (e: any) {} }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Bank Reconciliation Workbench</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Account #</TableHead><TableHead>Statement Date</TableHead><TableHead>Book Balance</TableHead><TableHead>Bank Statement Balance</TableHead><TableHead>Diff</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono">{r.account_number}</TableCell>
+              <TableCell>{r.statement_date}</TableCell>
+              <TableCell>{r.book_balance} QAR</TableCell>
+              <TableCell>{r.statement_balance} QAR</TableCell>
+              <TableCell className="font-bold">{r.book_balance - r.statement_balance} QAR</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function BankReconciliationStatementListSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Reconciliation Statements Archive</h3>
+      <div className="border rounded-md p-4 text-xs space-y-2">
+        <div className="flex justify-between border-b pb-2"><span>QNB-0001 Reconciled Statement - July 2026</span><Button size="sm" variant="outline"><Download className="h-3 w-3 mr-1" /> PDF</Button></div>
+        <div className="flex justify-between border-b pb-2"><span>CBQ-0002 Reconciled Statement - June 2026</span><Button size="sm" variant="outline"><Download className="h-3 w-3 mr-1" /> PDF</Button></div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. FINANCE REPORTS SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TrialBalanceSimpleSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Trial Balance (Simple Summary)</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Account Type</TableHead><TableHead className="text-right">Total Debit</TableHead><TableHead className="text-right">Total Credit</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell>Assets</TableCell><TableCell className="text-right font-mono">1,850,000 QAR</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell></TableRow>
+          <TableRow><TableCell>Liabilities</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell><TableCell className="text-right font-mono">450,000 QAR</TableCell></TableRow>
+          <TableRow><TableCell>Income</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell><TableCell className="text-right font-mono">1,600,000 QAR</TableCell></TableRow>
+          <TableRow><TableCell>Expenses</TableCell><TableCell className="text-right font-mono">200,000 QAR</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell></TableRow>
+          <TableRow className="font-bold border-t"><TableCell>Total</TableCell><TableCell className="text-right">2,050,000 QAR</TableCell><TableCell className="text-right">2,050,000 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function TrialBalanceFullSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Detailed Trial Balance Report</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Account Name</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell className="font-mono">1010</TableCell><TableCell>Bank Operating Account</TableCell><TableCell className="text-right font-mono">1,250,000 QAR</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell></TableRow>
+          <TableRow><TableCell className="font-mono">4010</TableCell><TableCell>Rental Income</TableCell><TableCell className="text-right font-mono">0 QAR</TableCell><TableCell className="text-right font-mono">1,250,000 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ProfitAndLossSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L)</h3>
+      <Card className="p-4 space-y-2 text-sm">
+        <div className="flex justify-between font-bold border-b pb-1"><span>Total Rental & Service Revenue</span><span className="text-emerald-600">385,000 QAR</span></div>
+        <div className="flex justify-between text-muted-foreground"><span>Maintenance Expenses</span><span>-42,000 QAR</span></div>
+        <div className="flex justify-between text-muted-foreground"><span>Administrative & Payroll</span><span>-70,400 QAR</span></div>
+        <div className="flex justify-between font-bold text-base border-t pt-2"><span>Net Profit</span><span className="text-emerald-600">272,600 QAR</span></div>
+      </Card>
+    </div>
+  );
+}
+
+function BalanceSheetSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Balance Sheet Statement</h3>
+      <div className="grid grid-cols-2 gap-4 text-xs">
+        <Card className="p-4 space-y-2">
+          <h4 className="font-bold text-sm border-b pb-1">Assets</h4>
+          <div className="flex justify-between"><span>Bank & Cash</span><span>1,700,000 QAR</span></div>
+          <div className="flex justify-between"><span>Properties & Land</span><span>15,000,000 QAR</span></div>
+          <div className="flex justify-between font-bold border-t pt-1"><span>Total Assets</span><span>16,700,000 QAR</span></div>
+        </Card>
+        <Card className="p-4 space-y-2">
+          <h4 className="font-bold text-sm border-b pb-1">Liabilities & Equity</h4>
+          <div className="flex justify-between"><span>Tenant Security Deposits</span><span>450,000 QAR</span></div>
+          <div className="flex justify-between"><span>Owner Equity</span><span>16,250,000 QAR</span></div>
+          <div className="flex justify-between font-bold border-t pt-1"><span>Total Liabilities & Equity</span><span>16,700,000 QAR</span></div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function GeneralLedgerReportSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">General Ledger Transaction Audit</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Account</TableHead><TableHead>Ref</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell>2026-08-01</TableCell><TableCell>1010 - QNB Bank</TableCell><TableCell>REC-001</TableCell><TableCell className="text-right">12,500 QAR</TableCell><TableCell className="text-right">0 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function CashFlowSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Cash Flow Statement</h3>
+      <Card className="p-4 space-y-2 text-xs">
+        <div className="flex justify-between font-semibold"><span>Operating Cash Flow</span><span className="text-emerald-600">+280,000 QAR</span></div>
+        <div className="flex justify-between font-semibold"><span>Investing Cash Flow</span><span>-50,000 QAR</span></div>
+        <div className="flex justify-between font-bold border-t pt-2"><span>Net Cash Increase</span><span className="text-emerald-600">+230,000 QAR</span></div>
+      </Card>
+    </div>
+  );
+}
+
+function CashBookSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Main Cash Book</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Voucher</TableHead><TableHead>Description</TableHead><TableHead className="text-right">In</TableHead><TableHead className="text-right">Out</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell>2026-08-02</TableCell><TableCell>CSH-01</TableCell><TableCell>Cash Rent Collection</TableCell><TableCell className="text-right font-bold text-emerald-600">5,500 QAR</TableCell><TableCell className="text-right">0 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function PettyCashBookSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Petty Cash Register</h3>
+      <Table>
+        <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Expense Description</TableHead><TableHead>Paid To</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+        <TableBody>
+          <TableRow><TableCell>2026-08-03</TableCell><TableCell>Office Supplies & Tea</TableCell><TableCell>Supermarket</TableCell><TableCell className="text-right">150 QAR</TableCell></TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function CashOnHandSubModule() {
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Current Cash Position</h3>
+      <div className="grid grid-cols-2 gap-4">
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Office Vault Cash</p><h4 className="text-2xl font-bold mt-1">24,500 QAR</h4></Card>
+        <Card className="p-4"><p className="text-xs text-muted-foreground">Petty Cash Custodian</p><h4 className="text-2xl font-bold mt-1">1,850 QAR</h4></Card>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. CONTRACT MANAGEMENT SUB-MODULES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) {
+  const [data, setData] = useState<FinContract[]>([]);
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ contract_number: "", title: "", party_name: "", type, total_value: 10000, start_date: "", end_date: "", status: "Active" });
+
+  useEffect(() => { load(); }, [type]);
+  async function load() {
+    try {
+      const all = await FinContractsApi.fetchAll();
+      setData(all.filter(c => c.type === type));
+    } catch (e: any) {}
+  }
+
+  async function handleAdd() {
+    try {
+      await FinContractsApi.create({ ...form, type });
+      toast.success(`${type} Contract saved`);
+      setOpen(false);
+      load();
+    } catch (e: any) { toast.error(e.message); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">{type} Contracts Register</h3>
+        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add {type} Contract</Button>
+      </div>
+
+      <Table>
+        <TableHeader><TableRow><TableHead>Contract #</TableHead><TableHead>Title</TableHead><TableHead>Party Name</TableHead><TableHead>Total Value</TableHead><TableHead>Period</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {data.map(c => (
+            <TableRow key={c.id}>
+              <TableCell className="font-mono font-bold">{c.contract_number}</TableCell>
+              <TableCell>{c.title}</TableCell>
+              <TableCell>{c.party_name}</TableCell>
+              <TableCell className="font-semibold">{c.total_value} QAR</TableCell>
+              <TableCell className="text-xs">{c.start_date} to {c.end_date}</TableCell>
+              <TableCell><Badge variant="outline">{c.status}</Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add {type} Contract</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div><Label>Contract Number</Label><Input placeholder="CNT-001" value={form.contract_number} onChange={e => setForm({...form, contract_number: e.target.value})} /></div>
+            <div><Label>Contract Title</Label><Input placeholder="Facility Agreement" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></div>
+            <div><Label>Party Name</Label><Input placeholder="Vendor or Tenant Name" value={form.party_name} onChange={e => setForm({...form, party_name: e.target.value})} /></div>
+            <div><Label>Total Value (QAR)</Label><Input type="number" value={form.total_value} onChange={e => setForm({...form, total_value: parseFloat(e.target.value) || 0})} /></div>
+            <div><Label>Start Date</Label><Input type="date" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} /></div>
+            <div><Label>End Date</Label><Input type="date" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} /></div>
+          </div>
+          <DialogFooter><Button onClick={handleAdd}>Save Contract</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

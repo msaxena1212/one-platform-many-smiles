@@ -99,7 +99,7 @@ function HostDashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Welcome back, {hostName}</h1>
           <p className="text-muted-foreground mt-2">Manage your properties and reservations.</p>
         </div>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => alert("Create property coming soon!")}>
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => navigate({ to: "/prop-mgr/properties" })}>
           <Plus className="mr-2 h-4 w-4" /> New property
         </Button>
       </div>
