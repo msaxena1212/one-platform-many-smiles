@@ -648,7 +648,7 @@ function JournalLedgerSubModule() {
 }
 
 function CreditDebitBuilderSubModule() {
-  const [lines, setLines] = useState([{ account: "", debit: 0, credit: 0 }]);
+  const [lines, setLines] = useState([{ account: "PDC In Hand", debit: 0, credit: 0 }]);
   const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
 
