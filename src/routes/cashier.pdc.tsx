@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, type ElementType } from "react";
+import { useState, useEffect, type ElementType } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, CreditCard, Building2, AlertCircle, CheckCircle2, Clock, Wifi } from "lucide-react";
+import { Search, CreditCard, Building2, AlertCircle, CheckCircle2, Clock, Wifi, Loader2 } from "lucide-react";
 import { useAppData, type PmsPdc } from "@/lib/app-data-context";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/cashier/pdc")({
   head: () => ({ meta: [{ title: "PDC Management - ZYNO Property Management" }] }),
@@ -41,7 +42,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function normalizeStatus(status?: string) {
   const value = (status || "").trim().toLowerCase();
-  if (value === "received" || value === "in hand" || value === "held") return "In Hand";
+  if (value === "received" || value === "in hand" || value === "held" || value === "issued") return "In Hand";
   if (value === "deposited") return "deposited";
   if (value === "cleared") return "cleared";
   if (value === "bounced") return "bounced";
@@ -64,25 +65,47 @@ function formatQAR(amount?: number) {
 }
 
 function CashierPDCs() {
-  const { pdcs, leases, setPdcs, syncing } = useAppData();
+  const { leases } = useAppData();
+  const [dbPdcs, setDbPdcs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  const rows = pdcs.map((pdc) => {
-    const lease = leases.find((item) => item.id === pdc.leaseId);
+  useEffect(() => {
+    async function loadDbPdcs() {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.from('pdcs').select('*').order('sl_no', { ascending: true });
+        if (!error && data && data.length > 0) {
+          setDbPdcs(data);
+        }
+      } catch {
+        // Fallback
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadDbPdcs();
+  }, []);
+
+  const rows = dbPdcs.map((pdc) => {
     return {
-      ...pdc,
-      tenantName: lease?.tenantName || "-",
-      unitName: lease?.unit || "-",
-      propertyName: lease?.property || "-",
-      leaseStart: lease?.startDate,
-      leaseEnd: lease?.endDate,
-      effectiveStatus: normalizeStatus(pdc.status),
+      id: pdc.id,
+      chequeNo: pdc.cheque_number || "-",
+      bank: pdc.bank || "-",
+      date: pdc.maturity_date || pdc.deposit_date || "-",
+      amount: Number(pdc.amount) || 0,
+      status: pdc.status || pdc.status_pdc || "In Hand",
+      tenantName: pdc.tenant_name || "-",
+      unitName: pdc.unit_name || "-",
+      propertyName: pdc.property_code || "-",
+      effectiveStatus: normalizeStatus(pdc.status || pdc.status_pdc),
     };
   });
 
-  function handleMark(id: string, status: PmsPdc["status"]) {
-    setPdcs((previous) => previous.map((pdc) => (pdc.id === id ? { ...pdc, status } : pdc)));
+  function handleMark(id: string, newStatus: string) {
+    setDbPdcs((prev) => prev.map((p) => (p.id === id ? { ...p, status: newStatus, status_pdc: newStatus } : p)));
+    supabase.from('pdcs').update({ status: newStatus, status_pdc: newStatus }).eq('id', id).then();
   }
 
   const statuses = ["all", ...Array.from(new Set(rows.map((row) => row.effectiveStatus)))];
@@ -90,11 +113,11 @@ function CashierPDCs() {
     const query = search.toLowerCase();
     const matchesSearch =
       !query ||
-      row.chequeNo.toLowerCase().includes(query) ||
-      row.tenantName.toLowerCase().includes(query) ||
-      row.unitName.toLowerCase().includes(query) ||
-      row.propertyName.toLowerCase().includes(query) ||
-      row.bank.toLowerCase().includes(query);
+      (row.chequeNo || "").toLowerCase().includes(query) ||
+      (row.tenantName || "").toLowerCase().includes(query) ||
+      (row.unitName || "").toLowerCase().includes(query) ||
+      (row.propertyName || "").toLowerCase().includes(query) ||
+      (row.bank || "").toLowerCase().includes(query);
     const matchesStatus = filterStatus === "all" || row.effectiveStatus === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -102,7 +125,7 @@ function CashierPDCs() {
   const totalAmount = filtered.reduce((sum, row) => sum + row.amount, 0);
   const inHandCount = filtered.filter((row) => row.effectiveStatus === "In Hand").length;
   const depositedCount = filtered.filter((row) => row.effectiveStatus === "deposited" || row.effectiveStatus === "cleared").length;
-  const dueCount = filtered.filter((row) => row.effectiveStatus === "In Hand" && new Date(row.date) <= TODAY).length;
+  const dueCount = filtered.filter((row) => row.effectiveStatus === "In Hand" && row.date && new Date(row.date) <= TODAY).length;
 
   return (
     <div className="space-y-6">

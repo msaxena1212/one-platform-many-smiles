@@ -1040,6 +1040,29 @@ export type ERPChartOfAccount = {
   code: string;
   name: string;
   type: string;
+  type_code?: string;
+  type_name?: string;
+  group_code?: string;
+  group_name?: string;
+  class_code?: string;
+  class_name?: string;
+  gl_code?: string;
+  gl_name?: string;
+  sl_code?: string;
+  sl_name?: string;
+  created_at: string;
+};
+
+export type UnitCOA = {
+  id: string;
+  property_name: string;
+  unit_code: string;
+  pdc_in_hand_code: string;
+  pdc_in_hand_name: string;
+  deposit_code: string;
+  deposit_name: string;
+  receivables_code: string;
+  receivables_name: string;
   created_at: string;
 };
 
@@ -1070,6 +1093,12 @@ export async function fetchERPChartOfAccounts() {
   const { data, error } = await supabase.from('erp_chart_of_accounts').select('*').order('code');
   if (error) throw error;
   return data as ERPChartOfAccount[];
+}
+
+export async function fetchUnitCOAs() {
+  const { data, error } = await supabase.from('unit_coas').select('*').order('unit_code');
+  if (error) throw error;
+  return data as UnitCOA[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {

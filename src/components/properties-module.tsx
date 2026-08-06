@@ -48,6 +48,8 @@ type PropertyFormState = {
   cost_center_name: string;
   property_category: string;
   ownership_type: string;
+  no_of_units: string;
+  total_units: string;
 };
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -71,6 +73,8 @@ const EMPTY_FORM: PropertyFormState = {
   cost_center_name: "",
   property_category: "",
   ownership_type: "",
+  no_of_units: "",
+  total_units: "",
 };
 
 export function PropertiesModule({ role }: PropertiesModuleProps) {
@@ -187,6 +191,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           costCenterName: form.cost_center_name,
           propertyCategory: form.property_category,
           ownershipType: form.ownership_type,
+          noOfUnits: form.no_of_units || form.total_units,
+          totalUnits: form.total_units || form.no_of_units,
         }) as Omit<Property, "id" | "created_at" | "property_images">,
       );
 
@@ -447,6 +453,22 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   }))
                 }
                 placeholder="Freehold / Leasehold"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Count of Units (Total Units)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={form.total_units || form.no_of_units}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    total_units: e.target.value,
+                    no_of_units: e.target.value,
+                  }))
+                }
+                placeholder="e.g. 10"
               />
             </div>
             <div className="space-y-2">

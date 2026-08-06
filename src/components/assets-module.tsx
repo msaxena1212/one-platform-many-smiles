@@ -44,7 +44,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   });
   const [propertyDialogOpen, setPropertyDialogOpen] = useState(false);
   const [propertyDialogMode, setPropertyDialogMode] = useState<"create" | "edit">("create");
-  const [propertyForm, setPropertyForm] = useState({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+  const [propertyForm, setPropertyForm] = useState({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0", no_of_units: "" });
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
   const [unitDialogMode, setUnitDialogMode] = useState<"create" | "edit">("create");
   const [unitForm, setUnitForm] = useState({ property_id: "", unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
@@ -128,6 +128,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
           bathrooms: Number(propertyForm.bathrooms) || 1,
           base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
           cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
+          no_of_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
+          total_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
         });
         setProperties((items) => items.map((item) => (item.id === saved.id ? saved : item)));
       } else {
@@ -146,6 +148,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
           bathrooms: Number(propertyForm.bathrooms) || 1,
           base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
           cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
+          no_of_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
+          total_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
           is_active: true,
           room_details: {},
           amenities: [],
@@ -154,7 +158,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       }
       setForm((f) => ({ ...f, assigned_property_id: saved.id, assigned_unit_id: "" }));
       setPropertyDialogOpen(false);
-      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0", no_of_units: "" });
       await load();
     } catch (err: any) {
       console.error(err);
@@ -495,6 +499,10 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="propUnits" className="text-right">Units Count</Label>
+              <Input id="propUnits" type="number" min="0" className="col-span-3" placeholder="e.g. 10" value={propertyForm.no_of_units} onChange={e => setPropertyForm(f => ({ ...f, no_of_units: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>

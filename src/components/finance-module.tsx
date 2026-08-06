@@ -18,7 +18,8 @@ import {
 import {
   fetchJournalEntries, fetchReceipts, fetchARLedgers, fetchGLAccounts,
   createJournalEntry, createReceipt, createAREntry, settleAREntry, createGLAccount,
-  type JournalEntry, type Receipt, type ARLedger, type GLAccount
+  fetchERPChartOfAccounts, fetchUnitCOAs,
+  type JournalEntry, type Receipt, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA
 } from "@/lib/supabase";
 import {
   FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
@@ -578,44 +579,304 @@ function PostingPeriodSubModule() {
 }
 
 function ChartOfAccountsSubModule() {
-  const [data, setData] = useState<GLAccount[]>([]);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "", name_en: "", type: "asset" as const, currency: "QAR", is_postable: true });
+  const [erpAccounts, setErpAccounts] = useState<ERPChartOfAccount[]>([]);
+  const [unitCoas, setUnitCoas] = useState<UnitCOA[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'master' | 'units'>('master');
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
-  useEffect(() => { load(); }, []);
-  async function load() { try { setData(await fetchGLAccounts()); } catch (e: any) {} }
-  async function handleCreate() {
-    try { await createGLAccount(form); toast.success("Account created"); setOpen(false); load(); } catch (e: any) { toast.error(e.message); }
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", type: "Assets", type_code: "1", group_name: "Current Assets", class_name: "Accounts Receivables", gl_name: "Tenant Receivables" });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [accs, uCoas] = await Promise.all([
+        fetchERPChartOfAccounts(),
+        fetchUnitCOAs()
+      ]);
+      setErpAccounts(accs || []);
+      setUnitCoas(uCoas || []);
+    } catch (e: any) {
+      toast.error("Failed to load Chart of Accounts: " + e.message);
+    } finally {
+      setLoading(false);
+    }
   }
+
+  async function handleCreate() {
+    try {
+      await createGLAccount({ code: form.code, name_en: form.name, type: form.type.toLowerCase() as any });
+      toast.success("Account created successfully!");
+      setOpen(false);
+      loadData();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  // Filter Master COA
+  const filteredMaster = erpAccounts.filter(acc => {
+    const matchesType = typeFilter === "all" || (acc.type || "").toLowerCase() === typeFilter.toLowerCase();
+    const q = search.toLowerCase();
+    const matchesSearch = !search ||
+      (acc.code || "").toLowerCase().includes(q) ||
+      (acc.name || "").toLowerCase().includes(q) ||
+      (acc.gl_name || "").toLowerCase().includes(q) ||
+      (acc.class_name || "").toLowerCase().includes(q) ||
+      (acc.group_name || "").toLowerCase().includes(q);
+    return matchesType && matchesSearch;
+  });
+
+  // Filter Unit COAs
+  const filteredUnits = unitCoas.filter(u => {
+    const q = search.toLowerCase();
+    return !search ||
+      (u.property_name || "").toLowerCase().includes(q) ||
+      (u.unit_code || "").toLowerCase().includes(q) ||
+      (u.pdc_in_hand_code || "").toLowerCase().includes(q) ||
+      (u.pdc_in_hand_name || "").toLowerCase().includes(q) ||
+      (u.deposit_code || "").toLowerCase().includes(q) ||
+      (u.deposit_name || "").toLowerCase().includes(q) ||
+      (u.receivables_code || "").toLowerCase().includes(q) ||
+      (u.receivables_name || "").toLowerCase().includes(q);
+  });
+
+  const totalMasterPages = Math.ceil(filteredMaster.length / pageSize) || 1;
+  const paginatedMaster = filteredMaster.slice((page - 1) * pageSize, page * pageSize);
+
+  const totalUnitPages = Math.ceil(filteredUnits.length / pageSize) || 1;
+  const paginatedUnits = filteredUnits.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-sm font-semibold">Chart of Accounts</h3>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add GL Account</Button>
-      </div>
-      <Table>
-        <TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Account Name</TableHead><TableHead>Type</TableHead><TableHead>Postable</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {data.map(acc => (
-            <TableRow key={acc.id}>
-              <TableCell className="font-mono font-bold">{acc.code}</TableCell>
-              <TableCell>{acc.name_en}</TableCell>
-              <TableCell className="capitalize"><Badge variant="outline">{acc.type}</Badge></TableCell>
-              <TableCell>{acc.is_postable ? "Yes" : "No"}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      {/* Header controls */}
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
+        <div>
+          <h3 className="text-lg font-bold tracking-tight">Chart of Accounts (COA) & Sub-Ledgers</h3>
+          <p className="text-xs text-muted-foreground">
+            Total {erpAccounts.length} GL / SL accounts and {unitCoas.length} unit-level COA mappings configured.
+          </p>
+        </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex bg-muted p-1 rounded-md text-xs font-medium">
+            <button
+              onClick={() => { setTab('master'); setPage(1); }}
+              className={`px-3 py-1.5 rounded-sm transition-all ${tab === 'master' ? 'bg-background text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Master COA ({erpAccounts.length})
+            </button>
+            <button
+              onClick={() => { setTab('units'); setPage(1); }}
+              className={`px-3 py-1.5 rounded-sm transition-all ${tab === 'units' ? 'bg-background text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Unit AC Codes ({unitCoas.length})
+            </button>
+          </div>
+
+          <Button size="sm" onClick={() => setOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" /> Add Account
+          </Button>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={tab === 'master' ? "Search code, name, class..." : "Search property, unit, COA code..."}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="pl-9 text-sm"
+          />
+        </div>
+
+        {tab === 'master' && (
+          <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
+            {['all', 'Assets', 'Liabilities', 'Capital', 'Revenue', 'Expenditure'].map(t => (
+              <Badge
+                key={t}
+                variant={typeFilter.toLowerCase() === t.toLowerCase() ? "default" : "outline"}
+                className="cursor-pointer capitalize text-xs px-3 py-1"
+                onClick={() => { setTypeFilter(t); setPage(1); }}
+              >
+                {t}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Tables View */}
+      {loading ? (
+        <div className="flex items-center justify-center p-12 text-muted-foreground gap-2">
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading Chart of Accounts...
+        </div>
+      ) : tab === 'master' ? (
+        <div className="border rounded-lg overflow-hidden bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead className="font-bold">Code / SL</TableHead>
+                <TableHead className="font-bold">Account Name</TableHead>
+                <TableHead className="font-bold">Type</TableHead>
+                <TableHead className="font-bold">Group</TableHead>
+                <TableHead className="font-bold">Class / GL</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedMaster.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    No Chart of Accounts found matching search criteria.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedMaster.map(acc => (
+                  <TableRow key={acc.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-mono font-bold text-primary">{acc.code}</TableCell>
+                    <TableCell className="font-medium">{acc.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`capitalize text-xs font-semibold ${
+                        (acc.type || '').toLowerCase().includes('asset') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        (acc.type || '').toLowerCase().includes('liab') ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        (acc.type || '').toLowerCase().includes('cap') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        (acc.type || '').toLowerCase().includes('rev') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                        'bg-purple-50 text-purple-700 border-purple-200'
+                      }`}>
+                        {acc.type_name || acc.type || 'N/A'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{acc.group_name || 'N/A'}</TableCell>
+                    <TableCell className="text-xs">
+                      <div className="font-medium">{acc.gl_name || acc.class_name || 'N/A'}</div>
+                      {acc.gl_code && <div className="text-[10px] text-muted-foreground font-mono">GL: {acc.gl_code}</div>}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="border rounded-lg overflow-hidden bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead className="font-bold">Property Name</TableHead>
+                <TableHead className="font-bold">Unit Code</TableHead>
+                <TableHead className="font-bold">PDC In Hand (Code & SL)</TableHead>
+                <TableHead className="font-bold">Deposit (Code & SL)</TableHead>
+                <TableHead className="font-bold">Receivables (Code & SL)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedUnits.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    No Unit AC Codes found matching search criteria.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedUnits.map(u => (
+                  <TableRow key={u.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-medium">{u.property_name || 'N/A'}</TableCell>
+                    <TableCell><Badge variant="secondary" className="font-mono font-semibold">{u.unit_code}</Badge></TableCell>
+                    <TableCell className="text-xs">
+                      <span className="font-mono font-bold text-blue-600 mr-1.5">{u.pdc_in_hand_code}</span>
+                      <span className="text-muted-foreground">{u.pdc_in_hand_name}</span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <span className="font-mono font-bold text-amber-600 mr-1.5">{u.deposit_code}</span>
+                      <span className="text-muted-foreground">{u.deposit_name}</span>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <span className="font-mono font-bold text-emerald-600 mr-1.5">{u.receivables_code}</span>
+                      <span className="text-muted-foreground">{u.receivables_name}</span>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Pagination Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-muted-foreground gap-3 pt-2">
+        <div>
+          Showing {tab === 'master' ? (
+            `${Math.min((page - 1) * pageSize + 1, filteredMaster.length)} - ${Math.min(page * pageSize, filteredMaster.length)} of ${filteredMaster.length} Accounts`
+          ) : (
+            `${Math.min((page - 1) * pageSize + 1, filteredUnits.length)} - ${Math.min(page * pageSize, filteredUnits.length)} of ${filteredUnits.length} Units`
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={page <= 1}
+            onClick={() => setPage(p => p - 1)}
+          >
+            Previous
+          </Button>
+          <span className="font-medium px-2 text-foreground">
+            Page {page} of {tab === 'master' ? totalMasterPages : totalUnitPages}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={page >= (tab === 'master' ? totalMasterPages : totalUnitPages)}
+            onClick={() => setPage(p => p + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+
+      {/* Create Account Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Account</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Add New Chart of Account</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3 py-2">
-            <div><Label>Code</Label><Input placeholder="1010" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><Label>Name</Label><Input placeholder="Petty Cash Fund" value={form.name_en} onChange={e => setForm({...form, name_en: e.target.value})} /></div>
+            <div>
+              <Label>Account Code</Label>
+              <Input placeholder="e.g. 12413999" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
+            </div>
+            <div>
+              <Label>Account Name / SL Name</Label>
+              <Input placeholder="e.g. Receivables - Unit 101" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div>
+              <Label>Account Type</Label>
+              <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Assets">Assets</SelectItem>
+                  <SelectItem value="Liabilities">Liabilities</SelectItem>
+                  <SelectItem value="Capital">Capital</SelectItem>
+                  <SelectItem value="Revenue">Revenue</SelectItem>
+                  <SelectItem value="Expenditure">Expenditure</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <DialogFooter><Button onClick={handleCreate}>Save Account</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate}>Save Account</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -7,5 +7,6 @@ export const Route = createFileRoute("/admin/manage/$id")({
 });
 
 function AdminManageProperty() {
-  return <ManagePropertyPage basePath="/admin" />;
+  const { id } = Route.useParams();
+  return <ManagePropertyPage basePath="/admin" id={id} />;
 }

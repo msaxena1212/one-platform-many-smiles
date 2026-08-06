@@ -444,6 +444,7 @@ export function ManagePropertyPage({
       propertyManager,
       noOfFloors,
       noOfUnits,
+      totalUnits: noOfUnits,
       totalBuiltUpAreaSqm,
       commonAreaSqm,
       parkingCount,
@@ -833,8 +834,8 @@ export function ManagePropertyPage({
                   <Input value={noOfFloors} onChange={e => setNoOfFloors(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>No. of Units</Label>
-                  <Input value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} />
+                  <Label>Count of Units (Total Units)</Label>
+                  <Input type="number" min="0" value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} placeholder="e.g. 10" />
                 </div>
                 <div className="space-y-2">
                   <Label>Total Built-up Area Sqm</Label>
