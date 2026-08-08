@@ -779,13 +779,30 @@ function LeasingPage() {
       remarks: reservationForm.remarks,
     };
     
-    // Persist reservation to backend
+    // Persist reservation to backend (map UI model → DB schema)
     try {
-      await persistReservation(reservation);
+      const now = new Date().toISOString();
+      await persistReservation({
+        id: reservation.id,
+        prospect_name: reservation.tenantName,
+        prospect_contact: "",
+        proposed_rental_amount: reservation.rent,
+        expected_start_date: reservation.startDate,
+        reservation_validity: reservation.validUntil,
+        special_conditions: reservation.remarks,
+        marketing_agent_id: reservation.agent || undefined,
+        proposed_lease_period: reservation.proposedLeasePeriod
+          ? Number(reservation.proposedLeasePeriod)
+          : undefined,
+        status: "Reserved",
+        created_at: now,
+        updated_at: now,
+      });
     } catch (error) {
       console.error("Failed to persist reservation:", error);
       throw error;
     }
+
     
     // Update UI state
     setReservations((items) => [reservation, ...items]);

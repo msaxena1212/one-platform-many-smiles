@@ -196,7 +196,17 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       alert(`Failed to save unit: ${err.message}`);
     }
   }
-  const searched = searchQuery ? filtered.filter(a => a.asset_code?.toLowerCase().includes(searchQuery.toLowerCase()) || a.asset_name.toLowerCase().includes(searchQuery.toLowerCase())) : filtered;
+  const searched = searchQuery ? filtered.filter(a => 
+    a.asset_code?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    a.asset_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.assigned_property_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.assigned_unit_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.assigned_employee_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    a.properties?.title?.toLowerCase().includes(searchQuery.toLowerCase())
+  ) : filtered;
 
   return (
     <div className="space-y-6">
@@ -208,35 +218,49 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         <div className="flex gap-2">
           {role === 'admin' && (
              <>
-               <Button variant="outline" onClick={handleExport} className="gap-2"><FileDown className="h-4 w-4" /> Export</Button>
-               <Button variant="outline" onClick={handleImport} className="gap-2"><FileUp className="h-4 w-4" /> Sync / Import</Button>
-             </>
+              <Button variant="outline" onClick={handleExport} className="gap-2">
+                <FileDown className="h-4 w-4" /> Export
+              </Button>
+              <Button variant="outline" onClick={handleImport} className="gap-2">
+                <FileUp className="h-4 w-4" /> Import
+              </Button>
+            </>
           )}
-          <Button onClick={() => setShowNew(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Add Asset
+          <Button onClick={() => setShowNew(true)} className="gap-2">
+            <Plus className="h-4 w-4" /> Add Asset
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 mb-8">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Assets</CardTitle>
-            <Package className="h-4 w-4 text-primary" />
+            <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{assets.length}</div>
-            <p className="text-xs text-muted-foreground">Registered in system</p>
+            <p className="text-xs text-muted-foreground">Tracked in system</p>
           </CardContent>
         </Card>
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Available</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{assets.filter(a => a.asset_status === 'Available').length}</div>
             <p className="text-xs text-muted-foreground">Ready for assignment</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Assigned</CardTitle>
+            <Building2 className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{assets.filter(a => a.asset_status === 'Assigned').length}</div>
+            <p className="text-xs text-muted-foreground">In active deployment</p>
           </CardContent>
         </Card>
         <Card className="border-border">
@@ -262,7 +286,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                 <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
               </TabsList>
               <Input
-                placeholder="Search by barcode or name..."
+                placeholder="Search by code, name, property, unit..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="max-w-xs"
@@ -287,8 +311,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   <thead>
                     <tr className="border-b bg-muted/30">
                       <th className="h-12 px-4 font-medium">Asset Name & Code</th>
-                      <th className="h-12 px-4 font-medium">Category</th>
-                      <th className="h-12 px-4 font-medium">Assignment</th>
+                      <th className="h-12 px-4 font-medium">Category / Brand</th>
+                      <th className="h-12 px-4 font-medium">Property & Unit Assignment</th>
                       <th className="h-12 px-4 font-medium">Purchase Value</th>
                       <th className="h-12 px-4 font-medium">Status</th>
                       <th className="h-12 px-4 font-medium text-right">Actions</th>
@@ -304,20 +328,31 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
-                            {asset.category}
-                          </span>
+                          <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
+                            {asset.category || 'General'}
+                          </div>
+                          {asset.brand && <div className="text-xs text-muted-foreground mt-1">{asset.brand} {asset.model ? `- ${asset.model}` : ''}</div>}
                         </td>
                         <td className="p-4">
-                          {asset.properties?.title ? (
-                            <div className="flex items-center gap-1 text-sm"><Building2 className="h-3 w-3"/> {asset.properties.title}</div>
-                          ) : asset.employees?.first_name ? (
-                            <div className="text-sm">{asset.employees.first_name} {asset.employees.last_name}</div>
+                          {asset.properties?.title || asset.assigned_property_code ? (
+                            <div>
+                              <div className="flex items-center gap-1 text-sm font-medium">
+                                <Building2 className="h-3 w-3 text-primary"/>
+                                {asset.assigned_property_code || asset.properties?.title}
+                              </div>
+                              {(asset.assigned_unit_code || asset.units?.unit_code) && (
+                                <div className="text-xs text-muted-foreground ml-4">
+                                  Unit: <span className="font-semibold text-foreground">{asset.assigned_unit_code || asset.units?.unit_code}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : asset.employees?.first_name || asset.assigned_employee_name ? (
+                            <div className="text-sm">{asset.assigned_employee_name || `${asset.employees?.first_name} ${asset.employees?.last_name}`}</div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
-                        <td className="p-4">${asset.purchase_cost?.toLocaleString()}</td>
+                        <td className="p-4 font-medium">QAR {asset.purchase_cost ? Number(asset.purchase_cost).toLocaleString() : '0'}</td>
                         <td className="p-4">
                           <Select
                             value={asset.asset_status?.toLowerCase()}

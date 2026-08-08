@@ -1,0 +1,330 @@
+<USER_REQUEST>
+Ensure all below mentioned details are updated:
+
+Unit AC Codes:
+Property Name	Unit Code	PDC In Hand	SL Name	Deposit	SL Name	Receivables	SL Name
+Old Salata - Bldg23	AAA - GF1	21400001	PDC - AAA - GF-1	21500001	Deposit - AAA - GF-1	12413001	Receivables - AAA - GF-1
+Old Salata - Bldg23	AAA - GF2	21400002	PDC - AAA - GF-2	21500002	Deposit - AAA - GF-2	12413002	Receivables - AAA - GF-2
+Old Salata - Bldg23	AAA - Flat11	21400003	PDC - AAA - FT:11	21500003	Deposit- AAA - FT:11	12413003	Receivables- AAA - FT:11
+Old Salata - Bldg23	AAA - Flat12	21400004	PDC - AAA - FT:12	21500004	Deposit- AAA - FT:12	12413004	Receivables- AAA - FT:12
+Old Salata - Bldg23	AAA - Flat13	21400005	PDC - AAA - FT:13	21500005	Deposit- AAA - FT:13	12413005	Receivables- AAA - FT:13
+Old Salata - Bldg23	AAA - Flat14	21400006	PDC - AAA - FT:14	21500006	Deposit- AAA - FT:14	12413006	Receivables- AAA - FT:14
+Old Salata - Bldg23	AAA - Flat15	21400007	PDC - AAA - FT:15	21500007	Deposit- AAA - FT:15	12413007	Receivables- AAA - FT:15
+Old Salata - Bldg23	AAA - Flat16	21400008	PDC - AAA - FT:16	21500008	Deposit- AAA - FT:16	12413008	Receivables- AAA - FT:16
+Old Salata - Bldg23	AAA - Flat21	21400009	PDC - AAA - FT:21	21500009	Deposit- AAA - FT:21	12413009	Receivables- AAA - FT:21
+Old Salata - Bldg23	AAA - Flat22	21400010	PDC - AAA - FT:22	21500010	Deposit- AAA - FT:22	12413010	Receivables- AAA - FT:22
+Old Salata - Bldg23	AAA - Flat23	21400011	PDC - AAA - FT:23	21500011	Deposit- AAA - FT:23	12413011	Receivables- AAA - FT:23
+Old Salata - Bldg23	AAA - Flat24	21400012	PDC - AAA - FT:24	21500012	Deposit- AAA - FT:24	12413012	Receivables- AAA - FT:24
+Old Salata - Bldg23	AAA - Flat25	21400013	PDC - AAA - FT:25	21500013	Deposit- AAA - FT:25	12413013	Receivables- AAA - FT:25
+Old Salata - Bldg23	AAA - Flat26	21400014	PDC - AAA - FT:26	21500014	Deposit- AAA - FT:26	12413014	Receivables- AAA - FT:26
+Old Salata - Bldg23	AAA - Flat31	21400015	PDC - AAA - FT:31	21500015	Deposit- AAA - FT:31	12413015	Receivables- AAA - FT:31
+Old Salata - Bldg23	AAA - Flat32	21400016	PDC - AAA - FT:32	21500016	Deposit- AAA - FT:32	12413016	Receivables- AAA - FT:32
+Old Salata - Bldg23	AAA - Flat33	21400017	PDC - AAA - FT:33	21500017	Deposit- AAA - FT:33	12413017	Receivables- AAA - FT:33
+Old Salata - Bldg23	AAA - Flat34	21400018	PDC - AAA - FT:34	21500018	Deposit- AAA - FT:34	12413018	Receivables- AAA - FT:34
+Old Salata - Bldg23	AAA - Flat35	21400019	PDC - AAA - FT:35	21500019	Deposit- AAA - FT:35	12413019	Receivables- AAA - FT:35
+Old Salata - Bldg23	AAA - Flat36	21400020	PDC - AAA - FT:36	21500020	Deposit- AAA - FT:36	12413020	Receivables- AAA - FT:36
+Old Salata - Bldg23	AAA - Flat41	21400021	PDC - AAA - FT:41	21500021	Deposit- AAA - FT:41	12413021	Receivables- AAA - FT:41
+Old Salata - Bldg23	AAA - Flat42	21400022	PDC - AAA - FT:42	21500022	Deposit- AAA - FT:42	12413022	Receivables- AAA - FT:42
+Old Salata - Bldg23	AAA - Flat43	21400023	PDC - AAA - FT:43	21500023	Deposit- AAA - FT:43	12413023	Receivables- AAA - FT:43
+Old Salata - Bldg23	AAA - Flat44	21400024	PDC - AAA - FT:44	21500024	Deposit- AAA - FT:44	12413024	Receivables- AAA - FT:44
+Old Salata - Bldg23	AAA - Flat45	21400025	PDC - AAA - FT:45	21500025	Deposit- AAA - FT:45	12413025	Receivables- AAA - FT:45
+Old Salata - Bldg23	AAA - Flat46	21400026	PDC - AAA - FT:46	21500026	Deposit- AAA - FT:46	12413026	Receivables- AAA - FT:46
+Old Salata - Bldg23	AAA - Flat51	21400027	PDC - AAA - FT:51	21500027	Deposit- AAA - FT:51	12413027	Receivables- AAA - FT:51
+Old Salata - Bldg23	AAA - Flat52	21400028	PDC - AAA - FT:52	21500028	Deposit- AAA - FT:52	12413028	Receivables- AAA - FT:52
+Old Salata - Bldg23	AAA - Flat53	21400029	PDC - AAA - FT:53	21500029	Deposit- AAA - FT:53	12413029	Receivables- AAA - FT:53
+Old Salata - Bldg23	AAA - Flat54	21400030	PDC - AAA - FT:54	21500030	Deposit- AAA - FT:54	12413030	Receivables- AAA - FT:54
+Old Salata - Bldg23	AAA - Flat55	21400031	PDC - AAA - FT:55	21500031	Deposit- AAA - FT:55	12413031	Receivables- AAA - FT:55
+Old Salata - Bldg23	AAA - Flat56	21400032	PDC - AAA - FT:56	21500032	Deposit- AAA - FT:56	12413032	Receivables- AAA - FT:56
+Old Salata - Bldg23	AAA - Flat61	21400033	PDC - AAA - FT:61	21500033	Deposit- AAA - FT:61	12413033	Receivables- AAA - FT:61
+Old Salata - Bldg23	AAA - Flat62	21400034	PDC - AAA - FT:62	21500034	Deposit- AAA - FT:62	12413034	Receivables- AAA - FT:62
+Old Salata - Bldg23	AAA - Flat63	21400035	PDC - AAA - FT:63	21500035	Deposit- AAA - FT:63	12413035	Receivables- AAA - FT:63
+Old Salata - Bldg23	AAA - Flat64	21400036	PDC - AAA - FT:64	21500036	Deposit- AAA - FT:64	12413036	Receivables- AAA - FT:64
+Old Salata - Bldg23	AAA - Flat65	21400037	PDC - AAA - FT:65	21500037	Deposit- AAA - FT:65	12413037	Receivables- AAA - FT:65
+Old Salata - Bldg23	AAA - Flat66	21400038	PDC - AAA - FT:66	21500038	Deposit- AAA - FT:66	12413038	Receivables- AAA - FT:66
+Old Salata - Bldg23	AAA - Flat71	21400039	PDC - AAA - FT:71	21500039	Deposit- AAA - FT:71	12413039	Receivables- AAA - FT:71
+Old Salata - Bldg23	AAA - Flat72	21400040	PDC - AAA - FT:72	21500040	Deposit- AAA - FT:72	12413040	Receivables- AAA - FT:72
+Old Salata - Bldg23	AAA - Flat73	21400041	PDC - AAA - FT:73	21500041	Deposit- AAA - FT:73	12413041	Receivables- AAA - FT:73
+Old Salata - Bldg23	AAA - Flat74	21400042	PDC - AAA - FT:74	21500042	Deposit- AAA - FT:74	12413042	Receivables- AAA - FT:74
+Old Salata - Bldg23	AAA - Flat75	21400043	PDC - AAA - FT:75	21500043	Deposit- AAA - FT:75	12413043	Receivables- AAA - FT:75
+Old Salata - Bldg23	AAA - Flat76	21400044	PDC - AAA - FT:76	21500044	Deposit- AAA - FT:76	12413044	Receivables- AAA - FT:76
+Old Salata - Bldg13	Old Salata 2 - Flat01	21400045	PDC - Old Salata 2 - FT:01	21500045	Deposit- Old Salata 2 - FT:01	12413045	Receivables- Old Salata 2 - FT:01
+Old Salata - Bldg13	Old Salata 2 - Flat02	21400046	PDC - Old Salata 2 - FT:02	21500046	Deposit- Old Salata 2 - FT:02	12413046	Receivables- Old Salata 2 - FT:02
+Old Salata - Bldg13	Old Salata 2 - Flat03	21400047	PDC - Old Salata 2 - FT:03	21500047	Deposit- Old Salata 2 - FT:03	12413047	Receivables- Old Salata 2 - FT:03
+Old Salata - Bldg13	Old Salata 2 - Flat04	21400048	PDC - Old Salata 2 - FT:04	21500048	Deposit- Old Salata 2 - FT:04	12413048	Receivables- Old Salata 2 - FT:04
+Old Salata - Bldg13	Old Salata 2 - Flat05	21400049	PDC - Old Salata 2 - FT:05	21500049	Deposit- Old Salata 2 - FT:05	12413049	Receivables- Old Salata 2 - FT:05
+Old Salata - Bldg13	Old Salata 2 - Flat06	21400050	PDC - Old Salata 2 - FT:06	21500050	Deposit- Old Salata 2 - FT:06	12413050	Receivables- Old Salata 2 - FT:06
+Old Salata - Bldg13	Old Salata 2 - Flat07	21400051	PDC - Old Salata 2 - FT:07	21500051	Deposit- Old Salata 2 - FT:07	12413051	Receivables- Old Salata 2 - FT:07
+Old Salata - Bldg13	Old Salata 2 - Flat08	21400052	PDC - Old Salata 2 - FT:08	21500052	Deposit- Old Salata 2 - FT:08	12413052	Receivables- Old Salata 2 - FT:08
+Old Salata - Bldg13	Old Salata 2 - Flat09	21400053	PDC - Old Salata 2 - FT:09	21500053	Deposit- Old Salata 2 - FT:09	12413053	Receivables- Old Salata 2 - FT:09
+Old Salata - Bldg13	Old Salata 2 - Flat10	21400054	PDC - Old Salata 2 - FT:10	21500054	Deposit- Old Salata 2 - FT:10	12413054	Receivables- Old Salata 2 - FT:10
+Old Salata - Bldg13	Old Salata 2 - Flat11	21400055	PDC - Old Salata 2 - FT:11	21500055	Deposit- Old Salata 2 - FT:11	12413055	Receivables- Old Salata 2 - FT:11
+Old Salata - Bldg13	Old Salata 2 - Flat12	21400056	PDC - Old Salata 2 - FT:12	21500056	Deposit- Old Salata 2 - FT:12	12413056	Receivables- Old Salata 2 - FT:12
+Old Salata - Bldg13	Old Salata 2 - Flat13	21400057	PDC - Old Salata 2 - FT:13	21500057	Deposit- Old Salata 2 - FT:13	12413057	Receivables- Old Salata 2 - FT:13
+Old Salata - Bldg13	Old Salata 2 - Flat14	21400058	PDC - Old Salata 2 - FT:14	21500058	Deposit- Old Salata 2 - FT:14	12413058	Receivables- Old Salata 2 - FT:14
+Old Salata - Bldg13	Old Salata 2 - Flat15	21400059	PDC - Old Salata 2 - FT:15	21500059	Deposit- Old Salata 2 - FT:15	12413059	Receivables- Old Salata 2 - FT:15
+Old Salata - Bldg13	Old Salata 2 - Flat16	21400060	PDC - Old Salata 2 - FT:16	21500060	Deposit- Old Salata 2 - FT:16	12413060	Receivables- Old Salata 2 - FT:16
+Old Salata - Bldg13	Old Salata 2 - Flat17	21400061	PDC - Old Salata 2 - FT:17	21500061	Deposit- Old Salata 2 - FT:17	12413061	Receivables- Old Salata 2 - FT:17
+Old Salata - Bldg13	Old Salata 2 - Flat18	21400062	PDC - Old Salata 2 - FT:18	21500062	Deposit- Old Salata 2 - FT:18	12413062	Receivables- Old Salata 2 - FT:18
+Old Salata - Bldg13	Old Salata 2 - Flat19	21400063	PDC - Old Salata 2 - FT:19	21500063	Deposit- Old Salata 2 - FT:19	12413063	Receivables- Old Salata 2 - FT:19
+Old Salata - Bldg13	Old Salata 2 - Flat20	21400064	PDC - Old Salata 2 - FT:20	21500064	Deposit- Old Salata 2 - FT:20	12413064	Receivables- Old Salata 2 - FT:20
+Old Salata - Bldg13	Old Salata 2 - Flat21	21400065	PDC - Old Salata 2 - FT:21	21500065	Deposit- Old Salata 2 - FT:21	12413065	Receivables- Old Salata 2 - FT:21
+Old Salata - Bldg13	Old Salata 2 - Flat22	21400066	PDC - Old Salata 2 - FT:22	21500066	Deposit- Old Salata 2 - FT:22	12413066	Receivables- Old Salata 2 - FT:22
+Old Salata - Bldg13	Old Salata 2 - Flat23	21400067	PDC - Old Salata 2 - FT:23	21500067	Deposit- Old Salata 2 - FT:23	12413067	Receivables- Old Salata 2 - FT:23
+Old Salata - Bldg13	Old Salata 2 - Flat24	21400068	PDC - Old Salata 2 - FT:24	21500068	Deposit- Old Salata 2 - FT:24	12413068	Receivables- Old Salata 2 - FT:24
+Old Salata - Bldg13	Old Salata 2 - Flat25	21400069	PDC - Old Salata 2 - FT:25	21500069	Deposit- Old Salata 2 - FT:25	12413069	Receivables- Old Salata 2 - FT:25
+Old Salata - Bldg13	Old Salata 2 - Flat26	21400070	PDC - Old Salata 2 - FT:26	21500070	Deposit- Old Salata 2 - FT:26	12413070	Receivables- Old Salata 2 - FT:26
+Old Salata - Bldg13	Old Salata 2 - Flat27	21400071	PDC - Old Salata 2 - FT:27	21500071	Deposit- Old Salata 2 - FT:27	12413071	Receivables- Old Salata 2 - FT:27
+Old Salata - Bldg13	Old Salata 2 - Flat28	21400072	PDC - Old Salata 2 - FT:28	21500072	Deposit- Old Salata 2 - FT:28	12413072	Receivables- Old Salata 2 - FT:28
+Bin Omran - Bldg90	Bin Omran 1 - Flat01	21400073	PDC - Bin Omran 1 - FT:01	21500073	Deposit- Bin Omran 1 - FT:01	12413073	Receivables- Bin Omran 1 - FT:01
+Bin Omran - Bldg90	Bin Omran 1 - Flat02	21400074	PDC - Bin Omran 1 - FT:02	21500074	Deposit- Bin Omran 1 - FT:02	12413074	Receivables- Bin Omran 1 - FT:02
+Bin Omran - Bldg90	Bin Omran 1 - Flat03	21400075	PDC - Bin Omran 1 - FT:03	21500075	Deposit- Bin Omran 1 - FT:03	12413075	Receivables- Bin Omran 1 - FT:03
+Bin Omran - Bldg90	Bin Omran 1 - Flat04	21400076	PDC - Bin Omran 1 - FT:04	21500076	Deposit- Bin Omran 1 - FT:04	12413076	Receivables- Bin Omran 1 - FT:04
+Bin Omran - Bldg90	Bin Omran 1 - Flat05	21400077	PDC - Bin Omran 1 - FT:05	21500077	Deposit- Bin Omran 1 - FT:05	12413077	Receivables- Bin Omran 1 - FT:05
+Bin Omran - Bldg90	Bin Omran 1 - Flat06	21400078	PDC - Bin Omran 1 - FT:06	21500078	Deposit- Bin Omran 1 - FT:06	12413078	Receivables- Bin Omran 1 - FT:06
+Bin Omran - Bldg90	Bin Omran 1 - Flat07	21400079	PDC - Bin Omran 1 - FT:07	21500079	Deposit- Bin Omran 1 - FT:07	12413079	Receivables- Bin Omran 1 - FT:07
+Bin Omran - Bldg90	Bin Omran 1 - Flat08	21400080	PDC - Bin Omran 1 - FT:08	21500080	Deposit- Bin Omran 1 - FT:08	12413080	Receivables- Bin Omran 1 - FT:08
+Bin Omran - Bldg90	Bin Omran 1 - Flat09	21400081	PDC - Bin Omran 1 - FT:09	21500081	Deposit- Bin Omran 1 - FT:09	12413081	Receivables- Bin Omran 1 - FT:09
+Bin Omran - Bldg90	Bin Omran 1 - Flat10	21400082	PDC - Bin Omran 1 - FT:10	21500082	Deposit- Bin Omran 1 - FT:10	12413082	Receivables- Bin Omran 1 - FT:10
+Bin Omran - Bldg90	Bin Omran 1 - Flat11	21400083	PDC - Bin Omran 1 - FT:11	21500083	Deposit- Bin Omran 1 - FT:11	12413083	Receivables- Bin Omran 1 - FT:11
+Bin Omran - Bldg90	Bin Omran 1 - Flat12	21400084	PDC - Bin Omran 1 - FT:12	21500084	Deposit- Bin Omran 1 - FT:12	12413084	Receivables- Bin Omran 1 - FT:12
+Bin Omran - Bldg90	Bin Omran 1 - Flat13	21400085	PDC - Bin Omran 1 - FT:13	21500085	Deposit- Bin Omran 1 - FT:13	12413085	Receivables- Bin Omran 1 - FT:13
+Bin Omran - Bldg90	Bin Omran 1 - Flat14	21400086	PDC - Bin Omran 1 - FT:14	21500086	Deposit- Bin Omran 1 - FT:14	12413086	Receivables- Bin Omran 1 - FT:14
+Bin Omran - Bldg90	Bin Omran 1 - Flat15	21400087	PDC - Bin Omran 1 - FT:15	21500087	Deposit- Bin Omran 1 - FT:15	12413087	Receivables- Bin Omran 1 - FT:15
+Mansoura - Bldg06	Mansoura - JM2 - Flat01	21400088	PDC - Mansoura - JM2 - FT:01	21500088	Deposit- Mansoura - JM2 - FT:01	12413088	Receivables- Mansoura - JM2 - FT:01
+Mansoura - Bldg06	Mansoura - JM2 - Flat02	21400089	PDC - Mansoura - JM2 - FT:02	21500089	Deposit- Mansoura - JM2 - FT:02	12413089	Receivables- Mansoura - JM2 - FT:02
+Mansoura - Bldg06	Mansoura - JM2 - Flat03	21400090	PDC - Mansoura - JM2 - FT:03	21500090	Deposit- Mansoura - JM2 - FT:03	12413090	Receivables- Mansoura - JM2 - FT:03
+Mansoura - Bldg06	Mansoura - JM2 - Flat04	21400091	PDC - Mansoura - JM2 - FT:04	21500091	Deposit- Mansoura - JM2 - FT:04	12413091	Receivables- Mansoura - JM2 - FT:04
+Mansoura - Bldg06	Mansoura - JM2 - Flat05	21400092	PDC - Mansoura - JM2 - FT:05	21500092	Deposit- Mansoura - JM2 - FT:05	12413092	Receivables- Mansoura - JM2 - FT:05
+Mansoura - Bldg06	Mansoura - JM2 - Flat06	21400093	PDC - Mansoura - JM2 - FT:06	21500093	Deposit- Mansoura - JM2 - FT:06	12413093	Receivables- Mansoura - JM2 - FT:06
+Mansoura - Bldg06	Mansoura - JM2 - Flat07	21400094	PDC - Mansoura - JM2 - FT:07	21500094	Deposit- Mansoura - JM2 - FT:07	12413094	Receivables- Mansoura - JM2 - FT:07
+Mansoura - Bldg06	Mansoura - JM2 - Flat08	21400095	PDC - Mansoura - JM2 - FT:08	21500095	Deposit- Mansoura - JM2 - FT:08	12413095	Receivables- Mansoura - JM2 - FT:08
+Mansoura - Bldg06	Mansoura - JM2 - Flat09	21400096	PDC - Mansoura - JM2 - FT:09	21500096	Deposit- Mansoura - JM2 - FT:09	12413096	Receivables- Mansoura - JM2 - FT:09
+Mansoura - Bldg06	Mansoura - JM2 - Flat10	21400097	PDC - Mansoura - JM2 - FT:10	21500097	Deposit- Mansoura - JM2 - FT:10	12413097	Receivables- Mansoura - JM2 - FT:10
+Mansoura - Bldg06	Mansoura - JM2 - Flat11	21400098	PDC - Mansoura - JM2 - FT:11	21500098	Deposit- Mansoura - JM2 - FT:11	12413098	Receivables- Mansoura - JM2 - FT:11
+Mansoura - Bldg06	Mansoura - JM2 - Flat12	21400099	PDC - Mansoura - JM2 - FT:12	21500099	Deposit- Mansoura - JM2 - FT:12	12413099	Receivables- Mansoura - JM2 - FT:12
+Mansoura - Bldg06	Mansoura - JM2 - Flat13	21400100	PDC - Mansoura - JM2 - FT:13	21500100	Deposit- Mansoura - JM2 - FT:13	12413100	Receivables- Mansoura - JM2 - FT:13
+Mansoura - Bldg06	Mansoura - JM2 - Flat14	21400101	PDC - Mansoura - JM2 - FT:14	21500101	Deposit- Mansoura - JM2 - FT:14	12413101	Receivables- Mansoura - JM2 - FT:14
+Mansoura - Bldg06	Mansoura - JM2 - Flat15	21400102	PDC - Mansoura - JM2 - FT:15	21500102	Deposit- Mansoura - JM2 - FT:15	12413102	Receivables- Mansoura - JM2 - FT:15
+Mansoura - Bldg06	Mansoura - JM2 - Flat16	21400103	PDC - Mansoura - JM2 - FT:16	21500103	Deposit- Mansoura - JM2 - FT:16	12413103	Receivables- Mansoura - JM2 - FT:16
+Mansoura - Bldg06	Mansoura - JM2 - Flat17	21400104	PDC - Mansoura - JM2 - FT:17	21500104	Deposit- Mansoura - JM2 - FT:17	12413104	Receivables- Mansoura - JM2 - FT:17
+Mansoura - Bldg06	Mansoura - JM2 - Flat18	21400105	PDC - Mansoura - JM2 - FT:18	21500105	Deposit- Mansoura - JM2 - FT:18	12413105	Receivables- Mansoura - JM2 - FT:18
+Mansoura - Bldg16	Mansoura - JM10 - Flat101	21400106	PDC - Mansoura - JM10 - FT:101	21500106	Deposit- Mansoura - JM10 - FT:101	12413106	Receivables- Mansoura - JM10 - FT:101
+Mansoura - Bldg16	Mansoura - JM10 - Flat102	21400107	PDC - Mansoura - JM10 - FT:102	21500107	Deposit- Mansoura - JM10 - FT:102	12413107	Receivables- Mansoura - JM10 - FT:102
+Mansoura - Bldg16	Mansoura - JM10 - Flat103	21400108	PDC - Mansoura - JM10 - FT:103	21500108	Deposit- Mansoura - JM10 - FT:103	12413108	Receivables- Mansoura - JM10 - FT:103
+Mansoura - Bldg16	Mansoura - JM10 - Flat201	21400109	PDC - Mansoura - JM10 - FT:201	21500109	Deposit- Mansoura - JM10 - FT:201	12413109	Receivables- Mansoura - JM10 - FT:201
+Mansoura - Bldg16	Mansoura - JM10 - Flat202	21400110	PDC - Mansoura - JM10 - FT:202	21500110	Deposit- Mansoura - JM10 - FT:202	12413110	Receivables- Mansoura - JM10 - FT:202
+Mansoura - Bldg16	Mansoura - JM10 - Flat203	21400111	PDC - Mansoura - JM10 - FT:203	21500111	Deposit- Mansoura - JM10 - FT:203	12413111	Receivables- Mansoura - JM10 - FT:203
+Mansoura - Bldg16	Mansoura - JM10 - Flat301	21400112	PDC - Mansoura - JM10 - FT:301	21500112	Deposit- Mansoura - JM10 - FT:301	12413112	Receivables- Mansoura - JM10 - FT:301
+Mansoura - Bldg16	Mansoura - JM10 - Flat302	21400113	PDC - Mansoura - JM10 - FT:302	21500113	Deposit- Mansoura - JM10 - FT:302	12413113	Receivables- Mansoura - JM10 - FT:302
+Mansoura - Bldg16	Mansoura - JM10 - Flat303	21400114	PDC - Mansoura - JM10 - FT:303	21500114	Deposit- Mansoura - JM10 - FT:303	12413114	Receivables- Mansoura - JM10 - FT:303
+Mansoura - Bldg16	Mansoura - JM10 - Flat401	21400115	PDC - Mansoura - JM10 - FT:401	21500115	Deposit- Mansoura - JM10 - FT:401	12413115	Receivables- Mansoura - JM10 - FT:401
+Mansoura - Bldg16	Mansoura - JM10 - Flat402	21400116	PDC - Mansoura - JM10 - FT:402	21500116	Deposit- Mansoura - JM10 - FT:402	12413116	Receivables- Mansoura - JM10 - FT:402
+Mansoura - Bldg16	Mansoura - JM10 - Flat403	21400117	PDC - Mansoura - JM10 - FT:403	21500117	Deposit- Mansoura - JM10 - FT:403	12413117	Receivables- Mansoura - JM10 - FT:403
+Mansoura - Bldg16	Mansoura - JM10 - Flat501	21400118	PDC - Mansoura - JM10 - FT:501	21500118	Deposit- Mansoura - JM10 - FT:501	12413118	Receivables- Mansoura - JM10 - FT:501
+Mansoura - Bldg16	Mansoura - JM10 - Flat502	21400119	PDC - Mansoura - JM10 - FT:502	21500119	Deposit- Mansoura - JM10 - FT:502	12413119	Receivables- Mansoura - JM10 - FT:502
+Mansoura - Bldg16	Mansoura - JM10 - Flat503	21400120	PDC - Mansoura - JM10 - FT:503	21500120	Deposit- Mansoura - JM10 - FT:503	12413120	Receivables- Mansoura - JM10 - FT:503
+Mansoura - Bldg16	Mansoura - JM10 - Studio	21400121	PDC - Mansoura - JM10 - Studio	21500121	Deposit- Mansoura - JM10 - Studio	12413121	Receivables- Mansoura - JM10 - Studio
+Mansoura - Bldg40	Mansoura - 40 - Flat05	21400122	PDC - Mansoura - 40 - FT:05	21500122	Deposit- Mansoura - 40 - FT:05	12413122	Receivables- Mansoura - 40 - FT:05
+Mansoura - Bldg03	Mansoura - 25 - Flat39	21400123	PDC - Mansoura - 25 - FT:39	21500123	Deposit- Mansoura - 25 - FT:39	12413123	Receivables- Mansoura - 25 - FT:39
+Al Naser - Bldg03	Naser - 03 - Flat01	21400124	PDC - Naser - 03 - FT:01	21500124	Deposit- Naser - 03 - FT:01	12413124	Receivables- Naser - 03 - FT:01
+Al Naser - Bldg03	Naser - 03 - Flat02	21400125	PDC - Naser - 03 - FT:02	21500125	Deposit- Naser - 03 - FT:02	12413125	Receivables- Naser - 03 - FT:02
+Al Naser - Bldg03	Naser - 03 - Flat03	21400126	PDC - Naser - 03 - FT:03	21500126	Deposit- Naser - 03 - FT:03	12413126	Receivables- Naser - 03 - FT:03
+Al Naser - Bldg03	Naser - 03 - Flat04	21400127	PDC - Naser - 03 - FT:04	21500127	Deposit- Naser - 03 - FT:04	12413127	Receivables- Naser - 03 - FT:04
+Al Naser - Bldg03	Naser - 03 - Flat05	21400128	PDC - Naser - 03 - FT:05	21500128	Deposit- Naser - 03 - FT:05	12413128	Receivables- Naser - 03 - FT:05
+Al Naser - Bldg03	Naser - 03 - Flat06	21400129	PDC - Naser - 03 - FT:06	21500129	Deposit- Naser - 03 - FT:06	12413129	Receivables- Naser - 03 - FT:06
+Al Naser - Bldg03	Naser - 03 - Flat07	21400130	PDC - Naser - 03 - FT:07	21500130	Deposit- Naser - 03 - FT:07	12413130	Receivables- Naser - 03 - FT:07
+Al Naser - Bldg03	Naser - 03 - Flat08	21400131	PDC - Naser - 03 - FT:08	21500131	Deposit- Naser - 03 - FT:08	12413131	Receivables- Naser - 03 - FT:08
+Al Naser - Bldg03	Naser - 03 - Flat09	21400132	PDC - Naser - 03 - FT:09	21500132	Deposit- Naser - 03 - FT:09	12413132	Receivables- Naser - 03 - FT:09
+Al Naser - Bldg03	Naser - 03 - Flat10	21400133	PDC - Naser - 03 - FT:10	21500133	Deposit- Naser - 03 - FT:10	12413133	Receivables- Naser - 03 - FT:10
+Al Naser - Bldg03	Naser - 03 - Flat11	21400134	PDC - Naser - 03 - FT:11	21500134	Deposit- Naser - 03 - FT:11	12413134	Receivables- Naser - 03 - FT:11
+Al Naser - Bldg03	Naser - 03 - Flat12	21400135	PDC - Naser - 03 - FT:12	21500135	Deposit- Naser - 03 - FT:12	12413135	Receivables- Naser - 03 - FT:12
+Al Naser - Bldg03	Naser - 03 - Flat13	21400136	PDC - Naser - 03 - FT:13	21500136	Deposit- Naser - 03 - FT:13	12413136	Receivables- Naser - 03 - FT:13
+Al Naser - Bldg03	Naser - 03 - Flat14	21400137	PDC - Naser - 03 - FT:14	21500137	Deposit- Naser - 03 - FT:14	12413137	Receivables- Naser - 03 - FT:14
+Al Naser - Bldg03	Naser - 03 - Flat15	21400138	PDC - Naser - 03 - FT:15	21500138	Deposit- Naser - 03 - FT:15	12413138	Receivables- Naser - 03 - FT:15
+Al Naser - Bldg03	Naser - 03 - Flat16	21400139	PDC - Naser - 03 - FT:16	21500139	Deposit- Naser - 03 - FT:16	12413139	Receivables- Naser - 03 - FT:16
+Al Naser - Bldg03	Naser - 03 - Flat17	21400140	PDC - Naser - 03 - FT:17	21500140	Deposit- Naser - 03 - FT:17	12413140	Receivables- Naser - 03 - FT:17
+Al Naser - Bldg03	Naser - 03 - Flat18	21400141	PDC - Naser - 03 - FT:18	21500141	Deposit- Naser - 03 - FT:18	12413141	Receivables- Naser - 03 - FT:18
+Al Naser - Bldg03	Naser - 03 - Flat19	21400142	PDC - Naser - 03 - FT:19	21500142	Deposit- Naser - 03 - FT:19	12413142	Receivables- Naser - 03 - FT:19
+Al Naser - Bldg03	Naser - 03 - Flat20	21400143	PDC - Naser - 03 - FT:20	21500143	Deposit- Naser - 03 - FT:20	12413143	Receivables- Naser - 03 - FT:20
+Al Naser - Bldg03	Naser - 03 - Flat21	21400144	PDC - Naser - 03 - FT:21	21500144	Deposit- Naser - 03 - FT:21	12413144	Receivables- Naser - 03 - FT:21
+Al Naser - Bldg03	Naser - 03 - Flat22	21400145	PDC - Naser - 03 - FT:22	21500145	Deposit- Naser - 03 - FT:22	12413145	Receivables- Naser - 03 - FT:22
+Al Naser - Bldg03	Naser - 03 - Flat23	21400146	PDC - Naser - 03 - FT:23	21500146	Deposit- Naser - 03 - FT:23	12413146	Receivables- Naser - 03 - FT:23
+Al Naser - Bldg03	Naser - 03 - Flat24	21400147	PDC - Naser - 03 - FT:24	21500147	Deposit- Naser - 03 - FT:24	12413147	Receivables- Naser - 03 - FT:24
+Al Naser - Bldg03	Naser - 03 - Flat25	21400148	PDC - Naser - 03 - FT:25	21500148	Deposit- Naser - 03 - FT:25	12413148	Receivables- Naser - 03 - FT:25
+Pearl Qatar - Bldg19	PQ - AP10 - Flat101	21400149	PDC - PQ - AP10 - FT:101	21500149	Deposit- PQ - AP10 - FT:101	12413149	Receivables- PQ - AP10 - FT:101
+Pearl Qatar - Bldg19	PQ - AP10 - Flat102	21400150	PDC - PQ - AP10 - FT:102	21500150	Deposit- PQ - AP10 - FT:102	12413150	Receivables- PQ - AP10 - FT:102
+Pearl Qatar - Bldg19	PQ - AP10 - Flat103	21400151	PDC - PQ - AP10 - FT:103	21500151	Deposit- PQ - AP10 - FT:103	12413151	Receivables- PQ - AP10 - FT:103
+Pearl Qatar - Bldg19	PQ - AP10 - Flat104	21400152	PDC - PQ - AP10 - FT:104	21500152	Deposit- PQ - AP10 - FT:104	12413152	Receivables- PQ - AP10 - FT:104
+Pearl Qatar - Bldg19	PQ - AP10 - Flat105	21400153	PDC - PQ - AP10 - FT:105	21500153	Deposit- PQ - AP10 - FT:105	12413153	Receivables- PQ - AP10 - FT:105
+Pearl Qatar - Bldg19	PQ - AP10 - Flat106	21400154	PDC - PQ - AP10 - FT:106	21500154	Deposit- PQ - AP10 - FT:106	12413154	Receivables- PQ - AP10 - FT:106
+Pearl Qatar - Bldg19	PQ - AP10 - Flat107	21400155	PDC - PQ - AP10 - FT:107	21500155	Deposit- PQ - AP10 - FT:107	12413155	Receivables- PQ - AP10 - FT:107
+Pearl Qatar - Bldg19	PQ - AP10 - Flat108	21400156	PDC - PQ - AP10 - FT:108	21500156	Deposit- PQ - AP10 - FT:108	12413156	Receivables- PQ - AP10 - FT:108
+Pearl Qatar - Bldg19	PQ - AP10 - Flat201	21400157	PDC - PQ - AP10 - FT:201	21500157	Deposit- PQ - AP10 - FT:201	12413157	Receivables- PQ - AP10 - FT:201
+Pearl Qatar - Bldg19	PQ - AP10 - Flat202	21400158	PDC - PQ - AP10 - FT:202	21500158	Deposit- PQ - AP10 - FT:202	12413158	Receivables- PQ - AP10 - FT:202
+Pearl Qatar - Bldg19	PQ - AP10 - Flat203	21400159	PDC - PQ - AP10 - FT:203	21500159	Deposit- PQ - AP10 - FT:203	12413159	Receivables- PQ - AP10 - FT:203
+Pearl Qatar - Bldg19	PQ - AP10 - Flat204	21400160	PDC - PQ - AP10 - FT:204	21500160	Deposit- PQ - AP10 - FT:204	12413160	Receivables- PQ - AP10 - FT:204
+Pearl Qatar - Bldg19	PQ - AP10 - Flat205	21400161	PDC - PQ - AP10 - FT:205	21500161	Deposit- PQ - AP10 - FT:205	12413161	Receivables- PQ - AP10 - FT:205
+Pearl Qatar - Bldg19	PQ - AP10 - Flat206	21400162	PDC - PQ - AP10 - FT:206	21500162	Deposit- PQ - AP10 - FT:206	12413162	Receivables- PQ - AP10 - FT:206
+Pearl Qatar - Bldg19	PQ - AP10 - Flat207	21400163	PDC - PQ - AP10 - FT:207	21500163	Deposit- PQ - AP10 - FT:207	12413163	Receivables- PQ - AP10 - FT:207
+Pearl Qatar - Bldg19	PQ - AP10 - Flat208	21400164	PDC - PQ - AP10 - FT:208	21500164	Deposit- PQ - AP10 - FT:208	12413164	Receivables- PQ - AP10 - FT:208
+Pearl Qatar - Bldg19	PQ - AP10 - Flat301	21400165	PDC - PQ - AP10 - FT:301	21500165	Deposit- PQ - AP10 - FT:301	12413165	Receivables- PQ - AP10 - FT:301
+Pearl Qatar - Bldg19	PQ - AP10 - Flat302	21400166	PDC - PQ - AP10 - FT:302	21500166	Deposit- PQ - AP10 - FT:302	12413166	Receivables- PQ - AP10 - FT:302
+Pearl Qatar - Bldg19	PQ - AP10 - Flat303	21400167	PDC - PQ - AP10 - FT:303	21500167	Deposit- PQ - AP10 - FT:303	12413167	Receivables- PQ - AP10 - FT:303
+Pearl Qatar - Bldg19	PQ - AP10 - Flat304	21400168	PDC - PQ - AP10 - FT:304	21500168	Deposit- PQ - AP10 - FT:304	12413168	Receivables- PQ - AP10 - FT:304
+Pearl Qatar - Bldg19	PQ - AP10 - Flat305	21400169	PDC - PQ - AP10 - FT:305	21500169	Deposit- PQ - AP10 - FT:305	12413169	Receivables- PQ - AP10 - FT:305
+Pearl Qatar - Bldg19	PQ - AP10 - Flat306	21400170	PDC - PQ - AP10 - FT:306	21500170	Deposit- PQ - AP10 - FT:306	12413170	Receivables- PQ - AP10 - FT:306
+Pearl Qatar - Bldg19	PQ - AP10 - Flat307	21400171	PDC - PQ - AP10 - FT:307	21500171	Deposit- PQ - AP10 - FT:307	12413171	Receivables- PQ - AP10 - FT:307
+Pearl Qatar - Bldg19	PQ - AP10 - Flat308	21400172	PDC - PQ - AP10 - FT:308	21500172	Deposit- PQ - AP10 - FT:308	12413172	Receivables- PQ - AP10 - FT:308
+Pearl Qatar - Bldg19	PQ - AP10 - Flat401	21400173	PDC - PQ - AP10 - FT:401	21500173	Deposit- PQ - AP10 - FT:401	12413173	Receivables- PQ - AP10 - FT:401
+Pearl Qatar - Bldg19	PQ - AP10 - Flat402	21400174	PDC - PQ - AP10 - FT:402	21500174	Deposit- PQ - AP10 - FT:402	12413174	Receivables- PQ - AP10 - FT:402
+Pearl Qatar - Bldg19	PQ - AP10 - Flat403	21400175	PDC - PQ - AP10 - FT:403	21500175	Deposit- PQ - AP10 - FT:403	12413175	Receivables- PQ - AP10 - FT:403
+Pearl Qatar - Bldg19	PQ - AP10 - Flat404	21400176	PDC - PQ - AP10 - FT:404	21500176	Deposit- PQ - AP10 - FT:404	12413176	Receivables- PQ - AP10 - FT:404
+Pearl Qatar - Bldg19	PQ - AP10 - Flat405	21400177	PDC - PQ - AP10 - FT:405	21500177	Deposit- PQ - AP10 - FT:405	12413177	Receivables- PQ - AP10 - FT:405
+Pearl Qatar - Bldg19	PQ - AP10 - Flat406	21400178	PDC - PQ - AP10 - FT:406	21500178	Deposit- PQ - AP10 - FT:406	12413178	Receivables- PQ - AP10 - FT:406
+Pearl Qatar - Bldg19	PQ - AP10 - Flat407	21400179	PDC - PQ - AP10 - FT:407	21500179	Deposit- PQ - AP10 - FT:407	12413179	Receivables- PQ - AP10 - FT:407
+Pearl Qatar - Bldg19	PQ - AP10 - Flat408	21400180	PDC - PQ - AP10 - FT:408	21500180	Deposit- PQ - AP10 - FT:408	12413180	Receivables- PQ - AP10 - FT:408
+Pearl Qatar - Bldg19	PQ - AP10 - Flat501	21400181	PDC - PQ - AP10 - FT:501	21500181	Deposit- PQ - AP10 - FT:501	12413181	Receivables- PQ - AP10 - FT:501
+Pearl Qatar - Bldg19	PQ - AP10 - Flat502	21400182	PDC - PQ - AP10 - FT:502	21500182	Deposit- PQ - AP10 - FT:502	12413182	Receivables- PQ - AP10 - FT:502
+Pearl Qatar - Bldg19	PQ - AP10 - Flat503	21400183	PDC - PQ - AP10 - FT:503	21500183	Deposit- PQ - AP10 - FT:503	12413183	Receivables- PQ - AP10 - FT:503
+Pearl Qatar - Bldg19	PQ - AP10 - Flat504	21400184	PDC - PQ - AP10 - FT:504	21500184	Deposit- PQ - AP10 - FT:504	12413184	Receivables- PQ - AP10 - FT:504
+Pearl Qatar - Bldg19	PQ - AP10 - Flat505	21400185	PDC - PQ - AP10 - FT:505	21500185	Deposit- PQ - AP10 - FT:505	12413185	Receivables- PQ - AP10 - FT:505
+Pearl Qatar - Bldg19	PQ - AP10 - Flat506	21400186	PDC - PQ - AP10 - FT:506	21500186	Deposit- PQ - AP10 - FT:506	12413186	Receivables- PQ - AP10 - FT:506
+Pearl Qatar - Bldg19	PQ - AP10 - Flat507	21400187	PDC - PQ - AP10 - FT:507	21500187	Deposit- PQ - AP10 - FT:507	12413187	Receivables- PQ - AP10 - FT:507
+Pearl Qatar - Bldg19	PQ - AP10 - Flat508	21400188	PDC - PQ - AP10 - FT:508	21500188	Deposit- PQ - AP10 - FT:508	12413188	Receivables- PQ - AP10 - FT:508
+Pearl Qatar - Bldg19	PQ - AP10 - Flat601	21400189	PDC - PQ - AP10 - FT:601	21500189	Deposit- PQ - AP10 - FT:601	12413189	Receivables- PQ - AP10 - FT:601
+Pearl Qatar - Bldg19	PQ - AP10 - Flat602	21400190	PDC - PQ - AP10 - FT:602	21500190	Deposit- PQ - AP10 - FT:602	12413190	Receivables- PQ - AP10 - FT:602
+Pearl Qatar - Bldg19	PQ - AP10 - Flat603	21400191	PDC - PQ - AP10 - FT:603	21500191	Deposit- PQ - AP10 - FT:603	12413191	Receivables- PQ - AP10 - FT:603
+Pearl Qatar - Bldg19	PQ - AP10 - Flat604	21400192	PDC - PQ - AP10 - FT:604	21500192	Deposit- PQ - AP10 - FT:604	12413192	Receivables- PQ - AP10 - FT:604
+Pearl Qatar - Bldg19	PQ - AP10 - Flat605	21400193	PDC - PQ - AP10 - FT:605	21500193	Deposit- PQ - AP10 - FT:605	12413193	Receivables- PQ - AP10 - FT:605
+Pearl Qatar - Bldg19	PQ - AP10 - Flat606	21400194	PDC - PQ - AP10 - FT:606	21500194	Deposit- PQ - AP10 - FT:606	12413194	Receivables- PQ - AP10 - FT:606
+Pearl Qatar - Bldg19	PQ - AP10 - Flat607	21400195	PDC - PQ - AP10 - FT:607	21500195	Deposit- PQ - AP10 - FT:607	12413195	Receivables- PQ - AP10 - FT:607
+Pearl Qatar - Bldg19	PQ - AP10 - Flat608	21400196	PDC - PQ - AP10 - FT:608	21500196	Deposit- PQ - AP10 - FT:608	12413196	Receivables- PQ - AP10 - FT:608
+Bin Omran - Bldg07	Bin Omran 2 - Flat01	21400197	PDC - Bin Omran 2 - FT:01	21500197	Deposit- Bin Omran 2 - FT:01	12413197	Receivables- Bin Omran 2 - FT:01
+Bin Omran - Bldg07	Bin Omran 2 - Flat02	21400198	PDC - Bin Omran 2 - FT:02	21500198	Deposit- Bin Omran 2 - FT:02	12413198	Receivables- Bin Omran 2 - FT:02
+Bin Omran - Bldg07	Bin Omran 2 - Flat03	21400199	PDC - Bin Omran 2 - FT:03	21500199	Deposit- Bin Omran 2 - FT:03	12413199	Receivables- Bin Omran 2 - FT:03
+Bin Omran - Bldg07	Bin Omran 2 - Flat04	21400200	PDC - Bin Omran 2 - FT:04	21500200	Deposit- Bin Omran 2 - FT:04	12413200	Receivables- Bin Omran 2 - FT:04
+Bin Omran - Bldg07	Bin Omran 2 - Flat05	21400201	PDC - Bin Omran 2 - FT:05	21500201	Deposit- Bin Omran 2 - FT:05	12413201	Receivables- Bin Omran 2 - FT:05
+Bin Omran - Bldg07	Bin Omran 2 - Flat06	21400202	PDC - Bin Omran 2 - FT:06	21500202	Deposit- Bin Omran 2 - FT:06	12413202	Receivables- Bin Omran 2 - FT:06
+Bin Omran - Bldg07	Bin Omran 2 - Flat07	21400203	PDC - Bin Omran 2 - FT:07	21500203	Deposit- Bin Omran 2 - FT:07	12413203	Receivables- Bin Omran 2 - FT:07
+Bin Omran - Bldg07	Bin Omran 2 - Flat08	21400204	PDC - Bin Omran 2 - FT:08	21500204	Deposit- Bin Omran 2 - FT:08	12413204	Receivables- Bin Omran 2 - FT:08
+Bin Omran - Bldg07	Bin Omran 2 - Flat09	21400205	PDC - Bin Omran 2 - FT:09	21500205	Deposit- Bin Omran 2 - FT:09	12413205	Receivables- Bin Omran 2 - FT:09
+Bin Omran - Bldg07	Bin Omran 2 - Flat10	21400206	PDC - Bin Omran 2 - FT:10	21500206	Deposit- Bin Omran 2 - FT:10	12413206	Receivables- Bin Omran 2 - FT:10
+Bin Omran - Bldg07	Bin Omran 2 - Flat11	21400207	PDC - Bin Omran 2 - FT:11	21500207	Deposit- Bin Omran 2 - FT:11	12413207	Receivables- Bin Omran 2 - FT:11
+Bin Omran - Bldg07	Bin Omran 2 - Flat12	21400208	PDC - Bin Omran 2 - FT:12	21500208	Deposit- Bin Omran 2 - FT:12	12413208	Receivables- Bin Omran 2 - FT:12
+Bin Omran - Bldg07	Bin Omran 2 - Flat13	21400209	PDC - Bin Omran 2 - FT:13	21500209	Deposit- Bin Omran 2 - FT:13	12413209	Receivables- Bin Omran 2 - FT:13
+Bin Omran - Bldg07	Bin Omran 2 - Flat14	21400210	PDC - Bin Omran 2 - FT:14	21500210	Deposit- Bin Omran 2 - FT:14	12413210	Receivables- Bin Omran 2 - FT:14
+Bin Omran - Bldg07	Bin Omran 2 - Flat15	21400211	PDC - Bin Omran 2 - FT:15	21500211	Deposit- Bin Omran 2 - FT:15	12413211	Receivables- Bin Omran 2 - FT:15
+Bin Omran - Bldg07	Bin Omran 2 - Flat16	21400212	PDC - Bin Omran 2 - FT:16	21500212	Deposit- Bin Omran 2 - FT:16	12413212	Receivables- Bin Omran 2 - FT:16
+Bin Omran - Bldg07	Bin Omran 2 - Flat17	21400213	PDC - Bin Omran 2 - FT:17	21500213	Deposit- Bin Omran 2 - FT:17	12413213	Receivables- Bin Omran 2 - FT:17
+Bin Omran - Bldg07	Bin Omran 2 - Flat18	21400214	PDC - Bin Omran 2 - FT:18	21500214	Deposit- Bin Omran 2 - FT:18	12413214	Receivables- Bin Omran 2 - FT:18
+Bin Omran - Bldg07	Bin Omran 2 - Flat19	21400215	PDC - Bin Omran 2 - FT:19	21500215	Deposit- Bin Omran 2 - FT:19	12413215	Receivables- Bin Omran 2 - FT:19
+Bin Omran - Bldg07	Bin Omran 2 - Flat20	21400216	PDC - Bin Omran 2 - FT:20	21500216	Deposit- Bin Omran 2 - FT:20	12413216	Receivables- Bin Omran 2 - FT:20
+Bin Omran - Bldg07	Bin Omran 2 - Flat21	21400217	PDC - Bin Omran 2 - FT:21	21500217	Deposit- Bin Omran 2 - FT:21	12413217	Receivables- Bin Omran 2 - FT:21
+Bin Omran - Bldg07	Bin Omran 2 - Flat22	21400218	PDC - Bin Omran 2 - FT:22	21500218	Deposit- Bin Omran 2 - FT:22	12413218	Receivables- Bin Omran 2 - FT:22
+Bin Omran - Bldg07	Bin Omran 2 - Flat23	21400219	PDC - Bin Omran 2 - FT:23	21500219	Deposit- Bin Omran 2 - FT:23	12413219	Receivables- Bin Omran 2 - FT:23
+Bin Omran - Bldg07	Bin Omran 2 - Flat24	21400220	PDC - Bin Omran 2 - FT:24	21500220	Deposit- Bin Omran 2 - FT:24	12413220	Receivables- Bin Omran 2 - FT:24
+Bin Omran - Bldg07	Bin Omran 2 - Flat25	21400221	PDC - Bin Omran 2 - FT:25	21500221	Deposit- Bin Omran 2 - FT:25	12413221	Receivables- Bin Omran 2 - FT:25
+Bin Omran - Bldg07	Bin Omran 2 - Flat26	21400222	PDC - Bin Omran 2 - FT:26	21500222	Deposit- Bin Omran 2 - FT:26	12413222	Receivables- Bin Omran 2 - FT:26
+Bin Omran - Bldg07	Bin Omran 2 - Flat27	21400223	PDC - Bin Omran 2 - FT:27	21500223	Deposit- Bin Omran 2 - FT:27	12413223	Receivables- Bin Omran 2 - FT:27
+Bin Omran - Bldg07	Bin Omran 2 - Flat28	21400224	PDC - Bin Omran 2 - FT:28	21500224	Deposit- Bin Omran 2 - FT:28	12413224	Receivables- Bin Omran 2 - FT:28
+Bin Omran - Bldg07	Bin Omran 2 - Flat29	21400225	PDC - Bin Omran 2 - FT:29	21500225	Deposit- Bin Omran 2 - FT:29	12413225	Receivables- Bin Omran 2 - FT:29
+Bin Omran - Bldg07	Bin Omran 2 - Flat30	21400226	PDC - Bin Omran 2 - FT:30	21500226	Deposit- Bin Omran 2 - FT:30	12413226	Receivables- Bin Omran 2 - FT:30
+Bin Omran - Bldg07	Bin Omran 2 - Flat31	21400227	PDC - Bin Omran 2 - FT:31	21500227	Deposit- Bin Omran 2 - FT:31	12413227	Receivables- Bin Omran 2 - FT:31
+Bin Omran - Bldg07	Bin Omran 2 - Flat32	21400228	PDC - Bin Omran 2 - FT:32	21500228	Deposit- Bin Omran 2 - FT:32	12413228	Receivables- Bin Omran 2 - FT:32
+Bin Omran - Bldg07	Bin Omran 2 - Flat33	21400229	PDC - Bin Omran 2 - FT:33	21500229	Deposit- Bin Omran 2 - FT:33	12413229	Receivables- Bin Omran 2 - FT:33
+Bin Omran - Bldg07	Bin Omran 2 - Flat34	21400230	PDC - Bin Omran 2 - FT:34	21500230	Deposit- Bin Omran 2 - FT:34	12413230	Receivables- Bin Omran 2 - FT:34
+Bin Omran - Bldg07	Bin Omran 2 - Flat35	21400231	PDC - Bin Omran 2 - FT:35	21500231	Deposit- Bin Omran 2 - FT:35	12413231	Receivables- Bin Omran 2 - FT:35
+Bin Omran - Bldg07	Bin Omran 2 - Flat36	21400232	PDC - Bin Omran 2 - FT:36	21500232	Deposit- Bin Omran 2 - FT:36	12413232	Receivables- Bin Omran 2 - FT:36
+Bin Omran - Bldg07	Bin Omran 2 - Flat37	21400233	PDC - Bin Omran 2 - FT:37	21500233	Deposit- Bin Omran 2 - FT:37	12413233	Receivables- Bin Omran 2 - FT:37
+Bin Omran - Bldg07	Bin Omran 2 - Flat38	21400234	PDC - Bin Omran 2 - FT:38	21500234	Deposit- Bin Omran 2 - FT:38	12413234	Receivables- Bin Omran 2 - FT:38
+Bin Omran - Bldg07	Bin Omran 2 - Flat39	21400235	PDC - Bin Omran 2 - FT:39	21500235	Deposit- Bin Omran 2 - FT:39	12413235	Receivables- Bin Omran 2 - FT:39
+Bin Omran - Bldg07	Bin Omran 2 - Flat40	21400236	PDC - Bin Omran 2 - FT:40	21500236	Deposit- Bin Omran 2 - FT:40	12413236	Receivables- Bin Omran 2 - FT:40
+Bin Omran - Bldg07	Bin Omran 2 - Flat41	21400237	PDC - Bin Omran 2 - FT:41	21500237	Deposit- Bin Omran 2 - FT:41	12413237	Receivables- Bin Omran 2 - FT:41
+Bin Omran - Bldg07	Bin Omran 2 - Flat42	21400238	PDC - Bin Omran 2 - FT:42	21500238	Deposit- Bin Omran 2 - FT:42	12413238	Receivables- Bin Omran 2 - FT:42
+Bin Omran - Bldg07	Bin Omran 2 - Flat43	21400239	PDC - Bin Omran 2 - FT:43	21500239	Deposit- Bin Omran 2 - FT:43	12413239	Receivables- Bin Omran 2 - FT:43
+Bin Omran - Bldg07	Bin Omran 2 - Flat44	21400240	PDC - Bin Omran 2 - FT:44	21500240	Deposit- Bin Omran 2 - FT:44	12413240	Receivables- Bin Omran 2 - FT:44
+Bin Omran - Bldg07	Bin Omran 2 - Flat45	21400241	PDC - Bin Omran 2 - FT:45	21500241	Deposit- Bin Omran 2 - FT:45	12413241	Receivables- Bin Omran 2 - FT:45
+Bin Omran - Bldg07	Bin Omran 2 - Flat46	21400242	PDC - Bin Omran 2 - FT:46	21500242	Deposit- Bin Omran 2 - FT:46	12413242	Receivables- Bin Omran 2 - FT:46
+Bin Omran - Bldg07	Bin Omran 2 - Flat47	21400243	PDC - Bin Omran 2 - FT:47	21500243	Deposit- Bin Omran 2 - FT:47	12413243	Receivables- Bin Omran 2 - FT:47
+Bin Omran - Bldg07	Bin Omran 2 - Flat48	21400244	PDC - Bin Omran 2 - FT:48	21500244	Deposit- Bin Omran 2 - FT:48	12413244	Receivables- Bin Omran 2 - FT:48
+Bin Omran - Bldg07	Bin Omran 2 - Flat49	21400245	PDC - Bin Omran 2 - FT:49	21500245	Deposit- Bin Omran 2 - FT:49	12413245	Receivables- Bin Omran 2 - FT:49
+Bin Omran - Bldg07	Bin Omran 2 - Flat50	21400246	PDC - Bin Omran 2 - FT:50	21500246	Deposit- Bin Omran 2 - FT:50	12413246	Receivables- Bin Omran 2 - FT:50
+Bin Omran - Bldg07	Bin Omran 2 - Flat51	21400247	PDC - Bin Omran 2 - FT:51	21500247	Deposit- Bin Omran 2 - FT:51	12413247	Receivables- Bin Omran 2 - FT:51
+Old Airport - Bldg56	OA56 - Flat01	21400248	PDC - OA56 - FT:01	21500248	Deposit- OA56 - FT:01	12413248	Receivables- OA56 - FT:01
+Old Airport - Bldg56	OA56 - Flat02	21400249	PDC - OA56 - FT:02	21500249	Deposit- OA56 - FT:02	12413249	Receivables- OA56 - FT:02
+Old Airport - Bldg56	OA56 - Flat03	21400250	PDC - OA56 - FT:03	21500250	Deposit- OA56 - FT:03	12413250	Receivables- OA56 - FT:03
+Old Airport - Bldg56	OA56 - Flat04	21400251	PDC - OA56 - FT:04	21500251	Deposit- OA56 - FT:04	12413251	Receivables- OA56 - FT:04
+Old Airport - Bldg56	OA56 - Flat05	21400252	PDC - OA56 - FT:05	21500252	Deposit- OA56 - FT:05	12413252	Receivables- OA56 - FT:05
+Old Airport - Bldg56	OA56 - Flat06	21400253	PDC - OA56 - FT:06	21500253	Deposit- OA56 - FT:06	12413253	Receivables- OA56 - FT:06
+Old Airport - Bldg56	OA56 - Flat07	21400254	PDC - OA56 - FT:07	21500254	Deposit- OA56 - FT:07	12413254	Receivables- OA56 - FT:07
+Old Airport - Bldg56	OA56 - Flat08	21400255	PDC - OA56 - FT:08	21500255	Deposit- OA56 - FT:08	12413255	Receivables- OA56 - FT:08
+Old Airport - Bldg56	OA56 - Flat09	21400256	PDC - OA56 - FT:09	21500256	Deposit- OA56 - FT:09	12413256	Receivables- OA56 - FT:09
+Old Airport - Bldg56	OA56 - Flat10	21400257	PDC - OA56 - FT:10	21500257	Deposit- OA56 - FT:10	12413257	Receivables- OA56 - FT:10
+Old Airport - Bldg56	OA56 - Flat11	21400258	PDC - OA56 - FT:11	21500258	Deposit- OA56 - FT:11	12413258	Receivables- OA56 - FT:11
+Old Airport - Bldg56	OA56 - Flat12	21400259	PDC - OA56 - FT:12	21500259	Deposit- OA56 - FT:12	12413259	Receivables- OA56 - FT:12
+Old Airport - Bldg56	OA56 - Flat13	21400260	PDC - OA56 - FT:13	21500260	Deposit- OA56 - FT:13	12413260	Receivables- OA56 - FT:13
+Old Airport - Bldg01	Thihama 2 - Flat01	21400261	PDC - Thihama 2 - FT:01	21500261	Deposit- Thihama 2 - FT:01	12413261	Receivables- Thihama 2 - FT:01
+Old Airport - Bldg01	Thihama 2 - Flat02	21400262	PDC - Thihama 2 - FT:02	21500262	Deposit- Thihama 2 - FT:02	12413262	Receivables- Thihama 2 - FT:02
+Old Airport - Bldg01	Thihama 2 - Flat03	21400263	PDC - Thihama 2 - FT:03	21500263	Deposit- Thihama 2 - FT:03	12413263	Receivables- Thihama 2 - FT:03
+Old Airport - Bldg01	Thihama 2 - Flat04	21400264	PDC - Thihama 2 - FT:04	21500264	Deposit- Thihama 2 - FT:04	12413264	Receivables- Thihama 2 - FT:04
+Old Airport - Bldg01	Thihama 2 - Flat05	21400265	PDC - Thihama 2 - FT:05	21500265	Deposit- Thihama 2 - FT:05	12413265	Receivables- Thihama 2 - FT:05
+Old Airport - Bldg01	Thihama 2 - Flat06	21400266	PDC - Thihama 2 - FT:06	21500266	Deposit- Thihama 2 - FT:06	12413266	Receivables- Thihama 2 - FT:06
+Old Airport - Bldg01	Thihama 2 - Flat07	21400267	PDC - Thihama 2 - FT:07	21500267	Deposit- Thihama 2 - FT:07	12413267	Receivables- Thihama 2 - FT:07
+Old Airport - Bldg01	Thihama 2 - Flat08	21400268	PDC - Thihama 2 - FT:08	21500268	Deposit- Thihama 2 - FT:08	12413268	Receivables- Thihama 2 - FT:08
+Old Airport - Bldg01	Thihama 2 - Flat09	21400269	PDC - Thihama 2 - FT:09	21500269	Deposit- Thihama 2 - FT:09	12413269	Receivables- Thihama 2 - FT:09
+Old Airport - Bldg01	Thihama 2 - Flat10	21400270	PDC - Thihama 2 - FT:10	21500270	Deposit- Thihama 2 - FT:10	12413270	Receivables- Thihama 2 - FT:10
+Old Airport - Bldg01	Thihama 2 - Flat11	21400271	PDC - Thihama 2 - FT:11	21500271	Deposit- Thihama 2 - FT:11	12413271	Receivables- Thihama 2 - FT:11
+Old Airport - Bldg01	Thihama 2 - Flat12	21400272	PDC - Thihama 2 - FT:12	21500272	Deposit- Thihama 2 - FT:12	12413272	Receivables- Thihama 2 - FT:12
+Old Airport - Bldg01	Thihama 2 - Flat13	21400273	PDC - Thihama 2 - FT:13	21500273	Deposit- Thihama 2 - FT:13	12413273	Receivables- Thihama 2 - FT:13
+Al Wakra - Bldg01	Wakra - 01 - Flat01	21400274	PDC - Wakra - 01 - FT:01	21500274	Deposit- Wakra - 01 - FT:01	12413274	Receivables- Wakra - 01 - FT:01
+Al Wakra - Bldg01	Wakra - 01 - Flat02	21400275	PDC - Wakra - 01 - FT:02	21500275	Deposit- Wakra - 01 - FT:02	12413275	Receivables- Wakra - 01 - FT:02
+Al Wakra - Bldg01	Wakra - 01 - Flat03	21400276	PDC - Wakra - 01 - FT:03	21500276	Deposit- Wakra - 01 - FT:03	12413276	Receivables- Wakra - 01 - FT:03
+Al Wakra - Bldg01	Wakra - 01 - Flat04	21400277	PDC - Wakra - 01 - FT:04	21500277	Deposit- Wakra - 01 - FT:04	12413277	Receivables- Wakra - 01 - FT:04
+Al Wakra - Bldg01	Wakra - 01 - Flat05	21400278	PDC - Wakra - 01 - FT:05	21500278	Deposit- Wakra - 01 - FT:05	12413278	Receivables- Wakra - 01 - FT:05
+Al Wakra - Bldg01	Wakra - 01 - Flat06	21400279	PDC - Wakra - 01 - FT:06	21500279	Deposit- Wakra - 01 - FT:06	12413279	Receivables- Wakra - 01 - FT:06
+Al Wakra - Bldg01	Wakra - 01 - Flat07	21400280	PDC - Wakra - 01 - FT:07	21500280	Deposit- Wakra - 01 - FT:07	12413280	Receivables- Wakra - 01 - FT:07
+Al Wakra - Bldg01	Wakra - 01 - Flat08	21400281	PDC - Wakra - 01 - FT:08	21500281	Deposit- Wakra - 01 - FT:08	12413281	Receivables- Wakra - 01 - FT:08
+Al Wakra - Bldg01	Wakra - 01 - Flat09	21400282	PDC - Wakra - 01 - FT:09	21500282	Deposit- Wakra - 01 - FT:09	12413282	Receivables- Wakra - 01 - FT:09
+Al Wakra - Bldg01	Wakra - 01 - Flat10	21400283	PDC - Wakra - 01 - FT:10	21500283	Deposit- Wakra - 01 - FT:10	12413283	Receivables- Wakra - 01 - FT:10
+Al Wakra - Bldg01	Wakra - 01 - Flat11	21400284	PDC - Wakra - 01 - FT:11	21500284	Deposit- Wakra - 01 - FT:11	12413284	Receivables- Wakra - 01 - FT:11
+Mugalina - Bldg88	Mugalina - 1BHK - Flat01	21400285	PDC - Mugalina - 1BHK - FT:01	21500285	Deposit- Mugalina - 1BHK - FT:01	12413285	Receivables- Mugalina - 1BHK - FT:01
+Mugalina - Bldg88	Mugalina - 1BHK - Flat02	21400286	PDC - Mugalina - 1BHK - FT:02	21500286	Deposit- Mugalina - 1BHK - FT:02	12413286	Receivables- Mugalina - 1BHK - FT:02
+Mugalina - Bldg88	Mugalina - 1BHK - Flat03	21400287	PDC - Mugalina - 1BHK - FT:03	21500287	Deposit- Mugalina - 1BHK - FT:03	12413287	Receivables- Mugalina - 1BHK - FT:03
+Mugalina - Bldg88	Mugalina - 1BHK - Flat04	21400288	PDC - Mugalina - 1BHK - FT:04	21500288	Deposit- Mugalina - 1BHK - FT:04	12413288	Receivables- Mugalina - 1BHK - FT:04
+Mugalina - Bldg88	Mugalina - 1BHK - Flat05	21400289	PDC - Mugalina - 1BHK - FT:05	21500289	Deposit- Mugalina - 1BHK - FT:05	12413289	Receivables- Mugalina - 1BHK - FT:05
+Mugalina - Bldg88	Mugalina - 1BHK - Flat06	21400290	PDC - Mugalina - 1BHK - FT:06	21500290	Deposit- Mugalina - 1BHK - FT:06	12413290	Receivables- Mugalina - 1BHK - FT:06
+Mugalina - Bldg88	Mugalina - 1BHK - Flat07	21400291	PDC - Mugalina - 1BHK - FT:07	21500291	Deposit- Mugalina - 1BHK - FT:07	12413291	Receivables- Mugalina - 1BHK - FT:07
+Mugalina - Bldg88	Mugalina - 1BHK - Flat08	21400292	PDC - Mugalina - 1BHK - FT:08	21500292	Deposit- Mugalina - 1BHK - FT:08	12413292	Receivables- Mugalina - 1BHK - FT:08
+Mugalina - Bldg88	Mugalina - 1BHK - Flat09	21400293	PDC - Mugalina - 1BHK - FT:09	21500293	Deposit- Mugalina - 1BHK - FT:09	12413293	Receivables- Mugalina - 1BHK - FT:09
+Mugalina - Bldg88	Mugalina - 1BHK - Flat10	21400294	PDC - Mugalina - 1BHK - FT:10	21500294	Deposit- Mugalina - 1BHK - FT:10	12413294	Receivables- Mugalina - 1BHK - FT:10
+Mugalina - Bldg88	Mugalina - 1BHK - Flat11	21400295	PDC - Mugalina - 1BHK - FT:11	21500295	Deposit- Mugalina - 1BHK - FT:11	12413295	Receivables- Mugalina - 1BHK - FT:11
+Mugalina - Bldg88	Mugalina - 1BHK - Flat12	21400296	PDC - Mugalina - 1BHK - FT:12	21500296	Deposit- Mugalina - 1BHK - FT:12	12413296	Receivables- Mugalina - 1BHK - FT:12
+Mugalina - Bldg16	Mugalina - 2BHK - Flat03	21400297	PDC - Mugalina - 2BHK - FT:03	21500297	Deposit- Mugalina - 2BHK - FT:03	12413297	Receivables- Mugalina - 2BHK - FT:03
+Musheireb - Bldg05	Musheireb - 05 - Flat01	21400298	PDC - Musheireb - 05 - FT:01	21500298	Deposit- Musheireb - 05 - FT:01	12413298	Receivables- Musheireb - 05 - FT:01
+Musheireb - Bldg05	Musheireb - 05 - Flat02	21400299	PDC - Musheireb - 05 - FT:02	21500299	Deposit- Musheireb - 05 - FT:02	12413299	Receivables- Musheireb - 05 - FT:02
+Musheireb - Bldg05	Musheireb - 05 - Flat03	21400300	PDC - Musheireb - 05 - FT:03	21500300	Deposit- Musheireb - 05 - FT:03	12413300	Receivables- Musheireb - 05 - FT:03
+Musheireb - Bldg05	Musheireb - 05 - Flat04	21400301	PDC - Musheireb - 05 - FT:04	21500301	Deposit- Musheireb - 05 - FT:04	12413301	Receivables- Musheireb - 05 - FT:04
+Musheireb - Bldg05	Musheireb - 05 - Flat05	21400302	PDC - Musheireb - 05 - FT:05	21500302	Deposit- Musheireb - 05 - FT:05	12413302	Receivables- Musheireb - 05 - FT:05
+Musheireb - Bldg05	Musheireb - 05 - Flat06	21400303	PDC - Musheireb - 05 - FT:06	21500303	Deposit- Musheireb - 05 - FT:06	12413303	Receivables- Musheireb - 05 - FT:06
+Musheireb - Bldg05	Musheireb - 05 - Flat07	21400304	PDC - Musheireb - 05 - FT:07	21500304	Deposit- Musheireb - 05 - FT:07	12413304	Receivables- Musheireb - 05 - FT:07
+Musheireb - Bldg05	Musheireb - 05 - Flat08	21400305	PDC - Musheireb - 05 - FT:08	21500305	Deposit- Musheireb - 05 - FT:08	12413305	Receivables- Musheireb - 05 - FT:08
+Musheireb - Bldg05	Musheireb - 05 - Flat09	21400306	PDC - Musheireb - 05 - FT:09	21500306	Deposit- Musheireb - 05 - FT:09	12413306	Receivables- Musheireb - 05 - FT:09
+Musheireb - Bldg05	Musheireb - 05 - Flat10	21400307	PDC - Musheireb - 05 - FT:10	21500307	Deposit- Musheireb - 05 - FT:10	12413307	Receivables- Musheireb - 05 - FT:10
+Musheireb - Bldg05	Musheireb - 05 - Flat11	21400308	PDC - Musheireb - 05 - FT:11	21500308	Deposit- Musheireb - 05 - FT:11	12413308	Receivables- Musheireb - 05 - FT:11
+Musheireb - Bldg05	Musheireb - 05 - Flat12	21400309	PDC - Musheireb - 05 - FT:12	21500309	Deposit- Musheireb - 05 - FT:12	12413309	Receivables- Musheireb - 05 - FT:12
+Musheireb - Bldg05	Musheireb - 05 - Flat13	21400310	PDC - Musheireb - 05 - FT:13	21500310	Deposit- Musheireb - 05 - FT:13	12413310	Receivables- Musheireb - 05 - FT:13
+Musheireb - Bldg05	Musheireb - 05 - Flat14	21400311	PDC - Musheireb - 05 - FT:14	21500311	Deposit- Musheireb - 05 - FT:14	12413311	Receivables- Musheireb - 05 - FT:14
+Musheireb - Bldg05	Musheireb - 05 - Flat15	21400312	PDC - Musheireb - 05 - FT:15	21500312	Deposit- Musheireb - 05 - FT:15	12413312	Receivables- Musheireb - 05 - FT:15
+Musheireb - Bldg05	Musheireb - 05 - Flat16	21400313	PDC - Musheireb - 05 - FT:16	21500313	Deposit- Musheireb - 05 - FT:16	12413313	Receivables- Musheireb - 05 - FT:16
+Musheireb - Bldg05	Musheireb - 05 - Flat17	21400314	PDC - Musheireb - 05 - FT:17	21500314	Deposit- Musheireb - 05 - FT:17	12413314	Receivables- Musheireb - 05 - FT:17
+Musheireb - Bldg05	Musheireb - 05 - Flat18	21400315	PDC - Musheireb - 05 - FT:18	21500315	Deposit- Musheireb - 05 - FT:18	12413315	Receivables- Musheireb - 05 - FT:18
+Musheireb - Bldg05	Musheireb - 05 - Flat19	21400316	PDC - Musheireb - 05 - FT:19	21500316	Deposit- Musheireb - 05 - FT:19	12413316	Receivables- Musheireb - 05 - FT:19
+Musheireb - Bldg05	Musheireb - 05 - Flat20	21400317	PDC - Musheireb - 05 - FT:20	21500317	Deposit- Musheireb - 05 - FT:20	12413317	Receivables- Musheireb - 05 - FT:20
+Musheireb - Bldg05	Musheireb - 05 - Flat21	21400318	PDC - Musheireb - 05 - FT:21	21500318	Deposit- Musheireb - 05 - FT:21	12413318	Receivables- Musheireb - 05 - FT:21
+Musheireb - Bldg05	Musheireb - 05 - Flat22	21400319	PDC - Musheireb - 05 - FT:22	21500319	Deposit- Musheireb - 05 - FT:22	12413319	Receivables- Musheireb - 05 - FT:22
+Musheireb - Bldg05	Musheireb - 05 - Flat23	21400320	PDC - Musheireb - 05 - FT:23	21500320	Deposit- Musheireb - 05 - FT:23	12413320	Receivables- Musheireb - 05 - FT:23
+Musheireb - Bldg05	Musheireb - 05 - Flat24	21400321	PDC - Musheireb - 05 - FT:24	21500321	Deposit- Musheireb - 05 - FT:24	12413321	Receivables- Musheireb - 05 - FT:24
+Musheireb - Bldg05	Musheireb - 05 - Flat25	21400322	PDC - Musheireb - 05 - FT:25	21500322	Deposit- Musheireb - 05 - FT:25	12413322	Receivables- Musheireb - 05 - FT:
+<truncated 26236 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.

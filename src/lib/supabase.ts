@@ -494,8 +494,11 @@ export type Asset = {
   warranty_status?: string;
   department_id?: string;
   assigned_property_id?: string;
+  assigned_property_code?: string;
   assigned_unit_id?: string;
+  assigned_unit_code?: string;
   assigned_employee_id?: string;
+  assigned_employee_name?: string;
   assignment_date?: string;
   asset_condition?: string;
   asset_status?: string;
@@ -503,6 +506,15 @@ export type Asset = {
   opening_cost?: number;
   last_service_date?: string;
   next_service_date?: string;
+  return_date?: string;
+  disposal_date?: string;
+  addition_during_year?: number;
+  total_asset_value?: number;
+  disposal_value?: number;
+  opening_accumulated_depreciation?: number;
+  current_year_depreciation?: number;
+  closing_accumulated_depreciation?: number;
+  net_book_value?: number;
   remarks?: string;
   created_at: string;
   updated_at: string;
@@ -510,7 +522,8 @@ export type Asset = {
   // Joins
   departments?: { name: string };
   employees?: { first_name: string; last_name: string };
-  properties?: { title: string };
+  properties?: { title: string; property_code?: string };
+  units?: { unit_code: string; unit_number?: string };
 };
 
 export async function fetchMaintenanceTickets(filters?: { property_id?: string; host_id?: string }) {
@@ -604,7 +617,7 @@ export type FixedAsset = {
 
 // --- HRMS Assets API ---
 export async function fetchAssets(filters?: { property_id?: string; employee_id?: string }) {
-  let query = supabase.from('assets').select('*, departments(name), employees(first_name, last_name), properties(title)').order('created_at', { ascending: false });
+  let query = supabase.from('assets').select('*, departments(name), employees(first_name, last_name), properties(title, property_code), units(unit_code)').order('created_at', { ascending: false });
   if (filters?.property_id) query = query.eq('assigned_property_id', filters.property_id);
   if (filters?.employee_id) query = query.eq('assigned_employee_id', filters.employee_id);
   const { data, error } = await query;
@@ -1098,11 +1111,24 @@ export async function fetchERPChartOfAccounts() {
 export async function fetchUnitCOAs() {
   const { data, error } = await supabase.from('unit_coas').select('*').order('unit_code');
   if (error) throw error;
-  return data as UnitCOA[];
+  return data as UnitCOA[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
   const { data, error } = await supabase.from('inventory_parts').insert([payload]).select().single();
   if (error) throw error;
   return data as InventoryPart;
+}
+
+export async function fetchCostCenters(): Promise<{ id: number; code: string; name: string }[]> {
+  const { data, error } = await supabase.from('fin_cost_centers').select('id, code, name').order('name', { ascending: true });
+  if (error) return [];
+  return (data ?? []) as { id: number; code: string; name: string }[];
+}
+
+export async function createUnitRooms(rooms: Record<string, unknown>[]): Promise<unknown[]> {
+  if (!rooms || rooms.length === 0) return [];
+  const { data, error } = await supabase.from('unit_rooms').insert(rooms).select();
+  if (error) throw error;
+  return data ?? [];
 }
