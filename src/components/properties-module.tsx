@@ -49,14 +49,6 @@ type PropertyFormState = {
   state: string;
   zip_code: string;
   country: string;
-  max_guests: string;
-  bedrooms: string;
-  beds: string;
-  bathrooms: string;
-  base_price_per_night: string;
-  cleaning_fee: string;
-  cost_center_code: string;
-  cost_center_name: string;
   property_category: string;
   ownership_type: string;
   no_of_units: string;
@@ -495,44 +487,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                     placeholder="e.g. 10"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Bedrooms</Label>
-                  <Input
-                    type="number"
-                    value={form.bedrooms}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, bedrooms: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Beds</Label>
-                  <Input
-                    type="number"
-                    value={form.beds}
-                    onChange={(e) => setForm((prev) => ({ ...prev, beds: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bathrooms</Label>
-                  <Input
-                    type="number"
-                    value={form.bathrooms}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, bathrooms: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Max Guests</Label>
-                  <Input
-                    type="number"
-                    value={form.max_guests}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, max_guests: e.target.value }))
-                    }
-                  />
-                </div>
+
               </div>
             )}
 
@@ -633,7 +588,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Base Price / Night (QR)</Label>
+
                   <Input
                     type="number"
                     value={form.base_price_per_night}
