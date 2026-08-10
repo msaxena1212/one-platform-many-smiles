@@ -258,11 +258,85 @@ export async function fetchAllProperties() {
   return data as Property[];
 }
 
+/** Columns present on public.properties (PostgREST schema). */
+const PROPERTIES_WRITE_KEYS = new Set([
+  'host_id',
+  'title',
+  'description',
+  'property_type',
+  'address',
+  'city',
+  'country',
+  'location',
+  'max_guests',
+  'bedrooms',
+  'beds',
+  'bathrooms',
+  'base_price_per_night',
+  'cleaning_fee',
+  'is_active',
+  'property_code',
+  'cost_center_code',
+  'cost_center_name',
+  'property_category',
+  'ownership_type',
+  'area_zone',
+  'street_building_name',
+  'plot_building_no',
+  'title_deed_no',
+  'municipality_ref_no',
+  'property_manager',
+  'no_of_floors',
+  'no_of_units',
+  'total_built_up_area_sqm',
+  'common_area_sqm',
+  'parking_count',
+  'no_of_elevators',
+  'completion_date',
+  'handover_date',
+  'documents_received',
+  'remarks',
+  'year_built',
+  'total_floors',
+  'total_units',
+  'property_status',
+  'contact_person',
+  'mobile_number',
+  'email',
+  'alternate_contact',
+  'postal_code',
+  'landmark',
+]);
+
+function sanitizePropertyWritePayload<T extends Record<string, unknown>>(payload: T): T {
+  const sanitized = {} as T;
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    if (key === 'zip_code') {
+      (sanitized as Record<string, unknown>).postal_code = value;
+      continue;
+    }
+    if (
+      key === 'amenities' ||
+      key === 'room_details' ||
+      key === 'municipality_details' ||
+      key === 'kahramaa_number' ||
+      key === 'state'
+    ) {
+      continue;
+    }
+    if (PROPERTIES_WRITE_KEYS.has(key)) {
+      (sanitized as Record<string, unknown>)[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 /** Create a new property listing */
 export async function createProperty(payload: Omit<Property, 'id' | 'created_at' | 'property_images'>) {
   const { data, error } = await supabase
     .from('properties')
-    .insert(payload)
+    .insert(sanitizePropertyWritePayload(payload as Record<string, unknown>))
     .select()
     .single();
 
@@ -274,13 +348,34 @@ export async function createProperty(payload: Omit<Property, 'id' | 'created_at'
 export async function updateProperty(id: string, payload: Partial<Omit<Property, 'id' | 'created_at' | 'property_images'>>) {
   const { data, error } = await supabase
     .from('properties')
-    .update({ ...payload, updated_at: new Date().toISOString() })
+    .update({
+      ...sanitizePropertyWritePayload(payload as Record<string, unknown>),
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select()
     .single();
 
   if (error) throw error;
   return data as Property;
+}
+
+/** Update property images */
+export async function updatePropertyImages(propertyId: string, images: { image_url: string; is_primary: boolean; display_order: number }[]) {
+  const { error: deleteError } = await supabase
+    .from('property_images')
+    .delete()
+    .eq('property_id', propertyId);
+  
+  if (deleteError) throw deleteError;
+
+  if (images.length > 0) {
+    const payload = images.map(img => ({ ...img, property_id: propertyId }));
+    const { error: insertError } = await supabase
+      .from('property_images')
+      .insert(payload);
+    if (insertError) throw insertError;
+  }
 }
 
 /** Fetch bookings for a guest */
@@ -1111,7 +1206,7 @@ export async function fetchERPChartOfAccounts() {
 export async function fetchUnitCOAs() {
   const { data, error } = await supabase.from('unit_coas').select('*').order('unit_code');
   if (error) throw error;
-  return data as UnitCOA[];
+  return data as UnitCOA[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {

@@ -83,7 +83,6 @@ export function buildPropertyPayload(input: {
     cleaning_fee: Number(input.cleaningFee) || 0,
     is_active: input.isActive ?? true,
     room_details: input.roomDetails ?? {},
-    amenities: amenityValues,
     property_code: input.propertyCode || undefined,
     cost_center_code: input.costCenterCode || undefined,
     cost_center_name: input.costCenterName || undefined,

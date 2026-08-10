@@ -17,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const Route = createFileRoute("/super-admin/tenants")({
   head: () => ({ meta: [{ title: "Tenant Management — ZYNO Super Admin" }] }),
@@ -46,6 +47,8 @@ function TenantsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [form, setForm] = useState({ full_name: "", email: "", plan: "Starter" });
   const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   function makeTenantKey(name: string) {
     const normalized = name
@@ -119,6 +122,11 @@ function TenantsPage() {
     t.full_name.toLowerCase().includes(search.toLowerCase())
   );
 
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginatedTenants = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  useEffect(() => { setCurrentPage(1); }, [search]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -185,7 +193,7 @@ function TenantsPage() {
                   <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">Loading tenants...</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={7} className="text-center py-12 text-muted-foreground">No tenants found.</td></tr>
-                ) : filtered.map(tenant => (
+                ) : paginatedTenants.map(tenant => (
                   <tr key={tenant.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-3">
@@ -234,6 +242,17 @@ function TenantsPage() {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="pt-4">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
 

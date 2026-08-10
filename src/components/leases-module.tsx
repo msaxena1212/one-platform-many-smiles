@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -13,6 +14,8 @@ export interface LeasesModuleProps {
 export function LeasesModule({ role }: LeasesModuleProps) {
   const [leases, setLeases] = useState<Lease[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +51,14 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const expiringCount = leases.filter(l => l.lease_status === 'Expiring').length;
 
   const basePath = role === 'admin' ? '/admin' : role === 'owner' ? '/owner' : '/prop-mgr';
+
+  const totalPages = Math.ceil(leases.length / ITEMS_PER_PAGE);
+  const paginatedLeases = leases.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  useEffect(() => { setCurrentPage(1); }, [leases]);
 
   return (
     <div className="space-y-6">
@@ -123,7 +134,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                     </td>
                   </tr>
                 ) : (
-                  leases.map((lease) => (
+                  paginatedLeases.map((lease) => (
                     <tr key={lease.id} className="hover:bg-muted/10 transition-colors">
                       <td className="px-6 py-4 font-mono text-xs">{lease.lease_number || 'N/A'}</td>
                       <td className="px-6 py-4 font-medium">{(lease as any).properties?.title || 'Unknown Property'}</td>
@@ -145,6 +156,25 @@ export function LeasesModule({ role }: LeasesModuleProps) {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-border">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} />
+                  </PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (
+                    <PaginationItem key={i}>
+                      <PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

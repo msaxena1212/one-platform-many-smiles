@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchProfiles, createProfile } from "@/lib/supabase";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export interface UsersModuleProps {
   role: "admin" | "prop-mgr";
@@ -35,6 +36,10 @@ export function UsersModule({ role }: UsersModuleProps) {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ full_name: '', email: '', role: 'Technician' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(profiles.length / ITEMS_PER_PAGE);
+  const paginatedProfiles = profiles.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   async function load() {
     setLoading(true);
@@ -97,7 +102,7 @@ export function UsersModule({ role }: UsersModuleProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {profiles.map((user, i) => (
+                  {paginatedProfiles.map((user, i) => (
                     <tr key={user.id || i} className="hover:bg-muted/10 transition-colors">
                       <td className="px-6 py-4">
                         <div className="font-medium text-foreground">{user.full_name}</div>
@@ -119,6 +124,25 @@ export function UsersModule({ role }: UsersModuleProps) {
                 </tbody>
               </table>
             </div>
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-border">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} />
+                    </PaginationItem>
+                    {[...Array(totalPages)].map((_, i) => (
+                      <PaginationItem key={i}>
+                        <PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink>
+                      </PaginationItem>
+                    ))}
+                    <PaginationItem>
+                      <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

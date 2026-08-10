@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { CreditCard, CheckCircle2, TrendingUp, Wallet, AlertTriangle, Building2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const Route = createFileRoute("/super-admin/billing")({
   head: () => ({ meta: [{ title: "Billing & Plans — ZYNO Super Admin" }] }),
@@ -56,6 +58,10 @@ const STATUS_COLORS: Record<string, string> = {
 
 function BillingPage() {
   const totalMRR = 999 * 8 + 299 * 3 + 4500 * 2;
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(INVOICES.length / ITEMS_PER_PAGE);
+  const paginatedInvoices = INVOICES.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
     <div className="space-y-8">
@@ -161,7 +167,7 @@ function BillingPage() {
                 </tr>
               </thead>
               <tbody>
-                {INVOICES.map(inv => (
+                {paginatedInvoices.map(inv => (
                   <tr key={inv.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3 pr-4 font-mono text-xs">{inv.id}</td>
                     <td className="py-3 pr-4 font-medium">{inv.tenant}</td>
@@ -178,6 +184,17 @@ function BillingPage() {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="pt-4">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

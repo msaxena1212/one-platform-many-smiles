@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
-import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, type Property } from "@/lib/supabase";
+import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, updatePropertyImages, type Property } from "@/lib/supabase";
+import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
 import { buildPropertyPayload } from "@/lib/property-master";
 import { toast } from "sonner";
@@ -159,6 +160,13 @@ export function ManagePropertyPage({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Master Data Options
+  const [propCategoryOptions, setPropCategoryOptions] = useState<{ id: string; label: string }[]>([]);
+  const [propTypeOptions, setPropTypeOptions] = useState<{ id: string; label: string }[]>([]);
+  const [ownershipOptions, setOwnershipOptions] = useState<{ id: string; label: string }[]>([]);
+  const [costCenterOptions, setCostCenterOptions] = useState<{ code: string; name: string }[]>([]);
+  const [images, setImages] = useState<ImageFile[]>([]);
+
   // Editable form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -170,6 +178,7 @@ export function ManagePropertyPage({
   const [address, setAddress] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [propertyType, setPropertyType] = useState<string>("");
+  const [customPropertyType, setCustomPropertyType] = useState<string>("");
   const [propertyCode, setPropertyCode] = useState("");
   const [propertyCategory, setPropertyCategory] = useState("");
   const [costCenterCode, setCostCenterCode] = useState("");
@@ -235,8 +244,15 @@ export function ManagePropertyPage({
     setAddress(prop.address);
     setIsActive(prop.is_active);
     setAmenities(prop.amenities || []);
+    setImages((prop.property_images || []).map((img) => ({
+      id: crypto.randomUUID(),
+      url: img.image_url,
+      category: "Exterior",
+      isCover: img.is_primary,
+    })));
     setPropertyType(prop.property_type || "");
-    setPropertyCode(prop.property_code || "");
+    setCustomPropertyType("");
+    setPropertyCode(prop.property_code || `PROP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`);
     setPropertyCategory(prop.property_category || "");
     setCostCenterCode(prop.cost_center_code || "");
     setCostCenterName(prop.cost_center_name || "");
@@ -317,8 +333,16 @@ export function ManagePropertyPage({
     Promise.all([
       fetchPropertyById(id),
       fetchHostBookings(MOCK_HOST_ID),
+      fetchPropertyCategories(),
+      fetchPropertyTypes(),
+      fetchOwnershipTypes(),
+      fetchCostCenters(),
     ])
-      .then(([prop, bks]) => {
+      .then(([prop, bks, pc, pt, ow, cc]) => {
+        setPropCategoryOptions(pc);
+        setPropTypeOptions(pt);
+        setOwnershipOptions(ow);
+        setCostCenterOptions(cc);
         populateForm(prop);
         
         if (prop.room_details) {
@@ -343,9 +367,13 @@ export function ManagePropertyPage({
           try {
             const units = await fetchUnits({ property_id: id });
             setUnitsCount(units.length || 0);
-            const leases = await fetchLeases({ property_id: id });
-            const activeLeases = (leases || []).filter(l => l.lease_status === 'ACTIVE').length;
-            setOccupancyPct(units.length ? Math.round((activeLeases / units.length) * 100) : 0);
+            const occupiedUnits = (units || []).filter(
+              (u: any) =>
+                u.status?.toLowerCase() === "occupied" ||
+                u.lease_status?.toLowerCase() === "leased" ||
+                u.lease_status?.toLowerCase() === "active"
+            ).length;
+            setOccupancyPct(units.length ? Math.round((occupiedUnits / units.length) * 100) : 0);
           } catch (e) {
             setUnitsCount(null);
             setOccupancyPct(null);
@@ -416,7 +444,7 @@ export function ManagePropertyPage({
     const payload = buildPropertyPayload({
       title,
       description,
-      propertyType: propertyType || property.property_type,
+      propertyType: propertyType === "Other" ? customPropertyType : (propertyType || property.property_type),
       address,
       city,
       state,
@@ -491,6 +519,14 @@ export function ManagePropertyPage({
     setSaving(true);
     try {
       await updateProperty(property.id, payload as Partial<Omit<Property, "id" | "created_at" | "property_images">>);
+      await updatePropertyImages(
+        property.id,
+        images.map((img, idx) => ({
+          image_url: img.url,
+          is_primary: img.isCover,
+          display_order: idx,
+        }))
+      );
       toast.success("Property updated successfully!");
     } catch (err: any) {
       toast.error("Failed to save: " + err.message);
@@ -624,78 +660,16 @@ export function ManagePropertyPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
             <Link to={`${basePath}/properties`}><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Manage Property</h1>
-          <p className="mt-1 text-muted-foreground">{property.title} — {property.city}, {property.country}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Units: {unitsCount ?? '—'} · Occupancy: {occupancyPct ?? '—'}%</p>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Edit Property</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{property.title} · {property.city}, {property.country}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Dialog open={maintenanceOpen} onOpenChange={setMaintenanceOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50">
-                <Wrench className="mr-2 h-4 w-4" /> Add Maintenance
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Maintenance Ticket</DialogTitle>
-                <DialogDescription>Create a new maintenance request for this property or a specific unit.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Title</Label>
-                  <Input value={ticketTitle} onChange={e => setTicketTitle(e.target.value)} placeholder="e.g. Broken AC" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea value={ticketDesc} onChange={e => setTicketDesc(e.target.value)} placeholder="Details..." />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Unit (Optional)</Label>
-                    <Input value={ticketUnit} onChange={e => setTicketUnit(e.target.value)} placeholder="e.g. A-12" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Priority</Label>
-                    <Select value={ticketPriority} onValueChange={(v: any) => setTicketPriority(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Category</Label>
-                  <Select value={ticketCategory} onValueChange={setTicketCategory}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="general">General</SelectItem>
-                      <SelectItem value="plumbing">Plumbing</SelectItem>
-                      <SelectItem value="electrical">Electrical</SelectItem>
-                      <SelectItem value="hvac">HVAC</SelectItem>
-                      <SelectItem value="cleaning">Cleaning</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setMaintenanceOpen(false)}>Cancel</Button>
-                <Button onClick={handleCreateTicket} disabled={submittingTicket}>
-                  {submittingTicket && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Submit Ticket
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
           <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
             <Trash2 className="mr-2 h-4 w-4" /> Deactivate
           </Button>
@@ -707,373 +681,135 @@ export function ManagePropertyPage({
       </div>
 
       <div className="grid gap-8 md:grid-cols-3">
-        
-        {/* Left Column: Edit Details */}
+
+        {/* ── Left Column: Property Edit Form ── */}
         <div className="md:col-span-2 space-y-6">
+
+          {/* 1. Identity & Codes */}
           <Card className="border-border">
             <CardHeader>
-              <CardTitle>Property Details</CardTitle>
-              <CardDescription>Update your listing's public information.</CardDescription>
+              <CardTitle>Property Identity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Listing Title</Label>
-                <Input value={title} onChange={e => setTitle(e.target.value)} />
-              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Property Code</Label>
-                  <Input value={propertyCode} onChange={e => setPropertyCode(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Name</Label>
+                <div className="space-y-2 col-span-2">
+                  <Label>Listing Title</Label>
                   <Input value={title} onChange={e => setTitle(e.target.value)} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Cost Center Code</Label>
-                  <Input value={costCenterCode} onChange={e => setCostCenterCode(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cost Center Name</Label>
-                  <Input value={costCenterName} onChange={e => setCostCenterName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Code - New</Label>
-                  <Input value={proposedPropertyCode} onChange={e => setProposedPropertyCode(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Name - New</Label>
-                  <Input value={proposedPropertyName} onChange={e => setProposedPropertyName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cost Center Code - New</Label>
-                  <Input value={proposedCostCenterCode} onChange={e => setProposedCostCenterCode(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cost Center Name - New</Label>
-                  <Input value={proposedCostCenterName} onChange={e => setProposedCostCenterName(e.target.value)} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-32" />
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Property Type</Label>
-                  <Select value={propertyType} onValueChange={v => setPropertyType(v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {PROPERTY_TYPES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Category</Label>
-                  <Input value={propertyCategory} onChange={e => setPropertyCategory(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Ownership Type</Label>
-                  <Input value={ownershipType} onChange={e => setOwnershipType(e.target.value)} />
+                  <Label>Property Code</Label>
+                  <Input value={propertyCode} onChange={e => setPropertyCode(e.target.value)} disabled className="bg-muted" />
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <select
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    value={isActive ? "active" : "unlisted"}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={isActive ? "active" : "inactive"}
                     onChange={e => setIsActive(e.target.value === "active")}
                   >
-                    <option value="active">Active (Visible)</option>
-                    <option value="unlisted">Unlisted (Hidden)</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4">
                 <div className="space-y-2">
-                  <Label>Country</Label>
-                  <Input value={country} onChange={e => setCountry(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>City</Label>
-                  <Input value={city} onChange={e => setCity(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Area / Zone</Label>
-                  <Input value={areaZone} onChange={e => setAreaZone(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Street / Building Name</Label>
-                  <Input value={streetBuildingName} onChange={e => setStreetBuildingName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Plot / Building No.</Label>
-                  <Input value={plotBuildingNo} onChange={e => setPlotBuildingNo(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Title Deed / Registration No.</Label>
-                  <Input value={titleDeedNo} onChange={e => setTitleDeedNo(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Municipality / Building Ref No.</Label>
-                  <Input value={municipalityRefNo} onChange={e => setMunicipalityRefNo(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Owner / Landlord</Label>
-                  <Input value={ownerLandlord} onChange={e => setOwnerLandlord(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Manager</Label>
-                  <Input value={propertyManager} onChange={e => setPropertyManager(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4">
-                <div className="space-y-2">
-                  <Label>No. of Floors</Label>
-                  <Input value={noOfFloors} onChange={e => setNoOfFloors(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Count of Units (Total Units)</Label>
-                  <Input type="number" min="0" value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} placeholder="e.g. 10" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Total Built-up Area Sqm</Label>
-                  <Input value={totalBuiltUpAreaSqm} onChange={e => setTotalBuiltUpAreaSqm(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Common Area Sqm</Label>
-                  <Input value={commonAreaSqm} onChange={e => setCommonAreaSqm(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Parking Count</Label>
-                  <Input value={parkingCount} onChange={e => setParkingCount(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>No of Elevator</Label>
-                  <Input value={noOfElevators} onChange={e => setNoOfElevators(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Completion Date</Label>
-                  <Input type="date" value={completionDate} onChange={e => setCompletionDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Handover Date</Label>
-                  <Input type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Property Status</Label>
-                  <Input value={propertyStatus} onChange={e => setPropertyStatus(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4">
-                <div className="space-y-2">
-                  <Label>Amenity / Facility 1</Label>
-                  <Input value={amenity1} onChange={e => setAmenity1(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amenity / Facility 2</Label>
-                  <Input value={amenity2} onChange={e => setAmenity2(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amenity / Facility 3</Label>
-                  <Input value={amenity3} onChange={e => setAmenity3(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amenity / Facility 4</Label>
-                  <Input value={amenity4} onChange={e => setAmenity4(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amenity / Facility 5</Label>
-                  <Input value={amenity5} onChange={e => setAmenity5(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Other Amenities / Facilities</Label>
-                  <Input value={otherAmenitiesFacilities} onChange={e => setOtherAmenitiesFacilities(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4">
-                <div className="space-y-2">
-                  <Label>Kahramaa Number</Label>
-                  <Input value={kahramaaNumber} onChange={e => setKahramaaNumber(e.target.value)} placeholder="Kahramaa / DEWA ref" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Documents Received?</Label>
-                  <select
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    value={documentsReceived ? "yes" : "no"}
-                    onChange={e => setDocumentsReceived(e.target.value === "yes")}
+                  <Label>Cost Center Code</Label>
+                  <Select
+                    value={costCenterCode}
+                    onValueChange={(val) => {
+                      const cc = costCenterOptions.find((c) => c.code === val);
+                      setCostCenterCode(val);
+                      setCostCenterName(cc?.name || "");
+                    }}
                   >
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Cost Center" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {costCenterOptions.map((opt) => (
+                        <SelectItem key={opt.code} value={opt.code}>
+                          {opt.code} - {opt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Price per night ($)</Label>
-                  <Input type="number" value={price} onChange={e => setPrice(Number(e.target.value))} />
+                  <Label>Cost Center Name (auto-filled)</Label>
+                  <Input readOnly value={costCenterName} className="bg-muted" placeholder="Auto-filled" />
                 </div>
               </div>
-
-              <div className="space-y-2 pt-4">
-                <Label>Remarks</Label>
-                <Textarea value={remarks} onChange={e => setRemarks(e.target.value)} className="h-24" />
-              </div>
-
               <div className="space-y-2">
-                <Label>Municipality Details</Label>
-                <Input value={municipalityDetails} onChange={e => setMunicipalityDetails(e.target.value)} placeholder="JSON or short text" />
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
-                <div className="space-y-2">
-                  <Label>Max Guests</Label>
-                  <Input type="number" defaultValue={property.max_guests} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bedrooms</Label>
-                  <Input type="number" defaultValue={property.bedrooms} disabled className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Bathrooms</Label>
-                  <Input type="number" defaultValue={property.bathrooms} disabled className="bg-muted/50" />
-                </div>
+                <Label>Description</Label>
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-20" />
               </div>
             </CardContent>
           </Card>
 
-          {/* Room Dimensions Card */}
+          {/* 1.5 Photos */}
           <Card className="border-border">
             <CardHeader>
-              <CardTitle>Room Dimensions</CardTitle>
-              <CardDescription>Detailed dimensions give guests confidence in booking.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {roomDetails.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No rooms added yet.</p>
-              ) : (
-                <div className="space-y-4">
-                  {roomDetails.map((room) => (
-                    <div key={room.id} className="p-4 border border-border rounded-xl bg-muted/10 relative">
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="icon" 
-                        className="absolute top-2 right-2 h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeRoom(room.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label>Room Name</Label>
-                          <Input 
-                            value={room.name} 
-                            onChange={e => updateRoom(room.id, "name", e.target.value)} 
-                            placeholder="e.g. Master Bedroom"
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Room Type</Label>
-                          <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none"
-                            value={room.type}
-                            onChange={e => updateRoom(room.id, "type", e.target.value)}
-                          >
-                            {ROOM_TYPES.map(rt => (
-                              <option key={rt.value} value={rt.value}>{rt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-border flex flex-wrap items-center gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Length</Label>
-                          <Input type="number" placeholder="0" value={room.length} onChange={e => updateRoom(room.id, "length", e.target.value)} required className="w-24" />
-                        </div>
-                        <span className="text-muted-foreground mt-6">×</span>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Width</Label>
-                          <Input type="number" placeholder="0" value={room.width} onChange={e => updateRoom(room.id, "width", e.target.value)} required className="w-24" />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Unit</Label>
-                          <select className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" value={room.unit} onChange={e => updateRoom(room.id, "unit", e.target.value)}>
-                            <option value="ft">ft</option>
-                            <option value="m">m</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-border flex items-center gap-3">
-                <select 
-                  id="manage-new-room-type"
-                  className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  defaultValue="bedroom"
-                >
-                  {ROOM_TYPES.map(rt => (
-                    <option key={rt.value} value={rt.value}>{rt.label}</option>
-                  ))}
-                </select>
-                <Button 
-                  type="button" 
-                  variant="secondary" 
-                  onClick={() => {
-                    const select = document.getElementById("manage-new-room-type") as HTMLSelectElement;
-                    addRoom(select.value);
-                  }}
-                >
-                  <Plus className="mr-2 h-4 w-4" /> Add Room
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Amenities</CardTitle>
-              <CardDescription>Select what your property offers.</CardDescription>
+              <CardTitle>Photos</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 gap-3">
-                {AMENITIES.filter(a => a.types.includes("all") || a.types.includes(property.property_type)).map((amenity) => (
-                  <div
-                    key={amenity.id}
-                    className={`flex items-center space-x-3 p-3 rounded-lg border transition-colors ${
-                      amenities.includes(amenity.id)
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted/50"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      id={amenity.id}
-                      className="h-4 w-4 cursor-pointer"
-                      checked={amenities.includes(amenity.id)}
-                      onChange={() => {
-                        setAmenities(prev => 
-                          prev.includes(amenity.id) 
-                            ? prev.filter(a => a !== amenity.id) 
-                            : [...prev, amenity.id]
-                        );
-                      }}
-                    />
-                    <Label htmlFor={amenity.id} className="cursor-pointer flex-1 text-sm font-medium">{amenity.label}</Label>
-                  </div>
-                ))}
+              <ImageUploader 
+                images={images} 
+                onChange={setImages} 
+                categories={['Exterior', 'Interior', 'Floor Plan', 'Other']} 
+              />
+            </CardContent>
+          </Card>
+
+          {/* 2. Classification */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Classification</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Property Type</Label>
+                  <Select value={propertyType} onValueChange={v => {
+                    setPropertyType(v);
+                    if (v !== "Other") setCustomPropertyType("");
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectContent>
+                      {propTypeOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
+                      {propertyType && propertyType !== "Other" && !propTypeOptions.find(o => o.id === propertyType) && (
+                         <SelectItem value={propertyType} className="capitalize">{propertyType}</SelectItem>
+                      )}
+                      <SelectItem value="Other">Other (Add new)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {propertyType === "Other" && (
+                    <div className="mt-1 flex gap-2">
+                      <Input placeholder="Enter custom type..." value={customPropertyType} onChange={e => setCustomPropertyType(e.target.value)} className="h-8 text-xs" />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Category</Label>
+                  <Select value={propertyCategory} onValueChange={v => setPropertyCategory(v)}>
+                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectContent>
+                      {propCategoryOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Ownership Type</Label>
+                  <Select value={ownershipType} onValueChange={v => setOwnershipType(v)}>
+                    <SelectTrigger><SelectValue placeholder="Select ownership" /></SelectTrigger>
+                    <SelectContent>
+                      {ownershipOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Location Card */}
+          {/* 3. Location */}
           <Card className="border-border">
             <CardHeader>
               <CardTitle>Location</CardTitle>
@@ -1099,15 +835,14 @@ export function ManagePropertyPage({
                         <div className="text-muted-foreground text-xs">{p.structured_formatting.secondary_text}</div>
                       </div>
                     ))}
-                    {!loadingPredictions && predictions.length > 0 && (
-                      <div className="px-4 py-2 text-xs text-center text-muted-foreground bg-muted/30 italic">
-                        Showing top {predictions.length} results
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Country</Label>
+                  <Input value={country} onChange={e => setCountry(e.target.value)} />
+                </div>
                 <div className="space-y-2">
                   <Label>City</Label>
                   <Input value={city} onChange={e => setCity(e.target.value)} />
@@ -1116,138 +851,62 @@ export function ManagePropertyPage({
                   <Label>State / Province</Label>
                   <Input value={state} onChange={e => setState(e.target.value)} />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Zip / Postal Code</Label>
                   <Input value={zipCode} onChange={e => setZipCode(e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label>Country</Label>
-                  <Input value={country} onChange={e => setCountry(e.target.value)} />
-                </div>
               </div>
-              {city || country ? (
-                <div className="mt-4 aspect-video bg-muted rounded-xl flex items-center justify-center border border-border overflow-hidden">
+              {(city || country) && (
+                <div className="mt-2 aspect-video rounded-xl border border-border overflow-hidden">
                   <iframe
-                    width="100%"
-                    height="100%"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    allowFullScreen
+                    width="100%" height="100%"
+                    style={{ border: 0 }} loading="lazy" allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyCN4v-DS9QmFjoiyaiwN8yfrPeZPbSA_xU&q=${encodeURIComponent(`${address}, ${city}, ${state}, ${country}`)}`}
-                  ></iframe>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column: Bookings & Stats */}
-        <div className="space-y-6">
-
-          {/* Availability Calendar Card */}
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="flex justify-between items-center">
-                Availability
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}>&lt;</Button>
-                  <Button variant="outline" size="sm" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}>&gt;</Button>
-                </div>
-              </CardTitle>
-              <CardDescription>
-                {currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-7 gap-1 text-center mb-2 text-xs font-semibold text-muted-foreground">
-                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-              </div>
-              <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map((day, i) => (
-                  <div 
-                    key={i} 
-                    className={`
-                      aspect-square flex items-center justify-center rounded-md text-sm
-                      ${!day ? "" : day.isBooked ? "bg-red-100 text-red-700 font-medium" : "bg-green-100 text-green-700 font-medium"}
-                    `}
-                    title={day ? (day.isBooked ? "Booked" : "Vacant") : ""}
-                  >
-                    {day?.day || ""}
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-4 mt-4 text-xs">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-100"></div> Vacant</div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-100"></div> Booked</div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Recent Bookings</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {bookings.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No bookings yet.</p>
-              ) : (
-                <div className="space-y-4">
-                  {bookings.map((booking: any) => (
-                    <div key={booking.id} className="flex items-start gap-4 border-b border-border last:border-0 pb-4 last:pb-0">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Users className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">Guest #{booking.guest_id.slice(-4)}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                          <CalendarIcon className="h-3 w-3" />
-                          {new Date(booking.check_in).toLocaleDateString()} – {new Date(booking.check_out).toLocaleDateString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">{booking.guests_count} guest(s) · ${booking.total_price}</p>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold mt-2 ${
-                          booking.status === "CONFIRMED" ? "bg-green-100 text-green-700"
-                          : booking.status === "PENDING" ? "bg-yellow-100 text-yellow-700"
-                          : booking.status === "COMPLETED" ? "bg-blue-100 text-blue-700"
-                          : "bg-red-100 text-red-700"
-                        }`}>
-                          {booking.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyCN4v-DS9QmFjoiyaiwN8yfrPeZPbSA_xU&q=${encodeURIComponent(`${address}, ${city}, ${country}`)}`}
+                  />
                 </div>
               )}
             </CardContent>
           </Card>
+        </div>
 
+        {/* ── Right Column: Summary Sidebar ── */}
+        <div className="space-y-6">
+
+          {/* Property Summary */}
           <Card className="border-border">
             <CardHeader>
-              <CardTitle>Property Stats</CardTitle>
+              <CardTitle>Property Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Price/Night</span>
-                <span className="font-medium">${property.base_price_per_night}</span>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Units</span>
+                <span className="font-semibold">{unitsCount ?? '—'}</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Cleaning Fee</span>
-                <span className="font-medium">${property.cleaning_fee}</span>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Occupancy</span>
+                <span className="font-semibold">{occupancyPct != null ? `${occupancyPct}%` : '—'}</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Total Bookings</span>
-                <span className="font-medium">{bookings.length}</span>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Status</span>
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${property.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {property.is_active ? 'Active' : 'Inactive'}
+                </span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Type</span>
-                <span className="font-medium capitalize">{property.property_type}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Listed Since</span>
-                <span className="font-medium">{new Date(property.created_at).toLocaleDateString()}</span>
-              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button asChild variant="outline" className="w-full justify-start" size="sm">
+                <Link to={`${basePath}/units`} search={{ property_id: id }} as="a">
+                  <Users className="mr-2 h-4 w-4" /> Manage Units
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Plus, CreditCard, Banknote } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 
 interface PDC {
   id: string;
@@ -26,6 +27,10 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(pdcs.length / ITEMS_PER_PAGE);
+  const paginatedPdcs = pdcs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const [formData, setFormData] = useState<Partial<PDC>>({
     cheque_number: '',
     bank: '',
@@ -94,7 +99,7 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
               ) : pdcs.length === 0 ? (
                 <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">No PDCs recorded</td></tr>
               ) : (
-                pdcs.map(pdc => (
+                paginatedPdcs.map(pdc => (
                   <tr key={pdc.id}>
                     <td className="px-4 py-3 font-mono">{pdc.cheque_number}</td>
                     <td className="px-4 py-3">{pdc.bank} {pdc.bank_branch ? `(${pdc.bank_branch})` : ''}</td>
@@ -111,6 +116,17 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
               )}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-border">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
 

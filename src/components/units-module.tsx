@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Bath,
   BedDouble,
   Building2,
@@ -38,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createUnit,
   createUnitRooms,
@@ -52,9 +53,11 @@ import {
   fetchUnits,
   fetchViewTypes,
   supabase,
+  updateUnit,
   type MasterItem,
   type Unit,
 } from "@/lib/supabase";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export interface UnitsModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -66,6 +69,8 @@ type PropertyOption = {
   id: string;
   title: string;
   property_code?: string;
+  cost_center_code?: string;
+  cost_center_name?: string;
 };
 
 type RoomEntry = {
@@ -75,6 +80,7 @@ type RoomEntry = {
   count: number;
   length: string;
   width: string;
+  uom: "sqm" | "sqft";
   area: string;
   capacity: string;
   details: string;
@@ -102,6 +108,7 @@ const makeRoomEntry = (type = "Bedroom"): RoomEntry => ({
   count: 1,
   length: "",
   width: "",
+  uom: "sqm",
   area: "",
   capacity: "",
   details: "",
@@ -220,11 +227,25 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1);
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [rooms, setRooms] = useState<RoomEntry[]>([makeRoomEntry("Bedroom")]);
   const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterProperty, setFilterProperty] = useState("all");
+  const [filterProperty, setFilterProperty] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("property_id") || "all";
+    }
+    return "all";
+  });
+  const [currentTab, setCurrentTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("property_id") ? "unit" : "property";
+    }
+    return "property";
+  });
   const [search, setSearch] = useState("");
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [furnishingTypes, setFurnishingTypes] = useState<MasterItem[]>([]);
@@ -233,6 +254,8 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   const [maintenanceResp, setMaintenanceResp] = useState<MasterItem[]>([]);
   const [depositTypes, setDepositTypes] = useState<MasterItem[]>([]);
   const [viewTypes, setViewTypes] = useState<MasterItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -251,16 +274,13 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         fetchViewTypes(),
       ]);
 
-      const loadedProperties =
-        role === "admin" ? await fetchAllProperties() : await fetchHostProperties(hostId);
+      // Internal PMS: fetch all properties for all roles (host_id is null on seeded data)
+      const loadedProperties = await fetchAllProperties();
 
-      // Fix: fetch units filtered by each property if not admin, to ensure proper mapping
+      // Fetch all units, then filter to only those belonging to the loaded properties
       const propertyIds = (loadedProperties || []).map((p) => p.id);
       const loadedUnits = await fetchUnits();
-      const filteredUnits =
-        role === "admin"
-          ? loadedUnits || []
-          : (loadedUnits || []).filter((unit) => propertyIds.includes(unit.property_id));
+      const filteredUnits = (loadedUnits || []).filter((unit) => propertyIds.includes(unit.property_id));
 
       setUnits(filteredUnits);
       setProperties(
@@ -268,6 +288,8 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           id: p.id,
           title: p.title,
           property_code: p.property_code,
+          cost_center_code: p.cost_center_code,
+          cost_center_name: p.cost_center_name,
         })),
       );
       setFurnishingTypes(fur);
@@ -290,56 +312,28 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   const setF = (key: keyof FormState, value: FormState[keyof FormState]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const selectedProperty = properties.find((p) => p.id === form.property_id);
 
-  const deriveUnitIdentity = (propertyId: string, unitRef: string) => {
-    const property = properties.find((item) => item.id === propertyId);
-    const trimmedRef = unitRef.trim();
-    const propertyCode = property?.property_code?.trim();
-    return {
-      unitCode: trimmedRef,
-      unitName: propertyCode && trimmedRef ? `${propertyCode} - ${trimmedRef}` : trimmedRef,
-      costCenterCode: propertyCode && trimmedRef ? `${propertyCode}-${trimmedRef}` : trimmedRef,
-    };
-  };
+
 
   const handlePropertyChange = (propertyId: string) => {
-    setForm((current) => {
-      const derived = deriveUnitIdentity(propertyId, current.unit_ref || "");
-      return {
-        ...current,
-        property_id: propertyId,
-        unit_code: current.unit_code || derived.unitCode,
-        unit_name: current.unit_name || derived.unitName,
-        unit_cost_center_code: current.unit_cost_center_code || derived.costCenterCode,
-      };
-    });
+    const property = properties.find((p) => p.id === propertyId);
+    const propCode = property?.property_code?.trim() || "";
+    const unitRef = form.unit_ref || "";
+    setForm((current) => ({
+      ...current,
+      property_id: propertyId,
+      unit_code: propCode && unitRef ? `${propCode}-${unitRef}` : unitRef,
+    }));
   };
 
   const handleUnitRefChange = (unitRef: string) => {
-    setForm((current) => {
-      const previousDerived = deriveUnitIdentity(current.property_id, current.unit_ref || "");
-      const nextDerived = deriveUnitIdentity(current.property_id, unitRef);
-      return {
-        ...current,
-        unit_ref: unitRef,
-        unit_code:
-          !current.unit_code || current.unit_code === current.unit_ref
-            ? nextDerived.unitCode
-            : current.unit_code,
-        unit_name:
-          !current.unit_name ||
-          current.unit_name === current.unit_ref ||
-          current.unit_name === previousDerived.unitName
-            ? nextDerived.unitName
-            : current.unit_name,
-        unit_cost_center_code:
-          !current.unit_cost_center_code ||
-          current.unit_cost_center_code === previousDerived.costCenterCode
-            ? nextDerived.costCenterCode
-            : current.unit_cost_center_code,
-      };
-    });
+    const property = properties.find((p) => p.id === form.property_id);
+    const propCode = property?.property_code?.trim() || "";
+    setForm((current) => ({
+      ...current,
+      unit_ref: unitRef,
+      unit_code: propCode && unitRef ? `${propCode}-${unitRef}` : unitRef,
+    }));
   };
 
   // --- Room helpers ---
@@ -350,7 +344,30 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     setRooms((prev) => prev.filter((r) => r.id !== id));
   };
   const updateRoom = (id: string, field: keyof RoomEntry, value: string | number) => {
-    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const updated = { ...r, [field]: value };
+        if (field === "length" || field === "width") {
+          const l = parseFloat(String(updated.length));
+          const w = parseFloat(String(updated.width));
+          if (!isNaN(l) && !isNaN(w) && l > 0 && w > 0) {
+            updated.area = (l * w).toFixed(2);
+          }
+        }
+        return updated;
+      }),
+    );
+  };
+
+  const handleEditUnit = (unit: Unit) => {
+    setEditingUnitId(unit.id || null);
+    setForm({
+      ...EMPTY_FORM,
+      ...unit,
+    });
+    setStep(1);
+    setOpen(true);
   };
 
   async function handleCreate() {
@@ -359,8 +376,14 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     }
     setSaving(true);
     try {
-      const created = await createUnit({
+      const autoArea = rooms.reduce((sum, r) => {
+        const a = parseFloat(r.area);
+        return sum + (isNaN(a) ? 0 : a * r.count);
+      }, 0);
+      
+      const payload = {
         ...form,
+        area: autoArea > 0 ? String(autoArea.toFixed(2)) : form.area,
         balcony_sqm:
           typeof form.balcony_sqm === "number" && Number.isNaN(form.balcony_sqm)
             ? undefined
@@ -369,28 +392,35 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           typeof form.total_area_sqm === "number" && Number.isNaN(form.total_area_sqm)
             ? undefined
             : form.total_area_sqm,
-      });
+      };
 
-      // Save room dimensions
-      const validRooms = rooms.filter((r) => r.room_type && r.count > 0);
-      if (validRooms.length > 0 && created?.id) {
-        const roomPayloads = validRooms.flatMap((r) =>
-          Array.from({ length: r.count }).map((_, i) => ({
-            unit_id: created.id,
-            room_type: r.room_type,
-            name: r.name || `${r.room_type}${r.count > 1 ? ` ${i + 1}` : ""}`,
-            length: r.length ? parseFloat(r.length) : null,
-            width: r.width ? parseFloat(r.width) : null,
-            area: r.area ? parseFloat(r.area) : r.length && r.width ? parseFloat(r.length) * parseFloat(r.width) : null,
-            capacity: r.capacity ? parseInt(r.capacity) : null,
-            details: r.details ? { notes: r.details } : null,
-          })),
-        );
-        await createUnitRooms(roomPayloads);
+      if (editingUnitId) {
+        await updateUnit(editingUnitId, payload);
+      } else {
+        const created = await createUnit(payload);
+        
+        // Save room dimensions only on create for now
+        const validRooms = rooms.filter((r) => r.room_type && r.count > 0);
+        if (validRooms.length > 0 && created?.id) {
+          const roomPayloads = validRooms.flatMap((r) =>
+            Array.from({ length: r.count }).map((_, i) => ({
+              unit_id: created.id,
+              room_type: r.room_type,
+              name: r.name || `${r.room_type}${r.count > 1 ? ` ${i + 1}` : ""}`,
+              length: r.length ? parseFloat(r.length) : null,
+              width: r.width ? parseFloat(r.width) : null,
+              area: r.area ? parseFloat(r.area) : r.length && r.width ? parseFloat(r.length) * parseFloat(r.width) : null,
+              capacity: r.capacity ? parseInt(r.capacity) : null,
+              details: r.details ? { notes: r.details } : null,
+            })),
+          );
+          await createUnitRooms(roomPayloads);
+        }
       }
 
       setOpen(false);
       setForm(EMPTY_FORM);
+      setEditingUnitId(null);
       setRooms([makeRoomEntry("Bedroom")]);
       setStep(1);
       await load();
@@ -402,10 +432,29 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     }
   }
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const in60Days = new Date(today);
+  in60Days.setDate(in60Days.getDate() + 60);
+
   // Occupancy: match on property_id (fixed mapping)
   const filtered = units.filter((unit) => {
-    const matchStatus =
-      filterStatus === "all" || unit.status?.toLowerCase() === filterStatus.toLowerCase();
+    let matchStatus: boolean;
+    const isVacant = unit.status?.toLowerCase() === "available" || unit.lease_status?.toLowerCase() === "vacant";
+    
+    if (filterStatus === "all") {
+      matchStatus = true;
+    } else if (filterStatus === "renewal_due") {
+      if (isVacant || !unit.contract_end_date) {
+        matchStatus = false;
+      } else {
+        const end = new Date(unit.contract_end_date);
+        end.setHours(0, 0, 0, 0);
+        matchStatus = end <= in60Days;
+      }
+    } else {
+      matchStatus = unit.status?.toLowerCase() === filterStatus.toLowerCase();
+    }
     const matchProperty = filterProperty === "all" || unit.property_id === filterProperty;
     const term = search.trim().toLowerCase();
     const matchSearch =
@@ -416,15 +465,36 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     return matchStatus && matchProperty && matchSearch;
   });
 
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginatedUnits = filtered.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [filterStatus, filterProperty, search]);
+
   const total = units.length;
   const occupied = units.filter(
-    (u) => u.status?.toLowerCase() === "occupied" || u.lease_status === "Leased",
+    (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
   ).length;
   const available = units.filter(
     (u) => u.status?.toLowerCase() === "available" || u.lease_status === "Vacant",
   ).length;
-  const renewalDue = units.filter((u) => u.lease_status === "Renewal Due").length;
+  const renewalDue = units.filter((u) => {
+    const isVacant = u.status?.toLowerCase() === "available" || u.lease_status?.toLowerCase() === "vacant";
+    if (isVacant || !u.contract_end_date) return false;
+    const end = new Date(u.contract_end_date);
+    end.setHours(0, 0, 0, 0);
+    return end <= in60Days; // includes already expired + expiring within 60 days
+  }).length;
   const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0;
+
+  // Total unit area derived from room dimensions entered in Step 4
+  const computedUnitArea = rooms.reduce((sum, r) => {
+    const a = parseFloat(r.area);
+    return sum + (isNaN(a) ? 0 : a * r.count);
+  }, 0);
 
   const masterOptions = {
     furnishing: furnishingTypes.length ? furnishingTypes : fallbackOptions.furnishing,
@@ -439,7 +509,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   const unitsByProperty = properties.map((prop) => {
     const propUnits = units.filter((u) => u.property_id === prop.id);
     const propOccupied = propUnits.filter(
-      (u) => u.status?.toLowerCase() === "occupied" || u.lease_status === "Leased",
+      (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
     ).length;
     return { ...prop, total: propUnits.length, occupied: propOccupied };
   });
@@ -495,84 +565,120 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         ))}
       </div>
 
-      {/* Property Occupancy Summary */}
-      {unitsByProperty.some((p) => p.total > 0) && (
-        <Card className="border-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Property-wise Occupancy</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-              {unitsByProperty
-                .filter((p) => p.total > 0)
-                .map((p) => {
-                  const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
-                  return (
-                    <div
-                      key={p.id}
-                      className="rounded-lg border border-border bg-muted/10 p-3 text-sm"
-                    >
-                      <div className="truncate font-medium" title={p.title}>
-                        {p.property_code || p.title}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {p.occupied}/{p.total} occupied
-                      </div>
-                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
-                        <div
-                          className="h-1.5 rounded-full bg-blue-500 transition-all"
-                          style={{ width: `${rate}%` }}
-                        />
-                      </div>
-                      <div className="mt-0.5 text-right text-xs font-semibold text-blue-600">
-                        {rate}%
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full space-y-4">
+        <TabsList>
+          <TabsTrigger value="property">Property-wise Occupancy</TabsTrigger>
+          <TabsTrigger value="unit">Unit-wise Occupancy</TabsTrigger>
+        </TabsList>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <Input
-          placeholder="Search unit, tenant..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-9 max-w-xs"
-        />
-        <Tabs value={filterStatus} onValueChange={setFilterStatus}>
-          <TabsList className="h-9">
-            <TabsTrigger value="all" className="text-xs">
-              All ({total})
-            </TabsTrigger>
-            <TabsTrigger value="occupied" className="text-xs">
-              Occupied ({occupied})
-            </TabsTrigger>
-            <TabsTrigger value="available" className="text-xs">
-              Available ({available})
-            </TabsTrigger>
-            <TabsTrigger value="maintenance" className="text-xs">
-              Maintenance
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <select
-          className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-          value={filterProperty}
-          onChange={(e) => setFilterProperty(e.target.value)}
-        >
-          <option value="all">All Properties</option>
-          {properties.map((property) => (
-            <option key={property.id} value={property.id}>
-              {property.property_code ? `${property.property_code} - ` : ""}
-              {property.title}
-            </option>
-          ))}
-        </select>
-      </div>
+        <TabsContent value="property" className="m-0">
+          {/* Property Occupancy Summary */}
+          {unitsByProperty.some((p) => p.total > 0) && (
+            <Card className="border-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Property-wise Occupancy</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {unitsByProperty
+                    .filter((p) => p.total > 0)
+                    .map((p) => {
+                      const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setFilterProperty(p.id);
+                            setFilterStatus("all");
+                            setCurrentTab("unit");
+                          }}
+                          className="rounded-lg border border-border bg-muted/10 p-3 text-sm cursor-pointer hover:bg-muted/30 transition-colors"
+                        >
+                          <div className="truncate font-medium" title={p.title}>
+                            {p.property_code || p.title}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {p.occupied}/{p.total} occupied
+                          </div>
+                          <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
+                            <div
+                              className="h-1.5 rounded-full bg-blue-500 transition-all"
+                              style={{ width: `${rate}%` }}
+                            />
+                          </div>
+                          <div className="mt-0.5 text-right text-xs font-semibold text-blue-600">
+                            {rate}%
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="unit" className="space-y-4 m-0">
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3">
+            <Input
+              placeholder="Search unit, tenant..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 max-w-xs"
+            />
+            <Tabs value={filterStatus} onValueChange={setFilterStatus}>
+              <TabsList className="h-9">
+                <TabsTrigger value="all" className="text-xs">
+                  All ({total})
+                </TabsTrigger>
+                <TabsTrigger value="occupied" className="text-xs">
+                  Occupied ({occupied})
+                </TabsTrigger>
+                <TabsTrigger value="available" className="text-xs">
+                  Available ({available})
+                </TabsTrigger>
+                <TabsTrigger value="maintenance" className="text-xs">
+                  Maintenance
+                </TabsTrigger>
+                <TabsTrigger value="renewal_due" className="text-xs text-amber-600">
+                  Renewal Due ({renewalDue})
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={filterProperty}
+              onChange={(e) => setFilterProperty(e.target.value)}
+            >
+              <option value="all">All Properties</option>
+              {properties.map((property) => (
+                <option key={property.id} value={property.id}>
+                  {property.property_code ? `${property.property_code} - ` : ""}
+                  {property.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {renewalDue > 0 && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+              <div>
+                <strong>{renewalDue} unit{renewalDue !== 1 ? "s" : ""}</strong>{" "}
+                {renewalDue !== 1 ? "have contracts" : "has a contract"} that{" "}
+                {renewalDue !== 1 ? "are" : "is"} expired or expiring within the next 60 days.
+                Units with expired contracts should be updated to{" "}<strong>Vacant</strong> once the tenant vacates.{" "}
+                <button
+                  type="button"
+                  className="font-semibold underline"
+                  onClick={() => setFilterStatus("renewal_due")}
+                >
+                  View affected units →
+                </button>
+              </div>
+            </div>
+          )}
 
       {/* Units Table */}
       <Card className="border-border">
@@ -594,6 +700,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     "Contract Period",
                     "E-Meter",
                     "W-Meter",
+                    "Cooling/Chiller",
                     "Actions",
                   ].map((heading) => (
                     <th
@@ -619,7 +726,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((unit) => {
+                  paginatedUnits.map((unit) => {
                     const property = properties.find((item) => item.id === unit.property_id);
                     const propertyLabel = property
                       ? `${property.property_code ? `${property.property_code} - ` : ""}${property.title}`
@@ -658,12 +765,12 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                           </span>
                         </td>
                         <td className="max-w-[150px] truncate px-4 py-3 text-xs">
-                          {unit.current_tenant || "-"}
+                          {unit.lease_status === "Vacant" || unit.status === "Available" ? "-" : (unit.current_tenant || "-")}
                         </td>
                         <td className="px-4 py-3 text-xs whitespace-nowrap">
-                          {unit.contract_start_date
+                          {unit.lease_status === "Vacant" || unit.status === "Available" ? "-" : (unit.contract_start_date
                             ? `${unit.contract_start_date.slice(0, 10)} → ${unit.contract_end_date?.slice(0, 10) || "-"}`
-                            : "-"}
+                            : "-")}
                         </td>
                         <td className="px-4 py-3 font-mono text-xs">
                           {unit.electricity_meter_no || "-"}
@@ -671,7 +778,10 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                         <td className="px-4 py-3 font-mono text-xs">
                           {unit.water_meter_no || "-"}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {unit.cooling_meter_no || "-"}
+                        </td>
+                        <td className="px-4 py-3 flex items-center gap-2">
                           <Button
                             size="sm"
                             variant="ghost"
@@ -683,6 +793,17 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                           >
                             View
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditUnit(unit);
+                            }}
+                          >
+                            Edit
+                          </Button>
                         </td>
                       </tr>
                     );
@@ -691,8 +812,43 @@ export function UnitsModule({ role }: UnitsModuleProps) {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-border">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }}
+                      className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                    />
+                  </PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (
+                    <PaginationItem key={i}>
+                      <PaginationLink
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }}
+                        isActive={currentPage === i + 1}
+                      >
+                        {i + 1}
+                      </PaginationLink>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
+      </TabsContent>
+    </Tabs>
 
       {/* ---- Unit Detail Dialog ---- */}
       <Dialog open={!!selectedUnit} onOpenChange={(next) => !next && setSelectedUnit(null)}>
@@ -788,55 +944,74 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   Lease & Financial Details
                 </h3>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
-                  {[
-                    ["Lease Status", selectedUnit.lease_status],
-                    ["Unit Status", selectedUnit.status],
-                    ["Rent Frequency", selectedUnit.rent_frequency],
-                    ["Base Rate", selectedUnit.price ? `QR ${selectedUnit.price.toLocaleString()}` : null],
-                    ["Current Rent", selectedUnit.current_rent ? `QR ${selectedUnit.current_rent.toLocaleString()}` : null],
-                    ["Security Deposit Type", selectedUnit.security_deposit_type],
-                    ["Security Deposit", selectedUnit.security_deposit_amount ? `QR ${selectedUnit.security_deposit_amount.toLocaleString()}` : null],
-                    ["Maintenance Resp.", selectedUnit.maintenance_responsibility],
-                    ["Contract No.", selectedUnit.contract_no],
-                    ["Documents Received", selectedUnit.documents_received ? "Yes" : "No"],
-                    ["Handover Date", selectedUnit.handover_date],
-                  ].map(([label, value]) => (
-                    <div key={label as string}>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        {label}
+                  {(() => {
+                    const isVacant = selectedUnit.lease_status === "Vacant" || selectedUnit.status === "Available";
+                    const leaseDetails = [
+                      ["Lease Status", selectedUnit.lease_status],
+                      ["Unit Status", selectedUnit.status],
+                      ["Rent Frequency", selectedUnit.rent_frequency],
+                      ["Base Rate", selectedUnit.price ? `QR ${selectedUnit.price.toLocaleString()}` : null],
+                      ["Current Rent", selectedUnit.current_rent ? `QR ${selectedUnit.current_rent.toLocaleString()}` : null],
+                      ["Security Deposit Type", selectedUnit.security_deposit_type],
+                      ["Security Deposit", selectedUnit.security_deposit_amount ? `QR ${selectedUnit.security_deposit_amount.toLocaleString()}` : null],
+                      ["Maintenance Resp.", selectedUnit.maintenance_responsibility],
+                    ];
+                    if (!isVacant) {
+                      leaseDetails.push(["Contract No.", selectedUnit.contract_no]);
+                    }
+                    leaseDetails.push(["Documents Received", selectedUnit.documents_received ? "Yes" : "No"]);
+                    if (!isVacant) {
+                      leaseDetails.push(["Handover Date", selectedUnit.handover_date]);
+                    }
+                    return leaseDetails.map(([label, value]) => (
+                      <div key={label as string}>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          {label}
+                        </div>
+                        <div className="mt-0.5 text-sm font-medium">{value || "-"}</div>
                       </div>
-                      <div className="mt-0.5 text-sm font-medium">{value || "-"}</div>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               </section>
 
-              {selectedUnit.current_tenant && (
-                <section>
-                  <h3 className="mb-3 border-b pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Current Tenant
-                  </h3>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                        Tenant Name
-                      </div>
-                      <div className="mt-0.5 text-sm font-medium">{selectedUnit.current_tenant}</div>
-                    </div>
-                    {selectedUnit.contract_start_date && (
+              {selectedUnit.current_tenant && (() => {
+                const isVacant = selectedUnit.lease_status === "Vacant" || selectedUnit.status === "Available";
+                return (
+                  <section>
+                    <h3 className="mb-3 border-b pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {isVacant ? "Past Tenant & Contract" : "Current Tenant"}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                          Contract Period
+                          {isVacant ? "Past Tenant Name" : "Tenant Name"}
                         </div>
-                        <div className="mt-0.5 text-sm font-medium">
-                          {selectedUnit.contract_start_date.slice(0, 10)} →{" "}
-                          {selectedUnit.contract_end_date?.slice(0, 10) || "-"}
-                        </div>
+                        <div className="mt-0.5 text-sm font-medium">{selectedUnit.current_tenant}</div>
                       </div>
-                    )}
-                  </div>
-                </section>
-              )}
+                      {isVacant && selectedUnit.contract_no && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Past Contract No.
+                          </div>
+                          <div className="mt-0.5 text-sm font-medium">{selectedUnit.contract_no}</div>
+                        </div>
+                      )}
+                      {selectedUnit.contract_start_date && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {isVacant ? "Past Contract Period" : "Contract Period"}
+                          </div>
+                          <div className="mt-0.5 text-sm font-medium">
+                            {selectedUnit.contract_start_date.slice(0, 10)} →{" "}
+                            {selectedUnit.contract_end_date?.slice(0, 10) || "-"}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })()}
 
               {selectedUnit.remarks && (
                 <section>
@@ -856,12 +1031,22 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         </DialogContent>
       </Dialog>
 
-      {/* ---- Add New Unit Dialog (Stepper) ---- */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[95vh] max-w-3xl overflow-y-auto">
+      {/* ---- Add / Edit Unit Dialog (Stepper) ---- */}
+      <Dialog open={open} onOpenChange={(val) => {
+        setOpen(val);
+        if (!val) {
+          setEditingUnitId(null);
+          setForm(EMPTY_FORM);
+          setRooms([makeRoomEntry("Bedroom")]);
+        }
+      }}>
+        <DialogContent
+          className="max-h-[95vh] max-w-3xl overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
-            <DialogTitle>Add New Unit</DialogTitle>
-            <DialogDescription>Register a new unit — Step {step} of {STEPS.length}: {STEPS[step - 1].name}</DialogDescription>
+            <DialogTitle>{editingUnitId ? "Edit Unit" : "Add New Unit"}</DialogTitle>
+            <DialogDescription>{editingUnitId ? "Update unit information" : "Register a new unit"} — Step {step} of {STEPS.length}: {STEPS[step - 1].name}</DialogDescription>
           </DialogHeader>
 
           {/* Stepper Header */}
@@ -919,11 +1104,15 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Unit Code</Label>
+                  <Label className="flex items-center gap-1">
+                    Unit Code
+                    <span className="text-[10px] font-normal text-muted-foreground">(auto-generated)</span>
+                  </Label>
                   <Input
                     value={form.unit_code || ""}
-                    onChange={(e) => setF("unit_code", e.target.value)}
-                    placeholder="e.g. Flat11"
+                    readOnly
+                    className="bg-muted/40 cursor-not-allowed font-mono"
+                    placeholder="Select property & enter unit ref"
                   />
                 </div>
                 <div className="space-y-1">
@@ -931,16 +1120,28 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   <Input
                     value={form.unit_name || ""}
                     onChange={(e) => setF("unit_name", e.target.value)}
-                    placeholder="AAA - Flat11"
+                    placeholder="Enter unit name manually"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label>Cost Center Code</Label>
-                  <Input
+                <div className="col-span-2 space-y-1">
+                  <Label>Cost Center</Label>
+                  <Select
                     value={form.unit_cost_center_code || ""}
-                    onChange={(e) => setF("unit_cost_center_code", e.target.value)}
-                    placeholder="AAA-Flat11"
-                  />
+                    onValueChange={(v) => setF("unit_cost_center_code", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cost center" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {properties
+                        .filter((p) => p.cost_center_code)
+                        .map((p) => (
+                          <SelectItem key={p.id} value={p.cost_center_code as string}>
+                            {p.cost_center_code} — {p.cost_center_name || p.title}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Block / Tower</Label>
@@ -1031,8 +1232,16 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label>Area (sqm)</Label>
-                  <Input value={form.area || ""} onChange={(e) => setF("area", e.target.value)} placeholder="e.g. 95" />
+                  <Label className="flex items-center gap-1">
+                    Area (sqm)
+                    <span className="text-[10px] font-normal text-muted-foreground">(auto-calculated from room dimensions in Step 4)</span>
+                  </Label>
+                  <Input
+                    value={computedUnitArea > 0 ? computedUnitArea.toFixed(2) : (form.area || "")}
+                    readOnly
+                    className="bg-muted/40 cursor-not-allowed"
+                    placeholder="Calculated from room dimensions (Step 4)"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Balcony (sqm)</Label>
@@ -1151,57 +1360,23 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Tenant & Contract */}
-                <div className="col-span-2 mt-2 border-t pt-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tenant & Contract</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>Current Tenant</Label>
-                      <Input value={form.current_tenant || ""} onChange={(e) => setF("current_tenant", e.target.value)} placeholder="Tenant name" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Contract No.</Label>
-                      <Input value={form.contract_no || ""} onChange={(e) => setF("contract_no", e.target.value)} placeholder="Agreement reference" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Contract Start</Label>
-                      <Input type="date" value={form.contract_start_date || ""} onChange={(e) => setF("contract_start_date", e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Contract End</Label>
-                      <Input type="date" value={form.contract_end_date || ""} onChange={(e) => setF("contract_end_date", e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Handover Date</Label>
-                      <Input type="date" value={form.handover_date || ""} onChange={(e) => setF("handover_date", e.target.value)} />
-                    </div>
-                    <div className="flex items-center gap-2 pt-6">
-                      <input
-                        type="checkbox"
-                        id="docs_received"
-                        checked={!!form.documents_received}
-                        onChange={(e) => setF("documents_received", e.target.checked)}
-                        className="h-4 w-4"
-                      />
-                      <Label htmlFor="docs_received" className="cursor-pointer">Documents Received</Label>
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label>Remarks</Label>
-                      <Input value={form.remarks || ""} onChange={(e) => setF("remarks", e.target.value)} placeholder="Notes for this unit" />
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           )}
 
+
           {/* Step 4: Room Dimensions */}
           {step === 4 && (
             <div className="py-2">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-4">
                 <p className="text-sm text-muted-foreground">
-                  Add rooms and their dimensions for this unit. Each room type can have a count — individual rooms will be created for each.
+                  Area auto-calculates from length × width. Bedroom &amp; Bathroom entries are capped by counts set in Step 2.
                 </p>
+                {computedUnitArea > 0 && (
+                  <div className="shrink-0 rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                    Total: {computedUnitArea.toFixed(2)} sqm
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -1225,7 +1400,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <div className="space-y-1">
                         <Label className="text-xs">Room Type</Label>
                         <Select value={room.room_type} onValueChange={(v) => updateRoom(room.id, "room_type", v)}>
@@ -1249,18 +1424,40 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Count</Label>
+                        <Label className="text-xs">
+                          Count
+                          {(room.room_type === "Bedroom" || room.room_type === "Bathroom") && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              (max: {room.room_type === "Bedroom" ? (form.bedrooms ?? 20) : (form.bathrooms ?? 20)})
+                            </span>
+                          )}
+                        </Label>
                         <Input
                           type="number"
                           min={1}
-                          max={20}
+                          max={room.room_type === "Bedroom" ? (form.bedrooms ?? 20) : room.room_type === "Bathroom" ? (form.bathrooms ?? 20) : 20}
                           className="h-8 text-xs"
                           value={room.count}
-                          onChange={(e) => updateRoom(room.id, "count", parseInt(e.target.value) || 1)}
+                          onChange={(e) => {
+                            const maxVal = room.room_type === "Bedroom" ? (form.bedrooms ?? 20) : room.room_type === "Bathroom" ? (form.bathrooms ?? 20) : 20;
+                            updateRoom(room.id, "count", Math.min(parseInt(e.target.value) || 1, maxVal));
+                          }}
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Length (m)</Label>
+                        <Label className="text-xs">Unit of Measure</Label>
+                        <Select value={room.uom} onValueChange={(v) => updateRoom(room.id, "uom", v)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sqm">sqm</SelectItem>
+                            <SelectItem value="sqft">sqft</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Length</Label>
                         <Input
                           type="number"
                           step="0.01"
@@ -1271,7 +1468,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Width (m)</Label>
+                        <Label className="text-xs">Width</Label>
                         <Input
                           type="number"
                           step="0.01"
@@ -1282,21 +1479,14 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">
-                          Area (sqm)
-                          {room.length && room.width && !room.area && (
-                            <span className="ml-1 text-[10px] text-muted-foreground">
-                              (auto: {(parseFloat(room.length) * parseFloat(room.width)).toFixed(2)})
-                            </span>
-                          )}
-                        </Label>
+                        <Label className="text-xs">Area ({room.uom}) <span className="text-[10px] text-muted-foreground">(auto)</span></Label>
                         <Input
                           type="number"
                           step="0.01"
-                          className="h-8 text-xs"
+                          className="h-8 text-xs bg-muted/40 cursor-not-allowed"
                           value={room.area}
-                          onChange={(e) => updateRoom(room.id, "area", e.target.value)}
-                          placeholder="or auto-calculated"
+                          readOnly
+                          placeholder="Auto-calculated"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1310,7 +1500,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                           placeholder="optional"
                         />
                       </div>
-                      <div className="col-span-2 space-y-1">
+                      <div className="col-span-2 space-y-1 sm:col-span-4">
                         <Label className="text-xs">Details / Notes</Label>
                         <Input
                           className="h-8 text-xs"
@@ -1325,18 +1515,34 @@ export function UnitsModule({ role }: UnitsModuleProps) {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                {ROOM_TYPES.slice(0, 7).map((rt) => (
-                  <Button
-                    key={rt}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => addRoom(rt)}
-                  >
-                    <PlusCircle className="mr-1 h-3 w-3" /> {rt}
-                  </Button>
-                ))}
+                {ROOM_TYPES.slice(0, 7).map((rt) => {
+                  const maxCount =
+                    rt === "Bedroom" ? (form.bedrooms ?? 20) :
+                    rt === "Bathroom" ? (form.bathrooms ?? 20) : 20;
+                  const currentTypeCount = rooms
+                    .filter((r) => r.room_type === rt)
+                    .reduce((s, r) => s + r.count, 0);
+                  const atMax = (rt === "Bedroom" || rt === "Bathroom") && currentTypeCount >= maxCount;
+                  return (
+                    <Button
+                      key={rt}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => !atMax && addRoom(rt)}
+                      disabled={atMax}
+                      title={atMax ? `Max ${maxCount} ${rt}(s) based on Step 2 configuration` : ""}
+                    >
+                      <PlusCircle className="mr-1 h-3 w-3" /> {rt}
+                      {(rt === "Bedroom" || rt === "Bathroom") && (
+                        <span className="ml-1 text-[10px] opacity-60">
+                          ({currentTypeCount}/{maxCount})
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
                 <Button
                   type="button"
                   variant="ghost"
@@ -1370,7 +1576,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
               ) : (
                 <Button onClick={handleCreate} disabled={saving}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create Unit
+                  {editingUnitId ? "Update Unit" : "Create Unit"}
                 </Button>
               )}
             </div>

@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Plus, Users, Briefcase, FileDown, FileUp, Building2, UserCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const Route = createFileRoute("/admin/hrms")({
   component: HRMSPage,
@@ -15,6 +16,10 @@ function HRMSPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [empPage, setEmpPage] = useState(1);
+  const EMP_PER_PAGE = 20;
+  const empTotalPages = Math.ceil(employees.length / EMP_PER_PAGE);
+  const paginatedEmployees = employees.slice((empPage - 1) * EMP_PER_PAGE, empPage * EMP_PER_PAGE);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -128,7 +133,7 @@ function HRMSPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {employees.map((emp) => (
+                      {paginatedEmployees.map((emp) => (
                         <tr key={emp.id} className="hover:bg-muted/50">
                           <td className="p-3">
                             <div className="flex items-center gap-3">
@@ -158,6 +163,17 @@ function HRMSPage() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {empTotalPages > 1 && (
+                <div className="pt-4">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setEmpPage(p => Math.max(1, p - 1)); }} className={empPage === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                      {[...Array(empTotalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setEmpPage(i + 1); }} isActive={empPage === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+                      <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setEmpPage(p => Math.min(empTotalPages, p + 1)); }} className={empPage === empTotalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
                 </div>
               )}
             </CardContent>

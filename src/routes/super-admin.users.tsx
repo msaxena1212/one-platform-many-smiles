@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export const Route = createFileRoute("/super-admin/users")({
   head: () => ({ meta: [{ title: "User Management — ZYNO Super Admin" }] }),
@@ -50,6 +51,8 @@ function UsersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const roles = ["All", "SUPER_ADMIN", "ADMIN", "HOST", "SALES", "OWNER", "GUEST"];
 
@@ -88,6 +91,11 @@ function UsersPage() {
     acc[r] = users.filter(u => u.role === r).length;
     return acc;
   }, {} as Record<string, number>);
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+  const paginatedUsers = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  useEffect(() => { setCurrentPage(1); }, [search, roleFilter]);
 
   return (
     <div className="space-y-6">
@@ -150,7 +158,7 @@ function UsersPage() {
                   <tr><td colSpan={4} className="text-center py-12 text-muted-foreground">Loading users...</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={4} className="text-center py-12 text-muted-foreground">No users found.</td></tr>
-                ) : filtered.map(user => (
+                ) : paginatedUsers.map(user => (
                   <tr key={user.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-3">
@@ -197,6 +205,17 @@ function UsersPage() {
               </tbody>
             </table>
           </div>
+          {totalPages > 1 && (
+            <div className="pt-4">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                  {[...Array(totalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

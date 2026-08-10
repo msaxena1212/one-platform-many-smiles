@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Building, PlusCircle, Users, Wallet, Wrench, ClipboardCheck, Plus, Home, Inbox, CalendarIcon, Loader2, BarChart, Package } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fetchHostProperties, supabase, type Property } from "@/lib/supabase";
+import { fetchAllProperties, supabase, type Property } from "@/lib/supabase";
 
 export const Route = createFileRoute("/prop-mgr/")({
   component: HostDashboard,
@@ -29,14 +29,10 @@ function HostDashboard() {
 
   useEffect(() => {
     async function loadDashboard() {
-      // Get current user session
+      // Get current user session (for name display if logged in)
       const { data: { session } } = await supabase.auth.getSession();
       
-      let hostId = MOCK_HOST_ID;
-      
       if (session?.user) {
-        hostId = session.user.id;
-        // Fetch host profile
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name')
@@ -48,18 +44,19 @@ function HostDashboard() {
         }
       }
       
-      fetchHostProperties(hostId)
+      // Internal PMS: fetch ALL properties (host_id is null on seeded data)
+      fetchAllProperties()
         .then(setProperties)
         .catch(console.error)
         .finally(() => setLoading(false));
 
-      // Try to fetch real stats if tables exist (falling back gracefully)
+      // Fetch real stats without host_id filter
       try {
-        const { count: propCount } = await supabase.from('properties').select('*', { count: 'exact', head: true }).eq('host_id', hostId);
-        const { count: unitCount } = await supabase.from('units').select('*', { count: 'exact', head: true }).eq('host_id', hostId);
-        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).eq('host_id', hostId).eq('lease_status', 'ACTIVE');
+        const { count: propCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
+        const { count: unitCount } = await supabase.from('units').select('*', { count: 'exact', head: true });
+        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).eq('lease_status', 'ACTIVE');
         
-        const { data: propData } = await supabase.from('properties').select('id').eq('host_id', hostId);
+        const { data: propData } = await supabase.from('properties').select('id');
         const propIds = propData?.map(p => p.id) || [];
         
         let assetsCount = 0;

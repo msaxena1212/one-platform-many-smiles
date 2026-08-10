@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { useAppData } from "@/lib/app-data-context";
 import { fetchAssets, updateAsset, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
@@ -745,6 +746,8 @@ function LeasingPage() {
     }));
   }
 
+  const [keysWorkflowLease, setKeysWorkflowLease] = useState<Lease | null>(null);
+
   const handoverAssets = useMemo(() => {
     if (!keysWorkflowLease) return assets;
     const unit = units.find((item) => item.unit === keysWorkflowLease.unit);
@@ -802,7 +805,7 @@ function LeasingPage() {
   });
 
   // ── Keys & Check-In Dialogs ──────────────────────────────────────
-  const [keysWorkflowLease, setKeysWorkflowLease] = useState<Lease | null>(null);
+  // Setup Handover
   const [keyNotifyOpen, setKeyNotifyOpen] = useState(false);
   const [keyNotifyForm, setKeyNotifyForm] = useState({
     handoverAt: addDays(today, 1),
@@ -3000,8 +3003,6 @@ function LeasingPage() {
         <Metric label="Open Settlements" value={openSettlements} icon={<Wallet className="h-4 w-4 text-red-600" />} />
       </div>
 
-      <LifecycleRail />
-
       <Tabs defaultValue="reservations" className="space-y-4">
         <TabsList className="flex h-auto flex-wrap justify-start">
           <TabsTrigger value="reservations">Reservations</TabsTrigger>
@@ -3558,28 +3559,44 @@ function StatusBadge({ value }: { value: string }) {
 }
 
 function DataTable({ columns, rows }: { columns: string[]; rows: React.ReactNode[][] }) {
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(rows.length / ITEMS_PER_PAGE);
+  const paginatedRows = rows.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[920px] text-sm">
-        <thead className="border-b bg-muted/30">
-          <tr>
-            {columns.map((column) => (
-              <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground last:text-right">{column}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y">
-          {rows.length === 0 ? (
-            <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-muted-foreground">No records yet.</td></tr>
-          ) : rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="align-middle">
-              {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 last:text-right">{cell}</td>
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[920px] text-sm">
+          <thead className="border-b bg-muted/30">
+            <tr>
+              {columns.map((column) => (
+                <th key={column} className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground last:text-right">{column}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y">
+            {rows.length === 0 ? (
+              <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-muted-foreground">No records yet.</td></tr>
+            ) : paginatedRows.map((row, rowIndex) => (
+              <tr key={rowIndex} className="align-middle">
+                {row.map((cell, cellIndex) => (
+                  <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 last:text-right">{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setPage(p => Math.max(1, p - 1)); }} className={page === 1 ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+            {[...Array(totalPages)].map((_, i) => (<PaginationItem key={i}><PaginationLink href="#" onClick={(e) => { e.preventDefault(); setPage(i + 1); }} isActive={page === i + 1}>{i + 1}</PaginationLink></PaginationItem>))}
+            <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setPage(p => Math.min(totalPages, p + 1)); }} className={page === totalPages ? "pointer-events-none opacity-50" : ""} /></PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
     </div>
   );
 }

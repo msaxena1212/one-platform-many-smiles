@@ -1,0 +1,1 @@
+import { createClient } from '@supabase/supabase-js'; const supabase = createClient('https://aws-0-ap-northeast-1.pooler.supabase.com', 'dummy_key'); console.log('This would test supabase if we had the anon key');
