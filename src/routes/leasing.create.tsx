@@ -650,6 +650,7 @@ function LeasingPage() {
     photos: "8",
     note: "",
   });
+  const [checkInOpen, setCheckInOpen] = useState(false);
 
   // ── Renewals Dialog ──────────────────────────────────────────────
   const [renewalResponseOpen, setRenewalResponseOpen] = useState(false);
@@ -728,6 +729,15 @@ function LeasingPage() {
     employerInfo: "",
   });
 
+  const [selectedProperty, setSelectedProperty] = useState("");
+  const distinctProperties = useMemo(() => Array.from(new Set(units.map(u => u.property))), []);
+  const filteredUnits = useMemo(() => {
+    if (selectedProperty) {
+      return units.filter(u => u.property === selectedProperty);
+    }
+    return units;
+  }, [selectedProperty, units]);
+
   const activeReservations = reservations.filter((item) => item.status === "reserved").length;
   const blockedDocuments = documents.filter((item) => item.mandatory && item.status !== "verified").length;
   const readyForKeys = leases.filter((lease) => lease.status === "fully_signed").length;
@@ -772,10 +782,11 @@ function LeasingPage() {
       unit: unit.unit,
       tenantName: reservationForm.tenantName.trim(),
       agent: reservationForm.agent,
+      agentContact: reservationForm.agentContact,
       startDate: reservationForm.startDate,
       validUntil: addDays(today, Number(reservationForm.validityDays || 7)),
       rent: Number(reservationForm.rent || unit.rent),
-      status: "Reserved",
+      status: "reserved",
       remarks: reservationForm.remarks,
     };
     
@@ -1384,8 +1395,8 @@ function LeasingPage() {
         fixturesCondition: checkInForm.fixturesCondition,
         wallFloorCeilingCondition: checkInForm.wallFloorCeilingCondition,
         acCondition: checkInForm.acCondition,
-        electricityMeter: checkInForm.electricityMeter || "182167",
-        waterMeter: checkInForm.waterMeter || "149089",
+        electricityMeter: checkInForm.electricityMeter || "182207",
+        waterMeter: checkInForm.waterMeter || "149129",
         chillerMeterReading: checkInForm.chillerMeterReading || "",
         damages: checkInForm.damages || "None recorded",
         pendingMaintenance: checkInForm.pendingMaintenance || "None",
@@ -2130,7 +2141,9 @@ function LeasingPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Key className="h-5 w-5 text-primary" /> Key Handover</DialogTitle>
-            <DialogDescription>Record key issue details for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
+            <DialogHeader>
+              <DialogDescription>Record key issue details for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
+            </DialogHeader>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -2372,7 +2385,7 @@ function LeasingPage() {
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Lease Lifecycle</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Lease Management</h2>
           <p className="text-muted-foreground">Reservation to lease closure with gates, approvals, handover, inspections and accounting documents.</p>
         </div>
         <Button onClick={() => setRenewalNoticeOpen(true)}>
@@ -2416,11 +2429,19 @@ function LeasingPage() {
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-[320px_1fr]">
               <div className="space-y-3 rounded-md border p-4">
+                <Field label="Property">
+                  <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {distinctProperties.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
                 <Field label="Unit">
                   <Select value={reservationForm.unit} onValueChange={(unit) => setReservationForm((form) => ({ ...form, unit }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {units.map((unit) => <SelectItem key={unit.id} value={unit.unit} disabled={unit.status !== "Available"}>{unit.unit} - {unit.status}</SelectItem>)}
+                      {filteredUnits.map((unit) => <SelectItem key={unit.id} value={unit.unit} disabled={unit.status !== "Available"}>{unit.unit} - {unit.status}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -2444,7 +2465,7 @@ function LeasingPage() {
                   <span className={isExpired(reservation.validUntil) && reservation.status === "reserved" ? "text-red-600" : ""}>{reservation.validUntil}</span>,
                   formatMoney(reservation.rent),
                   <StatusBadge key="status" value={reservation.status} />,
-                  <div key="actions" className="flex justify-end gap-2">
+                  <div key="actions" className="flex justify-end gap-2 truncate">
                     <Button size="sm" variant="outline" disabled={reservation.status !== "reserved"} onClick={() => openCreateLeaseDialog(reservation)}>Create Lease</Button>
                     <Button size="sm" variant="outline" disabled={reservation.status !== "reserved"} onClick={() => openReleaseDialog(reservation)}>Release</Button>
                   </div>,
@@ -2671,7 +2692,7 @@ function LeasingPage() {
                     <StatusBadge key="status" value={renewal.status} />,
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setRenewals((items) => items.map((item) => item.id === renewal.id ? { ...item, status: "under_discussion" } : item))}>Discuss</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "" }); setRenewalResponseOpen(true); }}>Renew</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "", updateStatus: "renewal_confirmed" as RenewalCase["status"] }); setRenewalResponseOpen(true); }}>Renew</Button>
                       {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "", outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", missingItems: "", cleaningCharges: "0", restorationCharges: "0" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
                     </div>,
                   ];

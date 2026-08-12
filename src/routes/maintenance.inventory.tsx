@@ -16,7 +16,7 @@ function MaintenanceInventory() {
   const [parts, setParts] = useState<InventoryPart[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [formData, setFormData] = useState({ part_name: '', part_number: '', category: '', quantity_on_hand: 0, unit_cost: 0 });
+  const [formData, setFormData] = useState({ name: '', sku: '', quantity_on_hand: 0, unit_cost: 0 });
 
   useEffect(() => {
     loadParts();
@@ -29,9 +29,9 @@ function MaintenanceInventory() {
 
   async function handleAddPart(e: React.FormEvent) {
     e.preventDefault();
-    await createInventoryPart(formData);
+    await createInventoryPart({ name: formData.name, sku: formData.sku, quantity_on_hand: formData.quantity_on_hand, unit_cost: formData.unit_cost, created_at: new Date().toISOString() });
     setIsAddOpen(false);
-    setFormData({ part_name: '', part_number: '', category: '', quantity_on_hand: 0, unit_cost: 0 });
+    setFormData({ name: '', sku: '', quantity_on_hand: 0, unit_cost: 0 });
     loadParts();
   }
 
@@ -50,16 +50,12 @@ function MaintenanceInventory() {
             <form onSubmit={handleAddPart} className="space-y-4">
               <div className="space-y-2">
                 <Label>Part Name</Label>
-                <Input required value={formData.part_name} onChange={e => setFormData({...formData, part_name: e.target.value})} />
+                <Input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Part Number</Label>
-                  <Input required value={formData.part_number} onChange={e => setFormData({...formData, part_number: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Category</Label>
-                  <Input required value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} />
+                  <Label>SKU / Part Number</Label>
+                  <Input value={formData.sku} onChange={e => setFormData({...formData, sku: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <Label>Quantity</Label>
@@ -91,8 +87,8 @@ function MaintenanceInventory() {
                       <Box className="h-4 w-4 text-slate-500" />
                     </div>
                     <div>
-                      <p className="font-semibold">{part.part_name} <span className="text-xs text-muted-foreground ml-1">({part.part_number})</span></p>
-                      <p className="text-sm text-muted-foreground">{part.category}</p>
+                      <p className="font-semibold">{part.name} <span className="text-xs text-muted-foreground ml-1">({part.sku || '-'})</span></p>
+                      <p className="text-sm text-muted-foreground">Qty: {part.quantity_on_hand}</p>
                     </div>
                   </div>
                   <div className="text-right">

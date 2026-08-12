@@ -90,14 +90,14 @@ type Customer = {
   qatarId: string;
   passport: string;
   crNumber: string;
-  nationality: string;
+  nationality?: string;
   mobile: string;
   email: string;
-  permanentAddress: string;
-  localAddress: string;
-  authorizedSignatory: string;
-  emergencyContact: string;
-  employerInfo: string;
+  permanentAddress?: string;
+  localAddress?: string;
+  authorizedSignatory?: string;
+  emergencyContact?: string;
+  employerInfo?: string;
   status: CustomerStatus;
 };
 
@@ -106,12 +106,12 @@ type Reservation = {
   property: string;
   unit: string;
   tenantName: string;
-  agent: string;
+  agent?: string;
   startDate: string;
   validUntil: string;
   rent: number;
   status: ReservationStatus;
-  remarks: string;
+  remarks?: string;
   proposedEndDate?: string;
 };
 
@@ -139,7 +139,7 @@ type Lease = {
   monthlyRent: number;
   securityDeposit: number;
   pdcCount: number;
-  paymentFrequency: "monthly" | "quarterly" | "half_yearly" | "yearly";
+  paymentFrequency: "monthly" | "quarterly" | "half_yearly" | "yearly" | "semi-annual" | "annual";
   gracePeriodDays: number;
   penalties: string;
   maintenanceResponsibility: string;
@@ -202,7 +202,7 @@ type KeyHandover = {
   parkingDeviceDetails?: string;
   electricityMeterReading?: string;
   waterMeterReading?: string;
-  meterInfo: string;
+  meterInfo?: string;
   unitCondition?: string;
   cleanliness?: string;
   acWorking?: boolean;
@@ -212,7 +212,7 @@ type KeyHandover = {
   idVerified?: boolean;
   photosTaken?: number;
   acknowledged: boolean;
-  issuedBy: string;
+  issuedBy?: string;
   collectorName?: string;
   collectorIdNumber?: string;
   tenantAcknowledgement?: string;
@@ -2984,7 +2984,7 @@ function LeasingPage() {
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Lease Lifecycle</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Lease Management</h2>
           <p className="text-muted-foreground">Reservation to lease closure with gates, approvals, handover, inspections and accounting documents.</p>
         </div>
         <Button onClick={() => setRenewalNoticeOpen(true)}>

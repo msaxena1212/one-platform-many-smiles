@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building, PlusCircle, Users, Wallet, Wrench, ClipboardCheck, Plus, Home, Inbox, CalendarIcon, Loader2, BarChart, Package } from "lucide-react";
+import { Plus, Home, Inbox, CalendarIcon, Loader2, BarChart, Package, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchAllProperties, supabase, type Property } from "@/lib/supabase";
 
@@ -226,8 +226,10 @@ function HostDashboard() {
                         <td className="p-4 align-middle">${property.base_price_per_night}</td>
                         <td className="p-4 align-middle text-muted-foreground">{property.city}, {property.country}</td>
                         <td className="p-4 align-middle text-right">
-                          <Button variant="outline" size="sm" onClick={() => alert("Manage property coming soon!")}>
-                            Manage
+                          <Button asChild variant="outline" size="sm">
+                            <Link to="/prop-mgr/manage/$id" params={{ id: property.id }}>
+                              Manage
+                            </Link>
                           </Button>
                         </td>
                       </tr>
