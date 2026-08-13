@@ -749,11 +749,10 @@ function LeasingPage() {
   const [keysWorkflowLease, setKeysWorkflowLease] = useState<Lease | null>(null);
 
   const handoverAssets = useMemo(() => {
-    if (!keysWorkflowLease) return assets;
+    if (!keysWorkflowLease) return [];
     const unit = units.find((item) => item.unit === keysWorkflowLease.unit);
-    if (!unit) return assets;
-    const filtered = assets.filter((asset) => asset.assigned_unit_id === unit.id || asset.assigned_property_id === unit.id);
-    return filtered.length > 0 ? filtered : assets;
+    if (!unit) return [];
+    return assets.filter((asset) => asset.assigned_unit_id === unit.id || asset.assigned_property_id === unit.id);
   }, [assets, keysWorkflowLease, units]);
 
   // Tenant Sign
@@ -914,12 +913,15 @@ function LeasingPage() {
   // ── PDC Add Dialog ───────────────────────────────────────────────
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [pdcLeaseId, setPdcLeaseId] = useState("");
-  const [pdcRows, setPdcRows] = useState<PdcRow[]>(() =>
-    Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" }))
+  const [pdcRows, setPdcRows] = useState<any[]>(() =>
+    Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], tenureStart: "", tenureEnd: "", file: "" }))
   );
 
 
+  const [createReservationOpen, setCreateReservationOpen] = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [reservationForm, setReservationForm] = useState({
+    property: "",
     unit: "AAA - GF2",
     tenantName: "",
     agent: "Marketing Agent",
@@ -1341,6 +1343,15 @@ function LeasingPage() {
         securityDeposit: lease.securityDeposit,
         depositNonRefundable: "QR 0 or as agreed",
         leaseNo: `LES-${lease.id}`,
+        paymentFrequency: lease.paymentFrequency,
+        pdcCount: lease.pdcCount,
+        gracePeriodDays: lease.gracePeriodDays,
+        penalties: lease.penalties,
+        maintenanceResponsibility: lease.maintenanceResponsibility,
+        utilityResponsibility: lease.utilityResponsibility,
+        parkingDetails: lease.parkingDetails,
+        specialConditions: lease.specialConditions,
+        noticePeriodDays: lease.noticePeriodDays,
       });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -1789,7 +1800,7 @@ function LeasingPage() {
       status: "received",
       output: `${newPdcs.length} PDCs recorded into the system for lease ${pdcLeaseId}`,
     });
-    setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" })));
+    setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], tenureStart: "", tenureEnd: "", file: "" })));
     setPdcLeaseId("");
     setAddPdcOpen(false);
   }
@@ -1798,6 +1809,115 @@ function LeasingPage() {
     <div className="space-y-6">
 
       {/* ── CREATE LEASE DIALOG ───────────────────────────────────── */}
+
+      <Dialog open={createReservationOpen} onOpenChange={setCreateReservationOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create Reservation</DialogTitle>
+            <DialogDescription>Select a property, then a unit to reserve.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Field label="Property">
+              <Select 
+                value={reservationForm.property} 
+                onValueChange={(property) => setReservationForm((form) => ({ ...form, property, unit: "" }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select Property" /></SelectTrigger>
+                <SelectContent>
+                  {Array.from(new Set(units.map(u => u.property))).map(prop => (
+                    <SelectItem key={prop} value={prop}>{prop}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Unit">
+              <Select 
+                value={reservationForm.unit} 
+                onValueChange={(unit) => setReservationForm((form) => ({ ...form, unit }))}
+                disabled={!reservationForm.property}
+              >
+                <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
+                <SelectContent>
+                  {units
+                    .filter(u => u.property === reservationForm.property)
+                    .map((unit) => (
+                    <SelectItem key={unit.id} value={unit.unit} disabled={unit.status !== "Available"}>
+                      {unit.unit} - {unit.status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Prospective tenant"><Input value={reservationForm.tenantName} onChange={(event) => setReservationForm((form) => ({ ...form, tenantName: event.target.value }))} /></Field>
+            <Field label="Expected Lease start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Validity days"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} /></Field>
+              <Field label="Rent"><Input type="number" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} /></Field>
+            </div>
+            <Field label="Remarks"><Textarea value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} /></Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
+            <Button onClick={async () => {
+              await withBusy("reserve", createReservation);
+              setCreateReservationOpen(false);
+            }}>
+              {busyAction === "reserve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
+              Reserve Unit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createCustomerOpen} onOpenChange={setCreateCustomerOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add Customer</DialogTitle>
+            <DialogDescription>Create a new customer profile.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
+            <Field label="Name"><Input value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} /></Field>
+            <Field label="Type">
+              <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
+              </Select>
+            </Field>
+            {customerForm.type === "individual" ? (
+              <>
+                <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
+                <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
+                <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
+                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
+                <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
+              </>
+            ) : (
+              <>
+                <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
+                <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
+                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
+                <Field label="Company / Operational Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
+              </>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
+              <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+            </div>
+            <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
+            <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateCustomerOpen(false)}>Cancel</Button>
+            <Button onClick={async () => {
+              await withBusy("customer", createCustomer);
+              setCreateCustomerOpen(false);
+            }}>
+              {busyAction === "customer" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+              Save Customer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={createLeaseOpen} onOpenChange={setCreateLeaseOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -2356,7 +2476,7 @@ function LeasingPage() {
 
       {/* ── KEY NOTIFY DIALOG ─────────────────────────────────── */}
       <Dialog open={keyNotifyOpen} onOpenChange={setKeyNotifyOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[500px] w-[95vw]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Bell className="h-5 w-5 text-primary" /> Key Issue Notification</DialogTitle>
             <DialogDescription>Send handover notification to tenant and all responsible parties for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
@@ -2371,7 +2491,7 @@ function LeasingPage() {
             <Field label="Recipients">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start text-left font-normal overflow-hidden text-ellipsis whitespace-nowrap">
+                  <Button variant="outline" className="w-full justify-start text-left font-normal h-auto min-h-10 py-2 whitespace-normal break-words">
                     {keyNotifyForm.recipients.length > 0 ? keyNotifyForm.recipients.join(", ") : "Select recipients..."}
                   </Button>
                 </DropdownMenuTrigger>
@@ -2911,7 +3031,7 @@ function LeasingPage() {
 
       {/* ── ADD PDC DIALOG ────────────────────────────────────── */}
       <Dialog open={addPdcOpen} onOpenChange={setAddPdcOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[1000px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-primary" /> Add PDC / Cheque</DialogTitle>
             <DialogDescription>Manually record a post-dated cheque for a lease.</DialogDescription>
@@ -2927,43 +3047,53 @@ function LeasingPage() {
             </Field>
             <div className="rounded-lg border bg-muted/30 p-3">
               <p className="mb-2 text-sm font-semibold">Enter up to 12 PDC rows</p>
-              <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground mb-2">
-                <span className="col-span-3">Cheque No.</span>
-                <span className="col-span-3">Bank</span>
-                <span className="col-span-2">Maturity</span>
-                <span className="col-span-2">Amount</span>
-                <span className="col-span-2">Document</span>
+              <div className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 text-xs font-semibold text-muted-foreground mb-2">
+                <span>Cheque No.</span>
+                <span>Bank</span>
+                <span>Maturity</span>
+                <span>Amount</span>
+                <span>Tenure (Start & End)</span>
+                <span>Document</span>
               </div>
               <div className="space-y-2 max-h-[360px] overflow-y-auto pr-2">
                 {pdcRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center text-sm">
+                  <div key={idx} className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 items-center text-sm">
                     <Input
-                      className="col-span-3"
                       value={row.chequeNo}
                       onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, chequeNo: e.target.value } : item))}
                       placeholder={`PDC-${idx + 1}`}
                     />
                     <Input
-                      className="col-span-3"
                       value={row.bank}
                       onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, bank: e.target.value } : item))}
                       placeholder="Bank"
                     />
                     <Input
-                      className="col-span-2"
                       type="date"
                       value={row.maturityDate}
                       onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, maturityDate: e.target.value } : item))}
                     />
                     <Input
-                      className="col-span-2"
                       type="number"
                       value={row.amount}
                       onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, amount: e.target.value } : item))}
                       placeholder="Amount"
                     />
+                    <div className="flex gap-1">
+                      <Input
+                        type="date"
+                        value={row.tenureStart}
+                        onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, tenureStart: e.target.value } : item))}
+                        title="Start Date"
+                      />
+                      <Input
+                        type="date"
+                        value={row.tenureEnd}
+                        onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, tenureEnd: e.target.value } : item))}
+                        title="End Date"
+                      />
+                    </div>
                     <Input
-                      className="col-span-2"
                       type="file"
                       onChange={e => setPdcRows((prev) => prev.map((item, index) => index === idx ? { ...item, file: e.target.files?.[0]?.name || "" } : item))}
                     />
@@ -3015,37 +3145,21 @@ function LeasingPage() {
           <TabsTrigger value="checkout">Checkout</TabsTrigger>
           <TabsTrigger value="vouchers">Vouchers</TabsTrigger>
           <TabsTrigger value="audit">Audit Flow</TabsTrigger>
-          <TabsTrigger value="masters">Masters</TabsTrigger>
+          
         </TabsList>
 
         <TabsContent value="reservations" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Unit Reservation - Lease Module</CardTitle>
-              <CardDescription>Reserving a unit locks it from Available to Reserved until conversion, expiry or release.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-[320px_1fr]">
-              <div className="space-y-3 rounded-md border p-4">
-                <Field label="Unit">
-                  <Select value={reservationForm.unit} onValueChange={(unit) => setReservationForm((form) => ({ ...form, unit }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {units.map((unit) => <SelectItem key={unit.id} value={unit.unit} disabled={unit.status !== "Available"}>{unit.unit} - {unit.status}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Prospective tenant"><Input value={reservationForm.tenantName} onChange={(event) => setReservationForm((form) => ({ ...form, tenantName: event.target.value }))} /></Field>
-                <Field label="Lease start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} /></Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Validity days"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} /></Field>
-                  <Field label="Rent"><Input type="number" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} /></Field>
-                </div>
-                <Field label="Remarks"><Textarea value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} /></Field>
-                <Button className="w-full" onClick={() => withBusy("reserve", createReservation)}>
-                  {busyAction === "reserve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
-                  Reserve Unit
-                </Button>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Unit Reservation - Lease Module</CardTitle>
+                <CardDescription>Reserving a unit locks it from Available to Reserved until conversion, expiry or release.</CardDescription>
               </div>
+              <Button onClick={() => setCreateReservationOpen(true)}>
+                <Lock className="mr-2 h-4 w-4" /> Create Reservation
+              </Button>
+            </CardHeader>
+            <CardContent>
               <DataTable
                 columns={["Unit", "Tenant", "Valid Until", "Rent", "Status", "Actions"]}
                 rows={reservations.map((reservation) => [
@@ -3066,46 +3180,16 @@ function LeasingPage() {
 
         <TabsContent value="customers" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Customer Master With Duplicate Validation</CardTitle>
-              <CardDescription>Duplicate checks run across Qatar ID, passport, CR number, mobile and email before activation.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 lg:grid-cols-[320px_1fr]">
-              <div className="space-y-3 rounded-md border p-4">
-                <Field label="Name"><Input value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} /></Field>
-                <Field label="Type">
-                  <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
-                  </Select>
-                </Field>
-                {customerForm.type === "individual" ? (
-                  <>
-                    <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
-                    <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
-                    <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
-                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                    <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-                  </>
-                ) : (
-                  <>
-                    <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
-                    <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
-                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                    <Field label="Company / Operational Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-                  </>
-                )}
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
-                  <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
-                </div>
-                <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
-                <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
-                <Button className="w-full" onClick={() => withBusy("customer", createCustomer)}>
-                  {busyAction === "customer" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                  Save Customer
-                </Button>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Customer Master With Duplicate Validation</CardTitle>
+                <CardDescription>Duplicate checks run across Qatar ID, passport, CR number, mobile and email before activation.</CardDescription>
               </div>
+              <Button onClick={() => setCreateCustomerOpen(true)}>
+                <UserPlus className="mr-2 h-4 w-4" /> Add Customer
+              </Button>
+            </CardHeader>
+            <CardContent>
               <DataTable
                 columns={["Name", "Type", "Primary ID", "Contact", "Status"]}
                 rows={customers.map((customer) => [
@@ -3156,9 +3240,14 @@ function LeasingPage() {
 
         <TabsContent value="agreement">
           <Card>
-            <CardHeader>
-              <CardTitle>Lease Agreement Terms & Payment Schedule Rules</CardTitle>
-              <CardDescription>Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Lease Agreement Terms & Payment Schedule Rules</CardTitle>
+                <CardDescription>Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.</CardDescription>
+              </div>
+              <Button onClick={() => setCreateLeaseOpen(true)}>
+                <FileSignature className="mr-2 h-4 w-4" /> Create Lease
+              </Button>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -3408,7 +3497,7 @@ function LeasingPage() {
                 </div>
                 <Button size="sm" onClick={() => {
                   setPdcLeaseId(leases[0]?.id || "");
-                  setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], file: "" })));
+                  setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], tenureStart: "", tenureEnd: "", file: "" })));
                   setAddPdcOpen(true);
                 }}>
                   <Receipt className="mr-2 h-4 w-4" /> Add PDC(s)
@@ -3462,17 +3551,7 @@ function LeasingPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="masters">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <MasterCard title="Reservation Status Master" icon={<Lock className="h-4 w-4" />} items={reservationStatusMasters} />
-            <MasterCard title="Customer Identity Master" icon={<ShieldCheck className="h-4 w-4" />} items={customerIdentityMasters} />
-            <MasterCard title="Document Verification Master" icon={<FileCheck2 className="h-4 w-4" />} items={documentVerificationMasters} />
-            <MasterCard title="Lease Status Master" icon={<FileSignature className="h-4 w-4" />} items={leaseStatusMasters} />
-            <MasterCard title="Key Handover Master" icon={<KeyRound className="h-4 w-4" />} items={keyHandoverMasters} />
-            <MasterCard title="Settlement Master" icon={<Wallet className="h-4 w-4" />} items={securitySettlementMasters} />
-            <MasterCard title="Voucher Document Master" icon={<Receipt className="h-4 w-4" />} items={voucherDocumentMasters} />
-          </div>
-        </TabsContent>
+        
       </Tabs>
     </div>
   );

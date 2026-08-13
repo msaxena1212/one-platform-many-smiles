@@ -194,7 +194,7 @@ export interface PmsAppData {
 }
 
 const STORAGE_KEY = "zyno-pms-app-data";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 const SEED_DATA: PmsAppData = {
   units: [

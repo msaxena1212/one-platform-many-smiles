@@ -26,6 +26,15 @@ export interface LeaseAgreementData {
   securityDeposit: number;
   depositNonRefundable: string;
   leaseNo: string;
+  paymentFrequency?: string;
+  pdcCount?: number;
+  gracePeriodDays?: number;
+  penalties?: string;
+  maintenanceResponsibility?: string;
+  utilityResponsibility?: string;
+  parkingDetails?: string;
+  specialConditions?: string;
+  noticePeriodDays?: number;
 }
 
 function formatMoney(amount: number) {
@@ -110,7 +119,21 @@ function LeaseAgreementDocument({ data }: { data: LeaseAgreementData }) {
         <Text style={styles.item}>Security Deposit: {formatMoney(data.securityDeposit)}</Text>
         <Text style={styles.item}>Non-refundable portion: {data.depositNonRefundable}</Text>
 
-        <Text style={styles.sectionTitle}>SECTION 10: SIGNATURE BLOCKS</Text>
+        <Text style={styles.sectionTitle}>Section 10: SPECIFIC TERMS & CONDITIONS</Text>
+        <Text style={styles.paragraph}>
+          The following specific terms and conditions shall apply to this lease agreement:
+        </Text>
+        <Text style={styles.item}>Payment Frequency: {data.paymentFrequency?.replace('_', ' ') || 'N/A'}</Text>
+        <Text style={styles.item}>Post-Dated Cheques (PDCs): {data.pdcCount || 0}</Text>
+        <Text style={styles.item}>Grace Period: {data.gracePeriodDays || 0} days</Text>
+        <Text style={styles.item}>Penalties: {data.penalties || 'None'}</Text>
+        <Text style={styles.item}>Maintenance Responsibility: {data.maintenanceResponsibility || 'N/A'}</Text>
+        <Text style={styles.item}>Utility Responsibility: {data.utilityResponsibility || 'N/A'}</Text>
+        <Text style={styles.item}>Parking Details: {data.parkingDetails || 'N/A'}</Text>
+        <Text style={styles.item}>Special Conditions: {data.specialConditions || 'None'}</Text>
+        <Text style={styles.item}>Notice Period for Renewal/Termination: {data.noticePeriodDays || 0} days</Text>
+
+        <Text style={styles.sectionTitle}>SECTION 11: SIGNATURE BLOCKS</Text>
         <Text style={styles.paragraph}>
           Insert the names of landlord and tenant (if there are two or more tenants, insert the names of each of them) and have each person sign and date the agreement.
         </Text>
