@@ -211,18 +211,33 @@ function NavModulesSidebar({
   searchParams: Record<string, any>;
   onSignOut: () => void;
 }) {
-  // ── Detect active states on URL change ───────────────────────────────────
+  // ── Detect active state: pick ONLY the single most-specific matching item ──
+  // This prevents "/prop-mgr" (Dashboard) from also matching when on "/prop-mgr/leases"
   function detectExpanded() {
-    const openMods = new Set<number>();
-    const openGrps: Record<number, Set<number>> = {};
+    let bestScore = -1;
+    let bestMi = -1;
+    let bestGi = -1;
+
     for (let mi = 0; mi < navModules.length; mi++) {
       for (let gi = 0; gi < navModules[mi].groups.length; gi++) {
-        if (navModules[mi].groups[gi].items.some(isItemActive)) {
-          openMods.add(mi);
-          if (!openGrps[mi]) openGrps[mi] = new Set();
-          openGrps[mi].add(gi);
+        for (const item of navModules[mi].groups[gi].items) {
+          if (!isItemActive(item)) continue;
+          // Score = path length + big bonus for tab-param match (most specific wins)
+          const score = (item.to as string).length + (item.search?.tab ? 1000 : 0);
+          if (score > bestScore) {
+            bestScore = score;
+            bestMi = mi;
+            bestGi = gi;
+          }
         }
       }
+    }
+
+    const openMods = new Set<number>();
+    const openGrps: Record<number, Set<number>> = {};
+    if (bestMi !== -1) {
+      openMods.add(bestMi);
+      openGrps[bestMi] = new Set([bestGi]);
     }
     return { openMods, openGrps };
   }
