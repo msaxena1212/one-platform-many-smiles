@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -726,9 +727,10 @@ function SubcategoryPanel({
 // ── Main MastersModule ────────────────────────────────────────────────────────
 
 export function MastersModule({ role }: MastersModuleProps) {
-  const [activeKey, setActiveKey] = useState("gender");
-
-  // HR Masters state
+  const searchParams = useSearch({ strict: false }) as Record<string, any>;
+  const activeKey = searchParams.tab || "gender";
+  
+  const [loading, setLoading] = useState(true);
   const [genders, setGenders] = useState<Simplemaster[]>([]);
   const [departments, setDepartments] = useState<Simplemaster[]>([]);
   const [designations, setDesignations] = useState<Simplemaster[]>([]);
@@ -752,7 +754,7 @@ export function MastersModule({ role }: MastersModuleProps) {
   // Loading per-master
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
 
-  const setLoading = (key: string, val: boolean) =>
+  const setLoadingKey = (key: string, val: boolean) =>
     setLoadingMap(prev => ({ ...prev, [key]: val }));
 
   const isLoading = (key: string) => !!loadingMap[key];
@@ -760,7 +762,7 @@ export function MastersModule({ role }: MastersModuleProps) {
   // ── Loaders ──────────────────────────────────────────────────────────────────
 
   const loadMaster = useCallback(async (key: string) => {
-    setLoading(key, true);
+    setLoadingKey(key, true);
     try {
       switch (key) {
         case "gender":          setGenders(await fetchGenders()); break;
@@ -786,7 +788,8 @@ export function MastersModule({ role }: MastersModuleProps) {
     } catch (err: any) {
       toast.error(err.message || `Failed to load ${key}`);
     } finally {
-      setLoading(key, false);
+      setLoadingKey(key, false);
+      setLoading(false);
     }
   }, []);
 
@@ -800,8 +803,8 @@ export function MastersModule({ role }: MastersModuleProps) {
 
   // ── Render panel by key ───────────────────────────────────────────────────────
 
-  function renderPanel(key: string) {
-    switch (key) {
+  function renderActivePanel() {
+    switch (activeKey) {
       // HR
       case "gender":
         return <SimpleMasterPanel title="Gender" items={genders} loading={isLoading("gender")} onAdd={async n => { await createGender(n); await loadMaster("gender"); }} onEdit={async (id, n) => { await updateGender(id, n); await loadMaster("gender"); }} onDelete={async id => { await deleteGender(id); await loadMaster("gender"); }} />;
@@ -874,7 +877,7 @@ export function MastersModule({ role }: MastersModuleProps) {
         );
 
       default:
-        return <p className="text-sm text-muted-foreground">Panel coming soon.</p>;
+        return <p className="text-sm text-muted-foreground p-4">Panel coming soon.</p>;
     }
   }
 
@@ -882,25 +885,6 @@ export function MastersModule({ role }: MastersModuleProps) {
 
   const activeLabel = NAV_GROUPS.flatMap(g => g.items).find(i => i.key === activeKey)?.label ?? "";
   const activeGroup = NAV_GROUPS.find(g => g.items.some(i => i.key === activeKey));
-  const groupItemCount = (key: string) => {
-    switch (key) {
-      case "gender":          return genders.length;
-      case "department":      return departments.length;
-      case "designation":     return designations.length;
-      case "employment_type": return employmentTypes.length;
-      case "work_location":   return workLocations.length;
-      case "employee_status": return employeeStatuses.length;
-      case "asset_category":  return assetCategories.length;
-      case "asset_subcategory": return allSubcategories.length;
-      case "asset_ownership_type": return assetOwnershipTypes.length;
-      case "asset_condition": return assetConditions.length;
-      case "asset_status":    return assetStatuses.length;
-      case "ticket_categories": return ticketCategories.length;
-      case "facilities":      return facilities.length;
-      case "payment_modes":   return paymentModes.length;
-      default: return 0;
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -913,55 +897,6 @@ export function MastersModule({ role }: MastersModuleProps) {
       </div>
 
       <div className="flex gap-6 min-h-[600px]">
-        {/* ── Sidebar ────────────────────────────────────────────────────── */}
-        <aside className="w-60 shrink-0">
-          <ScrollArea className="h-full">
-            <div className="space-y-5 pr-1">
-              {NAV_GROUPS.map(group => {
-                const Icon = group.icon;
-                return (
-                  <div key={group.label}>
-                    <div className={`flex items-center gap-2 px-2 py-1 rounded-md mb-1 ${group.bg}`}>
-                      <Icon className={`h-3.5 w-3.5 ${group.color}`} />
-                      <span className={`text-xs font-semibold uppercase tracking-wider ${group.color}`}>
-                        {group.label}
-                      </span>
-                    </div>
-                    <div className="space-y-0.5">
-                      {group.items.map(item => {
-                        const isActive = item.key === activeKey;
-                        const count = groupItemCount(item.key);
-                        return (
-                          <button
-                            key={item.key}
-                            onClick={() => setActiveKey(item.key)}
-                            className={`
-                              w-full flex items-center justify-between px-3 py-2 rounded-md text-sm transition-all
-                              ${isActive
-                                ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                              }
-                            `}
-                          >
-                            <span className="flex items-center gap-2">
-                              {isActive && <ChevronRight className="h-3 w-3 shrink-0" />}
-                              {item.label}
-                            </span>
-                            {count > 0 && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                                {count}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        </aside>
 
         {/* ── Content Panel ──────────────────────────────────────────────── */}
         <div className="flex-1 min-w-0">

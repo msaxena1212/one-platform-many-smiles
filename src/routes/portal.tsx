@@ -16,7 +16,7 @@ function PortalLayout() {
   const title = resolveConsoleTitle("portal", path);
 
   return (
-    <AppShell variant={config.variant} title={title} consoleLabel={config.consoleLabel} nav={config.nav} user={config.user}>
+    <AppShell variant={config.variant} title={title} consoleLabel={config.consoleLabel} navGroups={config.navGroups} navModules={config.navModules} nav={config.nav} user={config.user}>
       <Outlet />
     </AppShell>
   );

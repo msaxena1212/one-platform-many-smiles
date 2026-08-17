@@ -1123,26 +1123,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     placeholder="Enter unit name manually"
                   />
                 </div>
-                <div className="col-span-2 space-y-1">
-                  <Label>Cost Center</Label>
-                  <Select
-                    value={form.unit_cost_center_code || ""}
-                    onValueChange={(v) => setF("unit_cost_center_code", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select cost center" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {properties
-                        .filter((p) => p.cost_center_code)
-                        .map((p) => (
-                          <SelectItem key={p.id} value={p.cost_center_code as string}>
-                            {p.cost_center_code} — {p.cost_center_name || p.title}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+{/* Cost center selection removed as per new logic */}
                 <div className="space-y-1">
                   <Label>Block / Tower</Label>
                   <Input

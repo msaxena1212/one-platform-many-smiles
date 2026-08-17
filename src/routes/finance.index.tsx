@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { fetchJournalEntries, fetchARLedgers, JournalEntry, ARLedger } from "@/lib/supabase";
+import { FinVouchersApi, FinPdcRegisterApi } from "@/lib/supabase-finance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, TrendingUp, CreditCard, ArrowUpRight, ArrowDownRight, Wallet } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
@@ -10,16 +10,16 @@ export const Route = createFileRoute("/finance/")({
 });
 
 function FinanceDashboard() {
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
-  const [arLedgers, setArLedgers] = useState<ARLedger[]>([]);
+  const [journalEntries, setJournalEntries] = useState<any[]>([]);
+  const [arLedgers, setArLedgers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
         const [je, ar] = await Promise.all([
-          fetchJournalEntries(),
-          fetchARLedgers()
+          FinVouchersApi.fetchAll(),
+          FinPdcRegisterApi.fetchAll()
         ]);
         setJournalEntries(je || []);
         setArLedgers(ar || []);
@@ -32,7 +32,7 @@ function FinanceDashboard() {
     loadData();
   }, []);
 
-  const totalAr = arLedgers.reduce((acc, curr) => acc + curr.balance, 0);
+  const totalAr = (arLedgers as any[]).reduce((acc, curr) => acc + curr.balance, 0);
   const recentJeCount = journalEntries.length;
 
   const chartData = [

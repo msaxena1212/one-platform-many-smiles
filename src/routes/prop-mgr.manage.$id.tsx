@@ -903,7 +903,7 @@ export function ManagePropertyPage({
             </CardHeader>
             <CardContent className="space-y-2">
               <Button asChild variant="outline" className="w-full justify-start" size="sm">
-                <Link to={`${basePath}/units`} search={{ property_id: id }} as="a">
+                <Link to={`${basePath}/units` as any} search={{ property_id: id } as any}>
                   <Users className="mr-2 h-4 w-4" /> Manage Units
                 </Link>
               </Button>

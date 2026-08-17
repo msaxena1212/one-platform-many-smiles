@@ -425,7 +425,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => {
                       setPropertyDialogMode("create");
-                      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0" });
+                      setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0", no_of_units: "1" });
                       setPropertyDialogOpen(true);
                     }}>Add Property</Button>
                     <Button type="button" variant="outline" size="sm" disabled={!form.assigned_property_id} onClick={() => {
@@ -444,6 +444,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                         bathrooms: String(selected.bathrooms || 1),
                         base_price_per_night: String(selected.base_price_per_night || 0),
                         cleaning_fee: String(selected.cleaning_fee || 0),
+                        no_of_units: String((selected as any).no_of_units || 1),
                       });
                       setPropertyDialogOpen(true);
                     }}>Edit Property</Button>

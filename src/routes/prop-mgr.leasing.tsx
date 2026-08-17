@@ -575,6 +575,32 @@ function LeasingPage() {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [busyAction, setBusyAction] = useState("");
 
+  const [realUnits, setRealUnits] = useState<Unit[]>([]);
+  useEffect(() => {
+    async function fetchRealUnits() {
+      try {
+        const { supabase } = await import('@/lib/supabase');
+        const [{ data: props }, { data: uns }] = await Promise.all([
+          supabase.from('properties').select('id, title'),
+          supabase.from('units').select('*')
+        ]);
+        if (props && uns) {
+          const propMap = new Map(props.map((p: any) => [p.id, p.title]));
+          setRealUnits(uns.map((u: any) => ({
+            id: u.id,
+            property: propMap.get(u.property_id) || "Unknown Property",
+            unit: u.unit_ref,
+            status: u.status === "available" ? "Available" : u.status === "occupied" ? "Occupied" : u.status === "maintenance" ? "Vacant - Under Maintenance" : "Available",
+            rent: Number(u.price || 0)
+          })));
+        }
+      } catch (e) {
+        console.error("Failed to load real units", e);
+      }
+    }
+    fetchRealUnits();
+  }, []);
+
   // ── Dialog States ──────────────────────────────────────────────
   const [createLeaseOpen, setCreateLeaseOpen] = useState(false);
   const [selectedReservationForLease, setSelectedReservationForLease] = useState<Reservation | null>(null);
@@ -820,7 +846,7 @@ function LeasingPage() {
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverViewOpen, setHandoverViewOpen] = useState(false);
   const [selectedHandover, setSelectedHandover] = useState<KeyHandover | null>(null);
-  const [handoverActiveTab, setHandoverActiveTab] = useState<"details" | "condition" | "assets" | "checklist" | "acknowledgement">("details");
+  const [handoverActiveTab, setHandoverActiveTab] = useState<"details" | "assets" | "condition" | "checklist" | "acknowledgement" | string>("details");
   const [handoverForm, setHandoverForm] = useState({
     handoverAt: addDays(today, 1),
     handoverTime: "10:00",
@@ -899,6 +925,8 @@ function LeasingPage() {
     restorationCharges: "0",
     outstandingRent: "0",
     damagesAmount: "650",
+    utilityCharges: "0",
+    otherDeductions: "0",
     photos: "12",
     checkoutPhotos: "",
     checkoutReportFile: "",
@@ -1824,7 +1852,7 @@ function LeasingPage() {
               >
                 <SelectTrigger><SelectValue placeholder="Select Property" /></SelectTrigger>
                 <SelectContent>
-                  {Array.from(new Set(units.map(u => u.property))).map(prop => (
+                  {Array.from(new Set((realUnits.length > 0 ? realUnits : units).map(u => u.property))).map(prop => (
                     <SelectItem key={prop} value={prop}>{prop}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1838,7 +1866,7 @@ function LeasingPage() {
               >
                 <SelectTrigger><SelectValue placeholder="Select Unit" /></SelectTrigger>
                 <SelectContent>
-                  {units
+                  {(realUnits.length > 0 ? realUnits : units)
                     .filter(u => u.property === reservationForm.property)
                     .map((unit) => (
                     <SelectItem key={unit.id} value={unit.unit} disabled={unit.status !== "Available"}>
@@ -3463,7 +3491,7 @@ function LeasingPage() {
                     `Finance ${checkout.financeClearance ? "OK" : "Pending"}, Utility ${checkout.utilityClearance ? "OK" : "Pending"}, Keys ${checkout.keysReturned ? "Returned" : "Pending"}`,
                     checkout.comparisonSummary,
                     <StatusBadge key="status" value={checkout.status} />,
-                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Vacant - Under Maintenance" }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
+                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", checkoutPhotos: "", checkoutReportFile: "", handoverConditionSummary: "", finalConditionSummary: "", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Vacant - Under Maintenance" as any }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
                   ];
                 })}
               />

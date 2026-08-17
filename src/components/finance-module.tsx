@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,13 +22,16 @@ import {
   fetchERPChartOfAccounts, fetchUnitCOAs,
   type JournalEntry, type Receipt, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA
 } from "@/lib/supabase";
-import {
-  FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
+import { FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
   FinPostingPeriodsApi, FinBanksApi, FinBankAccountsApi, FinBankReconciliationsApi, FinContractsApi,
   type FinFinancialYear, type FinRegion, type FinVendor, type FinCustomer, type FinCostCenter,
   type FinPostingPeriod, type FinBank, type FinBankAccount, type FinBankReconciliation, type FinContract
 } from "@/lib/supabase-finance";
 import { toast } from "sonner";
+import { PdcManagement } from "./finance/pdc-management";
+import { DepositsGuarantees } from "./finance/deposits-guarantees";
+import { ReceivablesLegal } from "./finance/receivables";
+import { PayrollSync } from "./finance/payroll-sync";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
@@ -35,10 +39,11 @@ export interface FinanceModuleProps {
 
 const FINANCE_NAV = [
   {
-    group: "Setup Configuration",
+    group: "Setup",
     icon: Settings,
     color: "text-blue-500",
     bg: "bg-blue-500/10",
+    activeBg: "bg-blue-500",
     items: [
       { key: "financial_year", label: "Financial Year", icon: Calendar },
       { key: "region", label: "Region", icon: MapPin },
@@ -52,6 +57,7 @@ const FINANCE_NAV = [
     icon: DollarSign,
     color: "text-emerald-500",
     bg: "bg-emerald-500/10",
+    activeBg: "bg-emerald-500",
     items: [
       { key: "finance_dashboard", label: "Finance Dashboard", icon: LayoutDashboard },
       { key: "posting_period", label: "Posting Period", icon: Clock },
@@ -65,6 +71,7 @@ const FINANCE_NAV = [
     icon: CreditCard,
     color: "text-purple-500",
     bg: "bg-purple-500/10",
+    activeBg: "bg-purple-500",
     items: [
       { key: "grn_cost_mapping", label: "GRN Cost Mapping", icon: Layers },
       { key: "payable_invoice", label: "Payable Invoice", icon: ArrowUpRight },
@@ -75,27 +82,42 @@ const FINANCE_NAV = [
     ],
   },
   {
-    group: "Bank Accounting",
+    group: "Receivables",
+    icon: Activity,
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
+    activeBg: "bg-orange-500",
+    items: [
+      { key: "pdc_management", label: "PDC Management", icon: FileCheck },
+      { key: "deposits_guarantees", label: "Deposits & Guarantees", icon: Landmark },
+      { key: "legal_receivables", label: "Legal Receivables", icon: Scale },
+      { key: "payroll_sync", label: "Payroll Sync Engine", icon: Users },
+    ],
+  },
+  {
+    group: "Banking",
     icon: Landmark,
     color: "text-amber-500",
     bg: "bg-amber-500/10",
+    activeBg: "bg-amber-500",
     items: [
       { key: "bank", label: "Bank", icon: Building },
       { key: "bank_account", label: "Bank Account", icon: CreditCard },
       { key: "bank_clearance", label: "Bank Clearance", icon: FileCheck },
       { key: "bank_reconciliation", label: "Bank Reconciliation", icon: Scale },
-      { key: "bank_reconciliation_statement_list", label: "Bank Reconciliation Statement List", icon: FileSpreadsheet },
+      { key: "bank_reconciliation_statement_list", label: "Reconciliation Statements", icon: FileSpreadsheet },
     ],
   },
   {
-    group: "Finance Report",
+    group: "Reports",
     icon: PieChart,
     color: "text-rose-500",
     bg: "bg-rose-500/10",
+    activeBg: "bg-rose-500",
     items: [
-      { key: "trial_balance_simple", label: "Trial Balance(Simple)", icon: Scale },
+      { key: "trial_balance_simple", label: "Trial Balance (Simple)", icon: Scale },
       { key: "trial_balance", label: "Trial Balance", icon: Scale },
-      { key: "profit_and_loss", label: "Profit and Loss", icon: Activity },
+      { key: "profit_and_loss", label: "Profit & Loss", icon: Activity },
       { key: "balance_sheet", label: "Balance Sheet", icon: Landmark },
       { key: "general_ledger", label: "General Ledger", icon: BookOpen },
       { key: "cash_flow_statement", label: "Cash Flow Statement", icon: DollarSign },
@@ -105,10 +127,11 @@ const FINANCE_NAV = [
     ],
   },
   {
-    group: "Contract Management",
+    group: "Contracts",
     icon: FileCode,
     color: "text-indigo-500",
     bg: "bg-indigo-500/10",
+    activeBg: "bg-indigo-500",
     items: [
       { key: "expense_contract", label: "Expense Contract", icon: FileText },
       { key: "revenue_contract", label: "Revenue Contract", icon: FileCheck },
@@ -117,93 +140,36 @@ const FINANCE_NAV = [
 ];
 
 export function FinanceModule({ role }: FinanceModuleProps) {
-  const [activeKey, setActiveKey] = useState("finance_dashboard");
-  const [loading, setLoading] = useState(false);
+  const searchParams = useSearch({ strict: false }) as Record<string, any>;
+  const activeKey = searchParams.tab || "finance_dashboard";
 
-  // Active item info
-  const activeItem = FINANCE_NAV.flatMap(g => g.items).find(i => i.key === activeKey);
   const activeGroup = FINANCE_NAV.find(g => g.items.some(i => i.key === activeKey));
+  const activeItem = activeGroup?.items.find(i => i.key === activeKey);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Finance Management</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage chart of accounts, setup configuration, vouchers, bank accounting, reports, and contract lifecycle.
-        </p>
-      </div>
-
-      <div className="flex gap-6 min-h-[680px]">
-        {/* Sidebar */}
-        <aside className="w-64 shrink-0">
-          <ScrollArea className="h-[680px] pr-2">
-            <div className="space-y-5">
-              {FINANCE_NAV.map((group) => {
-                const GroupIcon = group.icon;
-                return (
-                  <div key={group.group}>
-                    <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md mb-1.5 ${group.bg}`}>
-                      <GroupIcon className={`h-4 w-4 ${group.color}`} />
-                      <span className={`text-xs font-bold uppercase tracking-wider ${group.color}`}>
-                        {group.group}
-                      </span>
-                    </div>
-                    <div className="space-y-0.5">
-                      {group.items.map((item) => {
-                        const ItemIcon = item.icon;
-                        const isActive = item.key === activeKey;
-                        return (
-                          <button
-                            key={item.key}
-                            onClick={() => setActiveKey(item.key)}
-                            className={`
-                              w-full flex items-center justify-between px-3 py-2 rounded-md text-xs transition-all text-left
-                              ${isActive
-                                ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                              }
-                            `}
-                          >
-                            <span className="flex items-center gap-2 truncate">
-                              <ItemIcon className="h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">{item.label}</span>
-                            </span>
-                            {isActive && <ChevronRight className="h-3 w-3 shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden">
+      {/* ── Main Content Area ─────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Breadcrumb / topbar */}
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-card shrink-0">
+          {activeGroup && (
+            <div className={`p-1.5 rounded-md ${activeGroup.bg}`}>
+              <activeGroup.icon className={`h-4 w-4 ${activeGroup.color}`} />
             </div>
-          </ScrollArea>
-        </aside>
-
-        {/* Main Content Area */}
-        <div className="flex-1 min-w-0">
-          <Card className="h-full">
-            <CardHeader className="pb-3 border-b">
-              <div className="flex items-center gap-3">
-                {activeItem && (
-                  <div className={`p-2 rounded-md ${activeGroup?.bg}`}>
-                    <activeItem.icon className={`h-5 w-5 ${activeGroup?.color}`} />
-                  </div>
-                )}
-                <div>
-                  <CardTitle className="text-lg">{activeItem?.label}</CardTitle>
-                  <CardDescription className="text-xs">{activeGroup?.group}</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <ScrollArea className="h-[570px] pr-2">
-                <FinanceSubModuleRouter subKey={activeKey} />
-              </ScrollArea>
-            </CardContent>
-          </Card>
+          )}
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="text-muted-foreground font-medium">{activeGroup?.group || "Finance"}</span>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+            <span className="font-semibold text-foreground">{activeItem?.label || "Overview"}</span>
+          </div>
         </div>
+
+        {/* Content */}
+        <ScrollArea className="flex-1">
+          <div className="p-6">
+            <FinanceSubModuleRouter subKey={activeKey} />
+          </div>
+        </ScrollArea>
       </div>
     </div>
   );
@@ -234,6 +200,12 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "payment_voucher": return <VoucherManagerSubModule type="Payment Voucher" />;
     case "receivable_invoice": return <ReceivableInvoiceSubModule />;
     case "receipt_voucher": return <VoucherManagerSubModule type="Receipt Voucher" />;
+    
+    // Receivables & Operations
+    case "pdc_management": return <PdcManagement />;
+    case "deposits_guarantees": return <DepositsGuarantees />;
+    case "legal_receivables": return <ReceivablesLegal />;
+    case "payroll_sync": return <PayrollSync />;
     
     // Bank Accounting
     case "bank": return <BankSubModule />;
@@ -886,7 +858,7 @@ function ChartOfAccountsSubModule() {
 function JournalLedgerSubModule() {
   const [data, setData] = useState<JournalEntry[]>([]);
   useEffect(() => { load(); }, []);
-  async function load() { try { setData(await fetchJournalEntries()); } catch (e: any) {} }
+  async function load() { try { const { FinVouchersApi: Api } = await import('@/lib/supabase-finance'); const data = await Api.fetchAll(); setData(data.map((v:any) => ({ id: v.id, je_no: v.voucher_number, posting_date: v.voucher_date, narration: v.narration, status: v.status })) as any); } catch (e: any) {} }
 
   return (
     <div className="space-y-4">

@@ -174,8 +174,8 @@ type Pdc = {
   bank: string;
   date: string;
   amount: number;
-  payerName: string;
-  period: string;
+  payerName?: string;
+  period?: string;
   status: PdcStatus;
   file?: string;
 };
@@ -256,9 +256,9 @@ type CheckoutCase = {
   outstandingCharges?: string;
   keyReturnRequirements?: string;
   utilityClearanceRequirements?: string;
-  unreturnedItemsCharges: number;
-  cleaningCharges: number;
-  restorationCharges: number;
+  unreturnedItemsCharges?: number;
+  cleaningCharges?: number;
+  restorationCharges?: number;
   financeClearance: boolean;
   utilityClearance: boolean;
   keysReturned: boolean;
@@ -272,10 +272,10 @@ type Settlement = {
   outstandingRent: number;
   damages: number;
   utilityCharges: number;
-  agencyCommissionDeduction: number;
-  adminChargesDeduction: number;
-  unreturnedItemsCharges: number;
-  cleaningRestorationCharges: number;
+  agencyCommissionDeduction?: number;
+  adminChargesDeduction?: number;
+  unreturnedItemsCharges?: number;
+  cleaningRestorationCharges?: number;
   otherDeductions: number;
   refundableBalance?: number;
   unitDisposition?: string;
@@ -293,6 +293,7 @@ type Voucher = {
   debit: string;
   credit: string;
   amount: number;
+  payerName?: string;
   status: "draft" | "posted" | "shared";
 };
 
@@ -645,6 +646,7 @@ function LeasingPage() {
     acCondition: "Operational",
     electricityMeter: "",
     waterMeter: "",
+    chillerMeterReading: "",
     damages: "",
     pendingMaintenance: "",
     photos: "8",
@@ -788,6 +790,8 @@ function LeasingPage() {
       rent: Number(reservationForm.rent || unit.rent),
       status: "reserved",
       remarks: reservationForm.remarks,
+      endDate: "",
+      proposedLeasePeriod: "",
     };
     
     // Persist reservation to backend (map UI model → DB schema)
@@ -2551,7 +2555,7 @@ function LeasingPage() {
                     </div>,
                     document.reviewer || "-",
                     <div key="actions" className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setUploadDocForm({ file: "", fileName: "", remarks: "" }); setUploadDocOpen(true); }}>Upload</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setUploadDocForm({ file: "", fileName: "", issueDate: "", remarks: "" }); setUploadDocOpen(true); }}>Upload</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "verified", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Verify</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "info_required", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Need Info</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSelectedDocId(document.id); setVerifyDocForm({ status: "rejected", expiryDate: "", remarks: "" }); setVerifyDocOpen(true); }}>Reject</Button>
@@ -2629,7 +2633,7 @@ function LeasingPage() {
                     `Tenant: ${lease.tenantSignedAt || "-"}; file: ${lease.signedDocument || "-"}; received by: ${lease.receivedBy || "-"}; landlord package: ${lease.landlordPackageSubmittedAt || "-"}; shared: ${lease.sharedWithTenant ? "Yes" : "No"}`,
                     <div key="actions" className="flex flex-wrap justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setTenantSignForm({ signedAt: today.toISOString().split("T")[0], signedDocument: "", receivedBy: "Leasing Department", remarks: "" }); setTenantSignOpen(true); }}>Tenant Sign</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", notes: "", receiptFile: "" }); setCollectOpen(true); }}>Collect</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", payerName: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", agencyCommission: "", adminCharges: "", utilityDeposit: "", cashierName: "", notes: "", receiptFile: "" }); setCollectOpen(true); }}>Collect</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setSubmitLandlordForm({ submittedTo: "", submittedAt: today.toISOString().split("T")[0], docsSent: "Email", notes: "", proofFile: "" }); setSubmitLandlordOpen(true); }}>Submit Landlord</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setLandlordSignForm({ signedAt: today.toISOString().split("T")[0], signedBy: "", signedDocument: "", sharedWithTenant: true, remarks: "" }); setLandlordSignOpen(true); }}>Landlord Sign</Button>
                     </div>,
@@ -2662,7 +2666,7 @@ function LeasingPage() {
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => { setKeysWorkflowLease(lease); setKeyNotifyForm({ handoverAt: addDays(today, 1), handoverTime: "10:00", recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"], authorizedCollector: lease.tenantName, keysSummary: "2 metal keys, 2 access cards, 1 parking remote", staffContact: "Property Manager - +974 4400 2200", outstandingRequirements: "None", note: "" }); setKeyNotifyOpen(true); }}>Notify</Button>
                       <Button size="sm" variant="outline" disabled={!(notice && notice.status === "sent")} onClick={() => { setKeysWorkflowLease(lease); setHandoverForm({ handoverAt: notice?.handoverAt || addDays(today, 1), handoverTime: notice?.handoverTime || "10:00", keys: "2", keyType: "Metal door keys", accessCards: "2", parkingRemotes: "1", parkingDeviceDetails: "Remote for covered parking bay", electricityMeterReading: "", waterMeterReading: "", issuedBy: "Property Manager", collectorName: notice?.authorizedCollector || lease.tenantName, tenantAcknowledgement: "Tenant acknowledged receipt of keys and access items.", note: "" }); setHandoverOpen(true); }}>Handover</Button>
-                      <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: "", waterMeter: "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
+                      <Button size="sm" variant="outline" disabled={!handover} onClick={() => { setKeysWorkflowLease(lease); setCheckInForm({ condition: "Good", furnitureCondition: "Good", fixturesCondition: "Good", wallFloorCeilingCondition: "Good", acCondition: "Operational", electricityMeter: "", waterMeter: "", chillerMeterReading: "", damages: "", pendingMaintenance: "", photos: "8", note: "" }); setCheckInOpen(true); }}>Check-In</Button>
                     </div>,
                   ];
                 })}

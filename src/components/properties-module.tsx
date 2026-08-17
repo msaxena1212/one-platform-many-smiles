@@ -579,40 +579,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             {/* Step 3: Cost Center & Categories */}
             {step === 3 && (
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Cost Center Code</Label>
-                  <Select
-                    value={form.cost_center_code}
-                    onValueChange={(val) => {
-                      const cc = costCenterOptions.find((c) => c.code === val);
-                      setForm((prev) => ({
-                        ...prev,
-                        cost_center_code: val,
-                        cost_center_name: cc?.name || prev.cost_center_name,
-                      }));
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Cost Center" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {costCenterOptions.map((opt) => (
-                        <SelectItem key={opt.code} value={opt.code}>
-                          {opt.code} - {opt.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Cost Center Name (auto-filled)</Label>
-                  <Input
-                    readOnly
-                    value={form.cost_center_name}
-                    className="bg-muted"
-                    placeholder="Auto-filled when code is selected"
-                  />
-                </div>
+{/* Cost Center fields removed as per new logic */}
                 <div className="space-y-2">
                   <Label>Property Category</Label>
                   <Select

@@ -1198,9 +1198,28 @@ export async function createERPVoucher(
 }
 
 export async function fetchERPChartOfAccounts() {
-  const { data, error } = await supabase.from('erp_chart_of_accounts').select('*').order('code');
-  if (error) throw error;
-  return data as ERPChartOfAccount[];
+  // Supabase defaults to 1000 rows max. Paginate to fetch all COA records.
+  const PAGE_SIZE = 1000;
+  let allData: ERPChartOfAccount[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('erp_chart_of_accounts')
+      .select('*')
+      .order('code')
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allData = [...allData, ...(data as ERPChartOfAccount[])];
+
+    if (data.length < PAGE_SIZE) break; // Last page
+    from += PAGE_SIZE;
+  }
+
+  return allData;
 }
 
 export async function fetchUnitCOAs() {

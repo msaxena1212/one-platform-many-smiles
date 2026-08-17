@@ -100,6 +100,8 @@ function CashierPDCs() {
       unitName: pdc.unit_name || "-",
       propertyName: pdc.property_code || "-",
       effectiveStatus: normalizeStatus(pdc.status || pdc.status_pdc),
+      leaseStart: pdc.lease_start || "",
+      leaseEnd: pdc.lease_end || "",
     };
   });
 
@@ -180,7 +182,7 @@ function CashierPDCs() {
           <CardTitle className="text-base">Cheque Register</CardTitle>
         </CardHeader>
         <CardContent className="p-0 mt-3">
-          {syncing ? (
+          {loading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
               <Clock className="w-4 h-4 animate-spin" />
               Loading shared PDC records...
@@ -255,7 +257,7 @@ function CashierPDCs() {
                       </td>
                     </tr>
                   ))}
-                  {filtered.length === 0 && !syncing && (
+                  {filtered.length === 0 && !loading && (
                     <tr>
                       <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
                         No PDC records found.
