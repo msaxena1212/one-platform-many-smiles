@@ -224,6 +224,18 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
         }) as Omit<Property, "id" | "created_at" | "property_images">,
       );
 
+      if (newProperty) {
+        try {
+          await supabase.from('fin_cost_centers').insert({
+            code: `CC-PROP-${newProperty.id.slice(0, 8).toUpperCase()}`,
+            name: form.title,
+            manager: form.cost_center_name || '',
+          });
+        } catch (ccErr) {
+          console.warn("Auto-create property cost center skipped/failed:", ccErr);
+        }
+      }
+
       if (images.length > 0 && newProperty) {
         await updatePropertyImages(
           newProperty.id,

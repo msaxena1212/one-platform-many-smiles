@@ -46,9 +46,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     load();
   }, [load]);
 
-  const activeCount = leases.filter(l => l.lease_status === 'Active').length;
-  const draftCount = leases.filter(l => l.lease_status === 'Draft').length;
-  const expiringCount = leases.filter(l => l.lease_status === 'Expiring').length;
+  const activeCount = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
+  const draftCount = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
+  const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
 
   const basePath = role === 'admin' ? '/admin' : role === 'owner' ? '/owner' : '/prop-mgr';
 
@@ -143,8 +143,8 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       <td className="px-6 py-4 font-medium">${lease.rental_amount?.toLocaleString() || '0'}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
-                          lease.lease_status === 'Active' ? 'bg-green-100 text-green-700' :
-                          lease.lease_status === 'Expiring' ? 'bg-amber-100 text-amber-700' :
+                          lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                          lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700' :
                           'bg-slate-100 text-slate-700'
                         }`}>
                           {lease.lease_status || 'DRAFT'}

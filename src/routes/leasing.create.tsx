@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createReservation as persistReservation, scheduleReservationExpiryNotification } from "@/lib/reservationService";
 import { checkExpiringReservationsAndNotify } from "@/lib/notificationService";
+import { useAppData } from "@/lib/app-data-context";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ import {
   unitDispositionMasters,
   voucherDocumentMasters,
 } from "@/lib/reference-data";
+import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 
 export const Route = createFileRoute("/leasing/create")({
   component: LeasingPage,
@@ -465,6 +467,9 @@ function formatMoney(value: number) {
 }
 
 function LeasingPage() {
+  // Shared context — used to sync vouchers/PDCs to Finance and PDC Register
+  const { setVouchers: setSharedVouchers, setPdcs: setSharedPdcs } = useAppData();
+
   const [units, setUnits] = useState<Unit[]>(initialUnits);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [reservations, setReservations] = useState<Reservation[]>(initialReservations);
@@ -584,7 +589,19 @@ function LeasingPage() {
     cashierName: "",
     notes: "",
     receiptFile: "",
+    // PDC schedule overrides
+    pdcCount: 12,
+    startDate: today.toISOString().split("T")[0],
+    endDate: addDays(today, 365),
+    firstChequeDate: today.toISOString().split("T")[0],
+    chequeIntervalDays: 30,
+    regularChequeAmount: "",
+    customCheques: [] as Array<{ chequeNo: string; bank: string; date: string; amount: number; period: string }>,
   });
+
+  // Receipt Modal State
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [receiptModalData, setReceiptModalData] = useState<TenantReceiptDetails | null>(null);
 
   // Submit to Landlord
   const [submitLandlordOpen, setSubmitLandlordOpen] = useState(false);
@@ -677,6 +694,14 @@ function LeasingPage() {
 
   const [completeCheckoutOpen, setCompleteCheckoutOpen] = useState(false);
   const [selectedCheckout, setSelectedCheckout] = useState<CheckoutCase | null>(null);
+  // ── PDC Add & Edit Dialogs ───────────────────────────────────────
+  const [addPdcOpen, setAddPdcOpen] = useState(false);
+  const [pdcLeaseId, setPdcLeaseId] = useState("");
+  const [pdcForm, setPdcForm] = useState({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "", payerName: "", period: "" });
+
+  const [editPdcOpen, setEditPdcOpen] = useState(false);
+  const [editingPdc, setEditingPdc] = useState<Pdc | null>(null);
+  const [editPdcForm, setEditPdcForm] = useState({ chequeNo: "", bank: "", date: "", amount: "", status: "received" as PdcStatus, payerName: "", period: "" });
   const [completeCheckoutForm, setCompleteCheckoutForm] = useState({
     condition: "Repair required",
     electricityMeter: "",
@@ -696,10 +721,20 @@ function LeasingPage() {
     unitDisposition: "Vacant - Under Maintenance" as Unit["status"],
   });
 
-  // ── PDC Add Dialog ───────────────────────────────────────────────
-  const [addPdcOpen, setAddPdcOpen] = useState(false);
-  const [pdcLeaseId, setPdcLeaseId] = useState("");
-  const [pdcForm, setPdcForm] = useState({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
+  // ── Security Deposit Voucher Dialog ─────────────────────────────
+  const [addSecurityOpen, setAddSecurityOpen] = useState(false);
+  const [securityLeaseId, setSecurityLeaseId] = useState("");
+  const [securityForm, setSecurityForm] = useState({
+    mode: "Cash" as string,
+    amount: "",
+    receiptNo: "",
+    payerName: "",
+    period: "Security Deposit",
+    narration: "",
+    chequeNo: "",
+    bank: "",
+    chequeDate: today.toISOString().split("T")[0],
+  });
 
 
   const [reservationForm, setReservationForm] = useState({
@@ -1133,40 +1168,153 @@ function LeasingPage() {
   function submitCollect() {
     if (!signatureWorkflowLease) return;
     const lease = signatureWorkflowLease;
-    const pdcTotal = lease.monthlyRent * lease.pdcCount;
-    const nextPdcs = Array.from({ length: lease.pdcCount }, (_, index) => ({
-      id: `p${pdcs.length + index + 1}`,
-      leaseId: lease.id,
-      chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
-      bank: collectForm.chequeBank || "Tenant Bank",
-      date: addDays(new Date(lease.startDate), index * 30),
-      amount: lease.monthlyRent,
-      payerName: collectForm.payerName || lease.tenantName,
-      period: `Month ${index + 1}`,
-      status: "received" as PdcStatus,
-    }));
+    
+    // Generate PDCs based on custom schedule if configured, or default count & breakdown
+    let nextPdcs: Pdc[] = [];
+    if (collectForm.customCheques && collectForm.customCheques.length > 0) {
+      nextPdcs = collectForm.customCheques.map((c, index) => ({
+        id: `p${pdcs.length + index + 1}`,
+        leaseId: lease.id,
+        chequeNo: c.chequeNo || `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
+        bank: c.bank || collectForm.chequeBank || "Tenant Bank",
+        date: c.date,
+        amount: c.amount,
+        payerName: collectForm.payerName || lease.tenantName,
+        period: c.period || `PDC ${index + 1}`,
+        status: "received" as PdcStatus,
+      }));
+    } else {
+      const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
+      const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
+      const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
+      const firstDate = new Date(collectForm.firstChequeDate || collectForm.startDate || lease.startDate);
+      const interval = Number(collectForm.chequeIntervalDays) || 30;
+
+      nextPdcs = Array.from({ length: count }, (_, index) => {
+        let amount = regularAmt;
+        if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
+          amount = totalRent - regularAmt * (count - 1);
+        }
+        return {
+          id: `p${pdcs.length + index + 1}`,
+          leaseId: lease.id,
+          chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
+          bank: collectForm.chequeBank || "Tenant Bank",
+          date: addDays(firstDate, index * interval),
+          amount: Math.max(0, amount),
+          payerName: collectForm.payerName || lease.tenantName,
+          period: `Cheque ${index + 1} of ${count}`,
+          status: "received" as PdcStatus,
+        };
+      });
+    }
+
+    const pdcTotal = nextPdcs.reduce((sum, p) => sum + p.amount, 0);
+
+    // Sync new PDCs to shared context (PDC Register)
+    setSharedPdcs((prev) => [
+      ...nextPdcs.map((p) => ({
+        id: p.id,
+        leaseId: p.leaseId,
+        chequeNo: p.chequeNo,
+        bank: p.bank,
+        date: p.date,
+        amount: p.amount,
+        status: "received" as const,
+        payerName: p.payerName,
+        period: p.period,
+      })),
+      ...prev,
+    ]);
     setPdcs((items) => [...nextPdcs, ...items]);
     const agencyAmt = Number(collectForm.agencyCommission) || 0;
     const adminAmt = Number(collectForm.adminCharges) || 0;
     const utilityAmt = Number(collectForm.utilityDeposit) || 0;
     const depAmt = Number(collectForm.depositAmount) || lease.securityDeposit;
-    setVouchers((items) => [
-      { id: `v${items.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${lease.startDate} to ${lease.endDate}`, debit: "PDC In Hand", credit: `Customer(PDC)-${lease.unit}`, amount: pdcTotal, status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: "Cash In Hand", credit: "Security Deposit Liability", amount: depAmt, status: "posted" },
-      ...(agencyAmt > 0 ? [{ id: `v${items.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Agency Commission", receiptNo: `RV-${lease.id}-03`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Agency Commission Income", amount: agencyAmt, status: "posted" as const }] : []),
-      ...(adminAmt > 0 ? [{ id: `v${items.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Admin Charges", receiptNo: `RV-${lease.id}-04`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Admin Charges Income", amount: adminAmt, status: "posted" as const }] : []),
-      ...(utilityAmt > 0 ? [{ id: `v${items.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Utility Deposit", receiptNo: `RV-${lease.id}-05`, method: "Cash", period: "Utility deposit", debit: "Cash In Hand", credit: "Utility Deposit Liability", amount: utilityAmt, status: "posted" as const }] : []),
-      ...items,
+    const newVouchers: Voucher[] = [
+      { id: `v${vouchers.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`, debit: "PDC In Hand", credit: `Customer(PDC)-${lease.unit}`, amount: pdcTotal, status: "posted" },
+      { id: `v${vouchers.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: collectForm.depositMode === "Cash" ? "Cash In Hand" : "PDC In Hand", credit: "Security Deposit Liability", amount: depAmt, status: "posted" },
+      ...(agencyAmt > 0 ? [{ id: `v${vouchers.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Agency Commission", receiptNo: `RV-${lease.id}-03`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Agency Commission Income", amount: agencyAmt, status: "posted" as const }] : []),
+      ...(adminAmt > 0 ? [{ id: `v${vouchers.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Admin Charges", receiptNo: `RV-${lease.id}-04`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Admin Charges Income", amount: adminAmt, status: "posted" as const }] : []),
+      ...(utilityAmt > 0 ? [{ id: `v${vouchers.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Utility Deposit", receiptNo: `RV-${lease.id}-05`, method: "Cash", period: "Utility deposit", debit: "Cash In Hand", credit: "Utility Deposit Liability", amount: utilityAmt, status: "posted" as const }] : []),
+    ];
+    setVouchers((items) => [...newVouchers, ...items]);
+    // Sync to Finance journal via shared context
+    setSharedVouchers((prev) => [
+      ...newVouchers.map((v) => ({
+        id: v.id,
+        leaseId: v.leaseId,
+        name: v.name,
+        receiptNo: v.receiptNo,
+        method: v.method,
+        period: v.period,
+        debit: v.debit,
+        credit: v.credit,
+        amount: v.amount,
+        status: v.status as "draft" | "posted" | "shared",
+      })),
+      ...prev,
     ]);
-    advanceLease(lease, "collection_completed", { collectionCompleted: true });
+    advanceLease(lease, "collection_completed", {
+      collectionCompleted: true,
+      pdcCount: nextPdcs.length,
+      startDate: collectForm.startDate || lease.startDate,
+      endDate: collectForm.endDate || lease.endDate,
+    });
     recordAudit({
       stage: "Collection & Receipt Generation",
       owner: `Finance Cashier${collectForm.cashierName ? " – " + collectForm.cashierName : ""}`,
-      input: `${lease.pdcCount} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
+      input: `${nextPdcs.length} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
       output: (collectForm.notes || "Rent, deposit and other collection receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
+
+    // Auto-generate Official Receipt for Tenant
+    const totalCollectedAmt = pdcTotal + depAmt + agencyAmt + adminAmt + utilityAmt;
+    const generatedReceipt: TenantReceiptDetails = {
+      receiptNo: `REC-${Date.now().toString().slice(-6)}`,
+      acknowledgementNo: `ACK-${lease.id.toUpperCase()}`,
+      date: today.toISOString().split("T")[0],
+      tenantName: lease.tenantName,
+      tenantPhone: (lease as any).phone || "",
+      tenantEmail: (lease as any).email || "",
+      tenantQid: (lease as any).qatarId || "",
+      propertyName: lease.property,
+      unitRef: lease.unit,
+      leaseNo: `LES-${lease.id.toUpperCase()}`,
+      leaseStartDate: collectForm.startDate || lease.startDate,
+      leaseEndDate: collectForm.endDate || lease.endDate,
+      monthlyRent: lease.monthlyRent,
+      totalContractRent: pdcTotal,
+      depositAmount: depAmt,
+      depositMode: collectForm.depositMode,
+      pdcCount: nextPdcs.length,
+      pdcs: nextPdcs.map((p) => ({
+        chequeNo: p.chequeNo,
+        bank: p.bank,
+        date: p.date,
+        amount: p.amount,
+        period: p.period,
+      })),
+      vouchers: newVouchers.map((v) => ({
+        receiptNo: v.receiptNo,
+        name: v.name,
+        amount: v.amount,
+        method: v.method,
+        debit: v.debit,
+        credit: v.credit,
+      })),
+      agencyCommission: agencyAmt,
+      adminCharges: adminAmt,
+      utilityDeposit: utilityAmt,
+      totalCollected: totalCollectedAmt,
+      cashierName: collectForm.cashierName || "Finance Cashier",
+      notes: collectForm.notes || "Official receipt acknowledged for rent cheques, security deposit, and applicable fees.",
+    };
+
+    setReceiptModalData(generatedReceipt);
+    setReceiptModalOpen(true);
     setCollectOpen(false);
   }
 
@@ -1282,12 +1430,15 @@ function LeasingPage() {
       + settlement.otherDeductions;
     const refundable = settlement.depositReceived - totalDeductions;
     setSettlements((items) => items.map((item) => (item.id === settlement.id ? { ...item, approval: "paid" as SettlementApproval } : item)));
-    setVouchers((items) => [
-      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: Math.max(0, refundable), status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: Math.max(0, refundable), status: "posted" },
-      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: refundable, status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: refundable, status: "posted" },
-      ...items,
+    const settlementVouchers: Voucher[] = [
+      { id: `v${vouchers.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: Math.max(0, refundable), status: "posted" },
+      { id: `v${vouchers.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: Math.max(0, refundable), status: "posted" },
+    ];
+    setVouchers((items) => [...settlementVouchers, ...items]);
+    // Sync settlement vouchers to Finance journal via shared context
+    setSharedVouchers((prev) => [
+      ...settlementVouchers.map((v) => ({ id: v.id, leaseId: v.leaseId, name: v.name, receiptNo: v.receiptNo, method: v.method, period: v.period, debit: v.debit, credit: v.credit, amount: v.amount, status: v.status as "posted" })),
+      ...prev,
     ]);
     const lease = leases.find((item) => item.id === settlement.leaseId);
     if (lease) {
@@ -1514,32 +1665,152 @@ function LeasingPage() {
   }
 
   function addManualPdc() {
-    if (!pdcLeaseId || !pdcForm.chequeNo || !pdcForm.file) {
-      alert("Please fill all required fields, including the PDC document upload.");
+    if (!pdcLeaseId || !pdcForm.chequeNo || !pdcForm.amount) {
+      alert("Please select a lease and enter the cheque number and amount.");
       return;
     }
+    const lease = leases.find((l) => l.id === pdcLeaseId);
     const pdc: Pdc = {
       id: `p${pdcs.length + 1}`,
       leaseId: pdcLeaseId,
       chequeNo: pdcForm.chequeNo,
-      bank: pdcForm.bank,
+      bank: pdcForm.bank || "Tenant Bank",
       date: pdcForm.date,
       amount: Number(pdcForm.amount) || 0,
+      payerName: pdcForm.payerName || lease?.tenantName || "",
+      period: pdcForm.period || "Manual PDC",
       status: "received",
       file: pdcForm.file,
     };
     setPdcs((items) => [pdc, ...items]);
+    // Sync to shared context so PDC Register and Finance see it
+    setSharedPdcs((prev) => [{ id: pdc.id, leaseId: pdc.leaseId, chequeNo: pdc.chequeNo, bank: pdc.bank, date: pdc.date, amount: pdc.amount, status: "received" as const, payerName: pdc.payerName, period: pdc.period }, ...prev]);
+    // Auto-generate a PDC receipt voucher and sync to Finance
+    if (lease) {
+      const pdcVoucher: Voucher = {
+        id: `v${vouchers.length + 1}`,
+        leaseId: pdcLeaseId,
+        name: "Receipts Voucher - PDC",
+        receiptNo: `RV-PDC-${pdc.chequeNo}`,
+        method: "PDC",
+        period: pdc.date,
+        debit: "PDC In Hand",
+        credit: `Customer(PDC)-${lease.unit}`,
+        amount: pdc.amount,
+        status: "posted",
+      };
+      setVouchers((items) => [pdcVoucher, ...items]);
+      setSharedVouchers((prev) => [{ id: pdcVoucher.id, leaseId: pdcVoucher.leaseId, name: pdcVoucher.name, receiptNo: pdcVoucher.receiptNo, method: pdcVoucher.method, period: pdcVoucher.period, debit: pdcVoucher.debit, credit: pdcVoucher.credit, amount: pdcVoucher.amount, status: pdcVoucher.status as "posted" }, ...prev]);
+    }
     recordAudit({
       stage: "PDC Added Manually",
       owner: "Finance",
       input: `Cheque ${pdc.chequeNo}, ${pdc.bank}, ${formatMoney(pdc.amount)}`,
       approval: "Manual entry",
       status: "received",
-      output: "PDC recorded in system",
+      output: "PDC recorded in system; receipt voucher posted to Finance",
     });
-    setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" });
+    setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "", payerName: "", period: "" });
     setPdcLeaseId("");
     setAddPdcOpen(false);
+  }
+
+  function saveEditedPdc() {
+    if (!editingPdc) return;
+    const updatedAmount = Number(editPdcForm.amount) || editingPdc.amount;
+    const updated: Pdc = {
+      ...editingPdc,
+      chequeNo: editPdcForm.chequeNo || editingPdc.chequeNo,
+      bank: editPdcForm.bank || editingPdc.bank,
+      date: editPdcForm.date || editingPdc.date,
+      amount: updatedAmount,
+      status: editPdcForm.status || editingPdc.status,
+      payerName: editPdcForm.payerName,
+      period: editPdcForm.period,
+    };
+    setPdcs((items) => items.map((p) => (p.id === updated.id ? updated : p)));
+    setSharedPdcs((prev) => prev.map((p) => (p.id === updated.id ? { ...p, chequeNo: updated.chequeNo, bank: updated.bank, date: updated.date, amount: updated.amount, status: updated.status as any, payerName: updated.payerName, period: updated.period } : p)));
+    recordAudit({
+      stage: "PDC Updated",
+      owner: "Finance",
+      input: `Cheque ${updated.chequeNo}, Maturity: ${updated.date}, Amount: ${formatMoney(updated.amount)}, Status: ${updated.status}`,
+      approval: "PDC Register adjustment",
+      status: updated.status,
+      output: "Cheque maturity date, amount and details updated in PDC register",
+    });
+    setEditPdcOpen(false);
+    setEditingPdc(null);
+  }
+
+  function addSecurityVoucher() {
+    if (!securityLeaseId || !securityForm.amount) {
+      alert("Please select a lease and enter the security deposit amount.");
+      return;
+    }
+    const lease = leases.find((l) => l.id === securityLeaseId);
+    if (!lease) return;
+    const amt = Number(securityForm.amount) || 0;
+    const receiptNo = securityForm.receiptNo || `SD-${securityLeaseId}-${Date.now().toString().slice(-5)}`;
+    const debitAccount = securityForm.mode === "Cash" ? "Cash In Hand" : securityForm.mode === "Bank Transfer" ? "Bank Account" : "PDC In Hand";
+
+    const secVoucher: Voucher = {
+      id: `v${vouchers.length + 1}`,
+      leaseId: securityLeaseId,
+      name: "Receipts Voucher - Security Deposit",
+      receiptNo,
+      method: securityForm.mode,
+      period: securityForm.period || "Security Deposit",
+      debit: debitAccount,
+      credit: "Security Deposit Liability",
+      amount: amt,
+      payerName: securityForm.payerName || lease.tenantName,
+      status: "posted",
+    };
+
+    setVouchers((items) => [secVoucher, ...items]);
+    // Sync to Finance journal via shared context
+    setSharedVouchers((prev) => [{
+      id: secVoucher.id,
+      leaseId: secVoucher.leaseId,
+      name: secVoucher.name,
+      receiptNo: secVoucher.receiptNo,
+      method: secVoucher.method,
+      period: secVoucher.period,
+      debit: secVoucher.debit,
+      credit: secVoucher.credit,
+      amount: secVoucher.amount,
+      status: "posted" as const,
+    }, ...prev]);
+
+    // If paid by PDC, also create a PDC entry
+    if (securityForm.mode === "PDC" && securityForm.chequeNo) {
+      const secPdc: Pdc = {
+        id: `p${pdcs.length + 1}`,
+        leaseId: securityLeaseId,
+        chequeNo: securityForm.chequeNo,
+        bank: securityForm.bank || "",
+        date: securityForm.chequeDate,
+        amount: amt,
+        payerName: securityForm.payerName || lease.tenantName,
+        period: "Security Deposit",
+        status: "received",
+      };
+      setPdcs((items) => [secPdc, ...items]);
+      setSharedPdcs((prev) => [{ id: secPdc.id, leaseId: secPdc.leaseId, chequeNo: secPdc.chequeNo, bank: secPdc.bank, date: secPdc.date, amount: secPdc.amount, status: "received" as const, payerName: secPdc.payerName, period: secPdc.period }, ...prev]);
+    }
+
+    recordAudit({
+      stage: "Security Deposit Collected",
+      owner: "Finance / Cashier",
+      input: `${lease.tenantName}, ${lease.unit}, ${securityForm.mode}, ${formatMoney(amt)}${securityForm.chequeNo ? `, Cheque: ${securityForm.chequeNo}` : ""}`,
+      approval: "Manual entry",
+      status: "posted",
+      output: `Security deposit voucher ${receiptNo} posted to Finance${securityForm.mode === "PDC" ? " + PDC recorded" : ""}`,
+    });
+
+    setSecurityForm({ mode: "Cash", amount: "", receiptNo: "", payerName: "", period: "Security Deposit", narration: "", chequeNo: "", bank: "", chequeDate: today.toISOString().split("T")[0] });
+    setSecurityLeaseId("");
+    setAddSecurityOpen(false);
   }
 
   return (
@@ -1944,31 +2215,215 @@ function LeasingPage() {
 
       {/* ── COLLECT RENT/PDC DIALOG ─────────────────────────── */}
       <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" /> Collect Rent & PDC</DialogTitle>
-            <DialogDescription>Record PDC collection and security deposit for {signatureWorkflowLease?.tenantName} — {signatureWorkflowLease?.pdcCount} PDCs × QR {signatureWorkflowLease?.monthlyRent?.toLocaleString()}.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" /> Collect Rent & PDC Schedule</DialogTitle>
+            <DialogDescription>
+              Record PDC collection, cheque counts, breakdown, and security deposit for {signatureWorkflowLease?.tenantName}.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Lease Period & Date Overrides */}
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lease Period & PDC Count</p>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Lease Start Date">
+                  <Input type="date" value={collectForm.startDate} onChange={(e) => setCollectForm((f) => ({ ...f, startDate: e.target.value }))} />
+                </Field>
+                <Field label="Lease End Date">
+                  <Input type="date" value={collectForm.endDate} onChange={(e) => setCollectForm((f) => ({ ...f, endDate: e.target.value }))} />
+                </Field>
+                <Field label="PDC Count (No. of Cheques)">
+                  <Input type="number" min={1} max={36} value={collectForm.pdcCount} onChange={(e) => {
+                    const count = Number(e.target.value);
+                    setCollectForm((f) => ({ ...f, pdcCount: count }));
+                  }} />
+                </Field>
+              </div>
+            </div>
+
+            {/* Payment Mode & Bank */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Rent Payment Mode">
-                <Select value={collectForm.paymentMode} onValueChange={v => setCollectForm(f => ({ ...f, paymentMode: v as any }))}>
+                <Select value={collectForm.paymentMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, paymentMode: v as any }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PDC">PDC (Cheques)</SelectItem>
+                    <SelectItem value="PDC">PDC (Post-Dated Cheques)</SelectItem>
                     <SelectItem value="Cash">Cash</SelectItem>
                     <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
                     <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Bank Name (for PDC)">
-                <Input value={collectForm.chequeBank} onChange={e => setCollectForm(f => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank" />
+              <Field label="Bank Name (for PDCs)">
+                <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank, CBQ" />
               </Field>
             </div>
+
+            {/* Maturity & Amount Breakdown Section */}
+            {collectForm.paymentMode === "PDC" && signatureWorkflowLease && (() => {
+              const totalContractRent = (signatureWorkflowLease.monthlyRent || 0) * (signatureWorkflowLease.pdcCount || 12);
+              const count = Number(collectForm.pdcCount) || signatureWorkflowLease.pdcCount || 12;
+              const regAmount = Number(collectForm.regularChequeAmount) || signatureWorkflowLease.monthlyRent;
+              const finalAmount = count > 1 ? totalContractRent - regAmount * (count - 1) : totalContractRent;
+
+              const regenerateCheques = (newCount = count, newRegAmt = regAmount, newFirstDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate, newInterval = collectForm.chequeIntervalDays) => {
+                const firstDateObj = new Date(newFirstDate);
+                const intervalNum = Number(newInterval) || 30;
+                const generated = Array.from({ length: newCount }, (_, i) => {
+                  let amount = newRegAmt;
+                  if (i === newCount - 1 && newCount > 1) {
+                    amount = Math.max(0, totalContractRent - newRegAmt * (newCount - 1));
+                  }
+                  return {
+                    chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                    bank: collectForm.chequeBank || "QNB",
+                    date: addDays(firstDateObj, i * intervalNum),
+                    amount,
+                    period: `Cheque ${i + 1} of ${newCount}`,
+                  };
+                });
+                setCollectForm((f) => ({ ...f, pdcCount: newCount, customCheques: generated }));
+              };
+
+              return (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-primary">PDC Amount & Maturity Schedule</p>
+                      <p className="text-xs text-muted-foreground">Total Rent: <strong>QR {totalContractRent.toLocaleString()}</strong> across <strong>{count}</strong> cheques</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => regenerateCheques()}>
+                      <RefreshCw className="h-3 w-3" /> Refresh / Reset Cheques
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="First Maturity Date">
+                      <Input type="date" value={collectForm.firstChequeDate} onChange={(e) => {
+                        const val = e.target.value;
+                        setCollectForm((f) => ({ ...f, firstChequeDate: val }));
+                        regenerateCheques(count, regAmount, val, collectForm.chequeIntervalDays);
+                      }} />
+                    </Field>
+                    <Field label="Interval (Days)">
+                      <Input type="number" min={1} value={collectForm.chequeIntervalDays} onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setCollectForm((f) => ({ ...f, chequeIntervalDays: val }));
+                        regenerateCheques(count, regAmount, collectForm.firstChequeDate, val);
+                      }} />
+                    </Field>
+                    <Field label="Regular Cheque Amount (QR)">
+                      <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        setCollectForm((f) => ({ ...f, regularChequeAmount: String(val) }));
+                        regenerateCheques(count, val, collectForm.firstChequeDate, collectForm.chequeIntervalDays);
+                      }} placeholder={`${signatureWorkflowLease.monthlyRent}`} />
+                    </Field>
+                  </div>
+
+                  {count > 1 && (
+                    <div className="text-xs bg-background/80 p-2.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-muted-foreground">
+                      <span>Breakdown: <strong>{count - 1}</strong> cheque(s) of <strong>QR {regAmount.toLocaleString()}</strong> + <strong>1</strong> final cheque for remaining balance of <strong>QR {Math.max(0, finalAmount).toLocaleString()}</strong></span>
+                      <Badge variant="outline" className="font-mono text-xs font-bold text-primary">Total: QR {((count - 1) * regAmount + finalAmount).toLocaleString()}</Badge>
+                    </div>
+                  )}
+
+                  {/* Individual Cheques Table */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-semibold text-muted-foreground">Cheque Schedule Lines ({collectForm.customCheques?.length || 0})</span>
+                      <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => {
+                        const existing = collectForm.customCheques || [];
+                        const lastCheque = existing[existing.length - 1];
+                        const nextDate = lastCheque ? addDays(new Date(lastCheque.date), Number(collectForm.chequeIntervalDays) || 30) : today.toISOString().split("T")[0];
+                        const nextIdx = existing.length + 1;
+                        setCollectForm(f => ({
+                          ...f,
+                          pdcCount: nextIdx,
+                          customCheques: [
+                            ...f.customCheques,
+                            {
+                              chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(nextIdx).padStart(3, "0")}`,
+                              bank: collectForm.chequeBank || "QNB",
+                              date: nextDate,
+                              amount: regAmount,
+                              period: `Cheque ${nextIdx} of ${nextIdx}`,
+                            }
+                          ]
+                        }));
+                      }}>
+                        + Add Cheque Row
+                      </Button>
+                    </div>
+
+                    {collectForm.customCheques && collectForm.customCheques.length > 0 && (
+                      <div className="max-h-52 overflow-y-auto border rounded bg-background">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground border-b sticky top-0 bg-muted">
+                            <tr>
+                              <th className="px-2 py-1.5 text-left w-8">#</th>
+                              <th className="px-2 py-1.5 text-left">Cheque No.</th>
+                              <th className="px-2 py-1.5 text-left">Bank</th>
+                              <th className="px-2 py-1.5 text-left">Maturity Date</th>
+                              <th className="px-2 py-1.5 text-right">Amount (QR)</th>
+                              <th className="px-2 py-1.5 w-8"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {collectForm.customCheques.map((c, i) => (
+                              <tr key={i} className="hover:bg-muted/20">
+                                <td className="px-2 py-1 font-mono text-muted-foreground">{i + 1}</td>
+                                <td className="px-1 py-1">
+                                  <Input value={c.chequeNo} onChange={(e) => setCollectForm((f) => ({
+                                    ...f,
+                                    customCheques: f.customCheques.map((item, idx) => (idx === i ? { ...item, chequeNo: e.target.value } : item)),
+                                  }))} className="h-7 text-xs font-mono" placeholder="Cheque #" />
+                                </td>
+                                <td className="px-1 py-1">
+                                  <Input value={c.bank} onChange={(e) => setCollectForm((f) => ({
+                                    ...f,
+                                    customCheques: f.customCheques.map((item, idx) => (idx === i ? { ...item, bank: e.target.value } : item)),
+                                  }))} className="h-7 text-xs" placeholder="Bank" />
+                                </td>
+                                <td className="px-1 py-1">
+                                  <Input type="date" value={c.date} onChange={(e) => setCollectForm((f) => ({
+                                    ...f,
+                                    customCheques: f.customCheques.map((item, idx) => (idx === i ? { ...item, date: e.target.value } : item)),
+                                  }))} className="h-7 text-xs font-mono" />
+                                </td>
+                                <td className="px-1 py-1 text-right">
+                                  <Input type="number" value={c.amount} onChange={(e) => setCollectForm((f) => ({
+                                    ...f,
+                                    customCheques: f.customCheques.map((item, idx) => (idx === i ? { ...item, amount: Number(e.target.value) } : item)),
+                                  }))} className="h-7 text-xs text-right font-mono w-24 ml-auto" />
+                                </td>
+                                <td className="px-1 py-1 text-center">
+                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => {
+                                    setCollectForm(f => ({
+                                      ...f,
+                                      pdcCount: Math.max(1, f.customCheques.length - 1),
+                                      customCheques: f.customCheques.filter((_, idx) => idx !== i)
+                                    }));
+                                  }}>
+                                    ×
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Security Deposit Section */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Security Deposit Mode">
-                <Select value={collectForm.depositMode} onValueChange={v => setCollectForm(f => ({ ...f, depositMode: v }))}>
+                <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Cash">Cash</SelectItem>
@@ -1979,18 +2434,16 @@ function LeasingPage() {
                 </Select>
               </Field>
               <Field label="Security Deposit Amount">
-                <Input type="number" value={collectForm.depositAmount} onChange={e => setCollectForm(f => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit}`} />
+                <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit}`} />
               </Field>
             </div>
-            <div className="rounded-md border bg-muted/40 p-3 text-sm">
-              <p>📦 {signatureWorkflowLease?.pdcCount} PDC cheques will be auto-generated and vouchers will be posted.</p>
-            </div>
+
             <Field label="Upload Collection Proof / Receipt (Optional)">
-              <Input type="file" onChange={e => setCollectForm(f => ({ ...f, receiptFile: e.target.files?.[0]?.name || "" }))} />
+              <Input type="file" onChange={(e) => setCollectForm((f) => ({ ...f, receiptFile: e.target.files?.[0]?.name || "" }))} />
               {collectForm.receiptFile && <p className="text-xs text-muted-foreground mt-1">Selected: {collectForm.receiptFile}</p>}
             </Field>
             <Field label="Notes">
-              <Textarea rows={2} value={collectForm.notes} onChange={e => setCollectForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+              <Textarea rows={2} value={collectForm.notes} onChange={(e) => setCollectForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes on PDC collection and schedule..." />
             </Field>
           </div>
           <DialogFooter>
@@ -2347,33 +2800,167 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ── ADD SECURITY DEPOSIT DIALOG ───────────────────────── */}
+      <Dialog open={addSecurityOpen} onOpenChange={setAddSecurityOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" /> Add Security Deposit</DialogTitle>
+            <DialogDescription>Record a security deposit collection and post it to Finance. If paid by PDC, a cheque entry is also created.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Field label="Lease *">
+              <Select value={securityLeaseId} onValueChange={(id) => {
+                setSecurityLeaseId(id);
+                const l = leases.find((x) => x.id === id);
+                if (l) setSecurityForm((f) => ({ ...f, amount: String(l.securityDeposit), payerName: l.tenantName }));
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select lease" /></SelectTrigger>
+                <SelectContent>
+                  {leases.map((l) => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Collection Mode">
+                <Select value={securityForm.mode} onValueChange={(v) => setSecurityForm((f) => ({ ...f, mode: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="PDC">PDC (Cheque)</SelectItem>
+                    <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Amount (QR) *">
+                <Input type="number" value={securityForm.amount} onChange={(e) => setSecurityForm((f) => ({ ...f, amount: e.target.value }))} placeholder="e.g. 5500" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Receipt No.">
+                <Input value={securityForm.receiptNo} onChange={(e) => setSecurityForm((f) => ({ ...f, receiptNo: e.target.value }))} placeholder="e.g. SD-2026-001" />
+              </Field>
+              <Field label="Payer Name">
+                <Input value={securityForm.payerName} onChange={(e) => setSecurityForm((f) => ({ ...f, payerName: e.target.value }))} placeholder="Tenant name" />
+              </Field>
+            </div>
+            <Field label="Period / Description">
+              <Input value={securityForm.period} onChange={(e) => setSecurityForm((f) => ({ ...f, period: e.target.value }))} placeholder="e.g. Security Deposit" />
+            </Field>
+            {securityForm.mode === "PDC" && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+                <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">PDC Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Cheque No. *">
+                    <Input value={securityForm.chequeNo} onChange={(e) => setSecurityForm((f) => ({ ...f, chequeNo: e.target.value }))} placeholder="e.g. CHQ-SD-001" />
+                  </Field>
+                  <Field label="Bank">
+                    <Input value={securityForm.bank} onChange={(e) => setSecurityForm((f) => ({ ...f, bank: e.target.value }))} placeholder="e.g. QNB" />
+                  </Field>
+                </div>
+                <Field label="Cheque Date">
+                  <Input type="date" value={securityForm.chequeDate} onChange={(e) => setSecurityForm((f) => ({ ...f, chequeDate: e.target.value }))} />
+                </Field>
+              </div>
+            )}
+            <Field label="Narration / Notes">
+              <Textarea rows={2} value={securityForm.narration} onChange={(e) => setSecurityForm((f) => ({ ...f, narration: e.target.value }))} placeholder="Optional notes..." />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddSecurityOpen(false)}>Cancel</Button>
+            <Button onClick={addSecurityVoucher}><ShieldCheck className="mr-2 h-4 w-4" /> Post Security Deposit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── EDIT PDC DIALOG ───────────────────────────────────── */}
+      <Dialog open={editPdcOpen} onOpenChange={setEditPdcOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" /> Edit PDC Cheque</DialogTitle>
+            <DialogDescription>Update maturity date, amount, cheque number, or status for this PDC.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Cheque No. *">
+                <Input value={editPdcForm.chequeNo} onChange={(e) => setEditPdcForm((f) => ({ ...f, chequeNo: e.target.value }))} />
+              </Field>
+              <Field label="Bank">
+                <Input value={editPdcForm.bank} onChange={(e) => setEditPdcForm((f) => ({ ...f, bank: e.target.value }))} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Maturity Date *">
+                <Input type="date" value={editPdcForm.date} onChange={(e) => setEditPdcForm((f) => ({ ...f, date: e.target.value }))} />
+              </Field>
+              <Field label="Amount (QR) *">
+                <Input type="number" value={editPdcForm.amount} onChange={(e) => setEditPdcForm((f) => ({ ...f, amount: e.target.value }))} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Status">
+                <Select value={editPdcForm.status} onValueChange={(v) => setEditPdcForm((f) => ({ ...f, status: v as PdcStatus }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="received">In Hand / Received</SelectItem>
+                    <SelectItem value="deposited">Deposited</SelectItem>
+                    <SelectItem value="cleared">Cleared</SelectItem>
+                    <SelectItem value="returned">Returned</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Payer Name">
+                <Input value={editPdcForm.payerName} onChange={(e) => setEditPdcForm((f) => ({ ...f, payerName: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Period / Narration">
+              <Input value={editPdcForm.period} onChange={(e) => setEditPdcForm((f) => ({ ...f, period: e.target.value }))} placeholder="e.g. Month 1 rent" />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPdcOpen(false)}>Cancel</Button>
+            <Button onClick={saveEditedPdc}><CreditCard className="mr-2 h-4 w-4" /> Save PDC Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── ADD PDC DIALOG ────────────────────────────────────── */}
       <Dialog open={addPdcOpen} onOpenChange={setAddPdcOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-primary" /> Add PDC / Cheque</DialogTitle>
-            <DialogDescription>Manually record a post-dated cheque for a lease.</DialogDescription>
+            <DialogDescription>Manually record a post-dated cheque for a lease with custom maturity and amount.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <Field label="Lease">
-              <Select value={pdcLeaseId} onValueChange={setPdcLeaseId}>
+            <Field label="Lease *">
+              <Select value={pdcLeaseId} onValueChange={(id) => {
+                setPdcLeaseId(id);
+                const l = leases.find((x) => x.id === id);
+                if (l) setPdcForm((f) => ({ ...f, payerName: l.tenantName, amount: String(l.monthlyRent) }));
+              }}>
                 <SelectTrigger><SelectValue placeholder="Select lease" /></SelectTrigger>
                 <SelectContent>
-                  {leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit}</SelectItem>)}
+                  {leases.map((l) => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque No."><Input value={pdcForm.chequeNo} onChange={e => setPdcForm(f => ({ ...f, chequeNo: e.target.value }))} placeholder="e.g. PDC-GF1-001" /></Field>
-              <Field label="Bank"><Input value={pdcForm.bank} onChange={e => setPdcForm(f => ({ ...f, bank: e.target.value }))} placeholder="e.g. QNB" /></Field>
+              <Field label="Cheque No. *"><Input value={pdcForm.chequeNo} onChange={(e) => setPdcForm((f) => ({ ...f, chequeNo: e.target.value }))} placeholder="e.g. PDC-GF1-001" /></Field>
+              <Field label="Bank"><Input value={pdcForm.bank} onChange={(e) => setPdcForm((f) => ({ ...f, bank: e.target.value }))} placeholder="e.g. QNB, CBQ" /></Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Cheque Date"><Input type="date" value={pdcForm.date} onChange={e => setPdcForm(f => ({ ...f, date: e.target.value }))} /></Field>
-              <Field label="Amount (QR)"><Input type="number" value={pdcForm.amount} onChange={e => setPdcForm(f => ({ ...f, amount: e.target.value }))} placeholder="e.g. 5600" /></Field>
+              <Field label="Maturity Date *"><Input type="date" value={pdcForm.date} onChange={(e) => setPdcForm((f) => ({ ...f, date: e.target.value }))} /></Field>
+              <Field label="Amount (QR) *"><Input type="number" value={pdcForm.amount} onChange={(e) => setPdcForm((f) => ({ ...f, amount: e.target.value }))} placeholder="e.g. 5000" /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Payer Name"><Input value={pdcForm.payerName} onChange={(e) => setPdcForm((f) => ({ ...f, payerName: e.target.value }))} placeholder="Tenant name" /></Field>
+              <Field label="Period / Narration"><Input value={pdcForm.period} onChange={(e) => setPdcForm((f) => ({ ...f, period: e.target.value }))} placeholder="e.g. Month 1 rent / balance" /></Field>
             </div>
             <div className="pt-2">
-              <Field label="Upload PDC Document *">
-                <Input type="file" onChange={e => setPdcForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
+              <Field label="Upload PDC Document (Optional)">
+                <Input type="file" onChange={(e) => setPdcForm((f) => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
                 {pdcForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {pdcForm.file}</p>}
               </Field>
             </div>
@@ -2410,13 +2997,14 @@ function LeasingPage() {
 
       <LifecycleRail />
 
-      <Tabs defaultValue="reservations" className="space-y-4">
+      <Tabs defaultValue="customers" className="space-y-4">
         <TabsList className="flex h-auto flex-wrap justify-start">
-          <TabsTrigger value="reservations">Reservations</TabsTrigger>
           <TabsTrigger value="customers">Customer Master</TabsTrigger>
+          <TabsTrigger value="reservations">Reservations</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="agreement">Agreement Terms</TabsTrigger>
           <TabsTrigger value="signatures">Signatures</TabsTrigger>
+          <TabsTrigger value="pdcs">PDC Register</TabsTrigger>
           <TabsTrigger value="keys">Keys & Check-In</TabsTrigger>
           <TabsTrigger value="renewals">Renewals</TabsTrigger>
           <TabsTrigger value="checkout">Checkout</TabsTrigger>
@@ -2520,13 +3108,17 @@ function LeasingPage() {
                 </Button>
               </div>
               <DataTable
-                columns={["Name", "Type", "Primary ID", "Contact", "Status"]}
+                columns={["Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
                 rows={customers.map((customer) => [
                   customer.name,
                   customer.type,
                   customer.qatarId || customer.passport || customer.crNumber || "-",
                   `${customer.mobile || "-"} / ${customer.email || "-"}`,
                   <StatusBadge key="status" value={customer.status} />,
+                  <div key="actions" className="flex justify-end gap-2">
+                    <Button size="sm" variant="outline" onClick={() => alert("View Customer")}>View</Button>
+                    <Button size="sm" variant="outline" onClick={() => alert("Edit Customer")}>Edit</Button>
+                  </div>,
                 ])}
               />
             </CardContent>
@@ -2575,9 +3167,10 @@ function LeasingPage() {
             </CardHeader>
             <CardContent>
               <DataTable
-                columns={["Lease", "Rent / Frequency", "PDCs", "Grace / Penalty", "Responsibilities", "Facilities / Clauses", "Renewal Notice", "Actions"]}
+                columns={["Lease", "Lease Period", "Rent / Frequency", "PDCs", "Grace / Penalty", "Responsibilities", "Facilities / Clauses", "Renewal Notice", "Actions"]}
                 rows={leases.map((lease) => [
                   `${lease.tenantName} / ${lease.unit}`,
+                  `${lease.startDate} to ${lease.endDate}`,
                   `${formatMoney(lease.monthlyRent)} / ${lease.paymentFrequency.replace("_", " ")}`,
                   `${lease.pdcCount} cheques`,
                   `${lease.gracePeriodDays} days / ${lease.penalties}`,
@@ -2633,9 +3226,152 @@ function LeasingPage() {
                     `Tenant: ${lease.tenantSignedAt || "-"}; file: ${lease.signedDocument || "-"}; received by: ${lease.receivedBy || "-"}; landlord package: ${lease.landlordPackageSubmittedAt || "-"}; shared: ${lease.sharedWithTenant ? "Yes" : "No"}`,
                     <div key="actions" className="flex flex-wrap justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setTenantSignForm({ signedAt: today.toISOString().split("T")[0], signedDocument: "", receivedBy: "Leasing Department", remarks: "" }); setTenantSignOpen(true); }}>Tenant Sign</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setCollectForm({ paymentMode: "PDC", chequeBank: "", payerName: "", depositAmount: String(lease.securityDeposit), depositMode: "Cash", agencyCommission: "", adminCharges: "", utilityDeposit: "", cashierName: "", notes: "", receiptFile: "" }); setCollectOpen(true); }}>Collect</Button>
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setSignatureWorkflowLease(lease);
+                        const count = lease.pdcCount || 12;
+                        const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
+                        const regAmt = lease.monthlyRent || 0;
+                        const firstDate = new Date(lease.startDate || today);
+                        const generated = Array.from({ length: count }, (_, i) => {
+                          let amount = regAmt;
+                          if (i === count - 1 && count > 1) {
+                            amount = Math.max(0, totalRent - regAmt * (count - 1));
+                          }
+                          return {
+                            chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                            bank: "QNB",
+                            date: addDays(firstDate, i * 30),
+                            amount,
+                            period: `Cheque ${i + 1} of ${count}`,
+                          };
+                        });
+                        setCollectForm({
+                          paymentMode: "PDC",
+                          chequeBank: "QNB",
+                          payerName: lease.tenantName,
+                          depositAmount: String(lease.securityDeposit),
+                          depositMode: "Cash",
+                          agencyCommission: "",
+                          adminCharges: "",
+                          utilityDeposit: "",
+                          cashierName: "",
+                          notes: "",
+                          receiptFile: "",
+                          pdcCount: count,
+                          startDate: lease.startDate,
+                          endDate: lease.endDate,
+                          firstChequeDate: lease.startDate,
+                          chequeIntervalDays: 30,
+                          regularChequeAmount: String(lease.monthlyRent),
+                          customCheques: generated,
+                        });
+                        setCollectOpen(true);
+                      }}>Collect</Button>
+                      <Button size="sm" variant="outline" className="text-primary border-primary/50 gap-1" onClick={() => {
+                        const leasePdcs = pdcs.filter(p => p.leaseId === lease.id);
+                        const leaseVouchers = vouchers.filter(v => v.leaseId === lease.id);
+                        const pdcTot = leasePdcs.reduce((s, p) => s + p.amount, 0) || (lease.monthlyRent * (lease.pdcCount || 12));
+                        const totalCol = pdcTot + lease.securityDeposit;
+                        const rec: TenantReceiptDetails = {
+                          receiptNo: `REC-${lease.id.toUpperCase()}`,
+                          acknowledgementNo: `ACK-${lease.id.toUpperCase()}`,
+                          date: lease.startDate || today.toISOString().split("T")[0],
+                          tenantName: lease.tenantName,
+                          tenantPhone: (lease as any).phone || "",
+                          tenantEmail: (lease as any).email || "",
+                          tenantQid: (lease as any).qatarId || "",
+                          propertyName: lease.property,
+                          unitRef: lease.unit,
+                          leaseNo: `LES-${lease.id.toUpperCase()}`,
+                          leaseStartDate: lease.startDate,
+                          leaseEndDate: lease.endDate,
+                          monthlyRent: lease.monthlyRent,
+                          totalContractRent: pdcTot,
+                          depositAmount: lease.securityDeposit,
+                          depositMode: "Cash / PDC",
+                          pdcCount: leasePdcs.length || lease.pdcCount || 12,
+                          pdcs: leasePdcs.length > 0 ? leasePdcs.map((p, idx) => ({
+                            chequeNo: p.chequeNo,
+                            bank: p.bank,
+                            date: p.date,
+                            amount: p.amount,
+                            period: p.period || `Cheque ${idx + 1}`,
+                          })) : Array.from({ length: lease.pdcCount || 12 }, (_, i) => ({
+                            chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                            bank: "QNB",
+                            date: addDays(new Date(lease.startDate || today), i * 30),
+                            amount: i === (lease.pdcCount || 12) - 1 ? Math.max(0, pdcTot - lease.monthlyRent * ((lease.pdcCount || 12) - 1)) : lease.monthlyRent,
+                            period: `Cheque ${i + 1}`,
+                          })),
+                          vouchers: leaseVouchers.map(v => ({
+                            receiptNo: v.receiptNo,
+                            name: v.name,
+                            amount: v.amount,
+                            method: v.method,
+                            debit: v.debit,
+                            credit: v.credit,
+                          })),
+                          totalCollected: totalCol,
+                          cashierName: "Finance Cashier",
+                          notes: "Official receipt acknowledged for lease security deposit and rent PDC schedule.",
+                        };
+                        setReceiptModalData(rec);
+                        setReceiptModalOpen(true);
+                      }}>
+                        <Receipt className="h-3.5 w-3.5" /> View Receipt
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setSubmitLandlordForm({ submittedTo: "", submittedAt: today.toISOString().split("T")[0], docsSent: "Email", notes: "", proofFile: "" }); setSubmitLandlordOpen(true); }}>Submit Landlord</Button>
                       <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setLandlordSignForm({ signedAt: today.toISOString().split("T")[0], signedBy: "", signedDocument: "", sharedWithTenant: true, remarks: "" }); setLandlordSignOpen(true); }}>Landlord Sign</Button>
+                    </div>,
+                  ];
+                })}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pdcs" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>PDC Register & Maturity Schedules</CardTitle>
+                  <CardDescription>Post-dated cheques with maturity dates, amounts, bank information, and status tracking.</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); const l = leases[0]; setPdcForm({ chequeNo: "", bank: "QNB", date: today.toISOString().split("T")[0], amount: l ? String(l.monthlyRent) : "", file: "", payerName: l?.tenantName || "", period: "" }); setAddPdcOpen(true); }}>
+                  <Receipt className="mr-2 h-4 w-4" /> Add PDC
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                columns={["Cheque No.", "Lease / Tenant", "Bank", "Maturity Date", "Period / Narration", "Amount", "Status", "Actions"]}
+                rows={pdcs.map((pdc) => {
+                  const lease = leases.find((item) => item.id === pdc.leaseId);
+                  return [
+                    pdc.chequeNo,
+                    lease ? `${lease.tenantName} (${lease.unit})` : pdc.leaseId,
+                    pdc.bank,
+                    pdc.date,
+                    pdc.period || "-",
+                    formatMoney(pdc.amount),
+                    <StatusBadge key="status" value={pdc.status} />,
+                    <div key="actions" className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setEditingPdc(pdc);
+                        setEditPdcForm({
+                          chequeNo: pdc.chequeNo,
+                          bank: pdc.bank,
+                          date: pdc.date,
+                          amount: String(pdc.amount),
+                          status: pdc.status,
+                          payerName: pdc.payerName || "",
+                          period: pdc.period || "",
+                        });
+                        setEditPdcOpen(true);
+                      }}>
+                        Edit / Maturity
+                      </Button>
                     </div>,
                   ];
                 })}
@@ -2756,9 +3492,14 @@ function LeasingPage() {
                   <CardTitle>Detailed Voucher Accounting</CardTitle>
                   <CardDescription>Named financial documents model rent receipt, deposit, PDC clearance, cheque return, rental income and settlement.</CardDescription>
                 </div>
-                <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" }); setAddPdcOpen(true); }}>
-                  <Receipt className="mr-2 h-4 w-4" /> Add PDC
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => { setSecurityLeaseId(leases[0]?.id || ""); const sl = leases[0]; setSecurityForm({ mode: "Cash", amount: sl ? String(sl.securityDeposit) : "", receiptNo: "", payerName: sl?.tenantName || "", period: "Security Deposit", narration: "", chequeNo: "", bank: "", chequeDate: today.toISOString().split("T")[0] }); setAddSecurityOpen(true); }}>
+                    <ShieldCheck className="mr-2 h-4 w-4" /> Add Security
+                  </Button>
+                  <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" }); setAddPdcOpen(true); }}>
+                    <Receipt className="mr-2 h-4 w-4" /> Add PDC
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -2775,8 +3516,14 @@ function LeasingPage() {
                     formatMoney(voucher.amount),
                     <StatusBadge key="status" value={voucher.status} />,
                     <div key="actions" className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" disabled={voucher.status !== "draft"} onClick={() => setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "posted" } : item))}>Post</Button>
-                      <Button size="sm" variant="outline" disabled={voucher.status === "draft" || voucher.status === "shared"} onClick={() => setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "shared" } : item))}>Share</Button>
+                      <Button size="sm" variant="outline" disabled={voucher.status !== "draft"} onClick={() => {
+                        setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "posted" } : item));
+                        setSharedVouchers((prev) => prev.map((item) => item.id === voucher.id ? { ...item, status: "posted" as const } : item));
+                      }}>Post</Button>
+                      <Button size="sm" variant="outline" disabled={voucher.status === "draft" || voucher.status === "shared"} onClick={() => {
+                        setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "shared" } : item));
+                        setSharedVouchers((prev) => prev.map((item) => item.id === voucher.id ? { ...item, status: "shared" as const } : item));
+                      }}>Share</Button>
                     </div>,
                   ];
                 })}
@@ -2820,6 +3567,13 @@ function LeasingPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Official Tenant Receipt Modal */}
+      <ReceiptModal
+        open={receiptModalOpen}
+        onOpenChange={setReceiptModalOpen}
+        data={receiptModalData}
+      />
     </div>
   );
 }

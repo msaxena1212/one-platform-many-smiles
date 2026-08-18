@@ -13,6 +13,7 @@ import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AppDataProvider } from "../lib/app-data-context";
+import { FinanceProvider } from "../lib/finance/finance-store";
 
 function NotFoundComponent() {
   return (
@@ -117,9 +118,11 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* AppDataProvider — single Supabase-backed real-time store shared across all roles */}
       <AppDataProvider>
-        {/* Required: nested routes render here */}
-        <Outlet />
-        <Toaster position="top-center" richColors />
+        <FinanceProvider>
+          {/* Required: nested routes render here */}
+          <Outlet />
+          <Toaster position="top-center" richColors />
+        </FinanceProvider>
       </AppDataProvider>
     </QueryClientProvider>
   );

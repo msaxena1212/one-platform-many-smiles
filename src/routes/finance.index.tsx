@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { FinVouchersApi, FinPdcRegisterApi } from "@/lib/supabase-finance";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, TrendingUp, CreditCard, ArrowUpRight, ArrowDownRight, Wallet } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { FinanceModule } from "@/components/finance-module";
 
 export const Route = createFileRoute("/finance/")({
-  component: FinanceDashboard,
+  head: () => ({ meta: [{ title: "Finance Operations" }] }),
+  component: FinanceIndexPage,
 });
+
+function FinanceIndexPage() {
+  return <FinanceModule role="finance" />;
+}
+
 
 function FinanceDashboard() {
   const [journalEntries, setJournalEntries] = useState<any[]>([]);

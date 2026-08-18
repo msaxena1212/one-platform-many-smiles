@@ -43,8 +43,14 @@ export async function collectSecurityDeposit(payload: {
 /**
  * Step 2: Transfer Deposit from 21500 to 21100 when Tenant Vacates
  */
-export async function transferDepositToRefundable(depositId: number) {
-  const { data: deposit, error } = await supabase.from('fin_deposits').select('*').eq('id', depositId).single();
+export async function transferDepositToRefundable(depositId: number | string) {
+  const isNumeric = typeof depositId === 'number' || (!isNaN(Number(depositId)) && !String(depositId).includes('-'));
+  if (!isNumeric) {
+    return;
+  }
+
+  const numId = Number(depositId);
+  const { data: deposit, error } = await supabase.from('fin_deposits').select('*').eq('id', numId).single();
   if (error) throw error;
   if (deposit.coa_account_code !== '21500') throw new Error('Deposit is already refundable or not a leasing deposit.');
 
@@ -63,7 +69,7 @@ export async function transferDepositToRefundable(depositId: number) {
   });
 
   // Update Subledger
-  await FinDepositsApi.update(depositId, { 
+  await FinDepositsApi.update(numId, { 
     coa_account_code: '21100', 
     status: 'Refundable' 
   });
@@ -72,8 +78,14 @@ export async function transferDepositToRefundable(depositId: number) {
 /**
  * Step 3: Settle Refundable Deposit against deductions and refund the rest
  */
-export async function settleDeposit(depositId: number, deductions: number, refundAmount: number) {
-  const { data: deposit, error } = await supabase.from('fin_deposits').select('*').eq('id', depositId).single();
+export async function settleDeposit(depositId: number | string, deductions: number, refundAmount: number) {
+  const isNumeric = typeof depositId === 'number' || (!isNaN(Number(depositId)) && !String(depositId).includes('-'));
+  if (!isNumeric) {
+    return;
+  }
+
+  const numId = Number(depositId);
+  const { data: deposit, error } = await supabase.from('fin_deposits').select('*').eq('id', numId).single();
   if (error) throw error;
   if (deposit.status !== 'Refundable') throw new Error('Deposit must be marked Refundable before settlement.');
 
@@ -102,5 +114,5 @@ export async function settleDeposit(depositId: number, deductions: number, refun
     lines
   });
 
-  await FinDepositsApi.update(depositId, { status: refundAmount > 0 ? 'Refunded' : 'Settled' });
+  await FinDepositsApi.update(numId, { status: refundAmount > 0 ? 'Refunded' : 'Settled' });
 }

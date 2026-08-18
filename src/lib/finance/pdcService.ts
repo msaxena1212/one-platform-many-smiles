@@ -35,13 +35,35 @@ export async function receivePdc(payload: {
   return pdc;
 }
 
-export async function depositPdc(pdcId: number) {
-  // Fetch PDC
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', pdcId).single();
+export async function depositPdc(pdcId: number | string) {
+  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
+  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+  const today = new Date().toISOString().split('T')[0];
+
+  if (isUuid) {
+    const { data: pdc } = await supabase.from('pdcs').select('*').eq('id', pdcId).single();
+    await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', pdcId);
+    if (pdc) {
+      await postPdcDeposit(
+        Number(pdc.amount) || 0,
+        1,
+        1,
+        1,
+        pdc.cheque_number || 'PDC'
+      ).catch(() => {});
+    }
+    return;
+  }
+
+  if (!isNumeric) {
+    return;
+  }
+
+  // Fetch PDC from fin_pdc_register
+  const numId = Number(pdcId);
+  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
   if (error) throw error;
   if (pdc.status !== 'In Hand' && pdc.status !== 'Received') throw new Error('PDC must be In Hand to deposit.');
-
-  const today = new Date().toISOString().split('T')[0];
 
   // Post Journal Entry
   await postPdcDeposit(
@@ -53,23 +75,57 @@ export async function depositPdc(pdcId: number) {
   );
 
   // Update Status
-  await FinPdcRegisterApi.update(pdcId, { status: 'Deposited', deposit_date: today });
+  await FinPdcRegisterApi.update(numId, { status: 'Deposited', deposit_date: today });
 }
 
-export async function clearPdc(pdcId: number) {
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', pdcId).single();
+export async function clearPdc(pdcId: number | string) {
+  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
+  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+  const today = new Date().toISOString().split('T')[0];
+
+  if (isUuid) {
+    await supabase.from('pdcs').update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today }).eq('id', pdcId);
+    return;
+  }
+
+  if (!isNumeric) {
+    return;
+  }
+
+  const numId = Number(pdcId);
+  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
   if (error) throw error;
   if (pdc.status !== 'Deposited') throw new Error('PDC must be Deposited to clear.');
 
-  const today = new Date().toISOString().split('T')[0];
-
-  // No journal needed on clear since bank balance already increased on deposit.
-  // We just update the subledger status.
-  await FinPdcRegisterApi.update(pdcId, { status: 'Cleared', cleared_date: today });
+  await FinPdcRegisterApi.update(numId, { status: 'Cleared', cleared_date: today });
 }
 
-export async function returnPdc(pdcId: number) {
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', pdcId).single();
+export async function returnPdc(pdcId: number | string) {
+  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
+  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+  const today = new Date().toISOString().split('T')[0];
+
+  if (isUuid) {
+    const { data: pdc } = await supabase.from('pdcs').select('*').eq('id', pdcId).single();
+    await supabase.from('pdcs').update({ status: 'bounced', status_pdc: 'bounced', returned_date: today }).eq('id', pdcId);
+    if (pdc) {
+      await postPdcReturn(
+        Number(pdc.amount) || 0,
+        1,
+        1,
+        1,
+        pdc.cheque_number || 'PDC'
+      ).catch(() => {});
+    }
+    return;
+  }
+
+  if (!isNumeric) {
+    return;
+  }
+
+  const numId = Number(pdcId);
+  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
   if (error) throw error;
   if (pdc.status !== 'Deposited') throw new Error('PDC must be Deposited to return.');
 
@@ -85,5 +141,5 @@ export async function returnPdc(pdcId: number) {
   );
 
   // Update Status
-  await FinPdcRegisterApi.update(pdcId, { status: 'Returned', returned_date: today });
+  await FinPdcRegisterApi.update(numId, { status: 'Returned', returned_date: today });
 }

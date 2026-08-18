@@ -399,6 +399,19 @@ export function UnitsModule({ role }: UnitsModuleProps) {
       } else {
         const created = await createUnit(payload);
         
+        if (created?.id) {
+          try {
+            const unitLabel = form.unit_number || form.unit_ref || created.id.slice(0, 6);
+            await supabase.from('fin_cost_centers').insert({
+              code: `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`,
+              name: `Unit ${unitLabel} Cost Center`,
+              manager: '',
+            });
+          } catch (ccErr) {
+            console.warn("Auto-create unit cost center skipped/failed:", ccErr);
+          }
+        }
+
         // Save room dimensions only on create for now
         const validRooms = rooms.filter((r) => r.room_type && r.count > 0);
         if (validRooms.length > 0 && created?.id) {
