@@ -190,14 +190,14 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "vendor_list": return <VendorListSubModule />;
     case "customer_list": return <CustomerListSubModule />;
     case "cost_center": return <CostCenterSubModule />;
-    
+
     // Finance
     case "finance_dashboard": return <FinanceDashboardSubModule />;
     case "posting_period": return <PostingPeriodSubModule />;
     case "chart_of_accounts": return <ChartOfAccountsSubModule />;
     case "journal_ledger": return <JournalLedgerSubModule />;
     case "credit_debit_builder": return <CreditDebitBuilderSubModule />;
-    
+
     // Payment
     case "grn_cost_mapping": return <GrnCostMappingSubModule />;
     case "payable_invoice": return <PayableInvoiceSubModule />;
@@ -205,20 +205,20 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "payment_voucher": return <VoucherManagerSubModule type="Payment Voucher" />;
     case "receivable_invoice": return <ReceivableInvoiceSubModule />;
     case "receipt_voucher": return <VoucherManagerSubModule type="Receipt Voucher" />;
-    
+
     // Receivables & Operations
     case "pdc_management": return <PdcManagement />;
     case "deposits_guarantees": return <DepositsGuarantees />;
     case "legal_receivables": return <ReceivablesLegal />;
     case "payroll_sync": return <PayrollSync />;
-    
+
     // Bank Accounting
     case "bank": return <BankSubModule />;
     case "bank_account": return <BankAccountSubModule />;
     case "bank_clearance": return <BankClearanceSubModule />;
     case "bank_reconciliation": return <BankReconciliationSubModule />;
     case "bank_reconciliation_statement_list": return <BankReconciliationStatementListSubModule />;
-    
+
     // Reports
     case "trial_balance_simple": return <TrialBalanceSimpleSubModule />;
     case "trial_balance": return <TrialBalanceFullSubModule />;
@@ -229,11 +229,11 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "cash_book": return <CashBookSubModule />;
     case "petty_cash_book": return <PettyCashBookSubModule />;
     case "cash_on_hand": return <CashOnHandSubModule />;
-    
+
     // Contracts
     case "expense_contract": return <ContractManagementSubModule type="Expense" />;
     case "revenue_contract": return <ContractManagementSubModule type="Revenue" />;
-    
+
     default: return <div className="text-center py-10 text-muted-foreground">Select a module</div>;
   }
 }
@@ -267,14 +267,14 @@ function FinancialYearSubModule() {
   async function handleAdd() {
     try {
       await FinFinancialYearsApi.create(form);
-    } catch {}
+    } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Financial Year added");
     setOpen(false);
   }
   async function handleDelete(id: number) {
     if (!confirm("Delete this FY?")) return;
-    try { await FinFinancialYearsApi.delete(id); } catch {}
+    try { await FinFinancialYearsApi.delete(id); } catch { }
     setData(prev => prev.filter(d => d.id !== id));
     toast.success("Financial year removed");
   }
@@ -313,10 +313,10 @@ function FinancialYearSubModule() {
             <p className="text-xs text-muted-foreground">Set the accounting period boundaries.</p>
           </DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Year Name</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><Label>Year Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Start Date</Label><Input type="date" value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} /></div>
-              <div><Label>End Date</Label><Input type="date" value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} /></div>
+              <div><Label>Start Date</Label><Input type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} /></div>
+              <div><Label>End Date</Label><Input type="date" value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -351,7 +351,7 @@ function RegionSubModule() {
     }
   }
   async function handleAdd() {
-    try { await FinRegionsApi.create(form); } catch {}
+    try { await FinRegionsApi.create(form); } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Region added");
     setOpen(false);
@@ -387,9 +387,9 @@ function RegionSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Geographical Region</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Region Code</Label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><Label>Region Name</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div><Label>Country</Label><Input value={form.country} onChange={e => setForm({...form, country: e.target.value})} /></div>
+            <div><Label>Region Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            <div><Label>Region Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><Label>Country</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -422,7 +422,7 @@ function VendorListSubModule() {
     }
   }
   async function handleAdd() {
-    try { await FinVendorsApi.create(form); } catch {}
+    try { await FinVendorsApi.create(form); } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Vendor added");
     setOpen(false);
@@ -460,14 +460,14 @@ function VendorListSubModule() {
           <DialogHeader><DialogTitle>Add Vendor Master</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Vendor Code</Label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-              <div><Label>Tax / CR Number</Label><Input value={form.tax_number} onChange={e => setForm({...form, tax_number: e.target.value})} /></div>
+              <div><Label>Vendor Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+              <div><Label>Tax / CR Number</Label><Input value={form.tax_number} onChange={e => setForm({ ...form, tax_number: e.target.value })} /></div>
             </div>
-            <div><Label>Company Name</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div><Label>Contact Person</Label><Input value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} /></div>
+            <div><Label>Company Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><Label>Contact Person</Label><Input value={form.contact_person} onChange={e => setForm({ ...form, contact_person: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-              <div><Label>Email</Label><Input value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
+              <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+              <div><Label>Email</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -485,7 +485,7 @@ function CustomerListSubModule() {
   const [dbCustomers, setDbCustomers] = useState<FinCustomer[]>([]);
 
   useEffect(() => {
-    async function load() { try { setDbCustomers(await FinCustomersApi.fetchAll()); } catch {} }
+    async function load() { try { setDbCustomers(await FinCustomersApi.fetchAll()); } catch { } }
     load();
   }, []);
 
@@ -555,10 +555,10 @@ function CostCenterSubModule() {
         if (!existing.has(code)) autoSeeds.push({ code, name: prop.title, manager: 'Site Manager', type: 'Property' });
       }
       setData([...dbData, ...autoSeeds.map((s, i) => ({ ...s, id: -1000 - i }))]);
-    } catch {}
+    } catch { }
   }
   async function handleAdd() {
-    try { await FinCostCentersApi.create(form); } catch {}
+    try { await FinCostCentersApi.create(form); } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Cost center added");
     setOpen(false);
@@ -594,9 +594,9 @@ function CostCenterSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Cost Center</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Code</Label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><Label>Name</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div><Label>Manager</Label><Input value={form.manager} onChange={e => setForm({...form, manager: e.target.value})} /></div>
+            <div><Label>Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            <div><Label>Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><Label>Manager</Label><Input value={form.manager} onChange={e => setForm({ ...form, manager: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -724,7 +724,7 @@ function PostingPeriodSubModule() {
   }
   async function toggle(row: FinPostingPeriod) {
     const nextStatus = row.status === "Open" ? "Closed" : "Open";
-    try { await FinPostingPeriodsApi.update(row.id, { status: nextStatus }); } catch {}
+    try { await FinPostingPeriodsApi.update(row.id, { status: nextStatus }); } catch { }
     setData(prev => prev.map(p => p.id === row.id ? { ...p, status: nextStatus } : p));
     toast.success(`Period ${row.period_name} is now ${nextStatus}`);
   }
@@ -911,13 +911,12 @@ function ChartOfAccountsSubModule() {
                   <TableCell className="font-mono font-bold text-primary">{acc.code}</TableCell>
                   <TableCell className="font-medium">{acc.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`capitalize text-[10px] font-semibold ${
-                      (acc.type || '').toLowerCase().includes('asset') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    <Badge variant="outline" className={`capitalize text-[10px] font-semibold ${(acc.type || '').toLowerCase().includes('asset') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                       (acc.type || '').toLowerCase().includes('liab') ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                      (acc.type || '').toLowerCase().includes('cap') ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                      (acc.type || '').toLowerCase().includes('rev') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                      'bg-purple-50 text-purple-700 border-purple-200'
-                    }`}>
+                        (acc.type || '').toLowerCase().includes('cap') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          (acc.type || '').toLowerCase().includes('rev') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                            'bg-purple-50 text-purple-700 border-purple-200'
+                      }`}>
                       {acc.type_name || acc.type || 'N/A'}
                     </Badge>
                   </TableCell>
@@ -971,11 +970,11 @@ function ChartOfAccountsSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add New Chart of Account</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Account Code</Label><Input placeholder="12413999" value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><Label>Account / SL Name</Label><Input placeholder="Receivables - Unit 101" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><Label>Account Code</Label><Input placeholder="12413999" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            <div><Label>Account / SL Name</Label><Input placeholder="Receivables - Unit 101" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div>
               <Label>Account Type</Label>
-              <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
+              <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Assets">Assets</SelectItem>
@@ -1033,7 +1032,7 @@ function JournalLedgerSubModule() {
           { account_code: form.cr_account.split(' ')[0], debit: 0, credit: amt, description: form.narration }
         ]
       });
-    } catch {}
+    } catch { }
 
     const newJE = {
       id: form.je_no,
@@ -1098,14 +1097,14 @@ function JournalLedgerSubModule() {
           </DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>JE Number</Label><Input value={form.je_no} onChange={e => setForm({...form, je_no: e.target.value})} /></div>
-              <div><Label>Posting Date</Label><Input type="date" value={form.posting_date} onChange={e => setForm({...form, posting_date: e.target.value})} /></div>
+              <div><Label>JE Number</Label><Input value={form.je_no} onChange={e => setForm({ ...form, je_no: e.target.value })} /></div>
+              <div><Label>Posting Date</Label><Input type="date" value={form.posting_date} onChange={e => setForm({ ...form, posting_date: e.target.value })} /></div>
             </div>
-            <div><Label>Reference / Document No</Label><Input value={form.reference} onChange={e => setForm({...form, reference: e.target.value})} /></div>
+            <div><Label>Reference / Document No</Label><Input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Debit Account (Dr)</Label>
-                <Select value={form.dr_account} onValueChange={v => setForm({...form, dr_account: v})}>
+                <Select value={form.dr_account} onValueChange={v => setForm({ ...form, dr_account: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="12000 - Bank Operating Account">12000 - Bank Operating Account</SelectItem>
@@ -1118,7 +1117,7 @@ function JournalLedgerSubModule() {
               </div>
               <div>
                 <Label>Credit Account (Cr)</Label>
-                <Select value={form.cr_account} onValueChange={v => setForm({...form, cr_account: v})}>
+                <Select value={form.cr_account} onValueChange={v => setForm({ ...form, cr_account: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="41100 - Rental Revenue">41100 - Rental Revenue</SelectItem>
@@ -1132,11 +1131,11 @@ function JournalLedgerSubModule() {
             </div>
             <div>
               <Label>Amount (QAR)</Label>
-              <Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
+              <Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
             </div>
             <div>
               <Label>Narration / Description</Label>
-              <Textarea rows={2} placeholder="Explain the business transaction..." value={form.narration} onChange={e => setForm({...form, narration: e.target.value})} />
+              <Textarea rows={2} placeholder="Explain the business transaction..." value={form.narration} onChange={e => setForm({ ...form, narration: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
@@ -1177,7 +1176,7 @@ function CreditDebitBuilderSubModule() {
           description: l.account,
         }))
       });
-    } catch {}
+    } catch { }
 
     toast.success("Journal voucher built & posted successfully!");
     setLines([
@@ -1323,18 +1322,18 @@ function GrnCostMappingSubModule() {
           <DialogHeader><DialogTitle>Map GRN Cost Allocation</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>GRN Number</Label><Input value={form.grn_no} onChange={e => setForm({...form, grn_no: e.target.value})} /></div>
-              <div><Label>PO Reference</Label><Input value={form.po_ref} onChange={e => setForm({...form, po_ref: e.target.value})} /></div>
+              <div><Label>GRN Number</Label><Input value={form.grn_no} onChange={e => setForm({ ...form, grn_no: e.target.value })} /></div>
+              <div><Label>PO Reference</Label><Input value={form.po_ref} onChange={e => setForm({ ...form, po_ref: e.target.value })} /></div>
             </div>
-            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})} /></div>
-            <div><Label>Item / Service Description</Label><Input value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
+            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
+            <div><Label>Item / Service Description</Label><Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Total Cost (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
-              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({...form, property: e.target.value})} /></div>
+              <div><Label>Total Cost (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
             </div>
             <div>
               <Label>Target GL Expense Account</Label>
-              <Select value={form.mapped_gl} onValueChange={v => setForm({...form, mapped_gl: v})}>
+              <Select value={form.mapped_gl} onValueChange={v => setForm({ ...form, mapped_gl: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="5020 - Repairs & Maintenance">5020 - Repairs & Maintenance</SelectItem>
@@ -1442,17 +1441,17 @@ function PayableInvoiceSubModule() {
           <DialogHeader><DialogTitle>Create Accounts Payable Invoice</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({...form, invoice_no: e.target.value})} /></div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
-            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({...form, vendor: e.target.value})} /></div>
+            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Bill Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} /></div>
+              <div><Label>Bill Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
             </div>
             <div>
               <Label>Expense Account</Label>
-              <Select value={form.account} onValueChange={v => setForm({...form, account: v})}>
+              <Select value={form.account} onValueChange={v => setForm({ ...form, account: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="5020 - Repairs & Maintenance">5020 - Repairs & Maintenance</SelectItem>
@@ -1563,19 +1562,19 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
           <DialogHeader><DialogTitle>Create {type}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Voucher #</Label><Input value={form.voucher_no} onChange={e => setForm({...form, voucher_no: e.target.value})} /></div>
-              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
+              <div><Label>Voucher #</Label><Input value={form.voucher_no} onChange={e => setForm({ ...form, voucher_no: e.target.value })} /></div>
+              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             </div>
-            <div><Label>Description / Narration</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><Label>Description / Narration</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Debit Account</Label><Input value={form.debit} onChange={e => setForm({...form, debit: e.target.value})} /></div>
-              <div><Label>Credit Account</Label><Input value={form.credit} onChange={e => setForm({...form, credit: e.target.value})} /></div>
+              <div><Label>Debit Account</Label><Input value={form.debit} onChange={e => setForm({ ...form, debit: e.target.value })} /></div>
+              <div><Label>Credit Account</Label><Input value={form.credit} onChange={e => setForm({ ...form, credit: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
               <div>
                 <Label>Payment Method</Label>
-                <Select value={form.method} onValueChange={v => setForm({...form, method: v})}>
+                <Select value={form.method} onValueChange={v => setForm({ ...form, method: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
@@ -1676,17 +1675,17 @@ function ReceivableInvoiceSubModule() {
           <DialogHeader><DialogTitle>Create Accounts Receivable Invoice</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({...form, invoice_no: e.target.value})} /></div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
-            <div><Label>Tenant Name</Label><Input value={form.tenant} onChange={e => setForm({...form, tenant: e.target.value})} /></div>
+            <div><Label>Tenant Name</Label><Input value={form.tenant} onChange={e => setForm({ ...form, tenant: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({...form, property: e.target.value})} /></div>
-              <div><Label>Unit</Label><Input value={form.unit} onChange={e => setForm({...form, unit: e.target.value})} /></div>
+              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
+              <div><Label>Unit</Label><Input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Issue Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} /></div>
+              <div><Label>Issue Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -1727,7 +1726,7 @@ function BankSubModule() {
   }
 
   async function handleAdd() {
-    try { await FinBanksApi.create(form); } catch {}
+    try { await FinBanksApi.create(form); } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Bank registered");
     setOpen(false);
@@ -1762,9 +1761,9 @@ function BankSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Bank Institution</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Bank Code</Label><Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><Label>Bank Full Name</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div><Label>SWIFT Code</Label><Input value={form.swift_code} onChange={e => setForm({...form, swift_code: e.target.value})} /></div>
+            <div><Label>Bank Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            <div><Label>Bank Full Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><Label>SWIFT Code</Label><Input value={form.swift_code} onChange={e => setForm({ ...form, swift_code: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -1798,7 +1797,7 @@ function BankAccountSubModule() {
   }
 
   async function handleAdd() {
-    try { await FinBankAccountsApi.create(form); } catch {}
+    try { await FinBankAccountsApi.create(form); } catch { }
     setData(prev => [{ id: Date.now(), ...form }, ...prev]);
     toast.success("Bank account created and mapped to GL Account 12000");
     setOpen(false);
@@ -1834,11 +1833,11 @@ function BankAccountSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Bank Account</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>IBAN / Account Number</Label><Input value={form.account_number} onChange={e => setForm({...form, account_number: e.target.value})} /></div>
-            <div><Label>Account Title</Label><Input value={form.account_title} onChange={e => setForm({...form, account_title: e.target.value})} /></div>
+            <div><Label>IBAN / Account Number</Label><Input value={form.account_number} onChange={e => setForm({ ...form, account_number: e.target.value })} /></div>
+            <div><Label>Account Title</Label><Input value={form.account_title} onChange={e => setForm({ ...form, account_title: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Currency</Label><Input value={form.currency} onChange={e => setForm({...form, currency: e.target.value})} /></div>
-              <div><Label>Opening Balance (QAR)</Label><Input type="number" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: parseFloat(e.target.value) || 0})} /></div>
+              <div><Label>Currency</Label><Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} /></div>
+              <div><Label>Opening Balance (QAR)</Label><Input type="number" value={form.opening_balance} onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) || 0 })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -1920,11 +1919,11 @@ function BankClearanceSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Record Bank Clearance</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Cheque / Reference Number</Label><Input value={form.ref} onChange={e => setForm({...form, ref: e.target.value})} /></div>
-            <div><Label>Bank</Label><Input value={form.bank} onChange={e => setForm({...form, bank: e.target.value})} /></div>
+            <div><Label>Cheque / Reference Number</Label><Input value={form.ref} onChange={e => setForm({ ...form, ref: e.target.value })} /></div>
+            <div><Label>Bank</Label><Input value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
-              <div><Label>Clearance Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+              <div><Label>Clearance Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -2007,7 +2006,7 @@ function BankReconciliationSubModule() {
           <div className="space-y-3 py-2 text-xs">
             <div>
               <Label>Bank Account</Label>
-              <Select value={form.account_number} onValueChange={v => setForm({...form, account_number: v})}>
+              <Select value={form.account_number} onValueChange={v => setForm({ ...form, account_number: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="QA55QNBA00000000123456789">QA55QNBA00000000123456789 - QNB Main</SelectItem>
@@ -2015,10 +2014,10 @@ function BankReconciliationSubModule() {
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Statement Date</Label><Input type="date" value={form.statement_date} onChange={e => setForm({...form, statement_date: e.target.value})} /></div>
+            <div><Label>Statement Date</Label><Input type="date" value={form.statement_date} onChange={e => setForm({ ...form, statement_date: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>GL Book Balance (QAR)</Label><Input type="number" value={form.book_balance} onChange={e => setForm({...form, book_balance: e.target.value})} /></div>
-              <div><Label>Bank Statement Balance</Label><Input type="number" value={form.statement_balance} onChange={e => setForm({...form, statement_balance: e.target.value})} /></div>
+              <div><Label>GL Book Balance (QAR)</Label><Input type="number" value={form.book_balance} onChange={e => setForm({ ...form, book_balance: e.target.value })} /></div>
+              <div><Label>Bank Statement Balance</Label><Input type="number" value={form.statement_balance} onChange={e => setForm({ ...form, statement_balance: e.target.value })} /></div>
             </div>
             <div className="p-2.5 rounded bg-muted/40 border flex justify-between">
               <span>Reconciliation Difference:</span>
@@ -2462,14 +2461,14 @@ function CashBookSubModule() {
           <DialogHeader><DialogTitle>Add Cash Book Entry</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-              <div><Label>Voucher Ref</Label><Input value={form.voucher} onChange={e => setForm({...form, voucher: e.target.value})} /></div>
+              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Voucher Ref</Label><Input value={form.voucher} onChange={e => setForm({ ...form, voucher: e.target.value })} /></div>
             </div>
-            <div><Label>Description</Label><Input placeholder="Reason for cash transaction" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
+            <div><Label>Description</Label><Input placeholder="Reason for cash transaction" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
+                <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="in">Cash In (Receipt)</SelectItem>
@@ -2477,7 +2476,7 @@ function CashBookSubModule() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -2554,10 +2553,10 @@ function PettyCashBookSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Petty Cash Expense</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-            <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({...form, expense: e.target.value})} /></div>
-            <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({...form, paid_to: e.target.value})} /></div>
-            <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+            <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({ ...form, expense: e.target.value })} /></div>
+            <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({ ...form, paid_to: e.target.value })} /></div>
+            <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -2989,14 +2988,14 @@ function CashBookSubModule() {
           <DialogHeader><DialogTitle>Add Cash Book Entry</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-              <div><Label>Voucher Ref</Label><Input value={form.voucher} onChange={e => setForm({...form, voucher: e.target.value})} /></div>
+              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Voucher Ref</Label><Input value={form.voucher} onChange={e => setForm({ ...form, voucher: e.target.value })} /></div>
             </div>
-            <div><Label>Description</Label><Input placeholder="Reason for cash transaction" value={form.description} onChange={e => setForm({...form, description: e.target.value})} /></div>
+            <div><Label>Description</Label><Input placeholder="Reason for cash transaction" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Type</Label>
-                <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
+                <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="in">Cash In (Receipt)</SelectItem>
@@ -3004,7 +3003,7 @@ function CashBookSubModule() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
           </div>
           <DialogFooter>
@@ -3075,10 +3074,10 @@ function PettyCashBookSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Petty Cash Expense</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} /></div>
-            <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({...form, expense: e.target.value})} /></div>
-            <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({...form, paid_to: e.target.value})} /></div>
-            <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} /></div>
+            <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({ ...form, expense: e.target.value })} /></div>
+            <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({ ...form, paid_to: e.target.value })} /></div>
+            <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -3180,7 +3179,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
     }
     try {
       await FinContractsApi.create({ ...form, type });
-    } catch {}
+    } catch { }
 
     setData(prev => [{ id: Date.now(), ...form, type }, ...prev]);
     toast.success(`${type} Contract saved successfully!`);
@@ -3256,12 +3255,12 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                   className="font-mono text-xs"
                   placeholder="CNT-EXP-001"
                   value={form.contract_number}
-                  onChange={e => setForm({...form, contract_number: e.target.value})}
+                  onChange={e => setForm({ ...form, contract_number: e.target.value })}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Contract Status</Label>
-                <Select value={form.status} onValueChange={v => setForm({...form, status: v})}>
+                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v })}>
                   <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Active">Active & Executed</SelectItem>
@@ -3279,7 +3278,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                 className="text-xs"
                 placeholder={type === "Expense" ? "e.g. Annual MEP Maintenance Agreement" : "e.g. 2-Year Commercial Lease Agreement"}
                 value={form.title}
-                onChange={e => setForm({...form, title: e.target.value})}
+                onChange={e => setForm({ ...form, title: e.target.value })}
               />
             </div>
 
@@ -3292,7 +3291,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                   className="text-xs"
                   placeholder={type === "Expense" ? "e.g. Qatar HVAC Solutions WLL" : "e.g. Al Ameen Real Estate"}
                   value={form.party_name}
-                  onChange={e => setForm({...form, party_name: e.target.value})}
+                  onChange={e => setForm({ ...form, party_name: e.target.value })}
                 />
               </div>
 
@@ -3303,7 +3302,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                     type="number"
                     className="text-xs font-mono pr-12 font-bold"
                     value={form.total_value}
-                    onChange={e => setForm({...form, total_value: parseFloat(e.target.value) || 0})}
+                    onChange={e => setForm({ ...form, total_value: parseFloat(e.target.value) || 0 })}
                   />
                   <span className="absolute right-3 top-2.5 text-[10px] font-bold text-muted-foreground">QAR</span>
                 </div>
@@ -3317,7 +3316,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                   type="date"
                   className="text-xs"
                   value={form.start_date}
-                  onChange={e => setForm({...form, start_date: e.target.value})}
+                  onChange={e => setForm({ ...form, start_date: e.target.value })}
                 />
               </div>
               <div className="space-y-1">
@@ -3326,7 +3325,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                   type="date"
                   className="text-xs"
                   value={form.end_date}
-                  onChange={e => setForm({...form, end_date: e.target.value})}
+                  onChange={e => setForm({ ...form, end_date: e.target.value })}
                 />
               </div>
             </div>
