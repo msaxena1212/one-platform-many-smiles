@@ -2,7 +2,7 @@
 
 ## Detailed Feature Comparison Table
 
-| Module/Sub Module | What we offer (ZYNO PMS) | What we have (Yes/No/Partial) | What other platform (PMS Properly) offer |
+| Module/Sub Module | ZYNO PMS | Do we have | PMS Properly |
 |-------------------|--------------------------|------------------------------------------|
 | **Dashboard & Analytics** | Live KPIs dashboard showing occupancy rates, collection summaries, portfolio performance; real-time analytics; export to PDF/Excel; configurable widgets; role-based dashboard views | Yes | Live KPIs, occupancy rates, collection summaries, and portfolio performance — your entire operation visible in one screen the moment you log in |
 | **Property Management** | Organize portfolio by area, building, classification (residential/commercial/mixed-use); track occupancy status across every property; property master includes amenities, geo-coordinates, status tracking; computed total_units from units; property documentation linking | Yes | Organise your portfolio by area, building, and classification. Track occupancy status across every property you manage from a single view |
