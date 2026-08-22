@@ -3295,13 +3295,17 @@ function LeasingPage() {
                             bank: p.bank,
                             date: p.date,
                             amount: p.amount,
-                            period: p.period || `Cheque ${idx + 1}`,
+                            period: p.period || ((p as any).tenureStart && (p as any).tenureEnd ? `${(p as any).tenureStart} to ${(p as any).tenureEnd}` : `Cheque ${idx + 1}`),
+                            tenureStart: (p as any).tenureStart || addDays(new Date(lease.startDate || today), idx * 30),
+                            tenureEnd: (p as any).tenureEnd || addDays(new Date(lease.startDate || today), idx * 30 + 29),
                           })) : Array.from({ length: lease.pdcCount || 12 }, (_, i) => ({
                             chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
                             bank: "QNB",
                             date: addDays(new Date(lease.startDate || today), i * 30),
                             amount: i === (lease.pdcCount || 12) - 1 ? Math.max(0, pdcTot - lease.monthlyRent * ((lease.pdcCount || 12) - 1)) : lease.monthlyRent,
-                            period: `Cheque ${i + 1}`,
+                            period: `${addDays(new Date(lease.startDate || today), i * 30)} to ${addDays(new Date(lease.startDate || today), i * 30 + 29)}`,
+                            tenureStart: addDays(new Date(lease.startDate || today), i * 30),
+                            tenureEnd: addDays(new Date(lease.startDate || today), i * 30 + 29),
                           })),
                           vouchers: leaseVouchers.map(v => ({
                             receiptNo: v.receiptNo,
@@ -3496,7 +3500,7 @@ function LeasingPage() {
                   <Button size="sm" variant="outline" onClick={() => { setSecurityLeaseId(leases[0]?.id || ""); const sl = leases[0]; setSecurityForm({ mode: "Cash", amount: sl ? String(sl.securityDeposit) : "", receiptNo: "", payerName: sl?.tenantName || "", period: "Security Deposit", narration: "", chequeNo: "", bank: "", chequeDate: today.toISOString().split("T")[0] }); setAddSecurityOpen(true); }}>
                     <ShieldCheck className="mr-2 h-4 w-4" /> Add Security
                   </Button>
-                  <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "" }); setAddPdcOpen(true); }}>
+                  <Button size="sm" onClick={() => { setPdcLeaseId(leases[0]?.id || ""); setPdcForm({ chequeNo: "", bank: "", date: today.toISOString().split("T")[0], amount: "", file: "", payerName: "", period: "" }); setAddPdcOpen(true); }}>
                     <Receipt className="mr-2 h-4 w-4" /> Add PDC
                   </Button>
                 </div>

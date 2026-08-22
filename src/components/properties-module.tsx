@@ -151,21 +151,46 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
     }
 
     void (async () => {
+      // Get context leases to check active occupancies
+      let contextLeases: any[] = [];
+      try {
+        const raw = window.localStorage.getItem("zyno-pms-app-data");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.leases) contextLeases = parsed.leases;
+        }
+      } catch (e) {}
+
       const entries = await Promise.all(
         properties.map(async (property) => {
           try {
             const units = await fetchUnits({ property_id: property.id });
-            const occupiedUnits = (units || []).filter(
+            const totalUnits = units?.length ?? 0;
+            
+            // Check occupied units in db or active leases in context matching property title
+            const occupiedDbCount = (units || []).filter(
               (u: any) =>
                 u.status?.toLowerCase() === "occupied" ||
                 u.lease_status?.toLowerCase() === "leased" ||
                 u.lease_status?.toLowerCase() === "active"
             ).length;
+
+            const activeContextLeaseCount = contextLeases.filter(
+              (l: any) =>
+                (l.property?.toLowerCase() === property.title?.toLowerCase() ||
+                 l.property?.toLowerCase().includes(property.title?.toLowerCase()) ||
+                 property.title?.toLowerCase().includes(l.property?.toLowerCase())) &&
+                (l.status === "active" || l.status === "fully_signed" || l.status === "collection_completed")
+            ).length;
+
+            const occupiedUnits = Math.max(occupiedDbCount, Math.min(totalUnits, activeContextLeaseCount));
+            const calculatedTotal = totalUnits > 0 ? totalUnits : (property.total_units || property.no_of_units || (activeContextLeaseCount > 0 ? activeContextLeaseCount : 1));
+
             return {
               id: property.id,
-              units: units?.length ?? 0,
-              occupancy: units?.length
-                ? Math.round((occupiedUnits / units.length) * 100) + "%"
+              units: calculatedTotal,
+              occupancy: calculatedTotal > 0
+                ? (occupiedUnits > 0 ? Math.round((occupiedUnits / calculatedTotal) * 100) + "%" : (occupiedDbCount > 0 ? Math.round((occupiedDbCount / calculatedTotal) * 100) + "%" : "0%"))
                 : "0%",
             };
           } catch {
@@ -200,6 +225,9 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       const generatedPropertyCode = `PROP-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
 
+      const propCostCenterCode = form.cost_center_code || `CC-PROP-${Math.floor(1000 + Math.random() * 9000)}`;
+      const propCostCenterName = form.cost_center_name || `${form.title} Cost Center`;
+
       const newProperty = await createProperty(
         buildPropertyPayload({
           hostId, // undefined for demo users → host_id omitted (null in DB)
@@ -215,8 +243,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           cleaningFee: 0,
           isActive: true,
           propertyCode: generatedPropertyCode,
-          costCenterCode: form.cost_center_code,
-          costCenterName: form.cost_center_name,
+          costCenterCode: propCostCenterCode,
+          costCenterName: propCostCenterName,
           propertyCategory: form.property_category,
           ownershipType: form.ownership_type,
           noOfUnits: form.no_of_units || form.total_units,
@@ -226,11 +254,16 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       if (newProperty) {
         try {
-          await supabase.from('fin_cost_centers').insert({
-            code: `CC-PROP-${newProperty.id.slice(0, 8).toUpperCase()}`,
-            name: form.title,
-            manager: form.cost_center_name || '',
-          });
+          const finalCcCode = `CC-PROP-${newProperty.id.slice(0, 8).toUpperCase()}`;
+          await supabase.from('fin_cost_centers').upsert({
+            code: finalCcCode,
+            name: `${form.title} Cost Center`,
+            manager: 'Property Manager',
+          }, { onConflict: 'code' });
+          await supabase.from('properties').update({
+            cost_center_code: finalCcCode,
+            cost_center_name: `${form.title} Cost Center`,
+          } as any).eq('id', newProperty.id);
         } catch (ccErr) {
           console.warn("Auto-create property cost center skipped/failed:", ccErr);
         }

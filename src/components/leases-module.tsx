@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
+import { useAppData } from "@/lib/app-data-context";
 import { Loader2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
@@ -12,7 +13,8 @@ export interface LeasesModuleProps {
 }
 
 export function LeasesModule({ role }: LeasesModuleProps) {
-  const [leases, setLeases] = useState<Lease[]>([]);
+  const { leases: contextLeases } = useAppData();
+  const [leases, setLeases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
@@ -20,27 +22,40 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      let query = supabase.from('leases').select('*, properties(title, property_code)');
-      
-      if (role === 'prop-mgr' && userId) {
-        // Property manager sees leases for properties they are assigned to or via employees link
-        // For simplicity, just fetch all in demo mode or add specific logic
-      } else if (role === 'owner' && userId) {
-         // Assuming host_id filtering would happen on properties
+      let dbLeases: any[] = [];
+      try {
+        const { data, error } = await supabase.from('leases').select('*, properties(title, property_code)').order('created_at', { ascending: false });
+        if (!error && data) dbLeases = data;
+      } catch (e) {
+        console.error(e);
       }
-      
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
-      setLeases(data || []);
+
+      // Map context leases to match table structure
+      const mappedContext = (contextLeases || []).map(cl => ({
+        id: cl.id,
+        lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
+        properties: { title: cl.property },
+        commencement_date: cl.startDate,
+        expiry_date: cl.endDate,
+        rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
+        lease_status: cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed' ? 'ACTIVE' : cl.status === 'renewal_due' ? 'EXPIRING' : 'DRAFT',
+      }));
+
+      // Combine both sources
+      const allLeases = [...dbLeases];
+      for (const mc of mappedContext) {
+        if (!allLeases.some(l => l.id === mc.id || l.lease_number === mc.lease_number)) {
+          allLeases.push(mc);
+        }
+      }
+
+      setLeases(allLeases);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [role]);
+  }, [contextLeases]);
 
   useEffect(() => {
     load();
@@ -100,11 +115,6 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       <Card className="border-border">
         <div className="flex items-center justify-between p-6 pb-4">
           <CardTitle className="text-lg">Leases</CardTitle>
-          {role !== 'owner' && (
-            <Button className="bg-primary hover:bg-primary/90" asChild>
-              <Link to={`${basePath}/leases/new` as any}>New lease</Link>
-            </Button>
-          )}
         </div>
         <CardContent className="p-0">
           <div className="overflow-x-auto">

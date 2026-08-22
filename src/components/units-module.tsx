@@ -58,6 +58,7 @@ import {
   type Unit,
 } from "@/lib/supabase";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { useAppData } from "@/lib/app-data-context";
 
 export interface UnitsModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -222,6 +223,7 @@ const STEPS = [
 ];
 
 export function UnitsModule({ role }: UnitsModuleProps) {
+  const { leases: contextLeases } = useAppData();
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -280,9 +282,38 @@ export function UnitsModule({ role }: UnitsModuleProps) {
       // Fetch all units, then filter to only those belonging to the loaded properties
       const propertyIds = (loadedProperties || []).map((p) => p.id);
       const loadedUnits = await fetchUnits();
-      const filteredUnits = (loadedUnits || []).filter((unit) => propertyIds.includes(unit.property_id));
+      const propMap = new Map((loadedProperties || []).map((p) => [p.id, p.title]));
+      
+      // Merge with context leases
+      const enrichedUnits = (loadedUnits || [])
+        .filter((unit) => propertyIds.includes(unit.property_id))
+        .map((unit) => {
+          const propTitle = propMap.get(unit.property_id) || "";
+          const activeLease = (contextLeases || []).find((l) =>
+            (l.property?.toLowerCase() === propTitle.toLowerCase() ||
+             l.property?.toLowerCase().includes(propTitle.toLowerCase()) ||
+             propTitle.toLowerCase().includes(l.property?.toLowerCase())) &&
+            (l.unit?.toLowerCase() === unit.unit_ref?.toLowerCase() ||
+             l.unit?.toLowerCase() === unit.unit_name?.toLowerCase() ||
+             l.unit?.toLowerCase() === unit.unit_code?.toLowerCase()) &&
+            (l.status === "active" || l.status === "fully_signed" || l.status === "collection_completed")
+          );
 
-      setUnits(filteredUnits);
+          if (activeLease) {
+            return {
+              ...unit,
+              lease_status: "Occupied",
+              status: "Occupied",
+              current_tenant: activeLease.tenantName || unit.current_tenant,
+              contract_start_date: activeLease.startDate || unit.contract_start_date,
+              contract_end_date: activeLease.endDate || unit.contract_end_date,
+              current_rent: activeLease.monthlyRent || unit.current_rent || unit.price,
+            };
+          }
+          return unit;
+        });
+
+      setUnits(enrichedUnits);
       setProperties(
         (loadedProperties || []).map((p) => ({
           id: p.id,
@@ -303,7 +334,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     } finally {
       setLoading(false);
     }
-  }, [role]);
+  }, [role, contextLeases]);
 
   useEffect(() => {
     load();
@@ -381,32 +412,45 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         return sum + (isNaN(a) ? 0 : a * r.count);
       }, 0);
       
-      const payload = {
+      // Date fields — Postgres rejects empty strings for type date; must be null
+      const DATE_FIELDS = ['contract_start_date', 'contract_end_date', 'handover_date'] as const;
+      const sanitizedPayload: Record<string, unknown> = {
         ...form,
-        area: autoArea > 0 ? String(autoArea.toFixed(2)) : form.area,
-        balcony_sqm:
-          typeof form.balcony_sqm === "number" && Number.isNaN(form.balcony_sqm)
-            ? undefined
-            : form.balcony_sqm,
-        total_area_sqm:
-          typeof form.total_area_sqm === "number" && Number.isNaN(form.total_area_sqm)
-            ? undefined
-            : form.total_area_sqm,
+        area: autoArea > 0 ? String(autoArea.toFixed(2)) : (form.area || null),
+        balcony_sqm: typeof form.balcony_sqm === "number" && Number.isNaN(form.balcony_sqm) ? null : (form.balcony_sqm ?? null),
+        total_area_sqm: typeof form.total_area_sqm === "number" && Number.isNaN(form.total_area_sqm) ? null : (form.total_area_sqm ?? null),
       };
+      DATE_FIELDS.forEach(f => {
+        if (!sanitizedPayload[f]) sanitizedPayload[f] = null;
+      });
+      // Also strip other string fields that should be null when empty
+      const NULLABLE_STRINGS = [
+        'current_tenant', 'contract_no', 'security_deposit_type',
+        'block_tower', 'floor', 'view_type', 'parking_slot_no',
+        'electricity_meter_no', 'water_meter_no', 'cooling_meter_no', 'remarks',
+      ] as const;
+      NULLABLE_STRINGS.forEach(f => {
+        if (sanitizedPayload[f] === '') sanitizedPayload[f] = null;
+      });
 
       if (editingUnitId) {
-        await updateUnit(editingUnitId, payload);
+        await updateUnit(editingUnitId, sanitizedPayload as Partial<typeof form>);
       } else {
-        const created = await createUnit(payload);
+        const created = await createUnit(sanitizedPayload as Partial<typeof form>);
         
         if (created?.id) {
           try {
-            const unitLabel = form.unit_number || form.unit_ref || created.id.slice(0, 6);
-            await supabase.from('fin_cost_centers').insert({
-              code: `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`,
-              name: `Unit ${unitLabel} Cost Center`,
+            const unitLabel = form.unit_name || form.unit_ref || created.id.slice(0, 6);
+            const unitCcCode = `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`;
+            const unitCcName = `Unit ${unitLabel} Cost Center`;
+            await supabase.from('fin_cost_centers').upsert({
+              code: unitCcCode,
+              name: unitCcName,
               manager: '',
-            });
+            }, { onConflict: 'code' });
+            await updateUnit(created.id, {
+              unit_cost_center_code: unitCcCode,
+            } as any);
           } catch (ccErr) {
             console.warn("Auto-create unit cost center skipped/failed:", ccErr);
           }

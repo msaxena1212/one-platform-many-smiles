@@ -918,7 +918,7 @@ export function MastersModule({ role }: MastersModuleProps) {
             </CardHeader>
             <CardContent className="pt-4">
               <ScrollArea className="h-[500px] pr-2">
-                {renderPanel(activeKey)}
+                {renderActivePanel()}
               </ScrollArea>
             </CardContent>
           </Card>

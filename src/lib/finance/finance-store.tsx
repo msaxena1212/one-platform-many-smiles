@@ -796,7 +796,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       });
     });
 
-    return list;
+    return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
   }, [journalEntries, grnMappings, payableInvoices, vouchers, receivableInvoices, legalReceivables]);
 
   // Derived Trial Balance Summary

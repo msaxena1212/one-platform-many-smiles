@@ -14,7 +14,9 @@ export type FinRegion = {
   id: number;
   code: string;
   name: string;
-  currency: string;
+  currency?: string;
+  country?: string;
+  status?: string;
 };
 
 export type FinVendor = {
@@ -48,7 +50,7 @@ export type FinCostCenter = {
 export type FinPostingPeriod = {
   id: number;
   period_name: string;
-  year: string;
+  year: number | string;
   month: number;
   status: 'Open' | 'Closed';
 };

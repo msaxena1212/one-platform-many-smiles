@@ -409,7 +409,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-emerald-500",
             bg: "bg-emerald-500/10",
             items: [
-              { to: "/admin/leasing", label: "Lease Lifecycle", icon: <FileSignature className="h-3.5 w-3.5" /> },
               { to: "/admin/leases", label: "All Leases", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },

@@ -712,30 +712,25 @@ export function ManagePropertyPage({
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Cost Center Code</Label>
-                  <Select
-                    value={costCenterCode}
-                    onValueChange={(val) => {
-                      const cc = costCenterOptions.find((c) => c.code === val);
-                      setCostCenterCode(val);
-                      setCostCenterName(cc?.name || "");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Cost Center" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {costCenterOptions.map((opt) => (
-                        <SelectItem key={opt.code} value={opt.code}>
-                          {opt.code} - {opt.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center justify-between">
+                    <Label>Cost Center Code</Label>
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">🔒 Locked</span>
+                  </div>
+                  <Input
+                    readOnly
+                    value={costCenterCode || (property ? `CC-PROP-${property.id.slice(0, 8).toUpperCase()}` : "CC-PROP-DEFAULT")}
+                    className="bg-muted font-mono font-semibold"
+                    placeholder="Cost Center Code"
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>Cost Center Name (auto-filled)</Label>
-                  <Input readOnly value={costCenterName} className="bg-muted" placeholder="Auto-filled" />
+                  <Label>Cost Center Name</Label>
+                  <Input
+                    readOnly
+                    value={costCenterName || title || property?.title || "Property Cost Center"}
+                    className="bg-muted font-medium"
+                    placeholder="Auto-synced Cost Center"
+                  />
                 </div>
               </div>
               <div className="space-y-2">

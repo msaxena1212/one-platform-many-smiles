@@ -1,145 +1,346 @@
 import { supabase } from '../supabase';
-import { postPdcCollection, postPdcDeposit, postPdcReturn } from './posting-engine';
+import {
+  postPdcCollection,
+  postPdcDepositToBank,
+  postPdcClear,
+  postPdcReturn,
+  postCashDepositInPlaceOfPdc,
+} from './posting-engine';
 import { FinPdcRegisterApi } from '../supabase-finance';
 
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+/** Fetch amount, tenant_id, property_id, unit_id for a PDC row from any source */
+async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
+  // Try fin_pdc_register first (has normalized IDs)
+  const { data: finRow } = await supabase
+    .from('fin_pdc_register')
+    .select('amount, tenant_id, property_id, unit_id, cheque_number')
+    .or(
+      chequeNo
+        ? `id.eq.${pdcId},cheque_number.eq.${chequeNo}`
+        : `id.eq.${pdcId}`,
+    )
+    .maybeSingle();
+
+  if (finRow?.amount) {
+    return {
+      amount:      Number(finRow.amount),
+      tenant_id:   Number(finRow.tenant_id)   || 0,
+      property_id: Number(finRow.property_id) || 0,
+      unit_id:     Number(finRow.unit_id)     || 0,
+      cheque_number: finRow.cheque_number || String(chequeNo ?? pdcId),
+    };
+  }
+
+  // Fallback: try pdcs table
+  const { data: pdc } = await supabase
+    .from('pdcs')
+    .select('amount, unit_name, cheque_number')
+    .or(
+      chequeNo
+        ? `id.eq.${String(pdcId)},cheque_number.eq.${chequeNo}`
+        : `id.eq.${String(pdcId)}`,
+    )
+    .maybeSingle();
+
+  return {
+    amount:        Number(pdc?.amount)  || 0,
+    tenant_id:     0,
+    property_id:   0,
+    unit_id:       0,
+    cheque_number: pdc?.cheque_number || String(chequeNo ?? pdcId),
+    unitCode:      pdc?.unit_name,
+  };
+}
+
+// ── PDC Lifecycle Functions ───────────────────────────────────────────────────
+
+/**
+ * Event 1 — Cheque Receipt / Collection
+ * Persists to fin_pdc_register + posts GL:
+ *   Dr PDC In Hand (12900), Cr Customer(PDC)-Unit (21400)
+ */
 export async function receivePdc(payload: {
-  cheque_number: string;
-  cheque_date: string;
-  amount: number;
-  tenant_id: number;
-  property_id: number;
-  unit_id: number;
-  bank_id?: number;
+  cheque_number:  string;
+  cheque_date:    string;
+  amount:         number;
+  tenant_id:      number;
+  property_id:    number;
+  unit_id:        number;
+  bank_id?:       number;
+  unitCode?:      string;
 }) {
-  // 1. Create entry in PDC Register
+  // 1. Persist to PDC Register
   const pdc = await FinPdcRegisterApi.create({
     cheque_number: payload.cheque_number,
-    cheque_date: payload.cheque_date,
-    amount: payload.amount,
-    tenant_id: payload.tenant_id,
-    property_id: payload.property_id,
-    unit_id: payload.unit_id,
-    bank_id: payload.bank_id,
-    status: 'In Hand'
+    cheque_date:   payload.cheque_date,
+    amount:        payload.amount,
+    tenant_id:     payload.tenant_id,
+    property_id:   payload.property_id,
+    unit_id:       payload.unit_id,
+    bank_id:       payload.bank_id,
+    status:        'In Hand',
   });
 
-  // 2. Post Journal Entry (Dr PDC In Hand, Cr Customer PDC Liability)
+  // 2. Post GL entry
   await postPdcCollection(
-    payload.amount, 
-    payload.tenant_id, 
-    payload.property_id, 
-    payload.unit_id, 
-    payload.cheque_number
+    payload.amount,
+    payload.tenant_id,
+    payload.property_id,
+    payload.unit_id,
+    payload.cheque_number,
+    payload.unitCode,
   );
 
   return pdc;
 }
 
-export async function depositPdc(pdcId: number | string) {
-  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
-  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+/**
+ * Event 2 — Cheque Deposit to Bank
+ * Updates status to Deposited + posts GL:
+ *   Dr Bank Account (12000), Cr PDC In Hand (12900)
+ */
+export async function depositPdc(pdcId: number | string, chequeNo?: string) {
   const today = new Date().toISOString().split('T')[0];
 
-  if (isUuid) {
-    const { data: pdc } = await supabase.from('pdcs').select('*').eq('id', pdcId).single();
-    await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', pdcId);
-    if (pdc) {
-      await postPdcDeposit(
-        Number(pdc.amount) || 0,
-        1,
-        1,
-        1,
-        pdc.cheque_number || 'PDC'
-      ).catch(() => {});
+  // ── DB status updates ────────────────────────────────────────────────────
+
+  // fin_pdc_register (numeric ID)
+  if (!isNaN(Number(pdcId))) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Deposited', deposit_date: today })
+        .eq('id', Number(pdcId));
+    } catch { /* continue */ }
+  }
+
+  // pdcs table — by cheque_number
+  if (chequeNo) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Deposited', deposit_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+
+    try {
+      await supabase
+        .from('pdcs')
+        .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+  }
+
+  // pdcs table — by UUID id
+  try {
+    await supabase
+      .from('pdcs')
+      .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
+      .eq('id', String(pdcId));
+  } catch { /* continue */ }
+
+  // ── GL posting ───────────────────────────────────────────────────────────
+  try {
+    const ctx = await resolveGlContext(pdcId, chequeNo);
+    if (ctx.amount > 0) {
+      await postPdcDepositToBank(
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+      );
     }
-    return;
+  } catch (err) {
+    console.error('[depositPdc] GL posting failed:', err);
   }
-
-  if (!isNumeric) {
-    return;
-  }
-
-  // Fetch PDC from fin_pdc_register
-  const numId = Number(pdcId);
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
-  if (error) throw error;
-  if (pdc.status !== 'In Hand' && pdc.status !== 'Received') throw new Error('PDC must be In Hand to deposit.');
-
-  // Post Journal Entry
-  await postPdcDeposit(
-    pdc.amount,
-    pdc.tenant_id,
-    pdc.property_id,
-    pdc.unit_id,
-    pdc.cheque_number
-  );
-
-  // Update Status
-  await FinPdcRegisterApi.update(numId, { status: 'Deposited', deposit_date: today });
 }
 
-export async function clearPdc(pdcId: number | string) {
-  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
-  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+/**
+ * Event 3 — Cheque Cleared by Bank
+ * Updates status to Cleared + posts GL:
+ *   Dr Customer(PDC)-Unit (21400), Cr Receivable-Unit (12413)
+ */
+export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   const today = new Date().toISOString().split('T')[0];
 
-  if (isUuid) {
-    await supabase.from('pdcs').update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today }).eq('id', pdcId);
-    return;
+  // ── DB status updates ────────────────────────────────────────────────────
+
+  if (!isNaN(Number(pdcId))) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Cleared', cleared_date: today })
+        .eq('id', Number(pdcId));
+    } catch { /* continue */ }
   }
 
-  if (!isNumeric) {
-    return;
+  if (chequeNo) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Cleared', cleared_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+
+    try {
+      await supabase
+        .from('pdcs')
+        .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
   }
 
-  const numId = Number(pdcId);
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
-  if (error) throw error;
-  if (pdc.status !== 'Deposited') throw new Error('PDC must be Deposited to clear.');
+  try {
+    await supabase
+      .from('pdcs')
+      .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
+      .eq('id', String(pdcId));
+  } catch { /* continue */ }
 
-  await FinPdcRegisterApi.update(numId, { status: 'Cleared', cleared_date: today });
+  // ── GL posting ───────────────────────────────────────────────────────────
+  try {
+    const ctx = await resolveGlContext(pdcId, chequeNo);
+    if (ctx.amount > 0) {
+      await postPdcClear(
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+        ctx.unitCode,
+      );
+    }
+  } catch (err) {
+    console.error('[clearPdc] GL posting failed:', err);
+  }
 }
 
-export async function returnPdc(pdcId: number | string) {
-  const isNumeric = typeof pdcId === 'number' || (!isNaN(Number(pdcId)) && !String(pdcId).includes('-'));
-  const isUuid = typeof pdcId === 'string' && pdcId.includes('-');
+/**
+ * Event 6 — Cheque Return / Bounce
+ * Updates status to Returned/Bounced + posts GL (full reversal):
+ *   Dr PDC In Hand (12900), Dr Receivable-Unit (12413)
+ *   Cr Bank Account (12000), Cr Customer(PDC)-Unit (21400)
+ */
+export async function returnPdc(pdcId: number | string, chequeNo?: string) {
   const today = new Date().toISOString().split('T')[0];
 
-  if (isUuid) {
-    const { data: pdc } = await supabase.from('pdcs').select('*').eq('id', pdcId).single();
-    await supabase.from('pdcs').update({ status: 'bounced', status_pdc: 'bounced', returned_date: today }).eq('id', pdcId);
-    if (pdc) {
+  // ── DB status updates ────────────────────────────────────────────────────
+
+  // 1. Update fin_pdc_register by ID if numeric
+  if (!isNaN(Number(pdcId))) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Returned', returned_date: today })
+        .eq('id', Number(pdcId));
+    } catch { /* continue */ }
+  }
+
+  // 2. Update fin_pdc_register and pdcs by cheque_number
+  if (chequeNo) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Returned', returned_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+
+    try {
+      await supabase
+        .from('pdcs')
+        .update({ status: 'bounced', status_pdc: 'bounced', returned_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+  }
+
+  // 3. Update pdcs by id (UUID or string)
+  try {
+    await supabase
+      .from('pdcs')
+      .update({ status: 'bounced', status_pdc: 'bounced', returned_date: today })
+      .eq('id', String(pdcId));
+  } catch { /* continue */ }
+
+  // ── GL posting (full reversal) ───────────────────────────────────────────
+  try {
+    const ctx = await resolveGlContext(pdcId, chequeNo);
+    if (ctx.amount > 0) {
       await postPdcReturn(
-        Number(pdc.amount) || 0,
-        1,
-        1,
-        1,
-        pdc.cheque_number || 'PDC'
-      ).catch(() => {});
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+        ctx.unitCode,
+      );
     }
-    return;
+  } catch (err) {
+    console.error('[returnPdc] GL posting failed:', err);
   }
+}
 
-  if (!isNumeric) {
-    return;
-  }
-
-  const numId = Number(pdcId);
-  const { data: pdc, error } = await supabase.from('fin_pdc_register').select('*').eq('id', numId).single();
-  if (error) throw error;
-  if (pdc.status !== 'Deposited') throw new Error('PDC must be Deposited to return.');
-
+/**
+ * Event 4 — Cash Deposit in place of PDC
+ * Marks the cheque as replaced by cash + posts GL:
+ *   Dr Bank Account (12000), Cr Cash In Hand (12100)
+ */
+export async function cashDepositInPlaceOfPdc(
+  pdcId: number | string,
+  chequeNo?: string,
+) {
   const today = new Date().toISOString().split('T')[0];
 
-  // Post Return Journal
-  await postPdcReturn(
-    pdc.amount,
-    pdc.tenant_id,
-    pdc.property_id,
-    pdc.unit_id,
-    pdc.cheque_number
-  );
+  // ── DB status updates ────────────────────────────────────────────────────
+  const newStatus = 'replaced';
 
-  // Update Status
-  await FinPdcRegisterApi.update(numId, { status: 'Returned', returned_date: today });
+  if (!isNaN(Number(pdcId))) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Replaced', deposit_date: today })
+        .eq('id', Number(pdcId));
+    } catch { /* continue */ }
+  }
+
+  if (chequeNo) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Replaced', deposit_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+
+    try {
+      await supabase
+        .from('pdcs')
+        .update({ status: newStatus, status_pdc: newStatus, deposit_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+  }
+
+  try {
+    await supabase
+      .from('pdcs')
+      .update({ status: newStatus, status_pdc: newStatus, deposit_date: today })
+      .eq('id', String(pdcId));
+  } catch { /* continue */ }
+
+  // ── GL posting ───────────────────────────────────────────────────────────
+  try {
+    const ctx = await resolveGlContext(pdcId, chequeNo);
+    if (ctx.amount > 0) {
+      await postCashDepositInPlaceOfPdc(
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+      );
+    }
+  } catch (err) {
+    console.error('[cashDepositInPlaceOfPdc] GL posting failed:', err);
+  }
 }

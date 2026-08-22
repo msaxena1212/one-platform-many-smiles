@@ -13,10 +13,12 @@ import {
   Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2
 } from "lucide-react";
 import { fetchAssets, createAsset, updateAsset, fetchProperties, fetchUnits, createProperty, updateProperty, createUnit, updateUnit, type Asset, type Property, type Unit } from "@/lib/supabase";
+import { useFinanceStore } from "@/lib/finance/finance-store";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 
 export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
+  const { addJournalEntry } = useFinanceStore();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -70,6 +72,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       if (form.autoBarcode || !finalBarcode) {
         finalBarcode = `${form.category.substring(0,3).toUpperCase()}-${form.asset_name.substring(0,3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
       }
+      const cost = Number(form.purchase_cost) || 0;
       await createAsset({
         asset_name: form.asset_name,
         category: form.category,
@@ -77,11 +80,29 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         assigned_property_id: form.assigned_property_id || undefined,
         assigned_unit_id: form.assigned_unit_id || undefined,
         purchase_date: form.purchase_date || new Date().toISOString().split("T")[0],
-        purchase_cost: Number(form.purchase_cost) || 0,
+        purchase_cost: cost,
         opening_cost: Number(form.opening_cost || form.purchase_cost) || 0,
         life_of_asset: Number(form.life_of_asset) || 20,
-        asset_status: form.asset_status,
+        asset_status: form.assigned_property_id ? "Assigned" : form.asset_status,
       });
+
+      // Post General Ledger Capitalization entry if cost > 0: DR 15000 Fixed Assets / CR 12000 Bank Operating Account
+      if (cost > 0) {
+        const targetProp = properties.find(p => p.id === form.assigned_property_id);
+        const targetUnit = units.find(u => u.id === form.assigned_unit_id);
+        addJournalEntry({
+          je_no: `JE-AST-CAP-${Date.now().toString().slice(-4)}`,
+          posting_date: form.purchase_date || new Date().toISOString().split("T")[0],
+          reference: `CAP-${finalBarcode}`,
+          narration: `Asset Capitalization: ${form.asset_name} (${form.category}) for ${targetProp?.title || 'Company Master'} ${targetUnit ? `(Unit: ${targetUnit.unit_ref})` : ''}`,
+          dr_account: "Fixed Assets & Equipment (15000)",
+          dr_code: "15000",
+          cr_account: "Bank Operating Account (12000)",
+          cr_code: "12000",
+          amount: cost,
+        });
+      }
+
       setShowNew(false);
       setForm({
         asset_name: "",
@@ -617,30 +638,87 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       
       {/* Transfer Asset Dialog */}
       <Dialog open={!!transferAsset} onOpenChange={(open) => !open && setTransferAsset(null)}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[450px]">
           <DialogHeader>
-            <DialogTitle>Transfer Asset</DialogTitle>
+            <DialogTitle>Transfer / Reassign Asset</DialogTitle>
             <DialogDescription>
-              Assign <strong>{transferAsset?.asset_name}</strong> to a different unit, property or employee.
+              Transfer <strong>{transferAsset?.asset_name}</strong> ({transferAsset?.asset_code}) to a different Property and Unit.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            <div>
-               <Label>Assigned Property ID</Label>
-               <Input placeholder="Leave blank to unassign" value={transferForm.assigned_property_id} onChange={e => setTransferForm({...transferForm, assigned_property_id: e.target.value})} />
+            <div className="space-y-2">
+              <Label>Target Property</Label>
+              <Select
+                value={transferForm.assigned_property_id}
+                onValueChange={(val) => setTransferForm(f => ({ ...f, assigned_property_id: val, assigned_unit_id: "" } as any))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select target property" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">— Unassign / General Pool —</SelectItem>
+                  {properties.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div>
-               <Label>Assigned Employee ID</Label>
-               <Input placeholder="Leave blank to unassign" value={transferForm.assigned_employee_id} onChange={e => setTransferForm({...transferForm, assigned_employee_id: e.target.value})} />
+
+            <div className="space-y-2">
+              <Label>Target Unit</Label>
+              <Select
+                value={(transferForm as any).assigned_unit_id || "unassigned"}
+                onValueChange={(val) => setTransferForm(f => ({ ...f, assigned_unit_id: val === "unassigned" ? "" : val } as any))}
+                disabled={!transferForm.assigned_property_id || transferForm.assigned_property_id === "unassigned"}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select unit (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">— Entire Property / Unassigned Unit —</SelectItem>
+                  {units
+                    .filter((u) => u.property_id === transferForm.assigned_property_id)
+                    .map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.unit_ref || `Unit ${u.id}`}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setTransferAsset(null)}>Cancel</Button>
             <Button onClick={async () => {
               if (transferAsset) {
-                 await updateAsset(transferAsset.id, { assigned_property_id: transferForm.assigned_property_id || undefined, assigned_employee_id: transferForm.assigned_employee_id || undefined });
-                 setTransferAsset(null);
-                 load();
+                const targetPropId = transferForm.assigned_property_id === "unassigned" ? null : transferForm.assigned_property_id;
+                const targetUnitId = (transferForm as any).assigned_unit_id || null;
+                const targetProp = properties.find(p => p.id === targetPropId);
+                const targetUnit = units.find(u => u.id === targetUnitId);
+
+                await updateAsset(transferAsset.id, {
+                  assigned_property_id: targetPropId || undefined,
+                  assigned_unit_id: targetUnitId || undefined,
+                  asset_status: targetPropId ? "Assigned" : "Available",
+                  remarks: targetProp ? `Transferred to ${targetProp.title} ${targetUnit ? `(Unit: ${targetUnit.unit_ref})` : ''}` : "Transferred to General Pool"
+                });
+
+                // Update General Ledger note
+                const cost = Number(transferAsset.purchase_cost) || 0;
+                if (cost > 0) {
+                  addJournalEntry({
+                    je_no: `JE-AST-TRF-${Date.now().toString().slice(-4)}`,
+                    posting_date: new Date().toISOString().split("T")[0],
+                    reference: `TRF-${transferAsset.asset_code}`,
+                    narration: `Asset Transfer: ${transferAsset.asset_name} transferred to ${targetProp?.title || 'General Pool'} (Unit: ${targetUnit?.unit_ref || 'N/A'})`,
+                    dr_account: "Fixed Assets & Equipment (15000)",
+                    dr_code: "15000",
+                    cr_account: "Fixed Assets & Equipment (15000)",
+                    cr_code: "15000",
+                    amount: cost,
+                  });
+                }
+
+                setTransferAsset(null);
+                load();
               }
             }}>Complete Transfer</Button>
           </DialogFooter>

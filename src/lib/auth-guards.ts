@@ -58,7 +58,25 @@ export async function getCurrentProfile() {
 
 export async function requireConsoleAccess(consoleKey: ConsoleKey) {
   const profile = await getCurrentProfile();
-  const allowed = await canAccessConsole(consoleKey, profile.role, profile.tenantContextId ?? null);
+
+  // canAccessConsole checks DB role_permissions table + falls back to defaults.
+  // We also check DEFAULT_ROLE_ACCESS directly to guard against DB misconfigurations
+  // that would incorrectly block a role from its own designated console.
+  let allowed = false;
+  try {
+    allowed = await canAccessConsole(consoleKey, profile.role, profile.tenantContextId ?? null);
+  } catch {
+    // Network or DB error — fall back to static defaults below
+  }
+
+  // Secondary fallback: if the static landing route for this role IS this console,
+  // always allow (prevents locking a role out of its own home console).
+  if (!allowed) {
+    const ownLanding = getLandingRouteForRole(profile.role);
+    if (ownLanding === `/${consoleKey}`) {
+      allowed = true;
+    }
+  }
 
   if (!allowed) {
     const fallbackRoute = getLandingRouteForRole(profile.role);

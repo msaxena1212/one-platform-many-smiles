@@ -145,7 +145,9 @@ export function AppShell({
         title={title}
         isItemActive={isItemActive}
         onSignOut={handleSignOut}
-      />
+      >
+        {children}
+      </LegacyNavGroupsLayout>
     );
   }
 
@@ -165,7 +167,7 @@ export function AppShell({
         <ScrollArea className="flex-1">
           <div className="py-3 px-3 space-y-0.5">
             {nav?.map((item) => (
-              <Link key={item.to as string} to={item.to} search={item.search} className={cn(
+              <Link key={item.to as string} to={item.to} search={item.search as any} className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-xs transition-colors",
                 isItemActive(item) ? cn("text-teal-400", SIDEBAR_ITEM_ACT) : "text-white/60 hover:text-white hover:bg-white/5"
               )}>
@@ -376,7 +378,7 @@ function NavModulesSidebar({
                                   <Link
                                     key={`${item.to as string}${item.search?.tab ?? ""}`}
                                     to={item.to}
-                                    search={item.search}
+                                    search={item.search as any}
                                     className={cn(
                                       "relative flex items-center gap-2 pl-7 pr-3 py-1.5 text-[10.5px] transition-colors",
                                       active
@@ -448,6 +450,7 @@ function LegacyNavGroupsLayout({
   title,
   isItemActive,
   onSignOut,
+  children,
 }: {
   navGroups: NavGroup[];
   consoleLabel?: string;
@@ -455,6 +458,7 @@ function LegacyNavGroupsLayout({
   title: string;
   isItemActive: (item: NavItem) => boolean;
   onSignOut: () => void;
+  children?: React.ReactNode;
 }) {
   function findActiveGroup(): number {
     const idx = navGroups.findIndex((g) => g.items.some(isItemActive));
@@ -514,7 +518,7 @@ function LegacyNavGroupsLayout({
                           <Link
                             key={`${item.to as string}${item.search?.tab ?? ""}`}
                             to={item.to}
-                            search={item.search}
+                            search={item.search as any}
                             className={cn(
                               "relative flex items-center gap-2.5 pl-7 pr-4 py-2 text-[11px] transition-colors",
                               active ? cn("text-teal-400 font-semibold", SIDEBAR_ITEM_ACT) : "text-white/50 hover:text-white/90 hover:bg-white/4"

@@ -29,6 +29,8 @@ export interface TenantReceiptDetails {
     date: string;
     amount: number;
     period?: string;
+    tenureStart?: string;
+    tenureEnd?: string;
   }>;
   vouchers?: Array<{
     receiptNo?: string;
@@ -109,6 +111,8 @@ export function ReceiptModal({ open, onOpenChange, data }: ReceiptModalProps) {
         chequeRef: pdc.chequeNo,
         maturityDate: pdc.date,
         type: 'PDC',
+        checkStartDate: pdc.tenureStart,
+        checkEndDate: pdc.tenureEnd,
         bankName: pdc.bank,
         amount: pdc.amount,
       });
@@ -260,21 +264,29 @@ export function ReceiptModal({ open, onOpenChange, data }: ReceiptModalProps) {
                       <th className="py-2 px-3 text-left">Cheque No.</th>
                       <th className="py-2 px-3 text-left">Bank</th>
                       <th className="py-2 px-3 text-left">Maturity Date</th>
-                      <th className="py-2 px-3 text-left">Period / Remarks</th>
+                      <th className="py-2 px-3 text-left">Period</th>
                       <th className="py-2 px-3 text-right">Amount (QAR)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {data.pdcs.map((pdc, idx) => (
-                      <tr key={idx} className="hover:bg-muted/20">
-                        <td className="py-1.5 px-3 font-mono text-muted-foreground">{idx + 1}</td>
-                        <td className="py-1.5 px-3 font-mono font-bold text-primary">{pdc.chequeNo}</td>
-                        <td className="py-1.5 px-3">{pdc.bank}</td>
-                        <td className="py-1.5 px-3 font-mono">{pdc.date}</td>
-                        <td className="py-1.5 px-3 text-muted-foreground">{pdc.period || `Cheque ${idx + 1}`}</td>
-                        <td className="py-1.5 px-3 text-right font-mono font-semibold">QR {pdc.amount.toLocaleString()}</td>
-                      </tr>
-                    ))}
+                    {data.pdcs.map((pdc, idx) => {
+                      let displayPeriod = pdc.period || `Cheque ${idx + 1}`;
+                      if (pdc.tenureStart && pdc.tenureEnd) {
+                        displayPeriod = `${pdc.tenureStart} to ${pdc.tenureEnd}`;
+                      } else if (pdc.tenureStart) {
+                        displayPeriod = `From ${pdc.tenureStart}`;
+                      }
+                      return (
+                        <tr key={idx} className="hover:bg-muted/20">
+                          <td className="py-1.5 px-3 font-mono text-muted-foreground">{idx + 1}</td>
+                          <td className="py-1.5 px-3 font-mono font-bold text-primary">{pdc.chequeNo}</td>
+                          <td className="py-1.5 px-3">{pdc.bank}</td>
+                          <td className="py-1.5 px-3 font-mono">{pdc.date}</td>
+                          <td className="py-1.5 px-3 font-mono text-muted-foreground">{displayPeriod}</td>
+                          <td className="py-1.5 px-3 text-right font-mono font-semibold">QR {pdc.amount.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -8,12 +8,14 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { transferDepositToRefundable, settleDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
+import { useFinanceStore } from "@/lib/finance/finance-store";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 
 const PAGE_SIZE = 20;
 
 export function DepositsGuarantees() {
   const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases } = useAppData();
+  const { addJournalEntry, addVoucher, addCashBookEntry } = useFinanceStore();
   const [deposits, setDeposits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -31,29 +33,27 @@ export function DepositsGuarantees() {
         if (!error && data) dbData = data;
       } catch (e) { /* fallback */ }
 
-      const depositVouchers = (sharedVouchers || []).filter(v =>
-        v.name.toLowerCase().includes("deposit") || (v.credit || "").toLowerCase().includes("deposit") || (v.period || "").toLowerCase().includes("deposit")
-      );
-
-      const contextDeposits = depositVouchers.map((v, idx) => {
-        const lease = leases?.find((l) => l.id === v.leaseId);
-        return {
-          id: v.id || `ctx-dep-${idx}`,
-          leaseId: v.leaseId,
-          receipt_no: v.receiptNo || `RV-DEP-${v.id || idx}`,
-          deposit_type: v.method === "Cash" ? "Cash Security Deposit" : "PDC Security Deposit",
-          coa_account_code: (v as any).status === "refundable" ? "21100 - Refundable Deposit Liability" : (v.credit || "21500 - Security Deposit Liability"),
-          amount: Number(v.amount) || 0,
-          status: (v as any).status === "refundable" ? "Refundable" : (v as any).status === "settled" ? "Settled" : "Active",
-          property_name: (v as any).property || lease?.property || 'Old Salata - Residence No:23',
-          unit_ref: (v as any).unit || lease?.unit || 'AAA - Flat16',
-          tenant_name: (v as any).tenantName || lease?.tenantName || 'Mr. Hafeez Shaik',
-          lease_start_date: lease?.startDate || '2025-10-01',
-          lease_end_date: lease?.endDate || '2026-09-30',
-          monthly_rent: lease?.monthlyRent || 5600,
-          total_contract_rent: lease ? (lease.monthlyRent * 12) : 67200,
-        };
-      });
+      const contextDeposits = (sharedVouchers || [])
+        .filter(v => v.name.toLowerCase().includes('deposit') || v.credit.toLowerCase().includes('deposit'))
+        .map((v, idx) => {
+          const lease = leases?.find((l) => l.id === v.leaseId);
+          return {
+            id: v.id || `ctx-dep-${idx}`,
+            leaseId: v.leaseId,
+            deposit_type: v.method ? `${v.method} Security Deposit` : 'Security Deposit',
+            coa_account_code: v.credit || '21500 - Security Deposit Liability',
+            amount: Number(v.amount) || 0,
+            status: v.status === 'shared' ? 'Active' : v.status === 'posted' ? 'Active' : (v.status as any) === 'refundable' ? 'Refundable' : (v.status as any) === 'settled' ? 'Settled' : 'Active',
+            property_name: lease?.property || 'Old Salata - Residence No:23',
+            unit_ref: lease?.unit || 'AAA - Flat16',
+            tenant_name: lease?.tenantName || 'Mr. Hafeez Shaik',
+            lease_start_date: lease?.startDate || '2025-10-01',
+            lease_end_date: lease?.endDate || '2026-09-30',
+            monthly_rent: lease?.monthlyRent || 5600,
+            total_contract_rent: (lease?.monthlyRent ? lease.monthlyRent * 12 : 67200),
+            created_at: lease?.startDate || '2026-08-01',
+          };
+        });
 
       const allDeposits = [...dbData];
       for (const cd of contextDeposits) {
@@ -61,6 +61,7 @@ export function DepositsGuarantees() {
           allDeposits.push(cd);
         }
       }
+      allDeposits.sort((a, b) => new Date(b.lease_start_date || b.created_at || "").getTime() - new Date(a.lease_start_date || a.created_at || "").getTime());
       setDeposits(allDeposits);
       setPage(1);
     } catch (e: any) {
@@ -73,6 +74,10 @@ export function DepositsGuarantees() {
   async function handleVacate(id: string | number) {
     if (!confirm('Transfer to Refundable (21100)?')) return;
     try {
+      const targetDep = deposits.find(d => String(d.id) === String(id));
+      const amt = targetDep ? Number(targetDep.amount) : 5000;
+      const todayStr = new Date().toISOString().split('T')[0];
+
       const isStringId = typeof id === 'string' && (id.startsWith('v') || id.startsWith('ctx-') || isNaN(Number(id)));
       if (isStringId) {
         setSharedVouchers(prev => prev.map(v => v.id === id ? { ...v, status: 'refundable' as any } : v));
@@ -80,7 +85,21 @@ export function DepositsGuarantees() {
       } else {
         await transferDepositToRefundable(Number(id));
       }
-      toast.success('Deposit is now Refundable.');
+
+      // General Ledger Journal Entry: DR 21500 Security Deposit Liability / CR 21100 Refundable Deposit Liability
+      addJournalEntry({
+        je_no: `JE-VAC-${String(id).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+        posting_date: todayStr,
+        reference: `VAC-DEP-${id}`,
+        narration: `Security Deposit reclassified as Refundable — ${targetDep?.tenant_name || 'Tenant'} (${targetDep?.unit_ref || 'Unit'})`,
+        dr_account: "Security Deposit Liability",
+        dr_code: "21500",
+        cr_account: "Refundable Deposit Liability",
+        cr_code: "21100",
+        amount: amt,
+      });
+
+      toast.success('Deposit is now Refundable. General Ledger updated.');
       load();
     } catch (e: any) {
       toast.error(e.message);
@@ -94,6 +113,9 @@ export function DepositsGuarantees() {
     const refund = amount - deductions;
     if (!confirm(`Settle Deposit?\nDeductions: ${deductions}\nRefund to Tenant: ${refund}`)) return;
     try {
+      const targetDep = deposits.find(d => String(d.id) === String(id));
+      const todayStr = new Date().toISOString().split('T')[0];
+
       const isStringId = typeof id === 'string' && (id.startsWith('v') || id.startsWith('ctx-') || isNaN(Number(id)));
       if (isStringId) {
         setSharedVouchers(prev => prev.map(v => v.id === id ? { ...v, status: 'settled' as any } : v));
@@ -101,7 +123,50 @@ export function DepositsGuarantees() {
       } else {
         await settleDeposit(Number(id), deductions, refund);
       }
-      toast.success('Deposit Settled. Journal Entry Posted.');
+
+      // 1. General Ledger Entry for Refund: DR 21100 Refundable Deposit / CR 12000 Bank Operating
+      if (refund > 0) {
+        addJournalEntry({
+          je_no: `JE-REF-${String(id).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+          posting_date: todayStr,
+          reference: `REF-DEP-${id}`,
+          narration: `Security Deposit Refund to Tenant — ${targetDep?.tenant_name || 'Tenant'} (${targetDep?.unit_ref || 'Unit'})`,
+          dr_account: "Refundable Deposit Liability",
+          dr_code: "21100",
+          cr_account: "Bank Operating Account",
+          cr_code: "12000",
+          amount: refund,
+        });
+        addVoucher({
+          voucher_no: `VCH-PAY-REF-${Date.now().toString().slice(-4)}`,
+          voucher_type: "Payment Voucher",
+          date: todayStr,
+          name: `Deposit Refund — ${targetDep?.tenant_name || 'Tenant'}`,
+          debit: "Refundable Deposit Liability",
+          debit_code: "21100",
+          credit: "Bank Operating Account",
+          credit_code: "12000",
+          amount: refund,
+          method: "Bank Transfer",
+        });
+      }
+
+      // 2. If deductions (maintenance/damages): DR 21100 / CR 50200 Repairs Income/Recovery
+      if (deductions > 0) {
+        addJournalEntry({
+          je_no: `JE-DED-${String(id).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+          posting_date: todayStr,
+          reference: `DED-DEP-${id}`,
+          narration: `Damage/Utility Deduction from Security Deposit — ${targetDep?.tenant_name || 'Tenant'}`,
+          dr_account: "Refundable Deposit Liability",
+          dr_code: "21100",
+          cr_account: "Repairs & Maintenance Recovery",
+          cr_code: "41400",
+          amount: deductions,
+        });
+      }
+
+      toast.success('Deposit Settled & Refunded. General Ledger & Payment Vouchers posted.');
       load();
     } catch (e: any) {
       toast.error(e.message);
@@ -158,6 +223,7 @@ export function DepositsGuarantees() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
+                    <TableHead className="font-bold text-xs">Entry Date</TableHead>
                     <TableHead className="font-bold text-xs">Type</TableHead>
                     <TableHead className="font-bold text-xs">GL Account</TableHead>
                     <TableHead className="font-bold text-xs">Property</TableHead>
@@ -170,10 +236,11 @@ export function DepositsGuarantees() {
                 </TableHeader>
                 <TableBody>
                   {paginated.length === 0 && (
-                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No Deposits found. Security Deposits are auto-created from Leasing vouchers.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No Deposits found. Security Deposits are auto-created from Leasing vouchers.</TableCell></TableRow>
                   )}
                   {paginated.map(d => (
                     <TableRow key={d.id} className="hover:bg-muted/30">
+                      <TableCell className="font-mono text-xs text-muted-foreground">{d.lease_start_date || d.created_at || '2026-08-01'}</TableCell>
                       <TableCell className="text-xs">{d.deposit_type}</TableCell>
                       <TableCell className="font-mono text-xs">{d.coa_account_code}</TableCell>
                       <TableCell className="text-xs">{d.property_name || '—'}</TableCell>

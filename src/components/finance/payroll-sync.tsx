@@ -144,8 +144,9 @@ export function PayrollSync() {
     setOpenModal(false);
   }
 
-  const totalPages = Math.max(1, Math.ceil(payrollSyncs.length / PAGE_SIZE));
-  const paginated = payrollSyncs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sortedPayrollSyncs = [...payrollSyncs].sort((a, b) => (b.period || "").localeCompare(a.period || ""));
+  const totalPages = Math.max(1, Math.ceil(sortedPayrollSyncs.length / PAGE_SIZE));
+  const paginated = sortedPayrollSyncs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totalSynced = payrollSyncs.reduce((s, row) => s + (Number(row.total_amount) || 0), 0);
 
@@ -158,7 +159,7 @@ export function PayrollSync() {
             Payroll Sync Engine & ERP Sub-Ledger Integrator
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {syncs.length} payroll sync jobs • Total Disbursed: <strong className="text-emerald-600 font-mono">QR {totalSynced.toLocaleString()}</strong>
+            {sortedPayrollSyncs.length} payroll sync jobs • Total Disbursed: <strong className="text-emerald-600 font-mono">QR {totalSynced.toLocaleString()}</strong>
           </p>
         </div>
         <Button size="sm" onClick={() => setOpenModal(true)} className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700">
@@ -196,8 +197,8 @@ export function PayrollSync() {
                     <TableRow key={sync.id} className="hover:bg-muted/30 text-xs">
                       <TableCell className="font-mono font-bold text-primary">{sync.payroll_run_id}</TableCell>
                       <TableCell className="font-medium">{sync.period}</TableCell>
-                      <TableCell>{sync.property_name || 'Portfolio-Wide Staff'}</TableCell>
-                      <TableCell className="font-medium">{sync.unit_ref || sync.department || 'Operations'}</TableCell>
+                      <TableCell>{(sync as any).property_name || 'Portfolio-Wide Staff'}</TableCell>
+                      <TableCell className="font-medium">{(sync as any).unit_ref || sync.department || 'Operations'}</TableCell>
                       <TableCell className="font-mono text-xs text-blue-600">{sync.account_code || '5010'}</TableCell>
                       <TableCell className="text-right font-bold font-mono text-emerald-600">
                         {Number(sync.total_amount).toLocaleString()}
@@ -223,9 +224,9 @@ export function PayrollSync() {
               </Table>
             </div>
 
-            {syncs.length > PAGE_SIZE && (
+            {sortedPayrollSyncs.length > PAGE_SIZE && (
               <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
-                <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, syncs.length)} of {syncs.length}</span>
+                <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, sortedPayrollSyncs.length)} of {sortedPayrollSyncs.length}</span>
                 <div className="flex gap-1">
                   <Button size="sm" variant="outline" className="h-7" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</Button>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (

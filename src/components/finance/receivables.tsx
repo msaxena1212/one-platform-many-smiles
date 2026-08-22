@@ -92,8 +92,9 @@ export function ReceivablesLegal() {
     setOpenRecover(false);
   }
 
-  const totalPages = Math.max(1, Math.ceil(legalReceivables.length / PAGE_SIZE));
-  const paginated = legalReceivables.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sortedLegalReceivables = [...legalReceivables].sort((a, b) => new Date(b.escalation_date || "").getTime() - new Date(a.escalation_date || "").getTime());
+  const totalPages = Math.max(1, Math.ceil(sortedLegalReceivables.length / PAGE_SIZE));
+  const paginated = sortedLegalReceivables.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totalOutstanding = legalReceivables.reduce((s, r) => s + (Number(r.outstanding_balance) || 0), 0);
 
