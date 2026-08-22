@@ -1,519 +1,1949 @@
 import { supabase } from '../supabase';
 
-export type VoucherLinePayload = {
-  account_code: string;       // GL code (e.g. "12900")
-  sl_code?: string;           // Sub-ledger code (e.g. "12900001" or "21400{unit}")
+/**
+ * Posting Engine
+ *
+ * Accounting Event
+ *      ↓
+ * Accounting Event Lines
+ *      ↓
+ * Posting Engine
+ *      ↓
+ * Financial Voucher
+ *      ↓
+ * Financial Voucher Lines
+ *
+ * Tables used:
+ *
+ * fin_accounting_events
+ * fin_accounting_event_lines
+ * fin_vouchers
+ * fin_voucher_lines
+ * fin_coa_accounts
+ *
+ * IMPORTANT:
+ * - No erp_* tables are used.
+ * - Accounting events must be balanced.
+ * - Accounting event lines must be balanced.
+ * - Voucher lines must be balanced.
+ * - Posting is idempotent.
+ * - Failed application-level posting is cleaned up.
+ */
+
+export type PostingResult = {
+  event_id: string;
+  voucher_id: string;
+  voucher_number: string;
+  status: 'POSTED';
+};
+
+type AccountingEvent = {
+  id: string;
+
+  event_type: string;
+  status: string;
+
+  event_date: string;
+  posting_date: string;
+
+  source_type: string;
+  source_id: string | null;
+
+  reference_number: string | null;
+  description: string | null;
+
+  idempotency_key: string;
+
+  reversal_of_event_id: string | null;
+  reversed_by_event_id: string | null;
+
+  voucher_id: string | null;
+
+  tenant_id: string | null;
+  lease_id: string | null;
+  property_id: string | null;
+  unit_id: string | null;
+  customer_id: string | null;
+
+  total_debit: number;
+  total_credit: number;
+};
+
+type AccountingEventLine = {
+  id: string;
+
+  event_id: string;
+  line_number: number;
+
+  account_id: string | null;
+  account_code: string | null;
+  account_name: string | null;
+
   debit: number;
   credit: number;
-  cost_center_id?: number;
-  property_id?: number;
-  unit_id?: number;
-  tenant_id?: number;
-  vendor_id?: number;
-  description?: string;
+
+  description: string | null;
+
+  tenant_id: string | null;
+  lease_id: string | null;
+  property_id: string | null;
+  unit_id: string | null;
+  customer_id: string | null;
+  cost_center_id: string | null;
+
+  source_type: string | null;
+  source_id: string | null;
+
+  metadata?: Record<string, unknown> | null;
 };
 
-export type PostVoucherPayload = {
-  voucher_date: string;
-  voucher_type: 'Journal' | 'Receipt' | 'Payment' | 'Contra' | 'Sales' | 'Purchase';
-  reference_no?: string;
-  description: string;
-  posted_by?: string;
-  lines: VoucherLinePayload[];
+type ResolvedAccount = {
+  id: string;
+  account_code: string;
+  account_name: string;
 };
-
-// ── Account Code Constants ────────────────────────────────────────────────────
-
-/** GL: PDC In Hand  |  SL: 12900001 */
-export const AC_PDC_IN_HAND         = '12900';
-export const SL_PDC_IN_HAND         = '12900001';
-
-/** GL: Bank Account  |  SL: 12000001 */
-export const AC_BANK                = '12000';
-export const SL_BANK                = '12000001';
-
-/** GL: Cash In Hand  |  SL: 12100001 */
-export const AC_CASH_IN_HAND        = '12100';
-export const SL_CASH_IN_HAND        = '12100001';
-
-/** GL: Customer(PDC) — Unit Account  |  SL: 21400{unitCode} */
-export const AC_CUSTOMER_PDC        = '21400';
-export const slCustomerPdc = (unitCode?: string | number) =>
-  unitCode ? `21400${unitCode}` : '21400';
-
-/** GL: Receivable — Unit Account  |  SL: 124130{unitCode} */
-export const AC_RECEIVABLE          = '12413';
-export const slReceivable = (unitCode?: string | number) =>
-  unitCode ? `124130${unitCode}` : '12413';
-
-/** GL: Deposit-Customer — Unit Account  |  SL: 21500{unitCode} */
-export const AC_DEPOSIT_CUSTOMER    = '21500';
-export const slDepositCustomer = (unitCode?: string | number) =>
-  unitCode ? `21500${unitCode}` : '21500';
-
-// ── Revenue Generation GL Codes ───────────────────────────────────────────────
-/** GL: Rental Revenue  |  SL: 41100{unitCode} */
-export const AC_RENTAL_REVENUE      = '41100';
-export const slRentalRevenue = (unitCode?: string | number) =>
-  unitCode ? `41100${unitCode}` : '41100';
-
-/** GL: Parking Revenue */
-export const AC_PARKING_REVENUE     = '41200';
-
-/** GL: Utility Recovery */
-export const AC_UTILITY_RECOVERY    = '41300';
-
-/** GL: CAM / Maintenance Recovery */
-export const AC_CAM_RECOVERY        = '41400';
-
-/** GL: Property Management Fee */
-export const AC_MANAGEMENT_FEE      = '41500';
-
-/** GL: Late Payment Penalty Income */
-export const AC_PENALTY_INCOME      = '41600';
-
-// ── Core Posting Engine ───────────────────────────────────────────────────────
 
 /**
- * Core Finance Posting Engine
- * Enforces balanced journal entries and interacts with Supabase
- * using erp_vouchers & erp_journal_entries schema.
+ * Monetary tolerance.
  */
-export async function postVoucher(payload: PostVoucherPayload) {
-  // 1. Enforce balance
-  const totalDebit  = payload.lines.reduce((sum, l) => sum + (Number(l.debit)  || 0), 0);
-  const totalCredit = payload.lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+const BALANCE_TOLERANCE = 0.001;
 
-  if (Math.abs(totalDebit - totalCredit) > 0.001) {
-    throw new Error(`Unbalanced voucher. Debits: ${totalDebit}, Credits: ${totalCredit}`);
+/**
+ * Round monetary values to 2 decimals.
+ */
+function money(
+  value: number | null | undefined,
+): number {
+  return Number(
+    (Number(value) || 0).toFixed(2),
+  );
+}
+
+/**
+ * Generate deterministic voucher number.
+ *
+ * Priority:
+ *
+ * 1. Accounting event reference number
+ * 2. Event UUID
+ */
+function generateVoucherNumber(
+  event: AccountingEvent,
+): string {
+  if (
+    event.reference_number &&
+    event.reference_number.trim()
+  ) {
+    return event.reference_number.trim();
   }
 
-  // 2. Fetch Account IDs from erp_chart_of_accounts
-  const accountCodes = payload.lines.map(l => l.account_code);
-  const accountMap   = new Map<string, { id: string; name: string }>();
+  return `EVT-${event.id
+    .replace(/-/g, '')
+    .slice(0, 8)
+    .toUpperCase()}`;
+}
 
-  try {
-    const { data: accounts, error: accError } = await supabase
-      .from('erp_chart_of_accounts')
-      .select('id, code, name')
-      .in('code', accountCodes);
+/**
+ * Validate debit/credit balance.
+ */
+function validateBalance(
+  totalDebit: number,
+  totalCredit: number,
+): void {
+  const debit = money(totalDebit);
+  const credit = money(totalCredit);
 
-    if (!accError && accounts) {
-      accounts.forEach(a => accountMap.set(a.code, { id: a.id, name: a.name }));
+  if (
+    debit <= 0 &&
+    credit <= 0
+  ) {
+    throw new Error(
+      'Accounting event cannot be posted because debit and credit are both zero.',
+    );
+  }
+
+  if (
+    Math.abs(debit - credit) >
+    BALANCE_TOLERANCE
+  ) {
+    throw new Error(
+      `Cannot post unbalanced accounting event. Debit=${debit}, Credit=${credit}`,
+    );
+  }
+}
+
+/**
+ * Validate accounting event lines.
+ */
+function validateLines(
+  lines: AccountingEventLine[],
+) {
+  if (!lines.length) {
+    throw new Error(
+      'Cannot post accounting event because it has no accounting lines.',
+    );
+  }
+
+  let totalDebit = 0;
+  let totalCredit = 0;
+
+  for (const line of lines) {
+    const debit = money(line.debit);
+    const credit = money(line.credit);
+
+    /*
+     * Account is mandatory.
+     */
+    if (
+      !line.account_id &&
+      !line.account_code
+    ) {
+      throw new Error(
+        `Accounting line ${line.line_number} does not contain an account ID or account code.`,
+      );
     }
-  } catch {
-    // Graceful fallback
-  }
 
-  // 3. Generate Voucher Number
-  const voucher_number = payload.reference_no || `VCH-${Date.now().toString().slice(-8)}`;
-
-  try {
-    // 4. Insert voucher header
-    const { data: voucher, error: voucherError } = await supabase
-      .from('erp_vouchers')
-      .insert({
-        voucher_no:    voucher_number,
-        voucher_type:  payload.voucher_type,
-        voucher_date:  payload.voucher_date,
-        total_amount:  totalDebit,
-        notes:         payload.description,
-      })
-      .select()
-      .single();
-
-    if (!voucherError && voucher) {
-      // 5. Insert journal lines
-      const journalLines = payload.lines.map((line) => {
-        const accInfo = accountMap.get(line.account_code);
-        return {
-          voucher_id:   voucher.id,
-          account_id:   accInfo?.id || null,
-          account_name: accInfo?.name || line.description || `Account ${line.account_code}`,
-          account_code: line.account_code,
-          sl_code:      line.sl_code || null,
-          debit:        line.debit,
-          credit:       line.credit,
-          description:  line.description || null,
-          property_id:  line.property_id || null,
-          unit_id:      line.unit_id || null,
-          tenant_id:    line.tenant_id || null,
-          cost_center_id: line.cost_center_id || null,
-        };
-      });
-
-      await supabase.from('erp_journal_entries').insert(journalLines);
-      return voucher;
+    /*
+     * Negative values are invalid.
+     */
+    if (
+      debit < 0 ||
+      credit < 0
+    ) {
+      throw new Error(
+        `Accounting line ${line.line_number} contains a negative debit or credit amount.`,
+      );
     }
-  } catch {
-    // Fallback
+
+    /*
+     * A line cannot contain both debit and credit.
+     */
+    if (
+      debit > 0 &&
+      credit > 0
+    ) {
+      throw new Error(
+        `Accounting line ${line.line_number} cannot contain both debit and credit.`,
+      );
+    }
+
+    /*
+     * A line must contain either debit or credit.
+     */
+    if (
+      debit === 0 &&
+      credit === 0
+    ) {
+      throw new Error(
+        `Accounting line ${line.line_number} has neither debit nor credit.`,
+      );
+    }
+
+    totalDebit += debit;
+    totalCredit += credit;
   }
+
+  totalDebit = money(totalDebit);
+  totalCredit = money(totalCredit);
+
+  validateBalance(
+    totalDebit,
+    totalCredit,
+  );
 
   return {
-    id:           `local-vch-${Date.now()}`,
-    voucher_no:   voucher_number,
-    voucher_type: payload.voucher_type,
-    voucher_date: payload.voucher_date,
-    total_amount: totalDebit,
-    notes:        payload.description,
+    debit: totalDebit,
+    credit: totalCredit,
   };
 }
 
-// ── Standard Accounting Flows ─────────────────────────────────────────────────
-
-/** Rent due generation: Dr Receivable, Cr Rental Revenue */
-export async function postRentDue(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  period: string,
-  unitCode?: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date:  today,
-    voucher_type:  'Journal',
-    description:   `Rent generation for period ${period}`,
-    reference_no:  period,
-    lines: [
-      {
-        account_code: AC_RECEIVABLE,
-        sl_code:      slReceivable(unitCode),
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Tenant Receivable',
-      },
-      {
-        account_code: '41100',
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Rental Revenue',
-      },
-    ],
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PDC FLOWS
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Event 1 — Cheque Receipt / Collection
- * Dr  PDC In Hand             (GL 12900 / SL 12900001)
- * Cr  Customer(PDC) - Unit    (GL 21400 / SL 21400{unit})
+ * Resolve all account codes against Chart of Accounts.
  */
-export async function postPdcCollection(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  cheque_number: string,
-  unitCode?: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Receipt',
-    description:  `PDC Collection — Chq ${cheque_number}`,
-    reference_no: cheque_number,
-    lines: [
-      {
-        account_code: AC_PDC_IN_HAND,
-        sl_code:      SL_PDC_IN_HAND,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'PDC In Hand',
-      },
-      {
-        account_code: AC_CUSTOMER_PDC,
-        sl_code:      slCustomerPdc(unitCode),
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Customer(PDC) - Unit Account',
-      },
-    ],
-  });
-}
+async function resolveAccounts(
+  lines: AccountingEventLine[],
+): Promise<Map<string, ResolvedAccount>> {
 
-/**
- * Event 2 — Cheque Deposit to Bank
- * Dr  Bank Account            (GL 12000 / SL 12000001)
- * Cr  PDC In Hand             (GL 12900 / SL 12900001)
- */
-export async function postPdcDepositToBank(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  cheque_number: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Receipt',
-    description:  `PDC Deposited to Bank — Chq ${cheque_number}`,
-    reference_no: cheque_number,
-    lines: [
+  const accountCodes = [
+    ...new Set(
+      lines
+        .map(
+          (line) =>
+            line.account_code?.trim(),
+        )
+        .filter(
+          (
+            code,
+          ): code is string =>
+            Boolean(code),
+        ),
+    ),
+  ];
+
+  const accountMap =
+    new Map<
+      string,
+      ResolvedAccount
+    >();
+
+  /*
+   * Nothing to resolve if all lines
+   * already contain account IDs.
+   */
+  if (!accountCodes.length) {
+    return accountMap;
+  }
+
+  const {
+    data: accounts,
+    error,
+  } = await supabase
+    .from(
+      'fin_coa_accounts',
+    )
+    .select(
+      'id, account_code, account_name',
+    )
+    .in(
+      'account_code',
+      accountCodes,
+    )
+    .eq(
+      'is_active',
+      true,
+    );
+
+  if (error) {
+    throw error;
+  }
+
+  for (
+    const account of
+    accounts || []
+  ) {
+    accountMap.set(
+      account.account_code,
       {
-        account_code: AC_BANK,
-        sl_code:      SL_BANK,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Bank Account',
+        id: account.id,
+        account_code:
+          account.account_code,
+        account_name:
+          account.account_name,
       },
-      {
-        account_code: AC_PDC_IN_HAND,
-        sl_code:      SL_PDC_IN_HAND,
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'PDC In Hand',
-      },
-    ],
-  });
+    );
+  }
+
+  /*
+   * Every account code must resolve.
+   */
+  for (
+    const line of lines
+  ) {
+    const code =
+      line.account_code?.trim();
+
+    if (
+      code &&
+      !accountMap.has(code)
+    ) {
+      throw new Error(
+        `Active COA account ${code} does not exist in fin_coa_accounts.`,
+      );
+    }
+  }
+
+  return accountMap;
 }
 
 /**
- * Event 3 — Cheque Cleared by Bank
- * Dr  Customer(PDC) - Unit    (GL 21400 / SL 21400{unit})
- * Cr  Receivable - Unit       (GL 12413 / SL 124130{unit})
+ * Check whether a voucher already exists
+ * for the accounting event.
+ *
+ * This provides an additional idempotency
+ * check before creating a new voucher.
  */
-export async function postPdcClear(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  cheque_number: string,
-  unitCode?: string,
+async function findExistingVoucher(
+  eventId: string,
 ) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Journal',
-    description:  `PDC Cleared — Chq ${cheque_number}`,
-    reference_no: cheque_number,
-    lines: [
-      {
-        account_code: AC_CUSTOMER_PDC,
-        sl_code:      slCustomerPdc(unitCode),
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Customer(PDC) - Unit Account',
-      },
-      {
-        account_code: AC_RECEIVABLE,
-        sl_code:      slReceivable(unitCode),
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Receivable - Unit Account',
-      },
-    ],
-  });
+  const {
+    data,
+    error,
+  } = await supabase
+    .from(
+      'fin_vouchers',
+    )
+    .select(
+      'id, voucher_number, accounting_event_id',
+    )
+    .eq(
+      'accounting_event_id',
+      eventId,
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
 }
 
 /**
- * Event 6 — Cheque Return / Bounce
- * Dr  PDC In Hand             (GL 12900 / SL 12900001)    — cheque back in hand
- * Cr  Bank Account            (GL 12000 / SL 12000001)    — reverse bank credit
- * Dr  Receivable - Unit       (GL 12413 / SL 124130{unit}) — re-expose outstanding
- * Cr  Customer(PDC) - Unit    (GL 21400 / SL 21400{unit}) — reverse PDC liability
+ * Move event DRAFT → POSTING.
+ *
+ * The conditional update prevents two
+ * application processes from both posting
+ * the same DRAFT event.
  */
-export async function postPdcReturn(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  cheque_number: string,
-  unitCode?: string,
+async function markEventPosting(
+  eventId: string,
 ) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Journal',
-    description:  `PDC Returned / Bounced — Chq ${cheque_number}`,
-    reference_no: cheque_number,
-    lines: [
-      {
-        account_code: AC_PDC_IN_HAND,
-        sl_code:      SL_PDC_IN_HAND,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'PDC In Hand (re-recorded on return)',
-      },
-      {
-        account_code: AC_BANK,
-        sl_code:      SL_BANK,
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Bank Account (reversed on cheque return)',
-      },
-      {
-        account_code: AC_RECEIVABLE,
-        sl_code:      slReceivable(unitCode),
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Receivable - Unit Account (re-exposed)',
-      },
-      {
-        account_code: AC_CUSTOMER_PDC,
-        sl_code:      slCustomerPdc(unitCode),
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Customer(PDC) - Unit Account (reversed)',
-      },
-    ],
-  });
-}
+  const {
+    data,
+    error,
+  } = await supabase
+    .from(
+      'fin_accounting_events',
+    )
+    .update({
+      status: 'POSTING',
+    })
+    .eq(
+      'id',
+      eventId,
+    )
+    .eq(
+      'status',
+      'DRAFT',
+    )
+    .select()
+    .maybeSingle();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CASH FLOWS
-// ─────────────────────────────────────────────────────────────────────────────
+  if (error) {
+    throw error;
+  }
 
-/**
- * Event 5 — Cash Receipt / Collection
- * Dr  Cash In Hand            (GL 12100 / SL 12100001)
- * Cr  Deposit-Customer - Unit (GL 21500 / SL 21500{unit})
- */
-export async function postCashCollection(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  ref: string,
-  unitCode?: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Receipt',
-    description:  `Cash Receipt — ${ref}`,
-    reference_no: ref,
-    lines: [
-      {
-        account_code: AC_CASH_IN_HAND,
-        sl_code:      SL_CASH_IN_HAND,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Cash In Hand',
-      },
-      {
-        account_code: AC_DEPOSIT_CUSTOMER,
-        sl_code:      slDepositCustomer(unitCode),
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Deposit-Customer - Unit Account',
-      },
-    ],
-  });
+  return data;
 }
 
 /**
- * Event 4 — Cash Deposit in place of PDC
- * Dr  Bank Account            (GL 12000 / SL 12000001)
- * Cr  Cash In Hand            (GL 12100 / SL 12100001)
+ * Restore event to DRAFT.
  */
-export async function postCashDepositInPlaceOfPdc(
-  amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  ref: string,
+async function restoreDraftStatus(
+  eventId: string,
 ) {
-  const today = new Date().toISOString().split('T')[0];
-  return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Contra',
-    description:  `Cash Deposit in place of PDC — ${ref}`,
-    reference_no: ref,
-    lines: [
-      {
-        account_code: AC_BANK,
-        sl_code:      SL_BANK,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Bank Account',
-      },
-      {
-        account_code: AC_CASH_IN_HAND,
-        sl_code:      SL_CASH_IN_HAND,
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Cash In Hand',
-      },
-    ],
-  });
+  const {
+    error,
+  } = await supabase
+    .from(
+      'fin_accounting_events',
+    )
+    .update({
+      status: 'DRAFT',
+    })
+    .eq(
+      'id',
+      eventId,
+    )
+    .eq(
+      'status',
+      'POSTING',
+    );
+
+  if (error) {
+    console.error(
+      'Failed to restore accounting event to DRAFT:',
+      error,
+    );
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEPOSIT & DAMAGE FLOWS
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Main posting engine.
+ */
+export async function postAccountingEvent(
+  eventId: string,
+): Promise<PostingResult> {
 
-/** Security Deposit Receipt via Bank or Cash */
+  /*
+   * ============================================================
+   * 1. Load accounting event
+   * ============================================================
+   */
+
+  const {
+    data: event,
+    error: eventError,
+  } = await supabase
+    .from(
+      'fin_accounting_events',
+    )
+    .select('*')
+    .eq(
+      'id',
+      eventId,
+    )
+    .single();
+
+  if (
+    eventError ||
+    !event
+  ) {
+    throw (
+      eventError ||
+      new Error(
+        `Accounting event ${eventId} was not found.`,
+      )
+    );
+  }
+
+  const accountingEvent =
+    event as AccountingEvent;
+
+  /*
+   * ============================================================
+   * 2. Existing POSTED event
+   * ============================================================
+   */
+
+  if (
+    accountingEvent.status ===
+    'POSTED' &&
+    accountingEvent.voucher_id
+  ) {
+
+    const {
+      data: existingVoucher,
+      error:
+      existingVoucherError,
+    } = await supabase
+      .from(
+        'fin_vouchers',
+      )
+      .select(
+        'id, voucher_number',
+      )
+      .eq(
+        'id',
+        accountingEvent.voucher_id,
+      )
+      .maybeSingle();
+
+    if (
+      existingVoucherError
+    ) {
+      throw existingVoucherError;
+    }
+
+    if (
+      existingVoucher
+    ) {
+      return {
+        event_id:
+          accountingEvent.id,
+
+        voucher_id:
+          existingVoucher.id,
+
+        voucher_number:
+          existingVoucher.voucher_number,
+
+        status:
+          'POSTED',
+      };
+    }
+
+    /*
+     * Event says POSTED but voucher does not exist.
+     *
+     * This is an accounting integrity problem.
+     * Do NOT silently create another voucher.
+     */
+    throw new Error(
+      `Accounting event ${eventId} is marked POSTED but voucher ${accountingEvent.voucher_id} was not found.`,
+    );
+  }
+
+  /*
+   * ============================================================
+   * 3. Validate event status
+   * ============================================================
+   */
+
+  if (
+    accountingEvent.status ===
+    'POSTING'
+  ) {
+    throw new Error(
+      `Accounting event ${eventId} is already being posted.`,
+    );
+  }
+
+  if (
+    accountingEvent.status ===
+    'REVERSED'
+  ) {
+    throw new Error(
+      `Accounting event ${eventId} has already been reversed.`,
+    );
+  }
+
+  if (
+    accountingEvent.status ===
+    'CANCELLED'
+  ) {
+    throw new Error(
+      `Accounting event ${eventId} has been cancelled.`,
+    );
+  }
+
+  /*
+   * ============================================================
+   * 4. Load accounting event lines
+   * ============================================================
+   */
+
+  const {
+    data: rawLines,
+    error: linesError,
+  } = await supabase
+    .from(
+      'fin_accounting_event_lines',
+    )
+    .select('*')
+    .eq(
+      'event_id',
+      eventId,
+    )
+    .order(
+      'line_number',
+      {
+        ascending: true,
+      },
+    );
+
+  if (linesError) {
+    throw linesError;
+  }
+
+  if (
+    !rawLines ||
+    !rawLines.length
+  ) {
+    throw new Error(
+      `Accounting event ${eventId} has no journal lines.`,
+    );
+  }
+
+  const lines =
+    rawLines as AccountingEventLine[];
+
+  /*
+   * ============================================================
+   * 5. Validate journal lines
+   * ============================================================
+   */
+
+  const lineTotals =
+    validateLines(
+      lines,
+    );
+
+  /*
+   * ============================================================
+   * 6. Validate event totals
+   * ============================================================
+   */
+
+  const eventDebit =
+    money(
+      accountingEvent.total_debit,
+    );
+
+  const eventCredit =
+    money(
+      accountingEvent.total_credit,
+    );
+
+  validateBalance(
+    eventDebit,
+    eventCredit,
+  );
+
+  if (
+    Math.abs(
+      eventDebit -
+      lineTotals.debit,
+    ) >
+    BALANCE_TOLERANCE
+  ) {
+    throw new Error(
+      `Accounting event total debit does not match journal lines. Event=${eventDebit}, Lines=${lineTotals.debit}`,
+    );
+  }
+
+  if (
+    Math.abs(
+      eventCredit -
+      lineTotals.credit,
+    ) >
+    BALANCE_TOLERANCE
+  ) {
+    throw new Error(
+      `Accounting event total credit does not match journal lines. Event=${eventCredit}, Lines=${lineTotals.credit}`,
+    );
+  }
+
+  /*
+   * ============================================================
+   * 7. Resolve COA accounts
+   * ============================================================
+   */
+
+  const accountMap =
+    await resolveAccounts(
+      lines,
+    );
+
+  /*
+   * ============================================================
+   * 8. Check for existing voucher
+   * ============================================================
+   *
+   * This catches cases where voucher creation
+   * succeeded but the event update did not.
+   */
+
+  const existingVoucher =
+    await findExistingVoucher(
+      eventId,
+    );
+
+  if (
+    existingVoucher
+  ) {
+
+    /*
+     * Ensure event points to the voucher.
+     */
+    await supabase
+      .from(
+        'fin_accounting_events',
+      )
+      .update({
+        status: 'POSTED',
+        voucher_id:
+          existingVoucher.id,
+        posted_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        'id',
+        eventId,
+      );
+
+    return {
+      event_id:
+        eventId,
+
+      voucher_id:
+        existingVoucher.id,
+
+      voucher_number:
+        existingVoucher.voucher_number,
+
+      status:
+        'POSTED',
+    };
+  }
+
+  /*
+   * ============================================================
+   * 9. Acquire posting lock
+   * ============================================================
+   */
+
+  const postingLock =
+    await markEventPosting(
+      eventId,
+    );
+
+  if (!postingLock) {
+
+    /*
+     * Another process may have posted
+     * the event.
+     */
+
+    const {
+      data: latestEvent,
+      error: latestError,
+    } = await supabase
+      .from(
+        'fin_accounting_events',
+      )
+      .select(
+        'id, status, voucher_id',
+      )
+      .eq(
+        'id',
+        eventId,
+      )
+      .single();
+
+    if (latestError) {
+      throw latestError;
+    }
+
+    if (
+      latestEvent?.status ===
+      'POSTED' &&
+      latestEvent?.voucher_id
+    ) {
+
+      const {
+        data: voucher,
+        error:
+        voucherError,
+      } = await supabase
+        .from(
+          'fin_vouchers',
+        )
+        .select(
+          'id, voucher_number',
+        )
+        .eq(
+          'id',
+          latestEvent.voucher_id,
+        )
+        .single();
+
+      if (
+        voucherError ||
+        !voucher
+      ) {
+        throw (
+          voucherError ||
+          new Error(
+            `Accounting event ${eventId} is POSTED but its voucher could not be found.`,
+          )
+        );
+      }
+
+      return {
+        event_id:
+          eventId,
+
+        voucher_id:
+          voucher.id,
+
+        voucher_number:
+          voucher.voucher_number,
+
+        status:
+          'POSTED',
+      };
+    }
+
+    throw new Error(
+      `Accounting event ${eventId} could not be locked for posting.`,
+    );
+  }
+
+  let voucherId:
+    string | null = null;
+
+  try {
+
+    /*
+     * ==========================================================
+     * 10. Generate voucher number
+     * ==========================================================
+     */
+
+    const voucherNumber =
+      generateVoucherNumber(
+        accountingEvent,
+      );
+
+    /*
+     * ==========================================================
+     * 11. Create financial voucher
+     * ==========================================================
+     *
+     * ACTUAL TABLE:
+     *
+     * fin_vouchers
+     *
+     * Columns used:
+     *
+     * voucher_number
+     * voucher_date
+     * voucher_type
+     * reference_no
+     * description
+     * total_amount
+     * status
+     * accounting_event_id
+     * posted_at
+     *
+     * NOTE:
+     * source_type and source_id are NOT columns
+     * in fin_vouchers.
+     */
+
+    const {
+      data: voucher,
+      error: voucherError,
+    } = await supabase
+      .from(
+        'fin_vouchers',
+      )
+      .insert({
+        voucher_number:
+          voucherNumber,
+
+        voucher_date:
+          accountingEvent.posting_date,
+
+        voucher_type:
+          'Journal',
+
+        reference_no:
+          accountingEvent.reference_number ||
+          accountingEvent.source_id ||
+          null,
+
+        description:
+          accountingEvent.description ||
+          `${accountingEvent.event_type} - ${accountingEvent.source_type}`,
+
+        total_amount:
+          lineTotals.debit,
+
+        status:
+          'Posted',
+
+        accounting_event_id:
+          accountingEvent.id,
+
+        posted_at:
+          new Date().toISOString(),
+      })
+      .select(
+        'id, voucher_number',
+      )
+      .single();
+
+    if (
+      voucherError ||
+      !voucher
+    ) {
+      throw (
+        voucherError ||
+        new Error(
+          'Failed to create financial voucher.',
+        )
+      );
+    }
+
+    voucherId =
+      voucher.id;
+
+    /*
+     * ==========================================================
+     * 12. Build voucher lines
+     * ==========================================================
+     */
+
+    const voucherLines =
+      lines.map(
+        (line) => {
+
+          const account =
+            line.account_code
+              ? accountMap.get(
+                line.account_code.trim(),
+              )
+              : undefined;
+
+          const resolvedAccountId =
+            account?.id ||
+            line.account_id ||
+            null;
+
+          if (
+            !resolvedAccountId
+          ) {
+            throw new Error(
+              `Voucher line ${line.line_number} could not resolve a COA account.`,
+            );
+          }
+
+          return {
+            voucher_id:
+              voucher.id,
+
+            account_id:
+              resolvedAccountId,
+
+            account_code:
+              account?.account_code ||
+              line.account_code ||
+              null,
+
+            account_name:
+              account?.account_name ||
+              line.account_name ||
+              null,
+
+            debit_amount:
+              money(
+                line.debit,
+              ),
+
+            credit_amount:
+              money(
+                line.credit,
+              ),
+
+            description:
+              line.description ||
+              account?.account_name ||
+              line.account_name ||
+              null,
+
+            tenant_id:
+              line.tenant_id ||
+              accountingEvent.tenant_id ||
+              null,
+
+            lease_id:
+              line.lease_id ||
+              accountingEvent.lease_id ||
+              null,
+
+            property_id:
+              line.property_id ||
+              accountingEvent.property_id ||
+              null,
+
+            unit_id:
+              line.unit_id ||
+              accountingEvent.unit_id ||
+              null,
+
+            customer_id:
+              line.customer_id ||
+              accountingEvent.customer_id ||
+              null,
+
+            cost_center_id:
+              line.cost_center_id ||
+              null,
+
+            source_type:
+              line.source_type ||
+              accountingEvent.source_type ||
+              null,
+
+            source_id:
+              line.source_id ||
+              accountingEvent.source_id ||
+              null,
+          };
+        },
+      );
+
+    /*
+     * ==========================================================
+     * 13. Validate voucher lines before insertion
+     * ==========================================================
+     */
+
+    let voucherDebit = 0;
+    let voucherCredit = 0;
+
+    for (
+      const line of voucherLines
+    ) {
+      voucherDebit +=
+        money(
+          line.debit_amount,
+        );
+
+      voucherCredit +=
+        money(
+          line.credit_amount,
+        );
+    }
+
+    voucherDebit =
+      money(voucherDebit);
+
+    voucherCredit =
+      money(voucherCredit);
+
+    validateBalance(
+      voucherDebit,
+      voucherCredit,
+    );
+
+    if (
+      Math.abs(
+        voucherDebit -
+        lineTotals.debit,
+      ) >
+      BALANCE_TOLERANCE
+    ) {
+      throw new Error(
+        `Voucher debit total does not match accounting event. Voucher=${voucherDebit}, Event=${lineTotals.debit}`,
+      );
+    }
+
+    if (
+      Math.abs(
+        voucherCredit -
+        lineTotals.credit,
+      ) >
+      BALANCE_TOLERANCE
+    ) {
+      throw new Error(
+        `Voucher credit total does not match accounting event. Voucher=${voucherCredit}, Event=${lineTotals.credit}`,
+      );
+    }
+
+    /*
+     * ==========================================================
+     * 14. Insert voucher lines
+     * ==========================================================
+     */
+
+    const {
+      error:
+      voucherLinesError,
+    } = await supabase
+      .from(
+        'fin_voucher_lines',
+      )
+      .insert(
+        voucherLines,
+      );
+
+    if (
+      voucherLinesError
+    ) {
+      throw voucherLinesError;
+    }
+
+    /*
+     * ==========================================================
+     * 15. Mark accounting event POSTED
+     * ==========================================================
+     */
+
+    const {
+      data:
+      updatedEvent,
+      error:
+      postedError,
+    } = await supabase
+      .from(
+        'fin_accounting_events',
+      )
+      .update({
+        status:
+          'POSTED',
+
+        voucher_id:
+          voucher.id,
+
+        posted_at:
+          new Date().toISOString(),
+      })
+      .eq(
+        'id',
+        accountingEvent.id,
+      )
+      .eq(
+        'status',
+        'POSTING',
+      )
+      .select(
+        'id, status, voucher_id',
+      )
+      .maybeSingle();
+
+    if (
+      postedError
+    ) {
+      throw postedError;
+    }
+
+    if (
+      !updatedEvent
+    ) {
+      throw new Error(
+        `Accounting event ${accountingEvent.id} could not be marked POSTED.`,
+      );
+    }
+
+    /*
+     * ==========================================================
+     * 16. Return result
+     * ==========================================================
+     */
+
+    return {
+      event_id:
+        accountingEvent.id,
+
+      voucher_id:
+        voucher.id,
+
+      voucher_number:
+        voucher.voucher_number,
+
+      status:
+        'POSTED',
+    };
+
+  } catch (error) {
+
+    /*
+     * ==========================================================
+     * 17. Failure cleanup
+     * ==========================================================
+     *
+     * Remove voucher lines first because they
+     * reference fin_vouchers.
+     */
+
+    if (
+      voucherId
+    ) {
+
+      await supabase
+        .from(
+          'fin_voucher_lines',
+        )
+        .delete()
+        .eq(
+          'voucher_id',
+          voucherId,
+        );
+
+      await supabase
+        .from(
+          'fin_vouchers',
+        )
+        .delete()
+        .eq(
+          'id',
+          voucherId,
+        );
+    }
+
+    /*
+     * Return event to DRAFT.
+     */
+
+    await restoreDraftStatus(
+      accountingEvent.id,
+    );
+
+    /*
+     * Preserve original error.
+     */
+
+    throw error;
+  }
+}
+
+/**
+ * Convenience wrapper.
+ */
+export async function postEvent(
+  eventId: string,
+): Promise<PostingResult> {
+  return postAccountingEvent(
+    eventId,
+  );
+}
+
+export type PostingLineInput = {
+  account_code: string;
+  account_name?: string;
+
+  debit: number;
+  credit: number;
+
+  tenant_id?: string | number;
+  lease_id?: string | number;
+  property_id?: string | number;
+  unit_id?: string | number;
+  customer_id?: string | number;
+  cost_center_id?: string | number;
+
+  description?: string;
+
+  source_type?: string;
+  source_id?: string;
+
+  metadata?: Record<string, unknown>;
+};
+
+export type PostVoucherInput = {
+  voucher_date: string;
+  voucher_type?: string;
+  description?: string;
+  reference_no?: string;
+
+  source_type?: string;
+  source_id?: string;
+
+  tenant_id?: string | number;
+  lease_id?: string | number;
+  property_id?: string | number;
+  unit_id?: string | number;
+  customer_id?: string | number;
+  cost_center_id?: string | number;
+
+  lines: PostingLineInput[];
+};
+
+function normalizeUuid(
+  value: string | number | null | undefined,
+): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  const valueString = String(value).trim();
+
+  if (!valueString) {
+    return undefined;
+  }
+
+  /*
+   * PostgreSQL UUID format.
+   */
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(valueString)) {
+    return undefined;
+  }
+
+  return valueString;
+}
+export async function postVoucher(
+  input: PostVoucherInput,
+): Promise<PostingResult> {
+
+  if (!input.lines || input.lines.length === 0) {
+    throw new Error(
+      'Cannot post voucher without accounting lines.',
+    );
+  }
+
+  const totalDebit = money(
+    input.lines.reduce(
+      (sum, line) =>
+        sum + Number(line.debit || 0),
+      0,
+    ),
+  );
+
+  const totalCredit = money(
+    input.lines.reduce(
+      (sum, line) =>
+        sum + Number(line.credit || 0),
+      0,
+    ),
+  );
+
+  validateBalance(
+    totalDebit,
+    totalCredit,
+  );
+
+  const sourceType =
+    input.source_type ||
+    'VOUCHER';
+
+  const sourceId =
+    input.source_id;
+
+  const referenceNumber =
+    input.reference_no ||
+    `VCH-${Date.now()}`;
+
+  /*
+   * Every voucher request becomes
+   * an accounting event first.
+   */
+  const idempotencyKey =
+    [
+      'POST-VOUCHER',
+      input.voucher_type || 'Journal',
+      referenceNumber,
+      input.voucher_date,
+    ].join('|');
+
+  const {
+    data: existingEvent,
+    error: existingEventError,
+  } = await supabase
+    .from('fin_accounting_events')
+    .select('id')
+    .eq(
+      'idempotency_key',
+      idempotencyKey,
+    )
+    .maybeSingle();
+
+  if (existingEventError) {
+    throw existingEventError;
+  }
+
+  if (existingEvent) {
+    return postAccountingEvent(
+      existingEvent.id,
+    );
+  }
+
+  /*
+   * Create Accounting Event.
+   *
+   * IMPORTANT:
+   * accounting-event-engine owns event
+   * and event-line creation.
+   */
+  const { createAccountingEvent } =
+    await import(
+      './accounting-event-engine'
+    );
+
+  const event =
+    await createAccountingEvent({
+      event_type: 'MANUAL_JOURNAL',
+
+      event_date:
+        input.voucher_date,
+
+      posting_date:
+        input.voucher_date,
+
+      source_type:
+        sourceType,
+
+      source_id:
+        sourceId,
+
+      reference_number:
+        referenceNumber,
+
+      description:
+        input.description,
+
+      idempotency_key:
+        idempotencyKey,
+
+      tenant_id:
+        normalizeUuid(input.tenant_id),
+
+      lease_id:
+        normalizeUuid(input.lease_id),
+
+      property_id:
+        normalizeUuid(input.property_id),
+
+      unit_id:
+        normalizeUuid(input.unit_id),
+
+      customer_id:
+        normalizeUuid(input.customer_id),
+
+      cost_center_id:
+        normalizeUuid(input.cost_center_id),
+
+      lines:
+        input.lines.map(
+          (line) => ({
+            account_code:
+              line.account_code,
+
+            account_name:
+              line.account_name,
+
+            debit:
+              money(line.debit),
+
+            credit:
+              money(line.credit),
+
+            tenant_id:
+              normalizeUuid(
+                line.tenant_id,
+              ),
+
+            lease_id:
+              normalizeUuid(
+                line.lease_id,
+              ),
+
+            property_id:
+              normalizeUuid(
+                line.property_id,
+              ),
+
+            unit_id:
+              normalizeUuid(
+                line.unit_id,
+              ),
+
+            customer_id:
+              normalizeUuid(
+                line.customer_id,
+              ),
+
+            cost_center_id:
+              normalizeUuid(
+                line.cost_center_id,
+              ),
+
+            description:
+              line.description,
+
+            source_type:
+              line.source_type,
+
+            source_id:
+              line.source_id,
+
+            metadata:
+              line.metadata,
+          }),
+        ),
+    });
+
+  return postAccountingEvent(
+    event.id,
+  );
+}
+
 export async function postLeaseDepositReceipt(
   amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  mode: 'Bank' | 'Cash',
-  ref: string,
-) {
-  const today       = new Date().toISOString().split('T')[0];
-  const debitCode   = mode === 'Bank' ? AC_BANK : AC_CASH_IN_HAND;
-  const debitSL     = mode === 'Bank' ? SL_BANK  : SL_CASH_IN_HAND;
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  mode: 'Cash' | 'Bank',
+  reference?: string,
+): Promise<PostingResult> {
+
+  const cashOrBankAccount =
+    mode === 'Cash'
+      ? '10100'
+      : '12000';
 
   return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Receipt',
-    description:  `Security Deposit Receipt via ${mode}`,
-    reference_no: ref,
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    voucher_type:
+      'Receipt',
+
+    description:
+      'Security Deposit Received',
+
+    reference_no:
+      reference,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
     lines: [
       {
-        account_code: debitCode,
-        sl_code:      debitSL,
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: mode,
+        account_code:
+          cashOrBankAccount,
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'Security Deposit Received',
       },
+
       {
-        account_code: AC_DEPOSIT_CUSTOMER,
-        sl_code:      SL_DEPOSIT_CUSTOMER_DEFAULT,
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Deposits - Leasing Customers',
+        account_code:
+          '21500',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Security Deposit Liability',
       },
     ],
   });
 }
 
-const SL_DEPOSIT_CUSTOMER_DEFAULT = '21500';
-
-/** Damage Charge: Dr Receivable, Cr Other Income */
-export async function postDamageCharge(
+export async function postPdcCollection(
   amount: number,
-  tenant_id: number,
-  property_id: number,
-  unit_id: number,
-  desc: string,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
   unitCode?: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
+): Promise<PostingResult> {
+
   return postVoucher({
-    voucher_date: today,
-    voucher_type: 'Journal',
-    description:  `Damage Charge: ${desc}`,
+    voucher_type: 'Receipt',
+
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    reference_no:
+      chequeNumber,
+
+    description:
+      `PDC Received - ${chequeNumber}${unitCode ? ` - ${unitCode}` : ''}`,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
     lines: [
       {
-        account_code: AC_RECEIVABLE,
-        sl_code:      slReceivable(unitCode),
-        debit: amount, credit: 0,
-        tenant_id, property_id, unit_id,
-        description: 'Tenant Receivable - Damage',
+        account_code:
+          '12900',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'PDC In Hand',
       },
+
       {
-        account_code: '41201003',
-        debit: 0, credit: amount,
-        tenant_id, property_id, unit_id,
-        description: 'Other Income - Damages',
+        account_code:
+          '21400',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Customer PDC Liability',
+      },
+    ],
+  });
+}
+
+export async function postPdcDepositToBank(
+  amount: number,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
+): Promise<PostingResult> {
+
+  return postVoucher({
+    voucher_type: 'Receipt',
+
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    reference_no:
+      chequeNumber,
+
+    description:
+      `PDC Deposited to Bank - ${chequeNumber}`,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
+    lines: [
+      {
+        account_code:
+          '12000',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'Bank Account',
+      },
+
+      {
+        account_code:
+          '12900',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'PDC In Hand',
+      },
+    ],
+  });
+}
+export async function postPdcClear(
+  amount: number,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
+  unitCode?: string,
+): Promise<PostingResult> {
+
+  return postVoucher({
+    voucher_type: 'Journal',
+
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    reference_no:
+      chequeNumber,
+
+    description:
+      `PDC Cleared - ${chequeNumber}${unitCode ? ` - ${unitCode}` : ''}`,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
+    lines: [
+      {
+        account_code:
+          '21400',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'Customer PDC Liability',
+      },
+
+      {
+        account_code:
+          '12413',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Tenant Receivable',
+      },
+    ],
+  });
+}
+
+export async function postPdcReturn(
+  amount: number,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
+  unitCode?: string,
+): Promise<PostingResult> {
+
+  return postVoucher({
+    voucher_type: 'Journal',
+
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    reference_no:
+      chequeNumber,
+
+    description:
+      `PDC Returned / Bounced - ${chequeNumber}${unitCode ? ` - ${unitCode}` : ''}`,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
+    lines: [
+      {
+        account_code:
+          '12900',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'PDC In Hand',
+      },
+
+      {
+        account_code:
+          '12413',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'Tenant Receivable',
+      },
+
+      {
+        account_code:
+          '12000',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Bank Account',
+      },
+
+      {
+        account_code:
+          '21400',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Customer PDC Liability',
+      },
+    ],
+  });
+}
+
+
+export async function postCashDepositInPlaceOfPdc(
+  amount: number,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
+): Promise<PostingResult> {
+
+  return postVoucher({
+    voucher_type: 'Receipt',
+
+    voucher_date:
+      new Date()
+        .toISOString()
+        .split('T')[0],
+
+    reference_no:
+      chequeNumber,
+
+    description:
+      `Cash Deposit in Place of PDC - ${chequeNumber}`,
+
+    tenant_id:
+      tenantId,
+
+    property_id:
+      propertyId,
+
+    unit_id:
+      unitId,
+
+    lines: [
+      {
+        account_code:
+          '12000',
+
+        debit:
+          amount,
+
+        credit:
+          0,
+
+        description:
+          'Bank Account',
+      },
+
+      {
+        account_code:
+          '12100',
+
+        debit:
+          0,
+
+        credit:
+          amount,
+
+        description:
+          'Cash In Hand',
       },
     ],
   });

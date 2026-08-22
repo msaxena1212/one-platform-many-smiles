@@ -1,6 +1,13 @@
+import 'dotenv/config';
 import { Client } from 'pg';
 
-const connectionString = "postgresql://postgres.rnebpqnzignwjeukgztz:ZZaM4YMKu80iCTa2@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres";
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error(
+    'DATABASE_URL is required to run the PDC seed script.'
+  );
+}
 
 async function seedPDC() {
   const client = new Client({ connectionString });
@@ -30,7 +37,7 @@ async function seedPDC() {
     // =====================================================================
     await client.query(`
       ALTER TABLE public.pdcs ENABLE ROW LEVEL SECURITY
-    `).catch(() => {});
+    `).catch(() => { });
     await client.query(`
       DO $$ BEGIN
         IF NOT EXISTS (
@@ -39,7 +46,7 @@ async function seedPDC() {
           CREATE POLICY "Public PDCs" ON public.pdcs FOR ALL USING (true);
         END IF;
       END $$
-    `).catch(() => {});
+    `).catch(() => { });
 
     // =====================================================================
     // STEP 3: Clear old PDC data and insert 220 real records
