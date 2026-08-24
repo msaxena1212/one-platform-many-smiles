@@ -279,248 +279,45 @@ IF EXISTS (
         p_event_id;
 
 END IF;
--- ========================================================
--- 9. Check for an existing voucher
---
--- Recovery rules:
---
--- 1. No voucher:
---      Continue with normal voucher creation.
---
--- 2. Voucher exists and has complete lines:
---      Validate totals and return existing voucher.
---
--- 3. Voucher exists but has no/incomplete lines:
---      Rebuild voucher lines from accounting event lines.
---
--- 4. Voucher exists but is structurally inconsistent:
---      Raise an exception rather than silently posting.
--- ========================================================
 
-SELECT v.*
-INTO v_voucher
-FROM public.fin_vouchers AS v
-WHERE v.accounting_event_id = p_event_id
-FOR UPDATE;
-
-IF FOUND THEN
-
-    -- ----------------------------------------------------
-    -- 9A. Validate existing voucher header
-    -- ----------------------------------------------------
-
-    IF v_voucher.status NOT IN ('DRAFT', 'Posted', 'POSTED') THEN
-
-        RAISE EXCEPTION
-            'Existing voucher % for accounting event % has invalid status: %.',
-            v_voucher.id,
-            p_event_id,
-            v_voucher.status;
-
-    END IF;
-
-
-    -- ----------------------------------------------------
-    -- 9B. Check whether voucher lines already exist
-    -- ----------------------------------------------------
-
-    SELECT
-        ROUND(COALESCE(SUM(vl.debit_amount), 0), 2),
-        ROUND(COALESCE(SUM(vl.credit_amount), 0), 2)
-    INTO
-        v_total_debit,
-        v_total_credit
-    FROM public.fin_voucher_lines AS vl
-    WHERE vl.voucher_id = v_voucher.id;
-
-
-    -- ----------------------------------------------------
-    -- 9C. Existing voucher is incomplete
+    -- ========================================================
+    -- 9. Check for an existing voucher
     --
-    -- Rebuild voucher lines from accounting event lines.
-    -- ----------------------------------------------------
+    -- Handles an earlier/incomplete posting attempt.
+    -- ========================================================
 
-    IF v_total_debit <> v_event.total_debit
-       OR v_total_credit <> v_event.total_credit
-       OR NOT EXISTS (
-            SELECT 1
-            FROM public.fin_voucher_lines AS vl
-            WHERE vl.voucher_id = v_voucher.id
-       )
-    THEN
-
-        -- Remove incomplete voucher lines only.
-        DELETE FROM public.fin_voucher_lines
-        WHERE voucher_id = v_voucher.id;
+    SELECT *
+    INTO v_voucher
+    FROM public.fin_vouchers
+    WHERE accounting_event_id = p_event_id
+    LIMIT 1;
 
 
-        -- Rebuild voucher lines from accounting event lines.
-        INSERT INTO public.fin_voucher_lines (
-            voucher_id,
-            account_id,
-            account_code,
-            account_name,
-            debit_amount,
-            credit_amount,
-            description,
-            tenant_id,
-            lease_id,
-            property_id,
-            unit_id,
-            customer_id,
-            cost_center_id,
-            source_type,
-            source_id
-        )
+    IF FOUND THEN
+
+        UPDATE public.fin_accounting_events
+        SET
+            status = 'POSTED',
+            voucher_id = v_voucher.id,
+            posted_at = COALESCE(
+                posted_at,
+                NOW()
+            )
+        WHERE id = p_event_id;
+
+
+        RETURN QUERY
         SELECT
-
+            p_event_id,
             v_voucher.id,
+            v_voucher.voucher_number,
+            'POSTED'::TEXT;
 
-            COALESCE(
-                coa.id,
-                l.account_id
-            ),
-
-            COALESCE(
-                coa.account_code,
-                l.account_code
-            ),
-
-            COALESCE(
-                coa.account_name,
-                l.account_name
-            ),
-
-            ROUND(l.debit, 2),
-
-            ROUND(l.credit, 2),
-
-            COALESCE(
-                l.description,
-                coa.account_name,
-                l.account_name
-            ),
-
-            COALESCE(
-                l.tenant_id,
-                v_event.tenant_id
-            ),
-
-            COALESCE(
-                l.lease_id,
-                v_event.lease_id
-            ),
-
-            COALESCE(
-                l.property_id,
-                v_event.property_id
-            ),
-
-            COALESCE(
-                l.unit_id,
-                v_event.unit_id
-            ),
-
-            COALESCE(
-                l.customer_id,
-                v_event.customer_id
-            ),
-
-            l.cost_center_id,
-
-            COALESCE(
-                l.source_type,
-                v_event.source_type
-            ),
-
-            COALESCE(
-                l.source_id,
-                v_event.source_id
-            )
-
-        FROM public.fin_accounting_event_lines AS l
-
-        LEFT JOIN public.fin_coa_accounts AS coa
-            ON (
-                coa.id = l.account_id
-                AND coa.is_active = TRUE
-            )
-            OR (
-                l.account_id IS NULL
-                AND coa.account_code = l.account_code
-                AND coa.is_active = TRUE
-            )
-
-        WHERE l.event_id = p_event_id;
-
-
-        -- ------------------------------------------------
-        -- Verify recovery actually produced correct lines.
-        -- ------------------------------------------------
-
-        SELECT
-            ROUND(COALESCE(SUM(vl.debit_amount), 0), 2),
-            ROUND(COALESCE(SUM(vl.credit_amount), 0), 2)
-        INTO
-            v_total_debit,
-            v_total_credit
-        FROM public.fin_voucher_lines AS vl
-        WHERE vl.voucher_id = v_voucher.id;
-
-
-        IF v_total_debit <> ROUND(v_event.total_debit, 2)
-           OR v_total_credit <> ROUND(v_event.total_credit, 2)
-        THEN
-
-            RAISE EXCEPTION
-                'Existing voucher % recovery failed for accounting event %. Event totals: Debit=%, Credit=%. Voucher totals: Debit=%, Credit=%.',
-                v_voucher.id,
-                p_event_id,
-                v_event.total_debit,
-                v_event.total_credit,
-                v_total_debit,
-                v_total_credit;
-
-        END IF;
+        RETURN;
 
     END IF;
 
 
-    -- ----------------------------------------------------
-    -- 9D. Existing voucher is now complete.
-    -- ----------------------------------------------------
-
-    UPDATE public.fin_vouchers
-    SET
-        status = 'Posted',
-        posted_at = COALESCE(
-            posted_at,
-            NOW()
-        )
-    WHERE id = v_voucher.id;
-
-
-    UPDATE public.fin_accounting_events
-    SET
-        status = 'POSTED',
-        voucher_id = v_voucher.id,
-        posted_at = COALESCE(
-            posted_at,
-            NOW()
-        )
-    WHERE id = p_event_id;
-
-
-    RETURN QUERY
-    SELECT
-        p_event_id,
-        v_voucher.id,
-        v_voucher.voucher_number,
-        'POSTED'::TEXT;
-
-    RETURN;
-
-END IF;
     -- ========================================================
     -- 10. Generate voucher number
     --

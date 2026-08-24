@@ -850,6 +850,15 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             ],
           },
           {
+            group: "Procurement",
+            icon: <ClipboardList className="h-3.5 w-3.5" />,
+            color: "text-cyan-500",
+            bg: "bg-cyan-500/10",
+            items: [
+              { to: "/finance/procurement", label: "Procurement Control Tower", icon: <ClipboardList className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
             group: "Contracts",
             icon: <FileSignature className="h-3.5 w-3.5" />,
             color: "text-indigo-500",
@@ -863,6 +872,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       },
     ],
     titleRules: [
+      { match: "/finance/procurement", title: "Procurement Control Tower" },
       { match: "/finance", title: "Finance" },
     ],
   },

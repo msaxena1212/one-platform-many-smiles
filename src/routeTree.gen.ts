@@ -67,6 +67,7 @@ import { Route as MaintenanceInventoryRouteImport } from './routes/maintenance.i
 import { Route as LeasingManageRouteImport } from './routes/leasing.manage'
 import { Route as LeasingCreateRouteImport } from './routes/leasing.create'
 import { Route as FinanceReceivablesRouteImport } from './routes/finance.receivables'
+import { Route as FinanceProcurementRouteImport } from './routes/finance.procurement'
 import { Route as FinanceLedgerRouteImport } from './routes/finance.ledger'
 import { Route as FinanceJournalRouteImport } from './routes/finance.journal'
 import { Route as CashierReceiptsRouteImport } from './routes/cashier.receipts'
@@ -382,6 +383,11 @@ const FinanceReceivablesRoute = FinanceReceivablesRouteImport.update({
   path: '/receivables',
   getParentRoute: () => FinanceRoute,
 } as any)
+const FinanceProcurementRoute = FinanceProcurementRouteImport.update({
+  id: '/procurement',
+  path: '/procurement',
+  getParentRoute: () => FinanceRoute,
+} as any)
 const FinanceLedgerRoute = FinanceLedgerRouteImport.update({
   id: '/ledger',
   path: '/ledger',
@@ -535,6 +541,7 @@ export interface FileRoutesByFullPath {
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
   '/leasing/manage': typeof LeasingManageRoute
@@ -611,6 +618,7 @@ export interface FileRoutesByTo {
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
   '/leasing/manage': typeof LeasingManageRoute
@@ -696,6 +704,7 @@ export interface FileRoutesById {
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
+  '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
   '/leasing/manage': typeof LeasingManageRoute
@@ -782,6 +791,7 @@ export interface FileRouteTypes {
     | '/cashier/receipts'
     | '/finance/journal'
     | '/finance/ledger'
+    | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
     | '/leasing/manage'
@@ -858,6 +868,7 @@ export interface FileRouteTypes {
     | '/cashier/receipts'
     | '/finance/journal'
     | '/finance/ledger'
+    | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
     | '/leasing/manage'
@@ -942,6 +953,7 @@ export interface FileRouteTypes {
     | '/cashier/receipts'
     | '/finance/journal'
     | '/finance/ledger'
+    | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
     | '/leasing/manage'
@@ -1421,6 +1433,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FinanceReceivablesRouteImport
       parentRoute: typeof FinanceRoute
     }
+    '/finance/procurement': {
+      id: '/finance/procurement'
+      path: '/procurement'
+      fullPath: '/finance/procurement'
+      preLoaderRoute: typeof FinanceProcurementRouteImport
+      parentRoute: typeof FinanceRoute
+    }
     '/finance/ledger': {
       id: '/finance/ledger'
       path: '/ledger'
@@ -1658,6 +1677,7 @@ const CashierRouteWithChildren =
 interface FinanceRouteChildren {
   FinanceJournalRoute: typeof FinanceJournalRoute
   FinanceLedgerRoute: typeof FinanceLedgerRoute
+  FinanceProcurementRoute: typeof FinanceProcurementRoute
   FinanceReceivablesRoute: typeof FinanceReceivablesRoute
   FinanceIndexRoute: typeof FinanceIndexRoute
 }
@@ -1665,6 +1685,7 @@ interface FinanceRouteChildren {
 const FinanceRouteChildren: FinanceRouteChildren = {
   FinanceJournalRoute: FinanceJournalRoute,
   FinanceLedgerRoute: FinanceLedgerRoute,
+  FinanceProcurementRoute: FinanceProcurementRoute,
   FinanceReceivablesRoute: FinanceReceivablesRoute,
   FinanceIndexRoute: FinanceIndexRoute,
 }

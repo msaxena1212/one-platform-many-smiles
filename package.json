@@ -10,7 +10,22 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "seed:real-estate": "node seed-real-estate.js"
+    "seed:real-estate": "node seed-real-estate.js",
+    "typecheck": "tsc --noEmit",
+    "procurement:validate": "node scripts/validate-procurement-phase8.mjs",
+    "procurement:validate:phase9": "node scripts/validate-procurement-phase9.mjs",
+    "procurement:validate:phase10": "node scripts/validate-procurement-phase10.mjs",
+    "procurement:validate:phase11": "node scripts/validate-procurement-phase11.mjs",
+    "procurement:validate:phase12": "node scripts/validate-procurement-phase12.mjs",
+    "procurement:validate:phase13": "node scripts/validate-procurement-phase13.mjs",
+    "procurement:validate:phase14": "node scripts/validate-procurement-phase14.mjs",
+    "procurement:validate:phase15": "node scripts/validate-procurement-phase15.mjs",
+    "procurement:validate:phase16": "node scripts/validate-procurement-phase16.mjs",
+    "procurement:validate:phase17": "node scripts/validate-procurement-phase17.mjs",
+    "procurement:validate:phase18": "node scripts/validate-procurement-phase18.mjs",
+    "procurement:validate:phase19": "node scripts/validate-procurement-phase19.mjs",
+    "procurement:validate:phase20": "node scripts/validate-procurement-phase20.mjs",
+    "procurement:validate:phase21": "node scripts/validate-procurement-phase21.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

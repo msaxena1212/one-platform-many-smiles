@@ -1,25 +1,34 @@
 BEGIN;
 
 -- ============================================================
--- Atomic Accounting Event Posting
--- Migration: 202608220005
+-- Fix Atomic Accounting Event Posting
+-- Migration:
 --
 -- Purpose:
---   Atomically validate and post an accounting event into:
+--   Fix PL/pgSQL ambiguity caused by RETURNS TABLE output
+--   variables sharing names with table columns.
 --
---   fin_accounting_events
---          ↓
---   fin_accounting_event_lines
---          ↓
---   fin_vouchers
---          ↓
---   fin_voucher_lines
+--   In particular:
 --
--- This function does NOT use:
---   erp_vouchers
---   erp_journal_entries
+--       event_id
 --
--- Schema/relationship changes belong to migration 004.
+--   was ambiguous between:
+--
+--       fin_accounting_event_lines.event_id
+--
+--   and the function output variable:
+--
+--       event_id
+--
+--   All table columns are now explicitly qualified.
+--
+-- UUID architecture:
+--   fin_accounting_events.id              = UUID
+--   fin_accounting_events.voucher_id      = UUID
+--   fin_vouchers.id                       = UUID
+--   fin_vouchers.accounting_event_id      = UUID
+--   fin_voucher_lines.voucher_id          = UUID
+--   fin_coa_accounts.id                   = UUID
 -- ============================================================
 
 
@@ -52,11 +61,12 @@ BEGIN
     -- 1. Lock accounting event
     -- ========================================================
 
-    SELECT *
+    SELECT e.*
     INTO v_event
-    FROM public.fin_accounting_events
-    WHERE id = p_event_id
+    FROM public.fin_accounting_events AS e
+    WHERE e.id = p_event_id
     FOR UPDATE;
+
 
     IF NOT FOUND THEN
 
@@ -86,10 +96,10 @@ BEGIN
         END IF;
 
 
-        SELECT *
+        SELECT v.*
         INTO v_voucher
-        FROM public.fin_vouchers
-        WHERE id = v_event.voucher_id;
+        FROM public.fin_vouchers AS v
+        WHERE v.id = v_event.voucher_id;
 
 
         IF NOT FOUND THEN
@@ -139,11 +149,18 @@ BEGIN
     -- ========================================================
     -- 4. Validate accounting lines exist
     -- ========================================================
+    --
+    -- IMPORTANT:
+    -- Explicit alias qualification prevents ambiguity with
+    -- the RETURNS TABLE event_id output variable.
+    -- ========================================================
 
     IF NOT EXISTS (
+
         SELECT 1
-        FROM public.fin_accounting_event_lines
-        WHERE event_id = p_event_id
+        FROM public.fin_accounting_event_lines AS l
+        WHERE l.event_id = p_event_id
+
     ) THEN
 
         RAISE EXCEPTION
@@ -158,13 +175,16 @@ BEGIN
     -- ========================================================
 
     SELECT
-        COALESCE(SUM(debit), 0),
-        COALESCE(SUM(credit), 0)
+        COALESCE(SUM(l.debit), 0),
+        COALESCE(SUM(l.credit), 0)
+
     INTO
         v_total_debit,
         v_total_credit
-    FROM public.fin_accounting_event_lines
-    WHERE event_id = p_event_id;
+
+    FROM public.fin_accounting_event_lines AS l
+
+    WHERE l.event_id = p_event_id;
 
 
     v_total_debit := ROUND(v_total_debit, 2);
@@ -227,305 +247,101 @@ BEGIN
 
     END IF;
 
+
     -- ========================================================
--- 8. Validate COA account resolution and consistency
--- ========================================================
-
-IF EXISTS (
-    SELECT 1
-    FROM public.fin_accounting_event_lines AS l
-    LEFT JOIN public.fin_coa_accounts AS coa
-        ON coa.id = l.account_id
-    WHERE l.event_id = p_event_id
-      AND (
-            (
-                l.account_id IS NOT NULL
-                AND coa.id IS NULL
-            )
-
-            OR
-
-            (
-                l.account_id IS NOT NULL
-                AND coa.id IS NOT NULL
-                AND coa.is_active = FALSE
-            )
-
-            OR
-
-            (
-                l.account_id IS NOT NULL
-                AND l.account_code IS NOT NULL
-                AND coa.id IS NOT NULL
-                AND coa.account_code <> l.account_code
-            )
-
-            OR
-
-            (
-                l.account_id IS NULL
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM public.fin_coa_accounts AS coa_by_code
-                    WHERE coa_by_code.account_code = l.account_code
-                      AND coa_by_code.is_active = TRUE
-                )
-            )
-      )
-) THEN
-
-    RAISE EXCEPTION
-        'Accounting event % contains an unresolved, inactive, or inconsistent COA account.',
-        p_event_id;
-
-END IF;
--- ========================================================
--- 9. Check for an existing voucher
---
--- Recovery rules:
---
--- 1. No voucher:
---      Continue with normal voucher creation.
---
--- 2. Voucher exists and has complete lines:
---      Validate totals and return existing voucher.
---
--- 3. Voucher exists but has no/incomplete lines:
---      Rebuild voucher lines from accounting event lines.
---
--- 4. Voucher exists but is structurally inconsistent:
---      Raise an exception rather than silently posting.
--- ========================================================
-
-SELECT v.*
-INTO v_voucher
-FROM public.fin_vouchers AS v
-WHERE v.accounting_event_id = p_event_id
-FOR UPDATE;
-
-IF FOUND THEN
-
-    -- ----------------------------------------------------
-    -- 9A. Validate existing voucher header
-    -- ----------------------------------------------------
-
-    IF v_voucher.status NOT IN ('DRAFT', 'Posted', 'POSTED') THEN
-
-        RAISE EXCEPTION
-            'Existing voucher % for accounting event % has invalid status: %.',
-            v_voucher.id,
-            p_event_id,
-            v_voucher.status;
-
-    END IF;
-
-
-    -- ----------------------------------------------------
-    -- 9B. Check whether voucher lines already exist
-    -- ----------------------------------------------------
-
-    SELECT
-        ROUND(COALESCE(SUM(vl.debit_amount), 0), 2),
-        ROUND(COALESCE(SUM(vl.credit_amount), 0), 2)
-    INTO
-        v_total_debit,
-        v_total_credit
-    FROM public.fin_voucher_lines AS vl
-    WHERE vl.voucher_id = v_voucher.id;
-
-
-    -- ----------------------------------------------------
-    -- 9C. Existing voucher is incomplete
+    -- 8. Validate COA account resolution
     --
-    -- Rebuild voucher lines from accounting event lines.
-    -- ----------------------------------------------------
+    -- Every accounting line must resolve to an active COA
+    -- account either through:
+    --
+    --   1. account_id
+    --   2. account_code
+    --
+    -- No unresolved accounting line may be posted.
+    -- ========================================================
 
-    IF v_total_debit <> v_event.total_debit
-       OR v_total_credit <> v_event.total_credit
-       OR NOT EXISTS (
-            SELECT 1
-            FROM public.fin_voucher_lines AS vl
-            WHERE vl.voucher_id = v_voucher.id
-       )
-    THEN
+    IF EXISTS (
 
-        -- Remove incomplete voucher lines only.
-        DELETE FROM public.fin_voucher_lines
-        WHERE voucher_id = v_voucher.id;
-
-
-        -- Rebuild voucher lines from accounting event lines.
-        INSERT INTO public.fin_voucher_lines (
-            voucher_id,
-            account_id,
-            account_code,
-            account_name,
-            debit_amount,
-            credit_amount,
-            description,
-            tenant_id,
-            lease_id,
-            property_id,
-            unit_id,
-            customer_id,
-            cost_center_id,
-            source_type,
-            source_id
-        )
-        SELECT
-
-            v_voucher.id,
-
-            COALESCE(
-                coa.id,
-                l.account_id
-            ),
-
-            COALESCE(
-                coa.account_code,
-                l.account_code
-            ),
-
-            COALESCE(
-                coa.account_name,
-                l.account_name
-            ),
-
-            ROUND(l.debit, 2),
-
-            ROUND(l.credit, 2),
-
-            COALESCE(
-                l.description,
-                coa.account_name,
-                l.account_name
-            ),
-
-            COALESCE(
-                l.tenant_id,
-                v_event.tenant_id
-            ),
-
-            COALESCE(
-                l.lease_id,
-                v_event.lease_id
-            ),
-
-            COALESCE(
-                l.property_id,
-                v_event.property_id
-            ),
-
-            COALESCE(
-                l.unit_id,
-                v_event.unit_id
-            ),
-
-            COALESCE(
-                l.customer_id,
-                v_event.customer_id
-            ),
-
-            l.cost_center_id,
-
-            COALESCE(
-                l.source_type,
-                v_event.source_type
-            ),
-
-            COALESCE(
-                l.source_id,
-                v_event.source_id
-            )
+        SELECT 1
 
         FROM public.fin_accounting_event_lines AS l
 
         LEFT JOIN public.fin_coa_accounts AS coa
+
             ON (
                 coa.id = l.account_id
                 AND coa.is_active = TRUE
             )
+
             OR (
+
                 l.account_id IS NULL
                 AND coa.account_code = l.account_code
                 AND coa.is_active = TRUE
+
             )
 
-        WHERE l.event_id = p_event_id;
+        WHERE l.event_id = p_event_id
 
+          AND COALESCE(
+                l.account_id,
+                coa.id
+              ) IS NULL
 
-        -- ------------------------------------------------
-        -- Verify recovery actually produced correct lines.
-        -- ------------------------------------------------
+    ) THEN
 
-        SELECT
-            ROUND(COALESCE(SUM(vl.debit_amount), 0), 2),
-            ROUND(COALESCE(SUM(vl.credit_amount), 0), 2)
-        INTO
-            v_total_debit,
-            v_total_credit
-        FROM public.fin_voucher_lines AS vl
-        WHERE vl.voucher_id = v_voucher.id;
-
-
-        IF v_total_debit <> ROUND(v_event.total_debit, 2)
-           OR v_total_credit <> ROUND(v_event.total_credit, 2)
-        THEN
-
-            RAISE EXCEPTION
-                'Existing voucher % recovery failed for accounting event %. Event totals: Debit=%, Credit=%. Voucher totals: Debit=%, Credit=%.',
-                v_voucher.id,
-                p_event_id,
-                v_event.total_debit,
-                v_event.total_credit,
-                v_total_debit,
-                v_total_credit;
-
-        END IF;
+        RAISE EXCEPTION
+            'Accounting event % contains an accounting line with an unresolved COA account.',
+            p_event_id;
 
     END IF;
 
 
-    -- ----------------------------------------------------
-    -- 9D. Existing voucher is now complete.
-    -- ----------------------------------------------------
+    -- ========================================================
+    -- 9. Check for an existing voucher
+    --
+    -- Handles an earlier/incomplete posting attempt.
+    -- ========================================================
 
-    UPDATE public.fin_vouchers
-    SET
-        status = 'Posted',
-        posted_at = COALESCE(
-            posted_at,
-            NOW()
-        )
-    WHERE id = v_voucher.id;
+    SELECT v.*
+    INTO v_voucher
 
+    FROM public.fin_vouchers AS v
 
-    UPDATE public.fin_accounting_events
-    SET
-        status = 'POSTED',
-        voucher_id = v_voucher.id,
-        posted_at = COALESCE(
-            posted_at,
-            NOW()
-        )
-    WHERE id = p_event_id;
+    WHERE v.accounting_event_id = p_event_id
+
+    LIMIT 1;
 
 
-    RETURN QUERY
-    SELECT
-        p_event_id,
-        v_voucher.id,
-        v_voucher.voucher_number,
-        'POSTED'::TEXT;
+    IF FOUND THEN
 
-    RETURN;
+        UPDATE public.fin_accounting_events AS e
 
-END IF;
+        SET
+            status = 'POSTED',
+            voucher_id = v_voucher.id,
+            posted_at = COALESCE(
+                e.posted_at,
+                NOW()
+            )
+
+        WHERE e.id = p_event_id;
+
+
+        RETURN QUERY
+        SELECT
+            p_event_id,
+            v_voucher.id,
+            v_voucher.voucher_number,
+            'POSTED'::TEXT;
+
+        RETURN;
+
+    END IF;
+
+
     -- ========================================================
     -- 10. Generate voucher number
-    --
-    -- Prefer the accounting event reference number.
-    -- Otherwise generate an internal event-based number.
     -- ========================================================
 
     IF NULLIF(
@@ -572,6 +388,7 @@ END IF;
         created_by,
         posted_at
     )
+
     VALUES (
         v_voucher_number,
         v_event.posting_date,
@@ -603,15 +420,13 @@ END IF;
 
         NOW()
     )
+
     RETURNING *
     INTO v_voucher;
 
 
     -- ========================================================
     -- 12. Create voucher lines
-    --
-    -- Resolve account using account_id first.
-    -- If account_id is NULL, resolve using account_code.
     -- ========================================================
 
     INSERT INTO public.fin_voucher_lines (
@@ -698,17 +513,21 @@ END IF;
             v_event.source_id
         )
 
-    FROM public.fin_accounting_event_lines l
+    FROM public.fin_accounting_event_lines AS l
 
-    LEFT JOIN public.fin_coa_accounts coa
+    LEFT JOIN public.fin_coa_accounts AS coa
+
         ON (
             coa.id = l.account_id
             AND coa.is_active = TRUE
         )
+
         OR (
+
             l.account_id IS NULL
             AND coa.account_code = l.account_code
             AND coa.is_active = TRUE
+
         )
 
     WHERE l.event_id = p_event_id;
@@ -718,12 +537,14 @@ END IF;
     -- 13. Mark accounting event as POSTED
     -- ========================================================
 
-    UPDATE public.fin_accounting_events
+    UPDATE public.fin_accounting_events AS e
+
     SET
         status = 'POSTED',
         voucher_id = v_voucher.id,
         posted_at = NOW()
-    WHERE id = p_event_id;
+
+    WHERE e.id = p_event_id;
 
 
     -- ========================================================
@@ -731,14 +552,36 @@ END IF;
     -- ========================================================
 
     RETURN QUERY
+
     SELECT
-        p_event_id,
+        v_event.id,
         v_voucher.id,
         v_voucher.voucher_number,
         'POSTED'::TEXT;
 
 END;
 $$;
+
+
+-- ============================================================
+-- Restore function permissions
+-- ============================================================
+
+REVOKE ALL
+ON FUNCTION public.post_accounting_event_atomic(UUID)
+FROM PUBLIC;
+
+REVOKE ALL
+ON FUNCTION public.post_accounting_event_atomic(UUID)
+FROM anon;
+
+REVOKE ALL
+ON FUNCTION public.post_accounting_event_atomic(UUID)
+FROM authenticated;
+
+GRANT EXECUTE
+ON FUNCTION public.post_accounting_event_atomic(UUID)
+TO service_role;
 
 
 COMMIT;

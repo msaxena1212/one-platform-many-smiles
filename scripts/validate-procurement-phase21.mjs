@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+const root=process.cwd();
+const required=['supabase/migrations/20260824120000_procurement_phase21_action_center.sql','src/lib/procurement/actionCenter.ts','src/components/procurement-module.tsx'];
+const checks=[];
+for(const f of required) checks.push([`exists:${f}`,fs.existsSync(path.join(root,f))]);
+const sql=fs.readFileSync(path.join(root,required[0]),'utf8');
+for(const token of ['proc_action_items','proc_refresh_action_center','proc_refresh_exception_actions','proc_action_center','proc_update_action_item','APPROVAL_OVERDUE','SUPPLIER_CONCENTRATION_REVIEW','EXCEPTION_RESOLUTION','evidence_reference','resolution_notes']) checks.push([`sql:${token}`,sql.includes(token)]);
+const svc=fs.readFileSync(path.join(root,required[1]),'utf8');
+for(const token of ['getProcurementActionCenter','refreshProcurementActionCenter','updateProcurementActionItem','ProcurementActionItem']) checks.push([`service:${token}`,svc.includes(token)]);
+const ui=fs.readFileSync(path.join(root,required[2]),'utf8');
+for(const token of ['action-center','Action Center','getProcurementActionCenter','Refresh Action Center','evidence_reference','resolution_notes']) checks.push([`ui:${token}`,ui.includes(token)]);
+const failed=checks.filter(([,ok])=>!ok);
+console.log(`PROCUREMENT_PHASE21_VALIDATION=${failed.length?'FAILED':'PASSED'}`); console.log(`checks=${checks.length}`); for(const [n,ok] of checks) console.log(`${ok?'PASS':'FAIL'} ${n}`); if(failed.length) process.exit(1);
