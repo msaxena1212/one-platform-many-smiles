@@ -13,16 +13,17 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Settings, Calendar, MapPin, Users, UserCheck, Layers, LayoutDashboard,
   Clock, BookOpen, FileText, PlusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
-  Building, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
+  Building, Building2, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
   DollarSign, Activity, FileCode, CheckCircle, Search, Plus, Trash2, Pencil,
   ChevronRight, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2,
-  AlertTriangle, RefreshCw, Eye, Printer, ShieldCheck, TrendingUp
+  AlertTriangle, RefreshCw, Eye, Printer, ShieldCheck, TrendingUp, ArrowUpDown,
+  Home as HomeIcon, User as UserIcon
 } from "lucide-react";
 import {
-  fetchJournalEntries, fetchReceipts, fetchARLedgers, fetchGLAccounts,
-  createJournalEntry, createReceipt, createAREntry, settleAREntry, createGLAccount,
+  fetchJournalEntries, fetchARLedgers, fetchGLAccounts,
+  createJournalEntry, createAREntry, settleAREntry, createGLAccount,
   fetchERPChartOfAccounts, fetchUnitCOAs,
-  type JournalEntry, type Receipt, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA
+  type JournalEntry, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA
 } from "@/lib/supabase";
 import {
   FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
@@ -544,8 +545,8 @@ function CostCenterSubModule() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ code: "CC-PROP-SALATA", name: "Old Salata Residence 23", manager: "Eng. Fahad", property_id: "", unit_id: "", type: "Property" });
 
-  const sharedProperties = Array.from(new Set((sharedUnits || []).map(u => u.property)))
-    .filter(Boolean).map((p, i) => ({ id: String(i), title: p }));
+  const sharedProperties = Array.from(new Set((sharedUnits || []).map(u => String((u as any).propertyName || (u as any).property || (u as any).buildingName || ""))))
+    .filter(p => Boolean(p && p.trim())).map((p, i) => ({ id: String(i), title: String(p) }));
 
   useEffect(() => { load(); }, [sharedUnits]);
   async function load() {
@@ -554,6 +555,7 @@ function CostCenterSubModule() {
       const existing = new Set(dbData.map((d: any) => d.code));
       const autoSeeds: any[] = [];
       for (const prop of sharedProperties) {
+        if (!prop || !prop.title) continue;
         const code = `CC-PROP-${prop.title.slice(0, 8).toUpperCase().replace(/\s/g, '-')}`;
         if (!existing.has(code)) autoSeeds.push({ code, name: prop.title, manager: 'Site Manager', type: 'Property' });
       }
@@ -1893,24 +1895,47 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     return true;
   });
 
-  function handleAdd() {
+  async function handleAdd() {
     const amt = parseFloat(form.amount) || 0;
-    const newVch = {
-      id: `v-custom-${Date.now()}`,
-      leaseId: "l1",
-      name: form.name,
-      receiptNo: form.voucher_no,
-      method: form.method,
-      period: form.date,
-      debit: form.debit,
-      credit: form.credit,
-      amount: amt,
-      status: "posted" as const
-    };
+    if (amt <= 0) {
+      toast.error("Amount must be greater than zero.");
+      return;
+    }
 
-    setSharedVouchers(prev => [newVch, ...prev]);
-    toast.success(`${type} ${form.voucher_no} posted to Ledger!`);
-    setOpen(false);
+    const accountCode = (label: string) => label.trim().split(/\s+/)[0];
+
+    try {
+      const result = await postVoucher({
+        voucher_date: form.date,
+        voucher_type: type,
+        description: form.name,
+        reference_no: form.voucher_no,
+        source_type: "FINANCE_VOUCHER",
+        lines: [
+          { account_code: accountCode(form.debit), debit: amt, credit: 0, description: form.debit },
+          { account_code: accountCode(form.credit), debit: 0, credit: amt, description: form.credit },
+        ],
+      });
+
+      setSharedVouchers(prev => [{
+        id: result.voucher_id,
+        leaseId: "",
+        name: form.name,
+        receiptNo: result.receipt_number,
+        method: form.method,
+        period: form.date,
+        debit: form.debit,
+        credit: form.credit,
+        amount: amt,
+        status: "posted" as const,
+      }, ...prev]);
+
+      toast.success(`${type} ${result.voucher_number} posted. Receipt ${result.receipt_number} generated.`);
+      setOpen(false);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || `Failed to post ${type}.`);
+    }
   }
 
   return (
@@ -3069,164 +3094,378 @@ function BalanceSheetSubModule() {
 }
 
 function GeneralLedgerReportSubModule() {
-  const { allLedgerTransactions } = useFinanceStore();
+  const { allLedgerTransactions, leases, units, customers } = useFinanceStore() as any;
   const [search, setSearch] = useState("");
-  const [startMonth, setStartMonth] = useState("");
-  const [endMonth, setEndMonth] = useState("");
-  const [quickFilter, setQuickFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [selectedProperty, setSelectedProperty] = useState("all");
+  const [selectedUnit, setSelectedUnit] = useState("all");
+  const [selectedCustomer, setSelectedCustomer] = useState("all");
+  const [selectedSource, setSelectedSource] = useState("all");
+  const [sortField, setSortField] = useState<"date" | "account_code" | "debit" | "credit">("date");
+  const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
 
+  // ── Compute ascending filter options ──────────────────────────────────────
+  const txList: any[] = allLedgerTransactions || [];
+
+  const propertyOptions = useMemo(() => {
+    const set = new Set<string>();
+    txList.forEach(tx => { if (tx.property_name) set.add(tx.property_name); });
+    (leases || []).forEach((l: any) => { if (l.property) set.add(l.property); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [txList, leases]);
+
+  const unitOptions = useMemo(() => {
+    const set = new Set<string>();
+    txList.forEach(tx => {
+      if (selectedProperty !== "all" && tx.property_name !== selectedProperty) return;
+      if (tx.unit_ref) set.add(tx.unit_ref);
+    });
+    (leases || []).forEach((l: any) => {
+      if (selectedProperty !== "all" && l.property !== selectedProperty) return;
+      if (l.unit) set.add(l.unit);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  }, [txList, leases, selectedProperty]);
+
+  const customerOptions = useMemo(() => {
+    const set = new Set<string>();
+    txList.forEach(tx => { if (tx.tenant_name) set.add(tx.tenant_name); });
+    (leases || []).forEach((l: any) => { if (l.tenantName) set.add(l.tenantName); });
+    (customers || []).forEach((c: any) => { if (c.name) set.add(c.name); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [txList, leases, customers]);
+
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    txList.forEach(tx => { if (tx.date && tx.date.length >= 7) set.add(tx.date.slice(0, 7)); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));  // Ascending chronological
+  }, [txList]);
+
+  const sourceOptions = useMemo(() => {
+    const set = new Set<string>();
+    txList.forEach(tx => { if (tx.source) set.add(tx.source); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [txList]);
+
+  // ── Filtered + Sorted list ────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let list = allLedgerTransactions;
-
-    // Month filtering
-    if (quickFilter === "current") {
-      const cur = new Date().toISOString().slice(0, 7);
-      list = list.filter(tx => (tx.date || "").startsWith(cur));
-    } else if (quickFilter === "last_month") {
-      const d = new Date();
-      d.setMonth(d.getMonth() - 1);
-      const prev = d.toISOString().slice(0, 7);
-      list = list.filter(tx => (tx.date || "").startsWith(prev));
-    } else if (quickFilter === "custom" || startMonth || endMonth) {
-      if (startMonth) {
-        list = list.filter(tx => (tx.date || "").slice(0, 7) >= startMonth);
+    let list = txList.filter(tx => {
+      // Property
+      if (selectedProperty !== "all" && tx.property_name !== selectedProperty) return false;
+      // Unit
+      if (selectedUnit !== "all" && tx.unit_ref !== selectedUnit) return false;
+      // Customer
+      if (selectedCustomer !== "all" && tx.tenant_name !== selectedCustomer) return false;
+      // Source
+      if (selectedSource !== "all" && tx.source !== selectedSource) return false;
+      // Month
+      if (selectedMonth !== "all" && !(tx.date || "").startsWith(selectedMonth)) return false;
+      // Date range
+      if (startDate && (tx.date || "") < startDate) return false;
+      if (endDate && (tx.date || "") > endDate) return false;
+      // Text search
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!(
+          (tx.account_name || "").toLowerCase().includes(q) ||
+          (tx.account_code || "").includes(q) ||
+          (tx.reference || "").toLowerCase().includes(q) ||
+          (tx.source || "").toLowerCase().includes(q) ||
+          (tx.description || "").toLowerCase().includes(q) ||
+          (tx.property_name || "").toLowerCase().includes(q) ||
+          (tx.unit_ref || "").toLowerCase().includes(q) ||
+          (tx.tenant_name || "").toLowerCase().includes(q)
+        )) return false;
       }
-      if (endMonth) {
-        list = list.filter(tx => (tx.date || "").slice(0, 7) <= endMonth);
-      }
-    }
+      return true;
+    });
 
-    if (!search) return list;
-    const q = search.toLowerCase();
-    return list.filter(tx =>
-      tx.account_name.toLowerCase().includes(q) ||
-      tx.account_code.includes(q) ||
-      tx.reference.toLowerCase().includes(q) ||
-      tx.source.toLowerCase().includes(q)
-    );
-  }, [allLedgerTransactions, search, startMonth, endMonth, quickFilter]);
+    // Sort
+    list = [...list].sort((a, b) => {
+      let comp = 0;
+      if (sortField === "date") {
+        comp = (a.date || "").localeCompare(b.date || "");
+      } else if (sortField === "account_code") {
+        comp = (a.account_code || "").localeCompare(b.account_code || "");
+      } else if (sortField === "debit") {
+        comp = (a.debit || 0) - (b.debit || 0);
+      } else if (sortField === "credit") {
+        comp = (a.credit || 0) - (b.credit || 0);
+      }
+      return sortAsc ? comp : -comp;
+    });
+
+    return list;
+  }, [txList, selectedProperty, selectedUnit, selectedCustomer, selectedSource, selectedMonth, startDate, endDate, search, sortField, sortAsc]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
 
   const totalDebit = useMemo(() => filtered.reduce((s, tx) => s + (tx.debit || 0), 0), [filtered]);
   const totalCredit = useMemo(() => filtered.reduce((s, tx) => s + (tx.credit || 0), 0), [filtered]);
 
+  function resetFilters() {
+    setSearch(""); setStartDate(""); setEndDate("");
+    setSelectedMonth("all"); setSelectedProperty("all");
+    setSelectedUnit("all"); setSelectedCustomer("all");
+    setSelectedSource("all"); setSortAsc(true); setPage(1);
+  }
+
+  function toggleSort(field: "date" | "account_code" | "debit" | "credit") {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(true); }
+    setPage(1);
+  }
+
+  const sortIcon = (field: string) => sortField === field ? (sortAsc ? " ↑" : " ↓") : "";
+
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">General Ledger Transaction Audit — Live</h3>
-          <p className="text-xs text-muted-foreground">Complete double-entry log with real-time month-wise and date range filtering.</p>
+          <p className="text-xs text-muted-foreground">Complete double-entry log with multi-dimensional filters: Property, Unit, Date, Month &amp; Customer (Ascending order).</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200 text-xs">
             DR: {totalDebit.toLocaleString()} QAR
           </Badge>
-          <Badge variant="outline" className="font-mono bg-emerald-50 text-emerald-700 border-emerald-200">
+          <Badge variant="outline" className="font-mono bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
             CR: {totalCredit.toLocaleString()} QAR
           </Badge>
-          <Badge variant="outline">{filtered.length} Postings</Badge>
+          <Badge variant="outline" className="text-xs">{filtered.length} Postings</Badge>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-muted/20 p-3 rounded-lg border">
-        <div className="sm:col-span-4 relative">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            className="pl-8 h-8 text-xs bg-background"
-            placeholder="Search account, code, or ref..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+      {/* ── Multi-Dimensional Filter Bar ──────────────────────────────────── */}
+      <div className="rounded-xl border bg-muted/25 p-3.5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-primary" />
+            <span className="text-xs font-bold uppercase tracking-wider">Multi-Dimensional Filters (Ascending Order)</span>
+          </div>
+          <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground px-2" onClick={resetFilters}>
+            Reset All
+          </Button>
         </div>
 
-        <div className="sm:col-span-3 flex items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">From:</Label>
-          <Input
-            type="month"
-            className="h-8 text-xs bg-background"
-            value={startMonth}
-            onChange={e => {
-              setStartMonth(e.target.value);
-              setQuickFilter("custom");
-            }}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {/* 1. Property Filter */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <Building2 className="h-3 w-3" /> Property
+            </Label>
+            <Select value={selectedProperty} onValueChange={v => { setSelectedProperty(v); setSelectedUnit("all"); setPage(1); }}>
+              <SelectTrigger className="h-8 text-xs bg-background">
+                <SelectValue placeholder="All Properties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Properties ({propertyOptions.length})</SelectItem>
+                {propertyOptions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 2. Unit Filter */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <HomeIcon className="h-3 w-3" /> Unit
+            </Label>
+            <Select value={selectedUnit} onValueChange={v => { setSelectedUnit(v); setPage(1); }}>
+              <SelectTrigger className="h-8 text-xs bg-background">
+                <SelectValue placeholder="All Units" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Units ({unitOptions.length})</SelectItem>
+                {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 3. Customer / Tenant Name Filter */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <UserIcon className="h-3 w-3" /> Customer Name
+            </Label>
+            <Select value={selectedCustomer} onValueChange={v => { setSelectedCustomer(v); setPage(1); }}>
+              <SelectTrigger className="h-8 text-xs bg-background">
+                <SelectValue placeholder="All Customers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Customers ({customerOptions.length})</SelectItem>
+                {customerOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 4. Month Filter (Ascending Chronological) */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <Calendar className="h-3 w-3" /> Month
+            </Label>
+            <Select value={selectedMonth} onValueChange={v => { setSelectedMonth(v); setPage(1); }}>
+              <SelectTrigger className="h-8 text-xs bg-background font-mono">
+                <SelectValue placeholder="All Months" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {monthOptions.map(m => {
+                  const [y, mm] = m.split("-");
+                  const label = new Date(Number(y), Number(mm) - 1, 1).toLocaleString("default", { month: "short", year: "numeric" });
+                  return <SelectItem key={m} value={m} className="font-mono text-xs">{label} ({m})</SelectItem>;
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 5. Source / Transaction Type Filter */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <FileText className="h-3 w-3" /> Source / Type
+            </Label>
+            <Select value={selectedSource} onValueChange={v => { setSelectedSource(v); setPage(1); }}>
+              <SelectTrigger className="h-8 text-xs bg-background">
+                <SelectValue placeholder="All Sources" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                {sourceOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="sm:col-span-3 flex items-center gap-1">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">To:</Label>
-          <Input
-            type="month"
-            className="h-8 text-xs bg-background"
-            value={endMonth}
-            onChange={e => {
-              setEndMonth(e.target.value);
-              setQuickFilter("custom");
-            }}
-          />
-        </div>
-
-        <div className="sm:col-span-2 flex items-center gap-1">
-          <Select
-            value={quickFilter}
-            onValueChange={v => {
-              setQuickFilter(v);
-              if (v === "all") {
-                setStartMonth("");
-                setEndMonth("");
-              }
-            }}
-          >
-            <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Period" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Dates</SelectItem>
-              <SelectItem value="current">Current Month</SelectItem>
-              <SelectItem value="last_month">Last Month</SelectItem>
-              <SelectItem value="custom">Month Range</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Sub-row: Search + Date Range + Sort toggle */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
+          <div className="sm:col-span-4 relative">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              className="pl-8 h-8 text-xs bg-background"
+              placeholder="Search account, code, reference, description, tenant..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+            />
+          </div>
+          <div className="sm:col-span-3 flex items-center gap-1.5">
+            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">From Date:</Label>
+            <Input
+              type="date"
+              className="h-8 text-xs bg-background"
+              value={startDate}
+              onChange={e => { setStartDate(e.target.value); setPage(1); }}
+            />
+          </div>
+          <div className="sm:col-span-3 flex items-center gap-1.5">
+            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">To Date:</Label>
+            <Input
+              type="date"
+              className="h-8 text-xs bg-background"
+              value={endDate}
+              onChange={e => { setEndDate(e.target.value); setPage(1); }}
+            />
+          </div>
+          <div className="sm:col-span-2 flex items-center gap-1.5 justify-end">
+            <Button size="sm" variant="outline" className="h-8 text-xs w-full gap-1" onClick={() => { setSortAsc(!sortAsc); setPage(1); }}>
+              <ArrowUpDown className="h-3 w-3" />{sortAsc ? "Ascending ↑" : "Descending ↓"}
+            </Button>
+          </div>
         </div>
       </div>
 
+      {/* Summary Banner */}
+      <div className="flex items-center justify-between text-xs px-1">
+        <span className="text-muted-foreground">
+          Showing <strong className="text-foreground">{filtered.length}</strong> of {txList.length} postings
+          {selectedProperty !== "all" ? ` • Property: ${selectedProperty}` : ""}
+          {selectedUnit !== "all" ? ` • Unit: ${selectedUnit}` : ""}
+          {selectedCustomer !== "all" ? ` • Customer: ${selectedCustomer}` : ""}
+          {selectedMonth !== "all" ? ` • Month: ${selectedMonth}` : ""}
+        </span>
+        <span className="font-mono text-xs">
+          Balance: <span className={`font-bold ${Math.abs(totalDebit - totalCredit) < 1 ? "text-emerald-600" : "text-red-600"}`}>
+            {Math.abs(totalDebit - totalCredit) < 1 ? "✓ Balanced" : `Out by QR ${Math.abs(totalDebit - totalCredit).toLocaleString()}`}
+          </span>
+        </span>
+      </div>
+
+      {/* Table */}
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs">
-              <TableHead className="font-bold">Date</TableHead>
-              <TableHead className="font-bold">Account Code</TableHead>
+              <TableHead className="font-bold cursor-pointer" onClick={() => toggleSort("date")}>
+                Date{sortIcon("date")}
+              </TableHead>
+              <TableHead className="font-bold cursor-pointer" onClick={() => toggleSort("account_code")}>
+                A/C Code{sortIcon("account_code")}
+              </TableHead>
               <TableHead className="font-bold">Account Name</TableHead>
+              <TableHead className="font-bold">Property</TableHead>
+              <TableHead className="font-bold">Unit</TableHead>
+              <TableHead className="font-bold">Customer / Tenant</TableHead>
               <TableHead className="font-bold">Reference</TableHead>
               <TableHead className="font-bold">Source</TableHead>
-              <TableHead className="text-right font-bold">Debit (QAR)</TableHead>
-              <TableHead className="text-right font-bold">Credit (QAR)</TableHead>
+              <TableHead className="text-right font-bold cursor-pointer" onClick={() => toggleSort("debit")}>
+                Debit (QAR){sortIcon("debit")}
+              </TableHead>
+              <TableHead className="text-right font-bold cursor-pointer" onClick={() => toggleSort("credit")}>
+                Credit (QAR){sortIcon("credit")}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="text-xs">
-            {filtered.length === 0 ? (
+            {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  No ledger transactions found for the selected month range.
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                  No GL postings match the selected Property, Unit, Date, Month, or Customer filter criteria.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.slice(0, 150).map(tx => (
+              paginated.map(tx => (
                 <TableRow key={tx.id} className="hover:bg-muted/30">
                   <TableCell className="font-mono text-xs">{tx.date}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">{tx.account_code}</TableCell>
-                  <TableCell className="font-medium">{tx.account_name}</TableCell>
+                  <TableCell className="font-medium text-xs">{tx.account_name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{tx.property_name || "—"}</TableCell>
+                  <TableCell className="text-xs font-mono">{tx.unit_ref || "—"}</TableCell>
+                  <TableCell className="text-xs">{tx.tenant_name || "—"}</TableCell>
                   <TableCell className="font-mono text-xs">{tx.reference}</TableCell>
                   <TableCell><Badge variant="outline" className="text-[10px]">{tx.source}</Badge></TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-blue-600">{tx.debit > 0 ? tx.debit.toLocaleString() : "—"}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-emerald-600">{tx.credit > 0 ? tx.credit.toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-blue-600">
+                    {tx.debit > 0 ? tx.debit.toLocaleString() : "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-emerald-600">
+                    {tx.credit > 0 ? tx.credit.toLocaleString() : "—"}
+                  </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </div>
-      {filtered.length > 150 && <p className="text-xs text-muted-foreground text-center">Showing 150 of {filtered.length} entries. Use month range or search to refine.</p>}
+
+      {/* Pagination */}
+      {filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="outline" className="h-7" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</Button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => Math.abs(p - page) <= 2).map(p => (
+              <Button key={p} size="sm" variant={p === page ? "default" : "outline"} className="h-7 w-7 p-0" onClick={() => setPage(p)}>{p}</Button>
+            ))}
+            <Button size="sm" variant="outline" className="h-7" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 function CashFlowSubModule() {
   const { cashFlowReport: cf } = useFinanceStore();

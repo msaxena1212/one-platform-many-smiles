@@ -455,19 +455,6 @@ export type Invoice = {
   created_at: string;
 };
 
-export type Receipt = {
-  id: string;
-  customer_id?: string;
-  payment_mode: 'cash' | 'bank' | 'cheque' | 'sadad' | 'mada' | 'apple_pay' | 'stc_pay' | 'card' | 'bank_transfer';
-  amount: number;
-  currency: string;
-  ref?: string;
-  received_at: string;
-  allocations: any;
-  status: string;
-  created_at: string;
-};
-
 export type CustomerDraft = {
   id: string;
   name: string;
@@ -514,16 +501,6 @@ export async function fetchJournalEntries() {
 
   if (error) throw error;
   return data as JournalEntry[];
-}
-
-export async function fetchReceipts() {
-  const { data, error } = await supabase
-    .from('receipts')
-    .select('*')
-    .order('received_at', { ascending: false });
-
-  if (error) throw error;
-  return data as Receipt[];
 }
 
 // ---- Maintenance Types ----
@@ -847,19 +824,6 @@ export async function updateJournalEntry(id: string, payload: Partial<Pick<Journ
   const { data, error } = await supabase.from('journal_entries').update(payload).eq('id', id).select().single();
   if (error) throw error;
   return data as JournalEntry;
-}
-
-// Receipts — Create & Update
-export async function createReceipt(payload: Omit<Receipt, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('receipts').insert(payload).select().single();
-  if (error) throw error;
-  return data as Receipt;
-}
-
-export async function updateReceipt(id: string, payload: Partial<Pick<Receipt, 'status' | 'amount' | 'payment_mode'>>) {
-  const { data, error } = await supabase.from('receipts').update(payload).eq('id', id).select().single();
-  if (error) throw error;
-  return data as Receipt;
 }
 
 // Fixed Assets

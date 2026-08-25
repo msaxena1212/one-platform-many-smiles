@@ -57,6 +57,7 @@ import {
 } from "@/lib/reference-data";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 import { useFinanceStore } from "@/lib/finance/finance-store";
+import { postVoucher } from "@/lib/finance/posting-engine";
 
 export const Route = createFileRoute("/prop-mgr/leasing")({
   component: LeasingPage,
@@ -1779,28 +1780,34 @@ function LeasingPage() {
       setPdcs((items) => [newPdc, ...items]);
     }
 
-    // 3. Persist to Supabase Finance tables (fin_vouchers and fin_voucher_lines) so Finance Dashboard & Ledger are updated
+    // 3. Post through the central Accounting Event -> Atomic Posting Engine.
+    // Business modules must never write fin_vouchers / fin_voucher_lines directly.
     try {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: finVch } = await supabase.from("fin_vouchers").insert({
-        voucher_number: vchNo,
+      const accountCode = (label: string) => {
+        if (label.includes("Cash In Hand")) return "12100";
+        if (label.includes("Bank Account")) return "12000";
+        if (label.includes("PDC In Hand")) return "12900";
+        if (label.includes("Security Deposit Liability")) return "21500";
+        if (label.includes("Customer(PDC)")) return "21400";
+        if (label.includes("Receivable")) return "12413";
+        if (label.includes("Rental Income")) return "41100";
+        if (label.includes("Payable")) return "21000";
+        throw new Error(`No master COA mapping for ${label}`);
+      };
+
+      await postVoucher({
         voucher_date: today.toISOString().split("T")[0],
         voucher_type: name.includes("Deposit") ? "Deposit" : name.includes("Payment") ? "Payment" : "Receipt",
-        reference_no: lease ? `${lease.tenantName} - ${lease.unit}` : undefined,
+        reference_no: vchNo,
+        source_type: "LEASING_VOUCHER",
         description: `${name} | ${period || "Lease Voucher"} | ${accounts.debit} -> ${accounts.credit}`,
-        total_amount: numAmount,
-        status: "Posted",
-        posted_at: new Date().toISOString(),
-      }).select().single();
-
-      if (finVch) {
-        await supabase.from("fin_voucher_lines").insert([
-          { voucher_id: finVch.id, account_id: 1, debit_amount: numAmount, credit_amount: 0, description: accounts.debit },
-          { voucher_id: finVch.id, account_id: 2, debit_amount: 0, credit_amount: numAmount, description: accounts.credit },
-        ]);
-      }
+        lines: [
+          { account_code: accountCode(accounts.debit), debit: numAmount, credit: 0, description: accounts.debit },
+          { account_code: accountCode(accounts.credit), debit: 0, credit: numAmount, description: accounts.credit },
+        ],
+      });
     } catch (e) {
-      console.warn("Supabase finance sync notice:", e);
+      console.warn("Central finance posting notice:", e);
     }
 
     recordAudit({
@@ -4866,19 +4873,30 @@ function LeasingPage() {
                       <Button size="sm" variant="outline" disabled={voucher.status !== "draft"} onClick={async () => {
                         setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "posted" } : item));
                         try {
-                          const { supabase } = await import("@/lib/supabase");
-                          await supabase.from("fin_vouchers").insert({
-                            voucher_number: voucher.receiptNo || voucher.id,
+                          const accountCode = (label: string) => {
+                            if (label.includes("Cash In Hand")) return "12100";
+                            if (label.includes("Bank Account")) return "12000";
+                            if (label.includes("PDC In Hand")) return "12900";
+                            if (label.includes("Security Deposit Liability")) return "21500";
+                            if (label.includes("Customer(PDC)")) return "21400";
+                            if (label.includes("Receivable")) return "12413";
+                            if (label.includes("Rental Income")) return "41100";
+                            if (label.includes("Payable")) return "21000";
+                            throw new Error(`No master COA mapping for ${label}`);
+                          };
+                          await postVoucher({
                             voucher_date: today.toISOString().split("T")[0],
                             voucher_type: voucher.name.includes("Deposit") ? "Deposit" : voucher.name.includes("Payment") ? "Payment" : "Receipt",
-                            reference_no: voucher.period,
+                            reference_no: voucher.receiptNo || voucher.id,
+                            source_type: "LEASING_VOUCHER",
                             description: `${voucher.name} | ${voucher.debit} -> ${voucher.credit}`,
-                            total_amount: voucher.amount,
-                            status: "Posted",
-                            posted_at: new Date().toISOString(),
+                            lines: [
+                              { account_code: accountCode(voucher.debit), debit: Number(voucher.amount || 0), credit: 0, description: voucher.debit },
+                              { account_code: accountCode(voucher.credit), debit: 0, credit: Number(voucher.amount || 0), description: voucher.credit },
+                            ],
                           });
                         } catch (e) {
-                          console.warn("Posting to Supabase finance failed:", e);
+                          console.warn("Central finance posting failed:", e);
                         }
                       }}>Post</Button>
                       <Button size="sm" variant="outline" disabled={voucher.status === "draft" || voucher.status === "shared"} onClick={() => setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "shared" } : item))}>Share</Button>

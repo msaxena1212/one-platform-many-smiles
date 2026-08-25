@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Receipt as ReceiptIcon, FileText, CheckCircle2, ArrowRightLeft, Wifi } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
@@ -51,9 +51,11 @@ function CashierDashboard() {
             <Wifi className="h-3 w-3" />
             Live Sync
           </Badge>
-          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-            <ReceiptIcon className="h-4 w-4" />
-            Generate Receipt
+          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+            <Link to="/cashier/receipts">
+              <ReceiptIcon className="h-4 w-4" />
+              View Financial Receipts
+            </Link>
           </Button>
         </div>
       </div>

@@ -88,7 +88,6 @@ import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
 import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
 import { Route as PropMgrUnitsPricingRouteImport } from './routes/prop-mgr.units.pricing'
 import { Route as PropMgrManageIdRouteImport } from './routes/prop-mgr.manage.$id'
-import { Route as PropMgrFinanceTransactionsRouteImport } from './routes/prop-mgr.finance.transactions'
 import { Route as PortalCommunityReviewsRouteImport } from './routes/portal.community.reviews'
 import { Route as PortalCommunityEventsRouteImport } from './routes/portal.community.events'
 import { Route as OwnerManageIdRouteImport } from './routes/owner.manage.$id'
@@ -490,12 +489,6 @@ const PropMgrManageIdRoute = PropMgrManageIdRouteImport.update({
   path: '/manage/$id',
   getParentRoute: () => PropMgrRoute,
 } as any)
-const PropMgrFinanceTransactionsRoute =
-  PropMgrFinanceTransactionsRouteImport.update({
-    id: '/transactions',
-    path: '/transactions',
-    getParentRoute: () => PropMgrFinanceRoute,
-  } as any)
 const PortalCommunityReviewsRoute = PortalCommunityReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
@@ -572,7 +565,7 @@ export interface FileRoutesByFullPath {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -605,7 +598,6 @@ export interface FileRoutesByFullPath {
   '/owner/manage/$id': typeof OwnerManageIdRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
-  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
 }
@@ -651,7 +643,7 @@ export interface FileRoutesByTo {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -684,7 +676,6 @@ export interface FileRoutesByTo {
   '/owner/manage/$id': typeof OwnerManageIdRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
-  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
 }
@@ -739,7 +730,7 @@ export interface FileRoutesById {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
-  '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -772,7 +763,6 @@ export interface FileRoutesById {
   '/owner/manage/$id': typeof OwnerManageIdRoute
   '/portal/community/events': typeof PortalCommunityEventsRoute
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
-  '/prop-mgr/finance/transactions': typeof PropMgrFinanceTransactionsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
 }
@@ -861,7 +851,6 @@ export interface FileRouteTypes {
     | '/owner/manage/$id'
     | '/portal/community/events'
     | '/portal/community/reviews'
-    | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
   fileRoutesByTo: FileRoutesByTo
@@ -940,7 +929,6 @@ export interface FileRouteTypes {
     | '/owner/manage/$id'
     | '/portal/community/events'
     | '/portal/community/reviews'
-    | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
   id:
@@ -1027,7 +1015,6 @@ export interface FileRouteTypes {
     | '/owner/manage/$id'
     | '/portal/community/events'
     | '/portal/community/reviews'
-    | '/prop-mgr/finance/transactions'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
   fileRoutesById: FileRoutesById
@@ -1604,13 +1591,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropMgrManageIdRouteImport
       parentRoute: typeof PropMgrRoute
     }
-    '/prop-mgr/finance/transactions': {
-      id: '/prop-mgr/finance/transactions'
-      path: '/transactions'
-      fullPath: '/prop-mgr/finance/transactions'
-      preLoaderRoute: typeof PropMgrFinanceTransactionsRouteImport
-      parentRoute: typeof PropMgrFinanceRoute
-    }
     '/portal/community/reviews': {
       id: '/portal/community/reviews'
       path: '/reviews'
@@ -1819,18 +1799,6 @@ const PortalRouteChildren: PortalRouteChildren = {
 const PortalRouteWithChildren =
   PortalRoute._addFileChildren(PortalRouteChildren)
 
-interface PropMgrFinanceRouteChildren {
-  PropMgrFinanceTransactionsRoute: typeof PropMgrFinanceTransactionsRoute
-}
-
-const PropMgrFinanceRouteChildren: PropMgrFinanceRouteChildren = {
-  PropMgrFinanceTransactionsRoute: PropMgrFinanceTransactionsRoute,
-}
-
-const PropMgrFinanceRouteWithChildren = PropMgrFinanceRoute._addFileChildren(
-  PropMgrFinanceRouteChildren,
-)
-
 interface PropMgrUnitsRouteChildren {
   PropMgrUnitsPricingRoute: typeof PropMgrUnitsPricingRoute
 }
@@ -1846,7 +1814,7 @@ const PropMgrUnitsRouteWithChildren = PropMgrUnitsRoute._addFileChildren(
 interface PropMgrRouteChildren {
   PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
   PropMgrAssetsRoute: typeof PropMgrAssetsRoute
-  PropMgrFinanceRoute: typeof PropMgrFinanceRouteWithChildren
+  PropMgrFinanceRoute: typeof PropMgrFinanceRoute
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
   PropMgrLeasingRoute: typeof PropMgrLeasingRoute
   PropMgrMaintenanceRoute: typeof PropMgrMaintenanceRoute
@@ -1861,7 +1829,7 @@ interface PropMgrRouteChildren {
 const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrApprovalsRoute: PropMgrApprovalsRoute,
   PropMgrAssetsRoute: PropMgrAssetsRoute,
-  PropMgrFinanceRoute: PropMgrFinanceRouteWithChildren,
+  PropMgrFinanceRoute: PropMgrFinanceRoute,
   PropMgrLeasesRoute: PropMgrLeasesRoute,
   PropMgrLeasingRoute: PropMgrLeasingRoute,
   PropMgrMaintenanceRoute: PropMgrMaintenanceRoute,

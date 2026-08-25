@@ -34,8 +34,31 @@ export type PostingResult = {
   event_id: string;
   voucher_id: string;
   voucher_number: string;
+  receipt_id: string;
+  receipt_number: string;
   status: 'POSTED';
 };
+
+async function getGeneratedReceipt(eventId: string) {
+  const { data, error } = await supabase
+    .from('fin_transaction_receipts')
+    .select('id, receipt_no')
+    .eq('accounting_event_id', eventId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    throw new Error(
+      `Financial transaction ${eventId} was posted but its receipt was not generated.`,
+    );
+  }
+
+  return {
+    receipt_id: data.id as string,
+    receipt_number: data.receipt_no as string,
+  };
+}
 
 type AccountingEvent = {
   id: string;
@@ -538,18 +561,14 @@ export async function postAccountingEvent(
     if (
       existingVoucher
     ) {
+      const receipt = await getGeneratedReceipt(accountingEvent.id);
+
       return {
-        event_id:
-          accountingEvent.id,
-
-        voucher_id:
-          existingVoucher.id,
-
-        voucher_number:
-          existingVoucher.voucher_number,
-
-        status:
-          'POSTED',
+        event_id: accountingEvent.id,
+        voucher_id: existingVoucher.id,
+        voucher_number: existingVoucher.voucher_number,
+        ...receipt,
+        status: 'POSTED',
       };
     }
 
@@ -742,18 +761,14 @@ export async function postAccountingEvent(
         eventId,
       );
 
+    const receipt = await getGeneratedReceipt(eventId);
+
     return {
-      event_id:
-        eventId,
-
-      voucher_id:
-        existingVoucher.id,
-
-      voucher_number:
-        existingVoucher.voucher_number,
-
-      status:
-        'POSTED',
+      event_id: eventId,
+      voucher_id: existingVoucher.id,
+      voucher_number: existingVoucher.voucher_number,
+      ...receipt,
+      status: 'POSTED',
     };
   }
 
@@ -830,18 +845,14 @@ export async function postAccountingEvent(
         );
       }
 
+      const receipt = await getGeneratedReceipt(eventId);
+
       return {
-        event_id:
-          eventId,
-
-        voucher_id:
-          voucher.id,
-
-        voucher_number:
-          voucher.voucher_number,
-
-        status:
-          'POSTED',
+        event_id: eventId,
+        voucher_id: voucher.id,
+        voucher_number: voucher.voucher_number,
+        ...receipt,
+        status: 'POSTED',
       };
     }
 
@@ -1194,18 +1205,14 @@ export async function postAccountingEvent(
      * ==========================================================
      */
 
+    const receipt = await getGeneratedReceipt(accountingEvent.id);
+
     return {
-      event_id:
-        accountingEvent.id,
-
-      voucher_id:
-        voucher.id,
-
-      voucher_number:
-        voucher.voucher_number,
-
-      status:
-        'POSTED',
+      event_id: accountingEvent.id,
+      voucher_id: voucher.id,
+      voucher_number: voucher.voucher_number,
+      ...receipt,
+      status: 'POSTED',
     };
 
   } catch (error) {
@@ -1944,6 +1951,39 @@ export async function postCashDepositInPlaceOfPdc(
 
         description:
           'Cash In Hand',
+      },
+    ],
+  });
+}
+
+export async function postPdcCancel(
+  amount: number,
+  tenantId: string | number,
+  propertyId: string | number,
+  unitId: string | number,
+  chequeNumber: string,
+  reason?: string,
+): Promise<PostingResult> {
+  return postVoucher({
+    voucher_type: 'Journal',
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference_no: chequeNumber,
+    description: `PDC Cancelled - ${chequeNumber}${reason ? ` - ${reason}` : ''}`,
+    tenant_id: tenantId,
+    property_id: propertyId,
+    unit_id: unitId,
+    lines: [
+      {
+        account_code: '21400',
+        debit: amount,
+        credit: 0,
+        description: 'Customer PDC Liability',
+      },
+      {
+        account_code: '12900',
+        debit: 0,
+        credit: amount,
+        description: 'PDC In Hand',
       },
     ],
   });

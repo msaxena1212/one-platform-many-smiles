@@ -5,6 +5,7 @@ import {
   postPdcClear,
   postPdcReturn,
   postCashDepositInPlaceOfPdc,
+  postPdcCancel,
 } from './posting-engine';
 import { FinPdcRegisterApi } from '../supabase-finance';
 
@@ -342,5 +343,70 @@ export async function cashDepositInPlaceOfPdc(
     }
   } catch (err) {
     console.error('[cashDepositInPlaceOfPdc] GL posting failed:', err);
+  }
+}
+
+/**
+ * Event 7 — Voluntary PDC Cancellation
+ * Marks the cheque as Cancelled + posts GL reversal:
+ *   Dr Customer(PDC)-Unit (21400), Cr PDC In Hand (12900)
+ */
+export async function cancelPdc(
+  pdcId: number | string,
+  chequeNo?: string,
+  reason?: string,
+) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // 1. Update fin_pdc_register by ID if numeric
+  if (!isNaN(Number(pdcId))) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null })
+        .eq('id', Number(pdcId));
+    } catch { /* continue */ }
+  }
+
+  // 2. Update fin_pdc_register and pdcs by cheque_number
+  if (chequeNo) {
+    try {
+      await supabase
+        .from('fin_pdc_register')
+        .update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+
+    try {
+      await supabase
+        .from('pdcs')
+        .update({ status: 'cancelled', status_pdc: 'cancelled', cancelled_date: today })
+        .eq('cheque_number', chequeNo);
+    } catch { /* continue */ }
+  }
+
+  // 3. Update pdcs by id (UUID or string)
+  try {
+    await supabase
+      .from('pdcs')
+      .update({ status: 'cancelled', status_pdc: 'cancelled', cancelled_date: today })
+      .eq('id', String(pdcId));
+  } catch { /* continue */ }
+
+  // ── GL posting ───────────────────────────────────────────────────────────
+  try {
+    const ctx = await resolveGlContext(pdcId, chequeNo);
+    if (ctx.amount > 0) {
+      await postPdcCancel(
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+        reason,
+      );
+    }
+  } catch (err) {
+    console.error('[cancelPdc] GL posting failed:', err);
   }
 }

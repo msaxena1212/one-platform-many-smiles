@@ -166,7 +166,38 @@ export function DepositsGuarantees() {
         });
       }
 
-      toast.success('Deposit Settled & Refunded. General Ledger & Payment Vouchers posted.');
+      // 3. Generate official Refund Settlement Receipt Modal
+      const refReceipt: TenantReceiptDetails = {
+        receiptNo: `REC-REF-${String(id).slice(-4)}`,
+        acknowledgementNo: `ACK-REF-${id}`,
+        date: todayStr,
+        tenantName: targetDep?.tenant_name || "Valued Tenant",
+        propertyName: targetDep?.property_name || "Property",
+        unitRef: targetDep?.unit_ref || "Unit",
+        leaseStartDate: targetDep?.lease_start_date || todayStr,
+        leaseEndDate: targetDep?.lease_end_date || todayStr,
+        monthlyRent: targetDep?.monthly_rent || 0,
+        totalContractRent: targetDep?.total_contract_rent || 0,
+        depositAmount: targetDep?.amount || 0,
+        depositMode: "Bank Transfer",
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [{
+          receiptNo: `PV-REF-${Date.now().toString().slice(-4)}`,
+          name: `Security Deposit Settlement Refund (Gross: ${amount}, Deductions: ${deductions}, Net: ${refund})`,
+          amount: refund,
+          method: "Bank Transfer",
+          debit: "21100 - Refundable Deposit Liability",
+          credit: "12000 - Bank Operating Account",
+        }],
+        totalCollected: refund,
+        cashierName: "Finance Department",
+        notes: `OFFICIAL SETTLEMENT REFUND RECEIPT: Gross Deposit: QR ${amount.toLocaleString()} | Deductions: QR ${deductions.toLocaleString()} | Net Refund Paid to Tenant: QR ${refund.toLocaleString()}. GL Vouchers & Entries posted.`,
+      };
+      setReceiptData(refReceipt);
+      setReceiptOpen(true);
+
+      toast.success('Deposit Settled & Refunded. Official Refund Receipt generated.');
       load();
     } catch (e: any) {
       toast.error(e.message);
