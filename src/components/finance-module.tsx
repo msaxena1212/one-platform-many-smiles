@@ -258,13 +258,13 @@ function FinancialYearSubModule() {
     try {
       const res = await FinFinancialYearsApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" },
-        { id: 2, name: "FY 2025-2026", start_date: "2025-01-01", end_date: "2025-12-31", status: "Closed" }
+        { id: "1", name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" as const },
+        { id: "2", name: "FY 2025-2026", start_date: "2025-01-01", end_date: "2025-12-31", status: "Closed" as const }
       ]);
     } catch {
       setData([
-        { id: 1, name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" },
-        { id: 2, name: "FY 2025-2026", start_date: "2025-01-01", end_date: "2025-12-31", status: "Closed" }
+        { id: "1", name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" as const },
+        { id: "2", name: "FY 2025-2026", start_date: "2025-01-01", end_date: "2025-12-31", status: "Closed" as const }
       ]);
     } finally { setLoading(false); }
   }
@@ -272,13 +272,13 @@ function FinancialYearSubModule() {
     try {
       await FinFinancialYearsApi.create(form);
     } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
     toast.success("Financial Year added");
     setOpen(false);
   }
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!confirm("Delete this FY?")) return;
-    try { await FinFinancialYearsApi.delete(id); } catch { }
+    try { await FinFinancialYearsApi.delete(id as any); } catch { }
     setData(prev => prev.filter(d => d.id !== id));
     toast.success("Financial year removed");
   }
@@ -303,7 +303,7 @@ function FinancialYearSubModule() {
                 <TableCell>{row.start_date}</TableCell>
                 <TableCell>{row.end_date}</TableCell>
                 <TableCell><Badge variant={row.status === "Active" ? "default" : "secondary"}>{row.status}</Badge></TableCell>
-                <TableCell><Button variant="ghost" size="icon" onClick={() => handleDelete(row.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>
+                <TableCell><Button variant="ghost" size="icon" onClick={() => handleDelete(String(row.id))}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -343,20 +343,20 @@ function RegionSubModule() {
     try {
       const res = await FinRegionsApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, code: "REG-DOH", name: "Doha & West Bay", country: "Qatar", currency: "QAR", status: "Active" },
-        { id: 2, code: "REG-WAK", name: "Al Wakra & Mesaieed", country: "Qatar", currency: "QAR", status: "Active" },
-        { id: 3, code: "REG-LUS", name: "Lusail Marina District", country: "Qatar", currency: "QAR", status: "Active" }
+        { id: "1", code: "REG-DOH", name: "Doha & West Bay", country: "Qatar", currency: "QAR", status: "Active" },
+        { id: "2", code: "REG-WAK", name: "Al Wakra & Mesaieed", country: "Qatar", currency: "QAR", status: "Active" },
+        { id: "3", code: "REG-LUS", name: "Lusail Marina District", country: "Qatar", currency: "QAR", status: "Active" }
       ]);
     } catch {
       setData([
-        { id: 1, code: "REG-DOH", name: "Doha & West Bay", country: "Qatar", currency: "QAR", status: "Active" },
-        { id: 2, code: "REG-WAK", name: "Al Wakra & Mesaieed", country: "Qatar", currency: "QAR", status: "Active" }
+        { id: "1", code: "REG-DOH", name: "Doha & West Bay", country: "Qatar", currency: "QAR", status: "Active" },
+        { id: "2", code: "REG-WAK", name: "Al Wakra & Mesaieed", country: "Qatar", currency: "QAR", status: "Active" }
       ]);
     }
   }
   async function handleAdd() {
     try { await FinRegionsApi.create(form); } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
     toast.success("Region added");
     setOpen(false);
   }
@@ -415,19 +415,19 @@ function VendorListSubModule() {
     try {
       const res = await FinVendorsApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" },
-        { id: 2, code: "VEND-102", name: "Doha Elevator Services WLL", contact_person: "Rashid Mahmood", email: "accounts@dohalifts.com", phone: "+974 5511 4433", tax_number: "CR-883921", status: "Active" },
-        { id: 3, code: "VEND-103", name: "Kahramaa & Qatar Cool Utilities", contact_person: "Govt Customer Desk", email: "billing@kahramaa.qa", phone: "+974 4449 4444", tax_number: "TAX-GOV-01", status: "Active" }
+        { id: "1", code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" as const },
+        { id: "2", code: "VEND-102", name: "Doha Elevator Services WLL", contact_person: "Rashid Mahmood", email: "accounts@dohalifts.com", phone: "+974 5511 4433", tax_number: "CR-883921", status: "Active" as const },
+        { id: "3", code: "VEND-103", name: "Kahramaa & Qatar Cool Utilities", contact_person: "Govt Customer Desk", email: "billing@kahramaa.qa", phone: "+974 4449 4444", tax_number: "TAX-GOV-01", status: "Active" as const }
       ]);
     } catch {
       setData([
-        { id: 1, code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" }
+        { id: "1", code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" as const }
       ]);
     }
   }
   async function handleAdd() {
     try { await FinVendorsApi.create(form); } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
     toast.success("Vendor added");
     setOpen(false);
   }
@@ -559,12 +559,12 @@ function CostCenterSubModule() {
         const code = `CC-PROP-${prop.title.slice(0, 8).toUpperCase().replace(/\s/g, '-')}`;
         if (!existing.has(code)) autoSeeds.push({ code, name: prop.title, manager: 'Site Manager', type: 'Property' });
       }
-      setData([...dbData, ...autoSeeds.map((s, i) => ({ ...s, id: -1000 - i }))]);
+      setData([...dbData, ...autoSeeds.map((s, i) => ({ ...s, id: String(-1000 - i) }))]);
     } catch { }
   }
   async function handleAdd() {
     try { await FinCostCentersApi.create(form); } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
     toast.success("Cost center added");
     setOpen(false);
   }
@@ -724,15 +724,15 @@ function PostingPeriodSubModule() {
     try {
       const res = await FinPostingPeriodsApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, period_name: "2026-08", year: 2026, month: 8, status: "Open" },
-        { id: 2, period_name: "2026-07", year: 2026, month: 7, status: "Closed" },
-        { id: 3, period_name: "2026-06", year: 2026, month: 6, status: "Closed" },
+        { id: "1", period_name: "2026-08", year: 2026, month: 8, status: "Open" as const },
+        { id: "2", period_name: "2026-07", year: 2026, month: 7, status: "Closed" as const },
+        { id: "3", period_name: "2026-06", year: 2026, month: 6, status: "Closed" as const },
       ]);
     } catch {
       setData([
-        { id: 1, period_name: "2026-08", year: 2026, month: 8, status: "Open" },
-        { id: 2, period_name: "2026-07", year: 2026, month: 7, status: "Closed" },
-        { id: 3, period_name: "2026-06", year: 2026, month: 6, status: "Closed" },
+        { id: "1", period_name: "2026-08", year: 2026, month: 8, status: "Open" as const },
+        { id: "2", period_name: "2026-07", year: 2026, month: 7, status: "Closed" as const },
+        { id: "3", period_name: "2026-06", year: 2026, month: 6, status: "Closed" as const },
       ]);
     }
   }
@@ -3104,7 +3104,7 @@ function GeneralLedgerReportSubModule() {
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
   const [sortField, setSortField] = useState<"date" | "account_code" | "debit" | "credit">("date");
-  const [sortAsc, setSortAsc] = useState<boolean>(true);
+  const [sortAsc, setSortAsc] = useState<boolean>(false); // Descending order based on date default
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 100;
 
@@ -3212,7 +3212,7 @@ function GeneralLedgerReportSubModule() {
     setSearch(""); setStartDate(""); setEndDate("");
     setSelectedMonth("all"); setSelectedProperty("all");
     setSelectedUnit("all"); setSelectedCustomer("all");
-    setSelectedSource("all"); setSortAsc(true); setPage(1);
+    setSelectedSource("all"); setSortField("date"); setSortAsc(false); setPage(1);
   }
 
   function toggleSort(field: "date" | "account_code" | "debit" | "credit") {
@@ -3229,7 +3229,7 @@ function GeneralLedgerReportSubModule() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">General Ledger Transaction Audit — Live</h3>
-          <p className="text-xs text-muted-foreground">Complete double-entry log with multi-dimensional filters: Property, Unit, Date, Month &amp; Customer (Ascending order).</p>
+          <p className="text-xs text-muted-foreground">Complete double-entry log with multi-dimensional filters: Property, Unit, Date, Month &amp; Customer.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200 text-xs">
@@ -3247,7 +3247,7 @@ function GeneralLedgerReportSubModule() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-primary" />
-            <span className="text-xs font-bold uppercase tracking-wider">Multi-Dimensional Filters (Ascending Order)</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Multi-Dimensional Filters</span>
           </div>
           <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground px-2" onClick={resetFilters}>
             Reset All

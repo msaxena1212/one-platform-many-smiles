@@ -255,7 +255,7 @@ function GlConfirmModal({
 // ── Main Component ────────────────────────────────────────────────────────────
 export function PdcManagement() {
   const { pdcs: sharedPdcs, setPdcs: setSharedPdcs, leases, units, customers } = useAppData();
-  const { addJournalEntry } = useFinanceStore();
+  const { addJournalEntry, addCashBookEntry, addVoucher } = useFinanceStore();
   const [pdcs, setPdcs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -268,6 +268,15 @@ export function PdcManagement() {
   const [pendingActionPdc, setPendingActionPdc] = useState<any | null>(null);
   const [pendingAction, setPendingAction] = useState<"deposit" | "clear" | "return" | "cancel" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Cash Replacement Modal state
+  const [cashModalOpen, setCashModalOpen] = useState(false);
+  const [cashStep, setCashStep] = useState<1 | 2>(1);
+  const [cashPdc, setCashPdc] = useState<any | null>(null);
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashReceiptDate, setCashReceiptDate] = useState(new Date().toISOString().split("T")[0]);
+  const [cashNotes, setCashNotes] = useState("");
+  const [cashCollectorName, setCashCollectorName] = useState("Finance Department");
 
   // Add PDC Modal state
   const [addPdcOpen, setAddPdcOpen] = useState(false);
@@ -293,7 +302,7 @@ export function PdcManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortField, setSortField] = useState<"cheque_date" | "cheque_number" | "tenant_name" | "amount">("cheque_date");
-  const [sortAsc, setSortAsc] = useState<boolean>(true); // Ascending order default
+  const [sortAsc, setSortAsc] = useState<boolean>(false); // Descending order based on date default
 
   // Load data from DB & context
   useEffect(() => {
@@ -608,6 +617,9 @@ export function PdcManagement() {
           cr_account: "Bank Account",
           cr_code: "12000",
           amount: amt,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : undefined,
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : undefined,
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : undefined,
         });
         addJournalEntry({
           je_no: `JE-REV-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
@@ -619,6 +631,9 @@ export function PdcManagement() {
           cr_account: "Customer(PDC) - Unit Account",
           cr_code: "21400",
           amount: amt,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : undefined,
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : undefined,
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : undefined,
         });
       } else if (action === "clear") {
         addJournalEntry({
@@ -631,6 +646,9 @@ export function PdcManagement() {
           cr_account: "Receivable - Unit Account",
           cr_code: "12413",
           amount: amt,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : undefined,
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : undefined,
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : undefined,
         });
       } else if (action === "deposit") {
         addJournalEntry({
@@ -643,6 +661,9 @@ export function PdcManagement() {
           cr_account: "PDC In Hand",
           cr_code: "12900",
           amount: amt,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : undefined,
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : undefined,
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : undefined,
         });
       } else if (action === "cancel") {
         addJournalEntry({
@@ -655,7 +676,24 @@ export function PdcManagement() {
           cr_account: "PDC In Hand",
           cr_code: "12900",
           amount: amt,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : undefined,
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : undefined,
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : undefined,
         });
+
+        // Update Sub-Ledger: Journal Voucher Register
+        addVoucher({
+          voucher_no: `VCH-CXL-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+          voucher_type: "Journal Voucher",
+          date: todayStr,
+          name: `PDC Cheque #${chqNo} Cancellation Reversal (${pdc.tenant_name || "Tenant"})`,
+          debit: "Customer(PDC) - Unit Account",
+          debit_code: "21400",
+          credit: "PDC In Hand",
+          credit_code: "12900",
+          amount: amt,
+          method: "Reversal",
+        } as any);
       }
 
       toast.success(`Cheque #${chqNo} marked as ${config.newStatus}. Database & GL updated.`);
@@ -666,16 +704,35 @@ export function PdcManagement() {
     }
   }
 
-  // ── Cash Replacement Action ────────────────────────────────────────────────
-  async function handleCashReplacement(pdc: any) {
+  // ── Open Cash Replacement Confirmation Modal ──────────────────────────────
+  function openCashModal(pdc: any) {
+    setCashPdc(pdc);
+    setCashStep(1);
+    setCashAmount(String(pdc.amount || ""));
+    setCashReceiptDate(new Date().toISOString().split("T")[0]);
+    setCashNotes("");
+    setCashCollectorName("Finance Department");
+    setCashModalOpen(true);
+  }
+
+  // ── Execute Confirmed Cash Replacement & Update DB + GL ────────────────────
+  async function executeConfirmedCashReplacement() {
+    if (!cashPdc) return;
+    const pdc = cashPdc;
     const chqNo = pdc.cheque_number || pdc.id;
-    const amt = Number(pdc.amount) || 0;
-    const todayStr = new Date().toISOString().split("T")[0];
+    const originalAmt = Number(pdc.amount) || 0;
+    const confirmedAmt = parseFloat(cashAmount) || originalAmt;
+    const receiptDate = cashReceiptDate || new Date().toISOString().split("T")[0];
+    const discrepancy = confirmedAmt - originalAmt;
+
+    setCashModalOpen(false);
+    setActionLoading(true);
 
     try {
-      setActionLoading(true);
-      await cashDepositInPlaceOfPdc(pdc.id, String(chqNo));
+      // 1. Persist to DB using cashDepositInPlaceOfPdc first
+      await cashDepositInPlaceOfPdc(pdc.id, String(chqNo), confirmedAmt, cashNotes, receiptDate, cashCollectorName);
 
+      // 2. Update local state and shared context after successful persistence
       setPdcs(prev => prev.map(p =>
         (String(p.id) === String(pdc.id) || String(p.cheque_number) === String(chqNo))
           ? { ...p, status: "Replaced" }
@@ -688,33 +745,148 @@ export function PdcManagement() {
           : p
       ));
 
+      // 3. Mirror into Finance store Journal Audit & Sub-Ledger:
+      // Entry A: Cash Collection & Deposit (DR 12000 Bank Operating Account / CR 12100 Cash In Hand)
+      addJournalEntry({
+        je_no: `JE-CSH-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        posting_date: receiptDate,
+        reference: `CSH-CHQ-${chqNo}`,
+        narration: `Cash Deposit in lieu of PDC Cheque #${chqNo}${discrepancy !== 0 ? ` (Discrepancy: ${discrepancy > 0 ? '+' : ''}${discrepancy} QAR from original QAR ${originalAmt})` : ''} | ${pdc.tenant_name || "Tenant"}${cashNotes ? ` — ${cashNotes}` : ''}`,
+        dr_account: "Bank Operating Account",
+        dr_code: "12000",
+        cr_account: "Cash In Hand",
+        cr_code: "12100",
+        amount: confirmedAmt,
+        property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
+        unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+        tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
+      });
+
+      // Entry B: Cheque Cancellation Reversal (DR 21400 Customer PDC Liability / CR 12900 PDC In Hand)
+      addJournalEntry({
+        je_no: `JE-CXL-CHQ-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        posting_date: receiptDate,
+        reference: `CXL-CHQ-${chqNo}`,
+        narration: `Cheque Cancelled & Returned on Cash Replacement — Cheque #${chqNo} | ${pdc.tenant_name || "Tenant"}`,
+        dr_account: "Customer(PDC) - Unit Account",
+        dr_code: "21400",
+        cr_account: "PDC In Hand",
+        cr_code: "12900",
+        amount: originalAmt,
+        property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
+        unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+        tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
+      });
+
+      // Entry C: Handle Discrepancy (if cash received differs from original cheque)
+      if (discrepancy < 0) {
+        // Shortfall / Discount: DR 50800 Settlement Discount / CR 12413 Tenant Receivable
+        addJournalEntry({
+          je_no: `JE-DISC-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+          posting_date: receiptDate,
+          reference: `DISC-CHQ-${chqNo}`,
+          narration: `Settlement Discount / Shortfall on Cash Replacement — Cheque #${chqNo}`,
+          dr_account: "Settlement Discount Allowed",
+          dr_code: "50800",
+          cr_account: "Tenant Receivable",
+          cr_code: "12413",
+          amount: Math.abs(discrepancy),
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
+        });
+      } else if (discrepancy > 0) {
+        // Excess Collection: DR 12100 Cash / CR 41900 Other Income / Adjustment
+        addJournalEntry({
+          je_no: `JE-ADJ-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+          posting_date: receiptDate,
+          reference: `ADJ-CHQ-${chqNo}`,
+          narration: `Excess Cash Adjustment on Replacement — Cheque #${chqNo}`,
+          dr_account: "Cash In Hand",
+          dr_code: "12100",
+          cr_account: "Other Operating Income",
+          cr_code: "41900",
+          amount: discrepancy,
+          property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
+          unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+          tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
+        });
+      }
+
+      // Update Sub-Ledger: Cash Book entry
+      addCashBookEntry({
+        date: receiptDate,
+        voucher: `CSH-CHQ-${chqNo}`,
+        description: `Cash Rent Replacement (Cheque #${chqNo} - ${pdc.tenant_name || "Tenant"})`,
+        type: "in",
+        amount: confirmedAmt,
+      });
+
+      // Update Sub-Ledger: Receipt Voucher Register (Cash Inflow)
+      addVoucher({
+        voucher_no: `VCH-CSH-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        voucher_type: "Receipt Voucher",
+        date: receiptDate,
+        name: `Cash Settlement in lieu of Cheque #${chqNo} (${pdc.tenant_name || "Tenant"})`,
+        debit: "Bank Operating Account",
+        debit_code: "12000",
+        credit: "Cash In Hand",
+        credit_code: "12100",
+        amount: confirmedAmt,
+        method: "Cash",
+      } as any);
+
+      // Update Sub-Ledger: Journal Voucher Register (Cheque Cancellation Reversal)
+      addVoucher({
+        voucher_no: `VCH-CXL-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        voucher_type: "Journal Voucher",
+        date: receiptDate,
+        name: `PDC Cheque #${chqNo} Cancellation on Cash Settlement (${pdc.tenant_name || "Tenant"})`,
+        debit: "Customer(PDC) - Unit Account",
+        debit_code: "21400",
+        credit: "PDC In Hand",
+        credit_code: "12900",
+        amount: originalAmt,
+        method: "Reversal",
+      } as any);
+
+      // 4. Generate Official Receipt
       const receipt: TenantReceiptDetails = {
         receiptNo: `CASH-${chqNo}-${Date.now().toString().slice(-4)}`,
         acknowledgementNo: `ACK-CASH-${chqNo}`,
-        date: todayStr,
-        tenantName: pdc.tenant_name || "Valued Tenant",
-        propertyName: pdc.property_name || "Property",
-        unitRef: pdc.unit_ref || "Unit",
-        leaseStartDate: pdc.lease_start || todayStr,
-        leaseEndDate: pdc.lease_end || todayStr,
-        monthlyRent: amt,
-        totalContractRent: amt,
+        date: receiptDate,
+        tenantName: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Valued Tenant",
+        propertyName: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Property",
+        unitRef: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+        leaseStartDate: pdc.lease_start || receiptDate,
+        leaseEndDate: pdc.lease_end || receiptDate,
+        monthlyRent: confirmedAmt,
+        totalContractRent: confirmedAmt,
         depositAmount: 0,
         depositMode: "Cash",
         pdcCount: 1,
-        pdcs: [{ chequeNo: chqNo, bank: pdc.bank_name || "Bank", date: pdc.cheque_date, amount: amt, period: "Rent Settlement", tenureStart: pdc.lease_start, tenureEnd: pdc.lease_end }],
-        totalCollected: amt,
-        cashierName: "Finance Department",
-        notes: `CASH IN LIEU OF CHEQUE: Received QR ${amt.toLocaleString()} in cash for Cheque #${chqNo}. Physical cheque returned. GL: DR 12000 Bank / CR 12100 Cash.`,
+        pdcs: [{
+          chequeNo: chqNo,
+          bank: pdc.bank_name || "Cash Replacement",
+          date: pdc.cheque_date,
+          amount: confirmedAmt,
+          period: "Cash in place of PDC",
+          tenureStart: pdc.lease_start || receiptDate,
+          tenureEnd: pdc.lease_end || receiptDate
+        }],
+        totalCollected: confirmedAmt,
+        cashierName: cashCollectorName || "Finance Department",
+        notes: `CASH IN LIEU OF CHEQUE: Received QAR ${confirmedAmt.toLocaleString()} in cash for Cheque #${chqNo}.${discrepancy !== 0 ? ` Note: Amount confirmed differs from original cheque amount (Original: QAR ${originalAmt.toLocaleString()}).` : ''} Physical cheque returned. GL: DR 12000 Bank / CR 12100 Cash.${cashNotes ? ` Remarks: ${cashNotes}` : ''}`,
       };
 
       setReceiptData(receipt);
       setReceiptOpen(true);
-      toast.success(`Cash settlement recorded for Cheque #${chqNo}. Cheque replaced.`);
+      toast.success(`Cash settlement of QAR ${confirmedAmt.toLocaleString()} recorded for Cheque #${chqNo}. Database & GL updated.`);
     } catch (e: any) {
       toast.error(e.message || "Failed to process cash replacement.");
     } finally {
       setActionLoading(false);
+      setCashPdc(null);
     }
   }
 
@@ -848,7 +1020,8 @@ export function PdcManagement() {
     setToDate("");
     setSearchQuery("");
     setStatusFilter("all");
-    setSortAsc(true);
+    setSortField("cheque_date");
+    setSortAsc(false);
     setPage(1);
     toast.info("All PDC filters reset to default");
   }
@@ -1149,7 +1322,7 @@ export function PdcManagement() {
                                 <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-rose-300 text-rose-700 hover:bg-rose-50" onClick={() => openGlConfirm(pdc, "cancel")}>
                                   <XCircle className="h-3 w-3 mr-1" /> Cancel
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-purple-300 text-purple-700 hover:bg-purple-50" onClick={() => handleCashReplacement(pdc)}>
+                                <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-purple-300 text-purple-700 hover:bg-purple-50" onClick={() => openCashModal(pdc)}>
                                   <Banknote className="h-3 w-3 mr-1" /> Cash
                                 </Button>
                               </>
@@ -1173,8 +1346,8 @@ export function PdcManagement() {
                                 <Button size="sm" variant="outline" className="h-6 text-xs border-blue-500 text-blue-600 hover:bg-blue-50 px-2" onClick={() => openGlConfirm(pdc, "deposit")}>
                                   Re-Deposit
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-6 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 px-2" onClick={() => handleCashReplacement(pdc)}>
-                                  Cash
+                                <Button size="sm" variant="outline" className="h-6 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 px-2" onClick={() => openCashModal(pdc)}>
+                                  <Banknote className="h-3 w-3 mr-1" /> Cash
                                 </Button>
                               </>
                             )}
@@ -1291,6 +1464,314 @@ export function PdcManagement() {
             <Button onClick={handleAddPdc} disabled={addPdcLoading || !addPdcForm.chequeNo || !addPdcForm.amount}>
               {addPdcLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Saving to DB…</> : "Save PDC & Post GL"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── CASH REPLACEMENT & SETTLEMENT CONFIRMATION MODAL (2-STEP STEPPER) ───────────── */}
+      <Dialog open={cashModalOpen} onOpenChange={setCashModalOpen}>
+        <DialogContent className="sm:max-w-[540px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Banknote className="h-5 w-5 text-purple-600" />
+              Cash Settlement in Place of Cheque
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {cashStep === 1
+                ? "Step 1 of 2: Verify tenant details and enter the confirmed cash collected."
+                : "Step 2 of 2: Review double-entry accounting impact for cash receipt & cheque cancellation."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Stepper Tabs Bar */}
+          <div className="flex items-center gap-2 border-b pb-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setCashStep(1)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
+                cashStep === 1
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">1</span>
+              Collection Details
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (cashAmount && parseFloat(cashAmount) > 0) setCashStep(2);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
+                cashStep === 2
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">2</span>
+              GL &amp; Sub-Ledger Impact
+            </button>
+          </div>
+
+          {cashPdc && (
+            <div className="space-y-3.5 py-1 text-xs">
+              {/* STEP 1: Collection details */}
+              {cashStep === 1 && (
+                <div className="space-y-3">
+                  {/* Cheque Summary Card */}
+                  <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Cheque Number:</span>
+                      <span className="font-mono font-bold text-primary">{cashPdc.cheque_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Customer / Tenant:</span>
+                      <span className="font-semibold text-foreground">{cashPdc.tenant_name || "Valued Tenant"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Property &amp; Unit:</span>
+                      <span>{cashPdc.property_name || "—"} • {cashPdc.unit_ref || "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Original Cheque Amount:</span>
+                      <span className="font-mono font-bold text-foreground">QR {Number(cashPdc.amount || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Amount input with live discrepancy warning */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">
+                        Actual Cash Received (QAR) <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        className="h-8 text-xs font-mono font-bold"
+                        placeholder="Enter cash received"
+                        value={cashAmount}
+                        onChange={(e) => setCashAmount(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Settlement Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={cashReceiptDate}
+                        onChange={(e) => setCashReceiptDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Discrepancy indicator */}
+                  {(() => {
+                    const original = Number(cashPdc.amount || 0);
+                    const actual = parseFloat(cashAmount) || 0;
+                    const diff = actual - original;
+                    if (diff === 0) {
+                      return (
+                        <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-[11px] text-emerald-800 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                          <span>Amount matches original cheque exactly (QR {actual.toLocaleString()}).</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className={`rounded-md border p-2 text-[11px] flex items-center gap-1.5 ${diff > 0 ? 'border-blue-200 bg-blue-50/70 text-blue-800' : 'border-amber-200 bg-amber-50/70 text-amber-800'}`}>
+                        <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                        <span>
+                          {diff > 0
+                            ? `Excess Cash: +QR ${diff.toLocaleString()} collected above cheque amount.`
+                            : `Shortfall / Discount: QR ${Math.abs(diff).toLocaleString()} less than cheque amount.`}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Remarks and Cashier */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Cashier / Collected By</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        value={cashCollectorName}
+                        onChange={(e) => setCashCollectorName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Remarks / Reason</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="e.g. Cash received at counter, cheque returned"
+                        value={cashNotes}
+                        onChange={(e) => setCashNotes(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Accounting & GL / SL Preview */}
+              {cashStep === 2 && (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-3.5 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <AlertTriangle className="h-3.5 w-3.5 text-purple-600" />
+                      General Ledger / Sub-Ledger (COA) Accounts Impacted
+                    </div>
+
+                    {/* 1. Cash Inflow Group */}
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        Part 1: Cash Collection &amp; Bank Deposit
+                      </div>
+                      {/* Debit Card: Bank Operating Account */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                              Debit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              GL 12000
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              Bank Operating Account
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Cash received deposited into Bank Account (Dr Bank 12000)
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
+                        </div>
+                      </div>
+
+                      {/* Credit Card: Cash In Hand */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                              Credit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              GL 12100
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              Cash In Hand
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Cash holding settled / offset against replacement cheque
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Cheque Cancellation Reversal Group */}
+                    <div className="space-y-2 pt-1 border-t border-purple-200/60">
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        Part 2: Original Cheque Cancellation &amp; Liability Reversal
+                      </div>
+                      {/* Debit Card: Customer PDC Liability Reversal */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                              Debit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                              GL 21400
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              Customer(PDC) - Unit Account
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Customer PDC liability reversed upon physical cheque return
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {Number(cashPdc.amount || 0).toLocaleString()}
+                        </div>
+                      </div>
+
+                      {/* Credit Card: PDC In Hand Reversal */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                              Credit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                              GL 12900
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              PDC In Hand
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            PDC In Hand holding account cleared
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {Number(cashPdc.amount || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground border-t border-border/50 pt-2">
+                      All 4 double-entry lines will be posted simultaneously to General Ledger &amp; Sub-Ledgers to maintain balance integrity.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 border-t pt-2">
+            <Button variant="outline" onClick={() => setCashModalOpen(false)} disabled={actionLoading}>
+              Cancel
+            </Button>
+            {cashStep === 1 ? (
+              <Button
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                onClick={() => setCashStep(2)}
+                disabled={!cashAmount || parseFloat(cashAmount) <= 0}
+              >
+                Review Accounting Impact →
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setCashStep(1)} disabled={actionLoading}>
+                  ← Back to Details
+                </Button>
+                <Button
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  onClick={executeConfirmedCashReplacement}
+                  disabled={actionLoading || !cashAmount || parseFloat(cashAmount) <= 0}
+                >
+                  {actionLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Recording Cash &amp; GL…</> : "Confirm Cash & Post GL"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

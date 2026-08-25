@@ -288,53 +288,64 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
  * Marks the cheque as replaced by cash + posts GL:
  *   Dr Bank Account (12000), Cr Cash In Hand (12100)
  */
-export async function cashDepositInPlaceOfPdc(
-  pdcId: number | string,
-  chequeNo?: string,
-) {
-  const today = new Date().toISOString().split('T')[0];
+export interface CashSettlementPayload {
+  pdcId: string | number;
+  chequeNo?: string;
+  confirmedAmount?: number;
+  notes?: string;
+  settlementDate?: string;
+  collectorName?: string;
+}
 
-  // ── DB status updates ────────────────────────────────────────────────────
+export async function cashDepositInPlaceOfPdc(
+  pdcId: string | number,
+  chequeNo?: string,
+  confirmedAmount?: number,
+  notes?: string,
+  settlementDate?: string,
+  collectorName?: string,
+) {
+  const dateStr = settlementDate || new Date().toISOString().split('T')[0];
   const newStatus = 'replaced';
 
+  // 1. Update fin_pdc_register — preserve original amount
   if (!isNaN(Number(pdcId))) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Replaced', deposit_date: today })
-        .eq('id', Number(pdcId));
-    } catch { /* continue */ }
+    const { error } = await supabase
+      .from('fin_pdc_register')
+      .update({ status: 'Replaced', deposit_date: dateStr })
+      .eq('id', Number(pdcId));
+    if (error) console.warn('[cashDepositInPlaceOfPdc] fin_pdc_register update warning:', error.message);
   }
 
+  // 2. Update by cheque_number
   if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Replaced', deposit_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
+    const { error: finErr } = await supabase
+      .from('fin_pdc_register')
+      .update({ status: 'Replaced', deposit_date: dateStr })
+      .eq('cheque_number', chequeNo);
+    if (finErr) console.warn('[cashDepositInPlaceOfPdc] fin_pdc_register cheque update warning:', finErr.message);
 
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: newStatus, status_pdc: newStatus, deposit_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
+    const { error: pdcErr } = await supabase
+      .from('pdcs')
+      .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
+      .eq('cheque_number', chequeNo);
+    if (pdcErr) console.warn('[cashDepositInPlaceOfPdc] pdcs cheque update warning:', pdcErr.message);
   }
 
-  try {
-    await supabase
-      .from('pdcs')
-      .update({ status: newStatus, status_pdc: newStatus, deposit_date: today })
-      .eq('id', String(pdcId));
-  } catch { /* continue */ }
+  // 3. Update pdcs by id
+  const { error: idErr } = await supabase
+    .from('pdcs')
+    .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
+    .eq('id', String(pdcId));
+  if (idErr) console.warn('[cashDepositInPlaceOfPdc] pdcs id update warning:', idErr.message);
 
-  // ── GL posting ───────────────────────────────────────────────────────────
+  // 4. GL posting
   try {
     const ctx = await resolveGlContext(pdcId, chequeNo);
-    if (ctx.amount > 0) {
+    const finalAmt = (confirmedAmount !== undefined && confirmedAmount > 0) ? confirmedAmount : ctx.amount;
+    if (finalAmt > 0) {
       await postCashDepositInPlaceOfPdc(
-        ctx.amount,
+        finalAmt,
         ctx.tenant_id,
         ctx.property_id,
         ctx.unit_id,

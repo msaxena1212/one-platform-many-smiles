@@ -14,6 +14,10 @@ export interface LedgerTransaction {
   credit: number;
   source: string;
   description: string;
+  // Dimensional metadata for filtering
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface JournalLedgerEntry {
@@ -28,6 +32,9 @@ export interface JournalLedgerEntry {
   cr_code: string;
   amount: number;
   status: string;
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface GrnCostMapping {
@@ -162,9 +169,9 @@ export interface PettyCashEntry {
 // ── Baseline Initial Data ──────────────────────────────────────────────────
 
 const INITIAL_JOURNAL_LEDGER: JournalLedgerEntry[] = [
-  { id: "je-1", je_no: "JE-2026-001", posting_date: "2026-08-01", reference: "REC-PDC-001", narration: "Rent PDC Deposited in QNB Bank Account", dr_account: "Bank Operating Account", dr_code: "12000", cr_account: "PDC In Hand", cr_code: "12900", amount: 5600, status: "Posted" },
-  { id: "je-2", je_no: "JE-2026-002", posting_date: "2026-08-02", reference: "ARE-RT-25-3962", narration: "Security Deposit Acknowledged Cash", dr_account: "Cash In Hand", dr_code: "10100", cr_account: "Security Deposit Liability", cr_code: "21500", amount: 1000, status: "Posted" },
-  { id: "je-3", je_no: "JE-2026-003", posting_date: "2026-08-05", reference: "INV-AP-9901", narration: "HVAC Maintenance & Spare Parts", dr_account: "Repairs & Maintenance", dr_code: "50200", cr_account: "Accounts Payable", cr_code: "20100", amount: 14500, status: "Posted" },
+  { id: "je-1", je_no: "JE-2026-001", posting_date: "2026-08-01", reference: "REC-PDC-001", narration: "Rent PDC Deposited in QNB Bank Account", dr_account: "Bank Operating Account", dr_code: "12000", cr_account: "PDC In Hand", cr_code: "12900", amount: 5600, status: "Posted", property_name: "Old Salata - Residence No:23", unit_ref: "AAA - Flat16", tenant_name: "Mr. Hafeez Shaik" },
+  { id: "je-2", je_no: "JE-2026-002", posting_date: "2026-08-02", reference: "ARE-RT-25-3962", narration: "Security Deposit Acknowledged Cash", dr_account: "Cash In Hand", dr_code: "10100", cr_account: "Security Deposit Liability", cr_code: "21500", amount: 1000, status: "Posted", property_name: "Old Salata - Residence No:23", unit_ref: "AAA - GF1", tenant_name: "M/S. Al Ameen Real Estate" },
+  { id: "je-3", je_no: "JE-2026-003", posting_date: "2026-08-05", reference: "INV-AP-9901", narration: "HVAC Maintenance & Spare Parts", dr_account: "Repairs & Maintenance", dr_code: "50200", cr_account: "Accounts Payable", cr_code: "20100", amount: 14500, status: "Posted", property_name: "Old Salata - Residence No:23", unit_ref: "Common Facilities", tenant_name: "Qatar Maintenance & HVAC Co." },
 ];
 
 const INITIAL_GRN_MAPPINGS: GrnCostMapping[] = [
@@ -179,8 +186,8 @@ const INITIAL_PAYABLE_INVOICES: PayableInvoice[] = [
 
 const INITIAL_VOUCHERS: FinanceVoucher[] = [
   { id: "vch-j1", voucher_no: "VCH-JOU-1001", voucher_type: "Journal Voucher", date: "2026-08-01", name: "Monthly Depreciation & Amortization", debit: "Depreciation Expense", debit_code: "50900", credit: "Accumulated Depreciation", credit_code: "13900", amount: 8500, status: "Posted" },
-  { id: "vch-p1", voucher_no: "VCH-PAY-2001", voucher_type: "Payment Voucher", date: "2026-08-06", name: "Settlement of Kahramaa Utility Bill", debit: "Accounts Payable", debit_code: "20100", credit: "Bank Operating Account", credit_code: "12000", amount: 9850, method: "Bank Transfer", status: "Posted" },
-  { id: "vch-r1", voucher_no: "VCH-REC-3001", voucher_type: "Receipt Voucher", date: "2026-08-08", name: "Direct Rent Collection - Unit Flat16", debit: "Bank Operating Account", debit_code: "12000", credit: "Rental Revenue", credit_code: "41100", amount: 5600, method: "Bank Transfer", status: "Posted" },
+  { id: "vch-p1", voucher_no: "VCH-PAY-2001", voucher_type: "Payment Voucher", date: "2026-08-06", name: "Settlement of Kahramaa Utility Bill", debit: "Accounts Payable", debit_code: "20100", credit: "Bank Operating Account", credit_code: "12000", amount: 9850, method: "Bank Transfer", status: "Posted", property: "Old Salata - Residence No:23", unit: "Building Utilities", tenant: "Kahramaa Utility Authority" } as any,
+  { id: "vch-r1", voucher_no: "VCH-REC-3001", voucher_type: "Receipt Voucher", date: "2026-08-08", name: "Direct Rent Collection - Unit Flat16", debit: "Bank Operating Account", debit_code: "12000", credit: "Rental Revenue", credit_code: "41100", amount: 5600, method: "Bank Transfer", status: "Posted", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", tenant: "Mr. Hafeez Shaik" } as any,
 ];
 
 const INITIAL_RECEIVABLE_INVOICES: ReceivableInvoice[] = [
@@ -593,7 +600,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       debit: 1500000,
       credit: 0,
       source: "Opening Balance",
-      description: "QNB Main Account Opening Balance"
+      description: "QNB Main Account Opening Balance",
+      property_name: "Main Portfolio (Corporate)",
+      unit_ref: "HQ-01",
+      tenant_name: "Owner / Treasury Desk"
     });
     list.push({
       id: "tx-init-2",
@@ -605,7 +615,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       debit: 0,
       credit: 1500000,
       source: "Opening Balance",
-      description: "Initial Capital Investment"
+      description: "Initial Capital Investment",
+      property_name: "Main Portfolio (Corporate)",
+      unit_ref: "HQ-01",
+      tenant_name: "Owner / Equity Partner"
     });
 
     // 1. Journal Ledger Entries
@@ -614,6 +627,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const isAsset = je.dr_code.startsWith("1");
       const isLiab = je.dr_code.startsWith("2");
       const isRev = je.dr_code.startsWith("4");
+
+      // Extract fallback tenant from narration if not provided
+      let derivedTenant = je.tenant_name;
+      if (!derivedTenant && je.narration) {
+        const pipeMatch = je.narration.match(/\|\s*([^—|]+)/);
+        if (pipeMatch && pipeMatch[1]?.trim() && pipeMatch[1].trim() !== "Tenant") {
+          derivedTenant = pipeMatch[1].trim();
+        }
+      }
 
       list.push({
         id: `tx-je-dr-${je.id}`,
@@ -625,7 +647,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: je.amount,
         credit: 0,
         source: "Journal Ledger",
-        description: je.narration
+        description: je.narration,
+        property_name: je.property_name || "Main Portfolio",
+        unit_ref: je.unit_ref || "General",
+        tenant_name: derivedTenant || "Corporate / Admin",
       });
 
       const isCrRev = je.cr_code.startsWith("4");
@@ -643,7 +668,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: je.amount,
         source: "Journal Ledger",
-        description: je.narration
+        description: je.narration,
+        property_name: je.property_name || "Main Portfolio",
+        unit_ref: je.unit_ref || "General",
+        tenant_name: derivedTenant || "Corporate / Admin",
       });
     });
 
@@ -659,7 +687,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: grn.amount,
         credit: 0,
         source: "GRN Cost Mapping",
-        description: `${grn.vendor} - ${grn.description}`
+        description: `${grn.vendor} - ${grn.description}`,
+        property_name: grn.property || "Main Portfolio",
+        unit_ref: "Facility Plant & Equip",
+        tenant_name: grn.vendor,
       });
       list.push({
         id: `tx-grn-cr-${grn.id}`,
@@ -671,7 +702,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: grn.amount,
         source: "GRN Cost Mapping",
-        description: `Payable to ${grn.vendor}`
+        description: `Payable to ${grn.vendor}`,
+        property_name: grn.property || "Main Portfolio",
+        unit_ref: "Facility Plant & Equip",
+        tenant_name: grn.vendor,
       });
     });
 
@@ -687,7 +721,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: ap.amount,
         credit: 0,
         source: "Payable Invoice",
-        description: `Invoice from ${ap.vendor}`
+        description: `Invoice from ${ap.vendor}`,
+        property_name: "Old Salata - Residence No:23",
+        unit_ref: "Building Maintenance",
+        tenant_name: ap.vendor,
       });
       list.push({
         id: `tx-ap-cr-${ap.id}`,
@@ -699,7 +736,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: ap.amount,
         source: "Payable Invoice",
-        description: `Payable to ${ap.vendor}`
+        description: `Payable to ${ap.vendor}`,
+        property_name: "Old Salata - Residence No:23",
+        unit_ref: "Building Maintenance",
+        tenant_name: ap.vendor,
       });
     });
 
@@ -708,6 +748,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const isDrExp = vch.debit_code.startsWith("5");
       const isDrAsset = vch.debit_code.startsWith("1");
       const isDrLiab = vch.debit_code.startsWith("2");
+
+      const propName = (vch as any).property || (vch as any).property_name || "Old Salata - Residence No:23";
+      const unitName = (vch as any).unit || (vch as any).unit_ref || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr" : "General Unit");
+      const tenantName = (vch as any).tenant || (vch as any).tenant_name || (vch.name.includes("Depreciation") ? "Internal Assets Desk" : "Corporate Accounts");
 
       list.push({
         id: `tx-vch-dr-${vch.id}`,
@@ -719,7 +763,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: vch.amount,
         credit: 0,
         source: vch.voucher_type,
-        description: vch.name
+        description: vch.name,
+        property_name: propName,
+        unit_ref: unitName,
+        tenant_name: tenantName,
       });
 
       const isCrRev = vch.credit_code.startsWith("4");
@@ -736,7 +783,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: vch.amount,
         source: vch.voucher_type,
-        description: vch.name
+        description: vch.name,
+        property_name: propName,
+        unit_ref: unitName,
+        tenant_name: tenantName,
       });
     });
 
@@ -752,7 +802,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: ar.amount,
         credit: 0,
         source: "Receivable Invoice",
-        description: `Rent Invoice for ${ar.tenant}`
+        description: `Rent Invoice for ${ar.tenant}`,
+        property_name: ar.property,
+        unit_ref: ar.unit,
+        tenant_name: ar.tenant,
       });
       list.push({
         id: `tx-ar-cr-${ar.id}`,
@@ -764,7 +817,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: ar.amount,
         source: "Receivable Invoice",
-        description: `${ar.stream} - ${ar.tenant}`
+        description: `${ar.stream} - ${ar.tenant}`,
+        property_name: ar.property,
+        unit_ref: ar.unit,
+        tenant_name: ar.tenant,
       });
     });
 
@@ -780,7 +836,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: lgl.original_amount,
         credit: 0,
         source: "Legal Receivables",
-        description: `Legal Escalation: ${lgl.tenant_name}`
+        description: `Legal Escalation: ${lgl.tenant_name}`,
+        property_name: lgl.property_name,
+        unit_ref: lgl.unit_ref,
+        tenant_name: lgl.tenant_name,
       });
       list.push({
         id: `tx-lgl-cr-${lgl.id}`,
@@ -792,11 +851,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: lgl.original_amount,
         source: "Legal Receivables",
-        description: `Transferred to Legal: ${lgl.tenant_name}`
+        description: `Transferred to Legal: ${lgl.tenant_name}`,
+        property_name: lgl.property_name,
+        unit_ref: lgl.unit_ref,
+        tenant_name: lgl.tenant_name,
       });
     });
 
-    return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
+    // Sort ascending by date (oldest first)
+    return list.sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
   }, [journalEntries, grnMappings, payableInvoices, vouchers, receivableInvoices, legalReceivables]);
 
   // Derived Trial Balance Summary

@@ -605,10 +605,83 @@ function LeasingPage() {
   } = useAppData();
   const { addJournalEntry, addVoucher: addFinanceVoucher, addReceivableInvoice, addCashBookEntry } = useFinanceStore();
   const [documents, setDocuments] = useState<TenantDocument[]>(initialDocuments);
-  const [inspections, setInspections] = useState<Inspection[]>([]);
-  const [renewals, setRenewals] = useState<RenewalCase[]>([]);
-  const [checkouts, setCheckouts] = useState<CheckoutCase[]>([]);
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([
+    {
+      id: "ci-l1",
+      leaseId: "l1",
+      type: "check_in",
+      condition: "Good",
+      electricityMeter: "182167",
+      waterMeter: "149089",
+      damages: "None recorded",
+      acknowledged: true,
+      photos: 8,
+    }
+  ]);
+  const [renewals, setRenewals] = useState<RenewalCase[]>([
+    {
+      id: "rn1",
+      leaseId: "l1",
+      noticeDate: "2026-08-01",
+      status: "awaiting_response",
+      proposedRent: 5880,
+      proposedPeriod: "12 months; QR 5,880; 5% rent revision; notice period retained",
+      revisedTerms: "5% rent revision; 60-day notice period retained",
+      expiryDate: "2026-09-30",
+      requiredNoticePeriod: "60 days",
+      lastConfirmationDate: "2026-08-31",
+      outstandingObligations: "Finance to confirm outstanding rent, PDC and maintenance obligations",
+      recipients: "Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord or Authorized Person",
+      followUpOwner: "Leasing Department",
+    },
+    {
+      id: "rn2",
+      leaseId: "l2",
+      noticeDate: "2026-07-01",
+      status: "awaiting_response",
+      proposedRent: 5775,
+      proposedPeriod: "12 months; QR 5,775; 5% rent revision; notice period retained",
+      revisedTerms: "5% rent revision; 60-day notice period retained",
+      expiryDate: "2026-08-31",
+      requiredNoticePeriod: "60 days",
+      lastConfirmationDate: "2026-08-01",
+      outstandingObligations: "Finance to confirm outstanding rent, PDC and maintenance obligations",
+      recipients: "Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord or Authorized Person",
+      followUpOwner: "Leasing Department",
+    }
+  ]);
+  const [checkouts, setCheckouts] = useState<CheckoutCase[]>([
+    {
+      id: "co1",
+      leaseId: "l1",
+      noticeDate: "2026-08-25",
+      moveOutDate: "2026-09-30",
+      inspectionDate: "2026-09-27",
+      comparisonSummary: "Pending final comparison with original check-in report",
+      nonRenewalNotice: "Tenant non-renewal notice received",
+      outstandingCharges: "Pending finance confirmation",
+      utilityClearanceRequirements: "Final utility clearance required before checkout closure",
+      keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
+      financeClearance: false,
+      utilityClearance: false,
+      keysReturned: false,
+      status: "planned",
+    }
+  ]);
+  const [settlements, setSettlements] = useState<Settlement[]>([
+    {
+      id: "s1",
+      leaseId: "l1",
+      depositReceived: 5100,
+      outstandingRent: 0,
+      damages: 650,
+      utilityCharges: 220,
+      otherDeductions: 0,
+      refundableBalance: 4230,
+      unitDisposition: "Vacant - Under Maintenance",
+      approval: "pending_approval",
+    }
+  ]);
   const [busyAction, setBusyAction] = useState("");
 
   const [realUnits, setRealUnits] = useState<Unit[]>([]);
@@ -972,6 +1045,7 @@ function LeasingPage() {
     restorationCharges: "0",
   });
 
+  const [checkoutActiveTab, setCheckoutActiveTab] = useState<string>("condition");
   const [completeCheckoutOpen, setCompleteCheckoutOpen] = useState(false);
   const [selectedCheckout, setSelectedCheckout] = useState<CheckoutCase | null>(null);
   const [completeCheckoutForm, setCompleteCheckoutForm] = useState({
@@ -1021,16 +1095,12 @@ function LeasingPage() {
     pdcDate: today.toISOString().split("T")[0],
   });
 
-  // ── Security Deposit Dialog ──────────────────────────────────────
-  const [securityDepositOpen, setSecurityDepositOpen] = useState(false);
-  const [securityDepositForm, setSecurityDepositForm] = useState({
-    leaseId: "",
-    amount: "",
-    method: "Cash" as string,
-    receiptNo: "",
-    chequeNo: "",
-    bank: "",
-    chequeDate: today.toISOString().split("T")[0],
+  // ── Security Deposit Settle & Refund Modal ─────────────────────────
+  const [settleRefundOpen, setSettleRefundOpen] = useState(false);
+  const [selectedSettlement, setSelectedSettlement] = useState<Settlement | null>(null);
+  const [settleRefundForm, setSettleRefundForm] = useState({
+    refundAmount: "",
+    paymentMethod: "Bank Transfer",
     notes: "",
   });
 
@@ -1766,7 +1836,7 @@ function LeasingPage() {
     // 1. Update shared in-memory context so all UI modules reflect it immediately
     setVouchers((items) => [newVoucher, ...items]);
 
-    // 2. If PDC method and user wants to create PDC entry, register it
+    // 2. If PDC method and user wants to create PDC entry, register it in PDC register
     if ((method === "PDC" || method === "Guarantee Cheque") && createPdc && pdcChequeNo) {
       const newPdc: Pdc = {
         id: `p${pdcs.length + 1}`,
@@ -1780,8 +1850,39 @@ function LeasingPage() {
       setPdcs((items) => [newPdc, ...items]);
     }
 
-    // 3. Post through the central Accounting Event -> Atomic Posting Engine.
-    // Business modules must never write fin_vouchers / fin_voucher_lines directly.
+    // 3. Mirror into FinanceStore Sub-Ledger & General Ledger
+    addFinanceVoucher({
+      voucher_no: vchNo,
+      voucher_type: name.includes("Deposit") ? "Receipt Voucher" : name.includes("Payment") ? "Payment Voucher" : "Receipt Voucher",
+      date: today.toISOString().split("T")[0],
+      name: `${name} — ${lease?.tenantName || "Tenant"} (${unitCode})`,
+      debit: accounts.debit,
+      debit_code: accounts.debit.includes("Cash") ? "12100" : accounts.debit.includes("PDC") ? "12900" : "12000",
+      credit: accounts.credit,
+      credit_code: accounts.credit.includes("Security") ? "21500" : accounts.credit.includes("PDC") ? "21400" : "41100",
+      amount: numAmount,
+      method: method,
+      property: lease?.property || "Old Salata - Residence No:23",
+      unit: unitCode,
+      tenant: lease?.tenantName || "Tenant",
+    } as any);
+
+    addJournalEntry({
+      je_no: `JE-${vchNo}`,
+      posting_date: today.toISOString().split("T")[0],
+      reference: vchNo,
+      narration: `${name} | ${period || "Lease Voucher"} | ${lease?.tenantName || "Tenant"} (${unitCode})`,
+      dr_account: accounts.debit,
+      dr_code: accounts.debit.includes("Cash") ? "12100" : accounts.debit.includes("PDC") ? "12900" : "12000",
+      cr_account: accounts.credit,
+      cr_code: accounts.credit.includes("Security") ? "21500" : accounts.credit.includes("PDC") ? "21400" : "41100",
+      amount: numAmount,
+      property_name: lease?.property || "Old Salata - Residence No:23",
+      unit_ref: unitCode,
+      tenant_name: lease?.tenantName || "Tenant",
+    });
+
+    // 4. Post through the central Accounting Event -> Atomic Posting Engine
     try {
       const accountCode = (label: string) => {
         if (label.includes("Cash In Hand")) return "12100";
@@ -1792,7 +1893,7 @@ function LeasingPage() {
         if (label.includes("Receivable")) return "12413";
         if (label.includes("Rental Income")) return "41100";
         if (label.includes("Payable")) return "21000";
-        throw new Error(`No master COA mapping for ${label}`);
+        return "12000";
       };
 
       await postVoucher({
@@ -1818,6 +1919,49 @@ function LeasingPage() {
       status: "posted",
       output: `Voucher ${newVoucher.receiptNo} created and posted to Finance for ${formatMoney(numAmount)}. ${(method === "PDC" || method === "Guarantee Cheque") && createPdc && pdcChequeNo ? `PDC ${pdcChequeNo} also registered.` : ""}`,
     });
+
+    // 5. Generate Official Tenant Receipt Modal
+    const isSecurity = name.includes("Security Deposit") || name.includes("Deposit");
+    const receiptData: TenantReceiptDetails = {
+      receiptNo: vchNo,
+      acknowledgementNo: `ACK-${vchNo}`,
+      date: today.toISOString().split("T")[0],
+      tenantName: lease?.tenantName || "Valued Tenant",
+      tenantPhone: "",
+      tenantEmail: "",
+      tenantQid: "",
+      propertyName: lease?.property || "Old Salata - Residence No:23",
+      unitRef: unitCode,
+      leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-GEN`,
+      leaseStartDate: lease?.startDate || today.toISOString().split("T")[0],
+      leaseEndDate: lease?.endDate || today.toISOString().split("T")[0],
+      monthlyRent: lease?.monthlyRent || numAmount,
+      totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : numAmount,
+      depositAmount: isSecurity ? numAmount : (lease?.securityDeposit || 0),
+      depositMode: method,
+      pdcCount: (method === "PDC" && createPdc) ? 1 : 0,
+      pdcs: (method === "PDC" && createPdc && pdcChequeNo) ? [{
+        chequeNo: pdcChequeNo,
+        bank: pdcBank || "Tenant Bank",
+        date: pdcDate,
+        amount: numAmount,
+        period: period || "Rent"
+      }] : [],
+      vouchers: [{
+        receiptNo: vchNo,
+        name: name,
+        amount: numAmount,
+        method: method,
+        debit: accounts.debit,
+        credit: accounts.credit
+      }],
+      totalCollected: numAmount,
+      cashierName: "Finance Department",
+      notes: `Official receipt for ${name} (${method}). Posted to Finance General Ledger.`,
+    };
+
+    setReceiptModalData(receiptData);
+    setReceiptModalOpen(true);
 
     setAddVoucherOpen(false);
     setAddVoucherForm({ leaseId: "", name: "Receipts Voucher - Rent", receiptNo: "", method: "PDC", period: "", debit: "PDC In Hand", credit: "Rental Income", amount: "", createPdc: true, pdcChequeNo: "", pdcBank: "", pdcDate: today.toISOString().split("T")[0] });
@@ -1972,27 +2116,163 @@ function LeasingPage() {
     });
   }
 
-  function approveSettlement(settlement: Settlement) {
-    const refundable = settlement.depositReceived - settlement.outstandingRent - settlement.damages - settlement.utilityCharges - settlement.otherDeductions;
+  function openSettleRefundModal(settlement: Settlement) {
+    setSelectedSettlement(settlement);
+    const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges + settlement.otherDeductions;
+    const calcRefund = Math.max(0, settlement.depositReceived - deductions);
+    setSettleRefundForm({
+      refundAmount: String(calcRefund),
+      paymentMethod: "Bank Transfer",
+      notes: `Security deposit settlement and refund for Lease ${settlement.leaseId}`,
+    });
+    setSettleRefundOpen(true);
+  }
+
+  function executeSettleAndRefund() {
+    if (!selectedSettlement) return;
+    const settlement = selectedSettlement;
+    const lease = leases.find((item) => item.id === settlement.leaseId);
+    const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges + settlement.otherDeductions;
+    const customRefund = parseFloat(settleRefundForm.refundAmount);
+    const refundable = !isNaN(customRefund) ? customRefund : Math.max(0, settlement.depositReceived - deductions);
+    const settlementDate = today.toISOString().split("T")[0];
+    const pvNo = `PV-SET-${Date.now().toString().slice(-6)}`;
+    const jvNo = `JV-SET-${Date.now().toString().slice(-6)}`;
+
+    // 1. Mark settlement as paid
     setSettlements((items) => items.map((item) => (item.id === settlement.id ? { ...item, approval: "paid" } : item)));
+
+    // 2. Post sub-ledger vouchers (local state)
     setVouchers((items) => [
-      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Tenant Settlement Voucher", receiptNo: `TS-${settlement.id}`, method: "Settlement", period: "Final checkout", debit: "Security Deposit Liability", credit: "Tenant Refund Payable", amount: refundable, status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher", receiptNo: `PV-${settlement.id}`, method: "Bank Transfer", period: "Refund", debit: "Tenant Refund Payable", credit: "Bank Account", amount: refundable, status: "posted" },
+      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Settlement — Release Security Deposit Liability", receiptNo: jvNo, method: "Journal", period: "Final checkout", debit: "Security Deposit Liability (21500)", credit: "Bank Operating Account (12000)", amount: settlement.depositReceived, status: "posted" },
+      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher — Tenant Security Refund", receiptNo: pvNo, method: settleRefundForm.paymentMethod, period: "Refund", debit: "Bank Operating Account (12000)", credit: "Payable - Refund Account (21300)", amount: refundable, status: "posted" },
       ...items,
     ]);
-    const lease = leases.find((item) => item.id === settlement.leaseId);
+
+    // 3. Post GL double-entry journal entries via FinanceStore
+    // Part A: Release the security deposit liability → DR 21500 Security Deposit Liability / CR 12000 Bank Operating Account
+    addJournalEntry({
+      je_no: jvNo,
+      posting_date: settlementDate,
+      reference: `Settlement: ${lease?.tenantName || settlement.leaseId}`,
+      narration: `Security deposit refund upon lease closure — ${lease?.unit || ""}, Gross Deposit: QR ${settlement.depositReceived.toLocaleString()}, Net Refund Paid: QR ${refundable.toLocaleString()}`,
+      dr_account: "Security Deposit Liability",
+      dr_code: "21500",
+      cr_account: "Bank Operating Account",
+      cr_code: "12000",
+      amount: settlement.depositReceived,
+      property_name: lease?.property || "Old Salata - Residence No:23",
+      unit_ref: lease?.unit || "Unit",
+      tenant_name: lease?.tenantName || "Tenant",
+    });
+
+    // Part B: Post deductions — DR various expense/recovery accounts / CR Security Deposit Liability (offset)
+    if (settlement.damages > 0) {
+      addJournalEntry({
+        je_no: `${jvNo}-A`,
+        posting_date: settlementDate,
+        reference: `Damage recovery: ${lease?.tenantName || ""}`,
+        narration: `Damage deduction from security deposit — ${lease?.unit || ""}`,
+        dr_account: "Damage Recovery Receivable",
+        dr_code: "12413",
+        cr_account: "Repairs & Maintenance Recovery",
+        cr_code: "41400",
+        amount: settlement.damages,
+        property_name: lease?.property || "Old Salata - Residence No:23",
+        unit_ref: lease?.unit || "Unit",
+        tenant_name: lease?.tenantName || "Tenant",
+      });
+    }
+
+    if (settlement.outstandingRent > 0) {
+      addJournalEntry({
+        je_no: `${jvNo}-B`,
+        posting_date: settlementDate,
+        reference: `Outstanding rent recovery: ${lease?.tenantName || ""}`,
+        narration: `Rent outstanding cleared from security deposit — ${lease?.unit || ""}`,
+        dr_account: "Rent Receivable",
+        dr_code: "12100",
+        cr_account: "Rental Revenue",
+        cr_code: "41100",
+        amount: settlement.outstandingRent,
+        property_name: lease?.property || "Old Salata - Residence No:23",
+        unit_ref: lease?.unit || "Unit",
+        tenant_name: lease?.tenantName || "Tenant",
+      });
+    }
+
+    // 4. Post finance voucher (FinanceStore sub-ledger)
+    addFinanceVoucher({
+      voucher_no: pvNo,
+      voucher_type: "Payment Voucher",
+      date: settlementDate,
+      name: `Tenant Security Deposit Refund — ${lease?.tenantName || settlement.leaseId}`,
+      debit: "Security Deposit Liability",
+      debit_code: "21500",
+      credit: "Bank Operating Account",
+      credit_code: "12000",
+      amount: refundable,
+      method: settleRefundForm.paymentMethod,
+      property: lease?.property || "Old Salata - Residence No:23",
+      unit: lease?.unit || "Unit",
+      tenant: lease?.tenantName || "Tenant",
+    } as any);
+
+    // 5. Close lease and update unit disposition
     if (lease) {
       setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
       setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition || "Vacant - Under Maintenance") as Unit["status"] } : item)));
     }
+
+    // 6. Open a settlement receipt modal
+    const receiptData: TenantReceiptDetails = {
+      receiptNo: pvNo,
+      acknowledgementNo: jvNo,
+      date: settlementDate,
+      tenantName: lease?.tenantName || "Valued Tenant",
+      tenantPhone: "",
+      tenantEmail: "",
+      tenantQid: "",
+      propertyName: lease?.property || "Old Salata - Residence No:23",
+      unitRef: lease?.unit || "Unit",
+      leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-${settlement.leaseId}`,
+      leaseStartDate: lease?.startDate || settlementDate,
+      leaseEndDate: lease?.endDate || settlementDate,
+      monthlyRent: lease?.monthlyRent || 0,
+      totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : 0,
+      depositAmount: settlement.depositReceived,
+      depositMode: "Security Deposit Refund",
+      pdcCount: 0,
+      pdcs: [],
+      vouchers: [
+        { receiptNo: jvNo, name: "Security Deposit Released (21500 → 12000)", amount: settlement.depositReceived, method: "Journal", debit: "Security Deposit Liability", credit: "Bank Operating Account" },
+        { receiptNo: pvNo, name: "Net Security Deposit Refund Paid", amount: refundable, method: settleRefundForm.paymentMethod, debit: "Bank Operating Account", credit: "Refund Payable" },
+        ...(settlement.damages > 0 ? [{ receiptNo: `${jvNo}-A`, name: `Damage Recovery Deducted`, amount: settlement.damages, method: "Deduction", debit: "Damage Receivable (12413)", credit: "Repairs Recovery (41400)" }] : []),
+        ...(settlement.outstandingRent > 0 ? [{ receiptNo: `${jvNo}-B`, name: `Outstanding Rent Recovered`, amount: settlement.outstandingRent, method: "Deduction", debit: "Rent Receivable (12100)", credit: "Rental Revenue (41100)" }] : []),
+        ...(settlement.utilityCharges > 0 ? [{ receiptNo: `${jvNo}-C`, name: `Utility Charges Deducted`, amount: settlement.utilityCharges, method: "Deduction", debit: "Utility Receivable", credit: "Utility Recovery" }] : []),
+      ],
+      agencyCommission: 0,
+      adminCharges: 0,
+      utilityDeposit: settlement.utilityCharges,
+      totalCollected: refundable,
+      cashierName: "Finance Department",
+      notes: `Refundable Security Deposit Settlement — Gross Deposit: QR ${settlement.depositReceived.toLocaleString()} | Total Deductions: QR ${deductions.toLocaleString()} | Net Refund Paid: QR ${refundable.toLocaleString()} | Mode: ${settleRefundForm.paymentMethod}${settleRefundForm.notes ? ` | Remarks: ${settleRefundForm.notes}` : ''}`,
+    };
+
+    setReceiptModalData(receiptData);
+    setReceiptModalOpen(true);
+    setSettleRefundOpen(false);
+
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
       owner: "Finance Department",
-      input: `Deposit ${formatMoney(settlement.depositReceived)}, refund ${formatMoney(refundable)}`,
+      input: `Deposit ${formatMoney(settlement.depositReceived)}, deductions ${formatMoney(deductions)}, refund ${formatMoney(refundable)}`,
       approval: "Settlement approval",
       status: "closed",
-      output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Vacant - Available"}, and history retained`,
+      output: `GL posted: DR 21500/CR 12000 (${formatMoney(settlement.depositReceived)}). PV ${pvNo} generated. Lease closed. Unit → ${settlement.unitDisposition || "Vacant"}.`,
     });
+
+    toast.success(`Settlement approved! Net refund QR ${refundable.toLocaleString()} — Payment Voucher ${pvNo} posted to GL.`);
   }
 
   function issueKeyNotice(lease: Lease) {
@@ -2168,10 +2448,17 @@ function LeasingPage() {
   }
 
   function startCheckout(lease: Lease) {
-    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "checkout" } : item)));
-    setCheckouts((items) => [
-      {
-        id: `co${items.length + 1}`,
+    // 1. Update lease status
+    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "non_renewal" as LeaseStatus } : item)));
+    
+    // 2. Update renewal case status to non_renewal
+    setRenewals((items) => items.map((item) => (item.leaseId === lease.id ? { ...item, status: "non_renewal" as RenewalCase["status"] } : item)));
+
+    // 3. Add or update checkout case
+    setCheckouts((items) => {
+      const existing = items.find(c => c.leaseId === lease.id);
+      const newCheckout: CheckoutCase = {
+        id: existing?.id || `co${items.length + 1}`,
         leaseId: lease.id,
         noticeDate: startCheckoutForm.noticeDate || today.toISOString().split("T")[0],
         moveOutDate: startCheckoutForm.moveOutDate || lease.endDate,
@@ -2185,9 +2472,13 @@ function LeasingPage() {
         utilityClearance: false,
         keysReturned: false,
         status: "planned",
-      },
-      ...items,
-    ]);
+      };
+      if (existing) {
+        return items.map(c => c.leaseId === lease.id ? newCheckout : c);
+      }
+      return [newCheckout, ...items];
+    });
+
     recordAudit({
       stage: "Non-Renewal & Check-Out",
       owner: "Leasing Department",
@@ -2196,6 +2487,8 @@ function LeasingPage() {
       status: "planned",
       output: startCheckoutForm.notes || "Checkout case opened with finance, utility and key-return requirements",
     });
+
+    toast.success(`Non-Renewal initiated for ${lease.tenantName}. Checkout case opened.`);
     setStartCheckoutOpen(false);
   }
 
@@ -4082,10 +4375,13 @@ function LeasingPage() {
             {(addVoucherForm.method === "PDC" || addVoucherForm.method === "Guarantee Cheque") && (
               <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">Also Register PDC Entry</p>
+                  <div>
+                    <p className="text-sm font-semibold">Also Register PDC Entry</p>
+                    <p className="text-[11px] text-muted-foreground">Automatically creates an active cheque record in PDC Management / Treasury register.</p>
+                  </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={addVoucherForm.createPdc} onChange={e => setAddVoucherForm(f => ({ ...f, createPdc: e.target.checked }))} className="h-4 w-4" />
-                    <span className="text-sm">Create PDC record</span>
+                    <span className="text-sm font-medium">Create PDC record</span>
                   </label>
                 </div>
                 {addVoucherForm.createPdc && (
@@ -4111,59 +4407,157 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── SECURITY DEPOSIT DIALOG ───────────────────────────── */}
-      <Dialog open={securityDepositOpen} onOpenChange={setSecurityDepositOpen}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+      {/* ── SECURITY DEPOSIT SETTLE & REFUND MODAL ─────────────── */}
+      <Dialog open={settleRefundOpen} onOpenChange={setSettleRefundOpen}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" /> Record Security Deposit</DialogTitle>
-            <DialogDescription>Record security deposit receipt. A voucher and (if PDC) a PDC record will be created automatically.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <ShieldCheck className="h-5 w-5 text-purple-600" />
+              Settle &amp; Refund Security Deposit
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Review checkout deductions, configure final tenant refund amount, and execute balanced double-entry GL journal posting.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Lease">
-              <Select value={securityDepositForm.leaseId} onValueChange={v => setSecurityDepositForm(f => ({ ...f, leaseId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select lease" /></SelectTrigger>
-                <SelectContent>{leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit} — Deposit: {formatMoney(l.securityDeposit)}</SelectItem>)}</SelectContent>
-              </Select>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount (QR)">
-                <Input type="number" value={securityDepositForm.amount} onChange={e => setSecurityDepositForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-              </Field>
-              <Field label="Payment Method">
-                <Select value={securityDepositForm.method} onValueChange={v => setSecurityDepositForm(f => ({ ...f, method: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="PDC">PDC (Cheque)</SelectItem>
-                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Receipt No.">
-              <Input value={securityDepositForm.receiptNo} onChange={e => setSecurityDepositForm(f => ({ ...f, receiptNo: e.target.value }))} placeholder="Auto-generated if blank" />
-            </Field>
-            {(securityDepositForm.method === "PDC" || securityDepositForm.method === "Guarantee Cheque") && (
-              <div className="grid grid-cols-3 gap-2">
-                <Field label="Cheque No.">
-                  <Input value={securityDepositForm.chequeNo} onChange={e => setSecurityDepositForm(f => ({ ...f, chequeNo: e.target.value }))} />
-                </Field>
-                <Field label="Bank">
-                  <Input value={securityDepositForm.bank} onChange={e => setSecurityDepositForm(f => ({ ...f, bank: e.target.value }))} />
-                </Field>
-                <Field label="Date">
-                  <Input type="date" value={securityDepositForm.chequeDate} onChange={e => setSecurityDepositForm(f => ({ ...f, chequeDate: e.target.value }))} />
-                </Field>
+
+          {selectedSettlement && (() => {
+            const lease = leases.find(l => l.id === selectedSettlement.leaseId);
+            const totalDeductions = selectedSettlement.outstandingRent + selectedSettlement.damages + selectedSettlement.utilityCharges + selectedSettlement.otherDeductions;
+            const grossDeposit = selectedSettlement.depositReceived || (lease?.securityDeposit || 0);
+            const maxCalculated = Math.max(0, grossDeposit - totalDeductions);
+            const enteredRefund = parseFloat(settleRefundForm.refundAmount) || 0;
+
+            return (
+              <div className="space-y-3.5 py-1 text-xs">
+                {/* Lease & Tenant Header Card */}
+                <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-medium">Tenant / Customer:</span>
+                    <span className="font-semibold text-foreground">{lease?.tenantName || selectedSettlement.leaseId}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-medium">Property &amp; Unit:</span>
+                    <span>{lease?.property || "Old Salata - Residence No:23"} • {lease?.unit || "Unit"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-medium">Lease Period:</span>
+                    <span>{lease?.startDate || "-"} to {lease?.endDate || "-"}</span>
+                  </div>
+                </div>
+
+                {/* Financial Breakdown Card */}
+                <div className="rounded-lg border bg-purple-50/50 border-purple-200 p-3 space-y-2.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900 block">
+                    Security Deposit Settlement Calculation (Refundable)
+                  </span>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 rounded bg-background border">
+                      <span className="text-muted-foreground block text-[10px]">Gross Deposit Held:</span>
+                      <span className="font-bold text-foreground font-mono">QAR {grossDeposit.toLocaleString()}</span>
+                    </div>
+                    <div className="p-2 rounded bg-background border">
+                      <span className="text-muted-foreground block text-[10px]">Itemized Deductions:</span>
+                      <span className="font-bold text-destructive font-mono">-QAR {totalDeductions.toLocaleString()}</span>
+                    </div>
+                    <div className="p-2 rounded bg-background border border-emerald-300 bg-emerald-50/70">
+                      <span className="text-emerald-800 block text-[10px] font-semibold">Net Calculated Refund:</span>
+                      <span className="font-bold text-emerald-700 font-mono">QAR {maxCalculated.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Deduction breakdown summary */}
+                  <div className="text-[11px] space-y-1 text-muted-foreground pt-1 border-t border-purple-200/60">
+                    <div className="flex justify-between">
+                      <span>• Damage / Repair Deductions:</span>
+                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.damages.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>• Outstanding Rent Recovered:</span>
+                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.outstandingRent.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>• Kahramaa &amp; Utility Charges:</span>
+                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.utilityCharges.toLocaleString()}</span>
+                    </div>
+                    {selectedSettlement.otherDeductions > 0 && (
+                      <div className="flex justify-between">
+                        <span>• Other Admin Charges:</span>
+                        <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.otherDeductions.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Refund input & payment mode */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">
+                      Actual Refund Amount to Pay (QAR) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      className="h-8 text-xs font-mono font-bold"
+                      value={settleRefundForm.refundAmount}
+                      onChange={(e) => setSettleRefundForm({ ...settleRefundForm, refundAmount: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Refund Payment Method</Label>
+                    <Select
+                      value={settleRefundForm.paymentMethod}
+                      onValueChange={(v) => setSettleRefundForm({ ...settleRefundForm, paymentMethod: v })}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Cheque">Bank Cheque</SelectItem>
+                        <SelectItem value="Cash">Cash In Hand</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">Settlement &amp; Refund Remarks</Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="e.g. Unit inspected, keys handed back, net deposit returned via bank transfer"
+                    value={settleRefundForm.notes}
+                    onChange={(e) => setSettleRefundForm({ ...settleRefundForm, notes: e.target.value })}
+                  />
+                </div>
+
+                {/* GL Double-Entry preview */}
+                <div className="rounded-lg border bg-muted/30 p-2.5 space-y-1 text-[11px]">
+                  <span className="font-semibold text-muted-foreground uppercase text-[10px] block">
+                    Automatic Double-Entry Posting on Execution:
+                  </span>
+                  <div className="flex justify-between font-mono">
+                    <span className="text-emerald-700">DR 21500 Security Deposit Liability (Gross)</span>
+                    <span className="font-bold">QAR {grossDeposit.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-mono">
+                    <span className="text-blue-700">CR 12000 Bank Operating Account (Net Refund)</span>
+                    <span className="font-bold">QAR {enteredRefund.toLocaleString()}</span>
+                  </div>
+                  {totalDeductions > 0 && (
+                    <div className="flex justify-between font-mono text-muted-foreground">
+                      <span>CR 41400 / 41100 Deductions &amp; Recoveries</span>
+                      <span>QAR {totalDeductions.toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-            <Field label="Notes">
-              <Textarea rows={2} value={securityDepositForm.notes} onChange={e => setSecurityDepositForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any special notes..." />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSecurityDepositOpen(false)}>Cancel</Button>
-            <Button onClick={addSecurityDeposit}><ShieldCheck className="mr-2 h-4 w-4" /> Record Deposit</Button>
+            );
+          })()}
+
+          <DialogFooter className="gap-2 border-t pt-2">
+            <Button variant="outline" onClick={() => setSettleRefundOpen(false)}>Cancel</Button>
+            <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={executeSettleAndRefund}>
+              <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Settlement &amp; Issue Receipt
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4192,53 +4586,229 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── COMPLETE CHECKOUT DIALOG ──────────────────────────── */}
+      {/* ── COMPLETE CHECKOUT DIALOG (UPGRADED MULTI-TAB WITH ASSET INSPECTION) ── */}
       <Dialog open={completeCheckoutOpen} onOpenChange={setCompleteCheckoutOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-primary" /> Check-Out Inspection & Clearances</DialogTitle>
-            <DialogDescription>Record final unit condition, deductions and clearance status for settlement.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <span className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2"><ClipboardCheck className="h-5 w-5 text-primary" /></span>
+              Check-Out Inspection &amp; Final Clearances
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              <span className="font-medium text-foreground">{leases.find(l => l.id === selectedCheckout?.leaseId)?.tenantName}</span> · {leases.find(l => l.id === selectedCheckout?.leaseId)?.unit} · {leases.find(l => l.id === selectedCheckout?.leaseId)?.property}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-2">
-            <Field label="Final Condition">
-              <Select value={completeCheckoutForm.condition} onValueChange={v => setCompleteCheckoutForm(f => ({ ...f, condition: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Good">Good — Minor cleaning only</SelectItem>
-                  <SelectItem value="Repair required">Repair Required</SelectItem>
-                  <SelectItem value="Major damage">Major Damage</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Final Electricity Meter"><Input value={completeCheckoutForm.electricityMeter} onChange={e => setCompleteCheckoutForm(f => ({ ...f, electricityMeter: e.target.value }))} placeholder="e.g. 182207" /></Field>
-              <Field label="Final Water Meter"><Input value={completeCheckoutForm.waterMeter} onChange={e => setCompleteCheckoutForm(f => ({ ...f, waterMeter: e.target.value }))} placeholder="e.g. 149129" /></Field>
-            </div>
-            <Field label="Damages / Missing Items">
-              <Textarea rows={2} value={completeCheckoutForm.damages} onChange={e => setCompleteCheckoutForm(f => ({ ...f, damages: e.target.value }))} placeholder="Tenant-caused damage, missing items..." />
-            </Field>
-            <Field label="No. of Photos"><Input type="number" value={completeCheckoutForm.photos} onChange={e => setCompleteCheckoutForm(f => ({ ...f, photos: e.target.value }))} /></Field>
-            <div className="rounded-md border p-3 space-y-2">
-              <p className="text-sm font-medium">Settlement Deductions (QR)</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Outstanding Rent"><Input type="number" value={completeCheckoutForm.outstandingRent} onChange={e => setCompleteCheckoutForm(f => ({ ...f, outstandingRent: e.target.value }))} /></Field>
-                <Field label="Damage Costs"><Input type="number" value={completeCheckoutForm.damagesAmount} onChange={e => setCompleteCheckoutForm(f => ({ ...f, damagesAmount: e.target.value }))} /></Field>
-                <Field label="Utility Charges"><Input type="number" value={completeCheckoutForm.utilityCharges} onChange={e => setCompleteCheckoutForm(f => ({ ...f, utilityCharges: e.target.value }))} /></Field>
-                <Field label="Other Deductions"><Input type="number" value={completeCheckoutForm.otherDeductions} onChange={e => setCompleteCheckoutForm(f => ({ ...f, otherDeductions: e.target.value }))} /></Field>
-              </div>
-            </div>
-            <div className="rounded-md border p-3 space-y-2">
-              <p className="text-sm font-medium">Clearances</p>
-              <div className="flex gap-6">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completeCheckoutForm.financeClearance} onChange={e => setCompleteCheckoutForm(f => ({ ...f, financeClearance: e.target.checked }))} className="h-4 w-4" /> Finance Cleared</label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completeCheckoutForm.utilityClearance} onChange={e => setCompleteCheckoutForm(f => ({ ...f, utilityClearance: e.target.checked }))} className="h-4 w-4" /> Utility Cleared</label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completeCheckoutForm.keysReturned} onChange={e => setCompleteCheckoutForm(f => ({ ...f, keysReturned: e.target.checked }))} className="h-4 w-4" /> Keys Returned</label>
-              </div>
-            </div>
+
+          {/* Tab navigation inside checkout dialog */}
+          <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
+            {[
+              { id: "condition", label: "🏠 Condition & Meters" },
+              { id: "assets", label: "📦 Asset Verification" },
+              { id: "damages", label: "💰 Deductions & Settlement" },
+              { id: "clearances", label: "✅ Clearances & Sign-Off" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                className={`flex-1 rounded-md px-2.5 py-1.5 font-medium transition-colors ${
+                  checkoutActiveTab === tab.id
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setCheckoutActiveTab(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <DialogFooter>
+
+          <div className="space-y-4 py-2">
+            {/* TAB 1: CONDITION & METERS */}
+            {checkoutActiveTab === "condition" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Unit Overall Condition</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Final Condition">
+                      <Select value={completeCheckoutForm.condition} onValueChange={v => setCompleteCheckoutForm(f => ({ ...f, condition: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Good">Good — Minor cleaning only</SelectItem>
+                          <SelectItem value="Repair required">Repair Required</SelectItem>
+                          <SelectItem value="Major damage">Major Damage</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Unit Disposition on Release">
+                      <Select value={completeCheckoutForm.unitDisposition} onValueChange={v => setCompleteCheckoutForm(f => ({ ...f, unitDisposition: v as any }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Available">Vacant - Ready / Available</SelectItem>
+                          <SelectItem value="Vacant - Under Maintenance">Vacant - Under Maintenance / Repairs</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Final Meter Readings at Check-Out</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="⚡ Final Electricity Meter (kWh)"><Input value={completeCheckoutForm.electricityMeter} onChange={e => setCompleteCheckoutForm(f => ({ ...f, electricityMeter: e.target.value }))} placeholder="e.g. 182207" /></Field>
+                    <Field label="💧 Final Water Meter (m³)"><Input value={completeCheckoutForm.waterMeter} onChange={e => setCompleteCheckoutForm(f => ({ ...f, waterMeter: e.target.value }))} placeholder="e.g. 149129" /></Field>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <Field label="No. of Photos Documented">
+                    <Input type="number" min="0" value={completeCheckoutForm.photos} onChange={e => setCompleteCheckoutForm(f => ({ ...f, photos: e.target.value }))} />
+                  </Field>
+                  <Field label="Damages / Inspection Notes">
+                    <Textarea rows={2} value={completeCheckoutForm.damages} onChange={e => setCompleteCheckoutForm(f => ({ ...f, damages: e.target.value }))} placeholder="Note any scratches, paint peeling, fixture damages..." />
+                  </Field>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: ASSET VERIFICATION */}
+            {checkoutActiveTab === "assets" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned Assets Check-Out Verification</p>
+                    <span className="text-xs text-muted-foreground">{handoverAssets.length} asset(s) registered</span>
+                  </div>
+                  {handoverAssets.length === 0 ? (
+                    <div className="rounded-md border bg-background p-4 text-center text-xs text-muted-foreground">
+                      No registered fixed assets found for this unit. You can note any unlisted items in the damages/missing items section.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {handoverAssets.map((asset) => {
+                        const change = assetChanges[asset.id] || { condition: asset.asset_condition || "Good", imageFileName: "" };
+                        return (
+                          <div key={asset.id} className="rounded-lg border bg-background p-3 flex items-center justify-between gap-3 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-foreground">{asset.asset_name}</div>
+                              <div className="text-muted-foreground text-[11px] font-mono">{asset.asset_code || asset.category || "Asset"}</div>
+                            </div>
+                            <div className="w-40">
+                              <Select value={change.condition} onValueChange={(v) => updateAssetChange(asset.id, { condition: v })}>
+                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Excellent">Excellent</SelectItem>
+                                  <SelectItem value="Good">Good (Normal Wear)</SelectItem>
+                                  <SelectItem value="Fair">Fair / Scratched</SelectItem>
+                                  <SelectItem value="Needs Attention">Damaged / Missing</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <Field label="Missing Items or Fixtures">
+                  <Input value={completeCheckoutForm.missingItems} onChange={e => setCompleteCheckoutForm(f => ({ ...f, missingItems: e.target.value }))} placeholder="e.g. 1 parking remote missing, kitchen light fixture broken..." />
+                </Field>
+              </div>
+            )}
+
+            {/* TAB 3: DEDUCTIONS & SETTLEMENT */}
+            {checkoutActiveTab === "damages" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-purple-50/40 border-purple-200 p-3 space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-purple-900">Security Deposit Settlement Calculation</p>
+                  {(() => {
+                    const lease = leases.find(l => l.id === selectedCheckout?.leaseId);
+                    const dep = lease?.securityDeposit || 5100;
+                    const rent = Number(completeCheckoutForm.outstandingRent) || 0;
+                    const dmg = Number(completeCheckoutForm.damagesAmount) || 0;
+                    const utl = Number(completeCheckoutForm.utilityCharges) || 0;
+                    const cln = Number(completeCheckoutForm.cleaningCharges) || 0;
+                    const rst = Number(completeCheckoutForm.restorationCharges) || 0;
+                    const other = Number(completeCheckoutForm.otherDeductions) || 0;
+                    const totalDeductions = rent + dmg + utl + cln + rst + other;
+                    const netRefund = dep - totalDeductions;
+                    return (
+                      <div className="grid grid-cols-3 gap-2 text-xs pt-1">
+                        <div className="p-2 rounded bg-background border">
+                          <span className="text-muted-foreground block text-[11px]">Gross Deposit:</span>
+                          <span className="font-bold text-foreground font-mono">QR {dep.toLocaleString()}</span>
+                        </div>
+                        <div className="p-2 rounded bg-background border">
+                          <span className="text-muted-foreground block text-[11px]">Total Deductions:</span>
+                          <span className="font-bold text-destructive font-mono">-QR {totalDeductions.toLocaleString()}</span>
+                        </div>
+                        <div className="p-2 rounded bg-background border border-emerald-300 bg-emerald-50/60">
+                          <span className="text-emerald-800 block text-[11px] font-semibold">Net Refund Payable:</span>
+                          <span className="font-bold text-emerald-700 font-mono">QR {netRefund.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="rounded-lg border p-3 space-y-3 text-xs">
+                  <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">Deduction Item Breakdown (QAR)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Outstanding Rent"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.outstandingRent} onChange={e => setCompleteCheckoutForm(f => ({ ...f, outstandingRent: e.target.value }))} /></Field>
+                    <Field label="Damage / Repair Costs"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.damagesAmount} onChange={e => setCompleteCheckoutForm(f => ({ ...f, damagesAmount: e.target.value }))} /></Field>
+                    <Field label="Final Utility (Kahramaa) Charges"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.utilityCharges} onChange={e => setCompleteCheckoutForm(f => ({ ...f, utilityCharges: e.target.value }))} /></Field>
+                    <Field label="Deep Cleaning Charges"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.cleaningCharges} onChange={e => setCompleteCheckoutForm(f => ({ ...f, cleaningCharges: e.target.value }))} /></Field>
+                    <Field label="Painting / Restoration Charges"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.restorationCharges} onChange={e => setCompleteCheckoutForm(f => ({ ...f, restorationCharges: e.target.value }))} /></Field>
+                    <Field label="Other Administrative Deductions"><Input type="number" className="h-8 text-xs font-mono" value={completeCheckoutForm.otherDeductions} onChange={e => setCompleteCheckoutForm(f => ({ ...f, otherDeductions: e.target.value }))} /></Field>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: CLEARANCES & SIGN-OFF */}
+            {checkoutActiveTab === "clearances" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-xs">
+                  <p className="font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">Inter-Departmental Clearances</p>
+                  <div className="space-y-2 pt-1">
+                    <label className="flex items-center gap-2.5 p-2 rounded-md border bg-background cursor-pointer hover:bg-muted/40">
+                      <input type="checkbox" checked={completeCheckoutForm.financeClearance} onChange={e => setCompleteCheckoutForm(f => ({ ...f, financeClearance: e.target.checked }))} className="h-4 w-4 rounded accent-primary" />
+                      <div>
+                        <span className="font-semibold block">Finance &amp; Accounts Clearance</span>
+                        <span className="text-[11px] text-muted-foreground">All rental dues, bounced cheques, and legal matters cleared.</span>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-2.5 p-2 rounded-md border bg-background cursor-pointer hover:bg-muted/40">
+                      <input type="checkbox" checked={completeCheckoutForm.utilityClearance} onChange={e => setCompleteCheckoutForm(f => ({ ...f, utilityClearance: e.target.checked }))} className="h-4 w-4 rounded accent-primary" />
+                      <div>
+                        <span className="font-semibold block">Kahramaa &amp; Utility Clearance</span>
+                        <span className="text-[11px] text-muted-foreground">Final electricity and water meter bill settled with provider.</span>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-2.5 p-2 rounded-md border bg-background cursor-pointer hover:bg-muted/40">
+                      <input type="checkbox" checked={completeCheckoutForm.keysReturned} onChange={e => setCompleteCheckoutForm(f => ({ ...f, keysReturned: e.target.checked }))} className="h-4 w-4 rounded accent-primary" />
+                      <div>
+                        <span className="font-semibold block">Key &amp; Access Device Handback</span>
+                        <span className="text-[11px] text-muted-foreground">All door keys, building access cards, and parking remotes received.</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-blue-50/60 border-blue-200 p-3 text-xs text-blue-900 space-y-1">
+                  <span className="font-bold block">📜 Settlement Statement Ready for Sign-Off</span>
+                  <p className="text-[11px]">
+                    Submitting this form will finalize the Move-Out inspection, update the checkout case to <span className="font-semibold">Ready For Settlement</span>, and generate the final deposit refund record.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-2">
             <Button variant="outline" onClick={() => setCompleteCheckoutOpen(false)}>Cancel</Button>
-            <Button onClick={() => selectedCheckout && completeCheckout(selectedCheckout)}><ClipboardCheck className="mr-2 h-4 w-4" /> Complete & Generate Settlement</Button>
+            <Button onClick={() => selectedCheckout && completeCheckout(selectedCheckout)}>
+              <ClipboardCheck className="mr-2 h-4 w-4" /> Complete &amp; Generate Settlement
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4823,7 +5393,9 @@ function LeasingPage() {
                     formatMoney(deductions),
                     formatMoney(refund),
                     <StatusBadge key="status" value={settlement.approval} />,
-                    <Button key="action" size="sm" variant="outline" disabled={settlement.approval === "paid"} onClick={() => approveSettlement(settlement)}>Approve & Pay</Button>,
+                    <Button key="action" size="sm" variant="outline" disabled={settlement.approval === "paid"} onClick={() => openSettleRefundModal(settlement)}>
+                      {settlement.approval === "paid" ? "Settled" : "Settle & Refund"}
+                    </Button>,
                   ];
                 })}
               />
@@ -4840,16 +5412,6 @@ function LeasingPage() {
                   <CardDescription>Named financial documents model rent receipt, deposit, PDC clearance, cheque return, rental income and settlement. Vouchers posted here are automatically synced to Finance.</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => { setSecurityDepositForm(f => ({ ...f, leaseId: leases[0]?.id || "" })); setSecurityDepositOpen(true); }}>
-                    <ShieldCheck className="mr-2 h-4 w-4" /> Security Deposit
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    setPdcLeaseId(leases[0]?.id || "");
-                    setPdcRows(Array.from({ length: 12 }, () => ({ chequeNo: "", bank: "", amount: "", maturityDate: today.toISOString().split("T")[0], tenureStart: "", tenureEnd: "", file: "" })));
-                    setAddPdcOpen(true);
-                  }}>
-                    <Receipt className="mr-2 h-4 w-4" /> Add PDC(s)
-                  </Button>
                   <Button size="sm" onClick={() => { setAddVoucherForm(f => ({ ...f, leaseId: leases[0]?.id || "" })); setAddVoucherOpen(true); }}>
                     <Banknote className="mr-2 h-4 w-4" /> Add Voucher
                   </Button>
@@ -4870,6 +5432,50 @@ function LeasingPage() {
                     formatMoney(voucher.amount),
                     <StatusBadge key="status" value={voucher.status} />,
                     <div key="actions" className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => {
+                        const isSecurity = voucher.name.includes("Security Deposit") || voucher.name.includes("Deposit");
+                        const receiptData: TenantReceiptDetails = {
+                          receiptNo: voucher.receiptNo || voucher.id,
+                          acknowledgementNo: `ACK-${voucher.receiptNo || voucher.id}`,
+                          date: today.toISOString().split("T")[0],
+                          tenantName: lease?.tenantName || "Valued Tenant",
+                          tenantPhone: "",
+                          tenantEmail: "",
+                          tenantQid: "",
+                          propertyName: lease?.property || "Old Salata - Residence No:23",
+                          unitRef: lease?.unit || "Unit",
+                          leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-GEN`,
+                          leaseStartDate: lease?.startDate || today.toISOString().split("T")[0],
+                          leaseEndDate: lease?.endDate || today.toISOString().split("T")[0],
+                          monthlyRent: lease?.monthlyRent || voucher.amount,
+                          totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : voucher.amount,
+                          depositAmount: isSecurity ? voucher.amount : (lease?.securityDeposit || 0),
+                          depositMode: voucher.method || "PDC",
+                          pdcCount: voucher.method === "PDC" ? 1 : 0,
+                          pdcs: voucher.method === "PDC" ? [{
+                            chequeNo: voucher.receiptNo || "CHQ-001",
+                            bank: "QNB",
+                            date: today.toISOString().split("T")[0],
+                            amount: voucher.amount,
+                            period: voucher.period || "Rent"
+                          }] : [],
+                          vouchers: [{
+                            receiptNo: voucher.receiptNo || voucher.id,
+                            name: voucher.name,
+                            amount: voucher.amount,
+                            method: voucher.method || "PDC",
+                            debit: voucher.debit,
+                            credit: voucher.credit
+                          }],
+                          totalCollected: voucher.amount,
+                          cashierName: "Finance Department",
+                          notes: `Official receipt for ${voucher.name} (${voucher.method || "Voucher"}).`,
+                        };
+                        setReceiptModalData(receiptData);
+                        setReceiptModalOpen(true);
+                      }}>
+                        <Printer className="h-3.5 w-3.5 mr-1" /> Receipt
+                      </Button>
                       <Button size="sm" variant="outline" disabled={voucher.status !== "draft"} onClick={async () => {
                         setVouchers((items) => items.map((item) => item.id === voucher.id ? { ...item, status: "posted" } : item));
                         try {
@@ -4882,7 +5488,7 @@ function LeasingPage() {
                             if (label.includes("Receivable")) return "12413";
                             if (label.includes("Rental Income")) return "41100";
                             if (label.includes("Payable")) return "21000";
-                            throw new Error(`No master COA mapping for ${label}`);
+                            return "12000";
                           };
                           await postVoucher({
                             voucher_date: today.toISOString().split("T")[0],
