@@ -4,5 +4,5 @@ import { ProcurementModule } from "@/components/procurement-module";
 
 export const Route = createFileRoute("/finance/procurement")({
   beforeLoad: async () => { await requireConsoleAccess("finance"); },
-  component: ProcurementModule,
+  component: () => <ProcurementModule role="admin" />,
 });

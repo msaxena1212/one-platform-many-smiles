@@ -142,170 +142,45 @@ END $$;
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.proc_document_sequences (
-    document_type TEXT NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    doc_type TEXT,
+    document_type TEXT,
     prefix TEXT NOT NULL,
+    fiscal_year INTEGER DEFAULT 2026,
+    last_number INTEGER DEFAULT 0,
     current_number BIGINT NOT NULL DEFAULT 0,
     padding_length INTEGER NOT NULL DEFAULT 6,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CONSTRAINT proc_document_sequences_pkey
-        PRIMARY KEY (document_type)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-
--- ============================================================
--- DOCUMENT SEQUENCE SCHEMA NORMALIZATION
--- ============================================================
--- The procurement document sequence table may already exist
--- from an earlier/incomplete procurement foundation attempt.
---
--- Normalize it to the canonical structure used by the
--- Procurement document-number generation layer.
--- ============================================================
+ALTER TABLE public.proc_document_sequences ADD COLUMN IF NOT EXISTS document_type TEXT;
+ALTER TABLE public.proc_document_sequences ADD COLUMN IF NOT EXISTS current_number BIGINT DEFAULT 0;
+ALTER TABLE public.proc_document_sequences ADD COLUMN IF NOT EXISTS padding_length INTEGER DEFAULT 6;
 
 DO $$
 BEGIN
-
-    -- Remove legacy primary key if present.
     IF EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'proc_document_sequences_pkey'
-          AND conrelid = 'public.proc_document_sequences'::regclass
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'proc_document_sequences' 
+          AND column_name = 'document_type'
     ) THEN
-        ALTER TABLE public.proc_document_sequences
-            DROP CONSTRAINT proc_document_sequences_pkey;
+        INSERT INTO public.proc_document_sequences (document_type, prefix)
+        VALUES
+            ('PR',  'PR'),
+            ('RFI', 'RFI'),
+            ('RFQ', 'RFQ'),
+            ('RFP', 'RFP'),
+            ('QT',  'QT'),
+            ('NEG', 'NEG'),
+            ('PO',  'PO'),
+            ('SA',  'SA'),
+            ('GRN', 'GRN'),
+            ('PINV','PINV')
+        ON CONFLICT DO NOTHING;
     END IF;
-
-    -- Remove legacy unique constraint if present.
-    IF EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'ux_proc_document_sequence'
-          AND conrelid = 'public.proc_document_sequences'::regclass
-    ) THEN
-        ALTER TABLE public.proc_document_sequences
-            DROP CONSTRAINT ux_proc_document_sequence;
-    END IF;
-
 END $$;
-
-
--- Ensure canonical columns exist.
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS document_type TEXT;
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS prefix TEXT;
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS current_number BIGINT DEFAULT 0;
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS padding_length INTEGER DEFAULT 6;
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-
-ALTER TABLE public.proc_document_sequences
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
-
--- Populate canonical columns from legacy columns if they exist.
-
-DO $$
-BEGIN
-
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'proc_document_sequences'
-          AND column_name = 'doc_type'
-    ) THEN
-
-        UPDATE public.proc_document_sequences
-        SET document_type = COALESCE(document_type, doc_type)
-        WHERE document_type IS NULL;
-
-    END IF;
-
-
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'proc_document_sequences'
-          AND column_name = 'last_number'
-    ) THEN
-
-        UPDATE public.proc_document_sequences
-        SET current_number = COALESCE(
-            current_number,
-            last_number,
-            0
-        )
-        WHERE current_number IS NULL;
-
-    END IF;
-
-END $$;
-
-
--- Remove legacy columns after migration to canonical columns.
-
-ALTER TABLE public.proc_document_sequences
-    DROP COLUMN IF EXISTS id,
-    DROP COLUMN IF EXISTS doc_type,
-    DROP COLUMN IF EXISTS fiscal_year,
-    DROP COLUMN IF EXISTS last_number;
-
-
--- Canonical columns must be mandatory.
-
-ALTER TABLE public.proc_document_sequences
-    ALTER COLUMN document_type SET NOT NULL,
-    ALTER COLUMN prefix SET NOT NULL,
-    ALTER COLUMN current_number SET NOT NULL,
-    ALTER COLUMN padding_length SET NOT NULL,
-    ALTER COLUMN created_at SET NOT NULL,
-    ALTER COLUMN updated_at SET NOT NULL;
-
-
--- Restore canonical primary key.
-
-ALTER TABLE public.proc_document_sequences
-    ADD CONSTRAINT proc_document_sequences_pkey
-    PRIMARY KEY (document_type);
-
-
--- Seed document number sequences.
-
-INSERT INTO public.proc_document_sequences
-    (
-        document_type,
-        prefix,
-        current_number,
-        padding_length
-    )
-VALUES
-    ('PR',   'PR',   0, 6),
-    ('RFI',  'RFI',  0, 6),
-    ('RFQ',  'RFQ',  0, 6),
-    ('RFP',  'RFP',  0, 6),
-    ('QT',   'QT',   0, 6),
-    ('NEG',  'NEG',  0, 6),
-    ('PO',   'PO',   0, 6),
-    ('SA',   'SA',   0, 6),
-    ('GRN',  'GRN',  0, 6),
-    ('PINV', 'PINV', 0, 6)
-ON CONFLICT (document_type)
-DO UPDATE SET
-    prefix = EXCLUDED.prefix,
-    padding_length = EXCLUDED.padding_length,
-    updated_at = NOW();
 
 
 -- ============================================================

@@ -1,9 +1,4 @@
-import {
-  Link,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
-
+import { Link, useNavigate, useRouterState, type LinkProps } from "@tanstack/react-router";
 import { LogOut, ChevronRight } from "lucide-react";
 
 import { type ReactNode, useState, useEffect } from "react";
@@ -16,9 +11,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface NavItem {
-  to: string;
+  to: LinkProps["to"];
   search?: Record<string, any>;
-  label: string;
+  label: string;        // Sub-sub-module name (Layer 3)
   icon: ReactNode;
   badge?: string | number;
   /** @deprecated use NavModule instead */
@@ -53,12 +48,12 @@ export interface NavGroup {
 }
 
 // ─── Sidebar colours ──────────────────────────────────────────────────────────
-const SIDEBAR_BG = "bg-[#161b22]";         // deepest panel bg
-const SIDEBAR_HEADER = "bg-[#1c2128]";          // header strip
+const SIDEBAR_BG       = "bg-[#161b22]";         // deepest panel bg
+const SIDEBAR_HEADER   = "bg-[#1c2128]";          // header strip
 const SIDEBAR_ITEM_ACT = "bg-[#1f6feb22]";        // active-item ghost
-const ACCENT = "text-teal-400";          // highlight text
-const ACCENT_BORDER = "border-l-2 border-teal-400";
-const DIVIDER = "border-[#30363d]";
+const ACCENT           = "text-teal-400";          // highlight text
+const ACCENT_BORDER    = "border-l-2 border-teal-400";
+const DIVIDER          = "border-[#30363d]";
 
 // ─── AppShell ─────────────────────────────────────────────────────────────────
 
@@ -88,14 +83,14 @@ export function AppShell({
     meta: string;
   };
 }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname  = useRouterState({ select: (s) => s.location.pathname });
   const searchParams = useRouterState({ select: (s) => s.location.search }) as Record<string, any>;
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
 
   const profile = user ?? {
     initials: variant === "admin" ? "AD" : variant === "host" ? "PM" : "TP",
-    name: variant === "admin" ? "Admin User" : variant === "host" ? "Property Manager" : "Tenant User",
-    meta: consoleLabel ?? (variant === "admin" ? "Staff Console" : variant === "host" ? "Host Console" : "Tenant Portal"),
+    name:     variant === "admin" ? "Admin User" : variant === "host" ? "Property Manager" : "Tenant User",
+    meta:     consoleLabel ?? (variant === "admin" ? "Staff Console" : variant === "host" ? "Host Console" : "Tenant Portal"),
   };
 
   async function handleSignOut() {

@@ -1,0 +1,122 @@
+--- /mnt/data/pmsrepo/one-platform-many-smiles-main/src/components/finance/pdc-management.tsx	2026-08-22 05:58:08.000000000 +0000
++++ /mnt/data/pdc-management.tsx	2026-08-24 12:29:34.118809935 +0000
+@@ -8,7 +8,6 @@
+ import { supabase } from "@/lib/supabase";
+ import { depositPdc, clearPdc, returnPdc } from "@/lib/finance/pdcService";
+ import { useAppData } from "@/lib/app-data-context";
+-import { useFinanceStore } from "@/lib/finance/finance-store";
+ import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
+ import {
+   Dialog,
+@@ -182,7 +181,6 @@
+ // ── Main Component ────────────────────────────────────────────────────────────
+ export function PdcManagement() {
+   const { pdcs: sharedPdcs, setPdcs: setSharedPdcs, leases } = useAppData();
+-  const { addJournalEntry } = useFinanceStore();
+   const [pdcs, setPdcs] = useState<any[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [actionLoading, setActionLoading] = useState(false);
+@@ -356,22 +354,8 @@
+     const id = pdc.id;
+     const amt = Number(pdc.amount) || 0;
+     const chqNo = pdc.cheque_number || id;
+-    const todayStr = new Date().toISOString().split('T')[0];
+     const config = getActionConfig(action, chqNo, pdc.tenant_name || 'Tenant', amt);
+ 
+-    // 1. Immediately update UI local state & context
+-    setPdcs(prev => prev.map(p =>
+-      (String(p.id) === String(id) || String(p.cheque_number) === String(chqNo))
+-        ? { ...p, status: config.newStatus }
+-        : p
+-    ));
+-
+-    setSharedPdcs(prev => prev.map(p =>
+-      (String(p.id) === String(id) || String((p as any).chequeNo) === String(chqNo))
+-        ? { ...p, status: config.newSharedStatus }
+-        : p
+-    ));
+-
+     // Close modal immediately so user isn't stuck
+     setGlConfirmOpen(false);
+     setPendingActionPdc(null);
+@@ -379,7 +363,7 @@
+     setActionLoading(true);
+ 
+     try {
+-      // 2. Persist status to DB AND post GL via pdcService
++      // Persist status and accounting atomically via pdcService.
+       if (action === "deposit") {
+         await depositPdc(id, String(chqNo));
+       } else if (action === "clear") {
+@@ -388,59 +372,18 @@
+         await returnPdc(id, String(chqNo));
+       }
+ 
+-      // 3. Mirror all paired debit/credit impact lines into the in-memory finance audit store
+-      if (action === "return") {
+-        // Line 1: Dr PDC In Hand (12900), Cr Bank Account (12000)
+-        addJournalEntry({
+-          je_no: `JE-RET-${String(chqNo).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+-          posting_date: todayStr,
+-          reference: `RET-CHQ-${chqNo}`,
+-          narration: `PDC Cheque Physically Returned — Cheque #${chqNo} | ${pdc.tenant_name || 'Tenant'}`,
+-          dr_account: "PDC In Hand",
+-          dr_code: "12900",
+-          cr_account: "Bank Account",
+-          cr_code: "12000",
+-          amount: amt,
+-        });
+-        // Line 2: Dr Receivable - Unit Account (12413), Cr Customer(PDC) - Unit Account (21400)
+-        addJournalEntry({
+-          je_no: `JE-REV-${String(chqNo).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+-          posting_date: todayStr,
+-          reference: `REV-CHQ-${chqNo}`,
+-          narration: `Re-instate Tenant Receivable & Reverse PDC Liability — Cheque #${chqNo}`,
+-          dr_account: "Receivable - Unit Account",
+-          dr_code: "12413",
+-          cr_account: "Customer(PDC) - Unit Account",
+-          cr_code: "21400",
+-          amount: amt,
+-        });
+-      } else if (action === "clear") {
+-        // Dr Customer(PDC) (21400), Cr Receivable (12413)
+-        addJournalEntry({
+-          je_no: `JE-CLE-${String(chqNo).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+-          posting_date: todayStr,
+-          reference: `CLE-CHQ-${chqNo}`,
+-          narration: `PDC Cleared in Bank — Cheque #${chqNo} | ${pdc.tenant_name || 'Tenant'}`,
+-          dr_account: "Customer(PDC) - Unit Account",
+-          dr_code: "21400",
+-          cr_account: "Receivable - Unit Account",
+-          cr_code: "12413",
+-          amount: amt,
+-        });
+-      } else if (action === "deposit") {
+-        // Dr Bank (12000), Cr PDC In Hand (12900)
+-        addJournalEntry({
+-          je_no: `JE-DEP-${String(chqNo).replace(/\W/g, '')}-${Date.now().toString().slice(-4)}`,
+-          posting_date: todayStr,
+-          reference: `DEP-CHQ-${chqNo}`,
+-          narration: `PDC Deposited to Bank — Cheque #${chqNo} | ${pdc.tenant_name || 'Tenant'}`,
+-          dr_account: "Bank Account",
+-          dr_code: "12000",
+-          cr_account: "PDC In Hand",
+-          cr_code: "12900",
+-          amount: amt,
+-        });
+-      }
++      // Update UI/context only after the database transaction succeeds.
++      setPdcs(prev => prev.map(p =>
++        (String(p.id) === String(id) || String(p.cheque_number) === String(chqNo))
++          ? { ...p, status: config.newStatus }
++          : p
++      ));
++
++      setSharedPdcs(prev => prev.map(p =>
++        (String(p.id) === String(id) || String((p as any).chequeNo) === String(chqNo))
++          ? { ...p, status: config.newSharedStatus }
++          : p
++      ));
+ 
+       toast.success(`PDC #${chqNo} marked as ${config.newStatus}. General Ledger updated.`);
+     } catch (e: any) {

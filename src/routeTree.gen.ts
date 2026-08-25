@@ -46,6 +46,7 @@ import { Route as SalesAppointmentsRouteImport } from './routes/sales.appointmen
 import { Route as PropMgrUsersRouteImport } from './routes/prop-mgr.users'
 import { Route as PropMgrUnitsRouteImport } from './routes/prop-mgr.units'
 import { Route as PropMgrPropertiesRouteImport } from './routes/prop-mgr.properties'
+import { Route as PropMgrProcurementRouteImport } from './routes/prop-mgr.procurement'
 import { Route as PropMgrMaintenanceRouteImport } from './routes/prop-mgr.maintenance'
 import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
 import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
@@ -75,6 +76,7 @@ import { Route as CashierPdcRouteImport } from './routes/cashier.pdc'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
 import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
+import { Route as AdminProcurementRouteImport } from './routes/admin.procurement'
 import { Route as AdminPermissionsRouteImport } from './routes/admin.permissions'
 import { Route as AdminMastersRouteImport } from './routes/admin.masters'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
@@ -278,6 +280,11 @@ const PropMgrPropertiesRoute = PropMgrPropertiesRouteImport.update({
   path: '/properties',
   getParentRoute: () => PropMgrRoute,
 } as any)
+const PropMgrProcurementRoute = PropMgrProcurementRouteImport.update({
+  id: '/procurement',
+  path: '/procurement',
+  getParentRoute: () => PropMgrRoute,
+} as any)
 const PropMgrMaintenanceRoute = PropMgrMaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
@@ -423,6 +430,11 @@ const AdminPropertiesRoute = AdminPropertiesRouteImport.update({
   path: '/properties',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminProcurementRoute = AdminProcurementRouteImport.update({
+  id: '/procurement',
+  path: '/procurement',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPermissionsRoute = AdminPermissionsRouteImport.update({
   id: '/permissions',
   path: '/permissions',
@@ -534,6 +546,7 @@ export interface FileRoutesByFullPath {
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
   '/admin/permissions': typeof AdminPermissionsRoute
+  '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -563,6 +576,7 @@ export interface FileRoutesByFullPath {
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/procurement': typeof PropMgrProcurementRoute
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
@@ -611,6 +625,7 @@ export interface FileRoutesByTo {
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
   '/admin/permissions': typeof AdminPermissionsRoute
+  '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -640,6 +655,7 @@ export interface FileRoutesByTo {
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/procurement': typeof PropMgrProcurementRoute
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
@@ -697,6 +713,7 @@ export interface FileRoutesById {
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
   '/admin/permissions': typeof AdminPermissionsRoute
+  '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -726,6 +743,7 @@ export interface FileRoutesById {
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
+  '/prop-mgr/procurement': typeof PropMgrProcurementRoute
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
@@ -784,6 +802,7 @@ export interface FileRouteTypes {
     | '/admin/maintenance'
     | '/admin/masters'
     | '/admin/permissions'
+    | '/admin/procurement'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
@@ -813,6 +832,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
+    | '/prop-mgr/procurement'
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
@@ -861,6 +881,7 @@ export interface FileRouteTypes {
     | '/admin/maintenance'
     | '/admin/masters'
     | '/admin/permissions'
+    | '/admin/procurement'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
@@ -890,6 +911,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
+    | '/prop-mgr/procurement'
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
@@ -946,6 +968,7 @@ export interface FileRouteTypes {
     | '/admin/maintenance'
     | '/admin/masters'
     | '/admin/permissions'
+    | '/admin/procurement'
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
@@ -975,6 +998,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
+    | '/prop-mgr/procurement'
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
@@ -1286,6 +1310,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropMgrPropertiesRouteImport
       parentRoute: typeof PropMgrRoute
     }
+    '/prop-mgr/procurement': {
+      id: '/prop-mgr/procurement'
+      path: '/procurement'
+      fullPath: '/prop-mgr/procurement'
+      preLoaderRoute: typeof PropMgrProcurementRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
     '/prop-mgr/maintenance': {
       id: '/prop-mgr/maintenance'
       path: '/maintenance'
@@ -1489,6 +1520,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPropertiesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/procurement': {
+      id: '/admin/procurement'
+      path: '/procurement'
+      fullPath: '/admin/procurement'
+      preLoaderRoute: typeof AdminProcurementRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/permissions': {
       id: '/admin/permissions'
       path: '/permissions'
@@ -1633,6 +1671,7 @@ interface AdminRouteChildren {
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminMastersRoute: typeof AdminMastersRoute
   AdminPermissionsRoute: typeof AdminPermissionsRoute
+  AdminProcurementRoute: typeof AdminProcurementRoute
   AdminPropertiesRoute: typeof AdminPropertiesRoute
   AdminUnitsRoute: typeof AdminUnitsRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -1650,6 +1689,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminMastersRoute: AdminMastersRoute,
   AdminPermissionsRoute: AdminPermissionsRoute,
+  AdminProcurementRoute: AdminProcurementRoute,
   AdminPropertiesRoute: AdminPropertiesRoute,
   AdminUnitsRoute: AdminUnitsRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -1810,6 +1850,7 @@ interface PropMgrRouteChildren {
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
   PropMgrLeasingRoute: typeof PropMgrLeasingRoute
   PropMgrMaintenanceRoute: typeof PropMgrMaintenanceRoute
+  PropMgrProcurementRoute: typeof PropMgrProcurementRoute
   PropMgrPropertiesRoute: typeof PropMgrPropertiesRoute
   PropMgrUnitsRoute: typeof PropMgrUnitsRouteWithChildren
   PropMgrUsersRoute: typeof PropMgrUsersRoute
@@ -1824,6 +1865,7 @@ const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrLeasesRoute: PropMgrLeasesRoute,
   PropMgrLeasingRoute: PropMgrLeasingRoute,
   PropMgrMaintenanceRoute: PropMgrMaintenanceRoute,
+  PropMgrProcurementRoute: PropMgrProcurementRoute,
   PropMgrPropertiesRoute: PropMgrPropertiesRoute,
   PropMgrUnitsRoute: PropMgrUnitsRouteWithChildren,
   PropMgrUsersRoute: PropMgrUsersRoute,

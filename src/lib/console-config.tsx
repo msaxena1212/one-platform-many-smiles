@@ -33,6 +33,11 @@ import {
   PieChart,
   Landmark,
   Scale,
+  Clock,
+  Calendar,
+  Award,
+  LogOut,
+  Megaphone,
 } from "lucide-react";
 import type { NavGroup, NavItem, NavModule } from "@/components/app-shell";
 import type { Profile } from "@/lib/supabase";
@@ -323,6 +328,45 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
         ],
       },
       {
+        module: "Procurement",
+        icon: <ClipboardList className="h-4 w-4" />,
+        color: "text-cyan-500",
+        bg: "bg-cyan-500/10",
+        activeBg: "bg-cyan-500",
+        groups: [
+          {
+            group: "Procurement Operations",
+            icon: <ClipboardList className="h-3.5 w-3.5" />,
+            color: "text-cyan-500",
+            bg: "bg-cyan-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "requests" }, label: "Purchase Requests", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "orders" }, label: "Purchase Orders", icon: <ClipboardList className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "receiving" }, label: "GRN / Receiving", icon: <Receipt className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Asset & Maintenance Integration",
+            icon: <Package className="h-3.5 w-3.5" />,
+            color: "text-amber-500",
+            bg: "bg-amber-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "assets" }, label: "Asset Linkage", icon: <Package className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "maintenance" }, label: "Maintenance Stock", icon: <Wrench className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Item Master",
+            icon: <Database className="h-3.5 w-3.5" />,
+            color: "text-indigo-500",
+            bg: "bg-indigo-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "catalog" }, label: "Item Catalog", icon: <Database className="h-3.5 w-3.5" /> },
+            ],
+          },
+        ],
+      },
+      {
         module: "Operations",
         icon: <Wrench className="h-4 w-4" />,
         color: "text-orange-500",
@@ -359,6 +403,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/prop-mgr/leases", title: "All Leases" },
       { match: "/prop-mgr/finance", title: "Finance" },
       { match: "/prop-mgr/assets", title: "Assets" },
+      { match: "/prop-mgr/procurement", title: "Procurement" },
       { match: "/prop-mgr/maintenance", title: "Maintenance" },
       { match: "/prop-mgr/approvals", title: "Approvals" },
       { match: "/prop-mgr/users", title: "Users" },
@@ -534,6 +579,45 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
         ],
       },
       {
+        module: "Procurement",
+        icon: <ClipboardList className="h-4 w-4" />,
+        color: "text-cyan-500",
+        bg: "bg-cyan-500/10",
+        activeBg: "bg-cyan-500",
+        groups: [
+          {
+            group: "Procurement Operations",
+            icon: <ClipboardList className="h-3.5 w-3.5" />,
+            color: "text-cyan-500",
+            bg: "bg-cyan-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "requests" }, label: "Purchase Requests", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "orders" }, label: "Purchase Orders", icon: <ClipboardList className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "receiving" }, label: "GRN / Receiving", icon: <Receipt className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Asset & Maintenance Integration",
+            icon: <Package className="h-3.5 w-3.5" />,
+            color: "text-amber-500",
+            bg: "bg-amber-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "assets" }, label: "Asset Linkage", icon: <Package className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "maintenance" }, label: "Maintenance Stock", icon: <Wrench className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Item Master",
+            icon: <Database className="h-3.5 w-3.5" />,
+            color: "text-indigo-500",
+            bg: "bg-indigo-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "catalog" }, label: "Item Catalog", icon: <Database className="h-3.5 w-3.5" /> },
+            ],
+          },
+        ],
+      },
+      {
         module: "Operations",
         icon: <Wrench className="h-4 w-4" />,
         color: "text-orange-500",
@@ -552,26 +636,63 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
         ],
       },
       {
+        module: "HRMS",
+        icon: <Users className="h-4 w-4" />,
+        color: "text-teal-500",
+        bg: "bg-teal-500/10",
+        activeBg: "bg-teal-500",
+        groups: [
+          {
+            group: "Core HR",
+            icon: <UserCheck className="h-3.5 w-3.5" />,
+            color: "text-teal-500",
+            bg: "bg-teal-500/10",
+            items: [
+              { to: "/admin/hrms", search: { tab: "dashboard" }, label: "Dashboard", icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "employees" }, label: "Employees", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "organization" }, label: "Org Masters", icon: <Building2 className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Workforce & Time",
+            icon: <Clock className="h-3.5 w-3.5" />,
+            color: "text-blue-500",
+            bg: "bg-blue-500/10",
+            items: [
+              { to: "/admin/hrms", search: { tab: "attendance" }, label: "Attendance & Shifts", icon: <Clock className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "leaves" }, label: "Leave Management", icon: <Calendar className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Payroll & Finance",
+            icon: <Wallet className="h-3.5 w-3.5" />,
+            color: "text-emerald-500",
+            bg: "bg-emerald-500/10",
+            items: [
+              { to: "/admin/hrms", search: { tab: "payroll" }, label: "Payroll & Salary", icon: <CreditCard className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "expenses" }, label: "Expenses & Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Appraisal & Lifecycle",
+            icon: <Award className="h-3.5 w-3.5" />,
+            color: "text-rose-500",
+            bg: "bg-rose-500/10",
+            items: [
+              { to: "/admin/hrms", search: { tab: "performance" }, label: "Performance / KPA", icon: <Award className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "exit_lifecycle" }, label: "Exit & FNF", icon: <LogOut className="h-3.5 w-3.5" /> },
+              { to: "/admin/hrms", search: { tab: "services" }, label: "Help Desk & Notices", icon: <Megaphone className="h-3.5 w-3.5" /> },
+            ],
+          },
+        ],
+      },
+      {
         module: "System & Config",
         icon: <Settings className="h-4 w-4" />,
         color: "text-blue-500",
         bg: "bg-blue-500/10",
         activeBg: "bg-blue-500",
         groups: [
-          {
-            group: "HRMS Masters",
-            icon: <Users className="h-3.5 w-3.5" />,
-            color: "text-blue-500",
-            bg: "bg-blue-500/10",
-            items: [
-              { to: "/admin/masters", search: { tab: "gender" }, label: "Genders", icon: <Settings className="h-3.5 w-3.5" /> },
-              { to: "/admin/masters", search: { tab: "department" }, label: "Departments", icon: <Settings className="h-3.5 w-3.5" /> },
-              { to: "/admin/masters", search: { tab: "designation" }, label: "Designations", icon: <Settings className="h-3.5 w-3.5" /> },
-              { to: "/admin/masters", search: { tab: "employment_type" }, label: "Employment Types", icon: <Settings className="h-3.5 w-3.5" /> },
-              { to: "/admin/masters", search: { tab: "work_location" }, label: "Work Locations", icon: <Settings className="h-3.5 w-3.5" /> },
-              { to: "/admin/masters", search: { tab: "employee_status" }, label: "Employee Statuses", icon: <Settings className="h-3.5 w-3.5" /> },
-            ],
-          },
           {
             group: "Asset Masters",
             icon: <Package className="h-3.5 w-3.5" />,
@@ -603,7 +724,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-rose-500/10",
             items: [
               { to: "/admin/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/hrms", label: "HRMS", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/admin/audit-logs", label: "Audit Logs", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },
@@ -618,6 +738,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/admin/leases", title: "All Leases" },
       { match: "/admin/finance", title: "Finance" },
       { match: "/admin/assets", title: "Assets" },
+      { match: "/admin/procurement", title: "Procurement" },
       { match: "/admin/maintenance", title: "Maintenance" },
       { match: "/admin/masters", title: "Masters & Config" },
       { match: "/admin/users", title: "Users" },
@@ -850,15 +971,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             ],
           },
           {
-            group: "Procurement",
-            icon: <ClipboardList className="h-3.5 w-3.5" />,
-            color: "text-cyan-500",
-            bg: "bg-cyan-500/10",
-            items: [
-              { to: "/finance/procurement", label: "Procurement Control Tower", icon: <ClipboardList className="h-3.5 w-3.5" /> },
-            ],
-          },
-          {
             group: "Contracts",
             icon: <FileSignature className="h-3.5 w-3.5" />,
             color: "text-indigo-500",
@@ -872,7 +984,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       },
     ],
     titleRules: [
-      { match: "/finance/procurement", title: "Procurement Control Tower" },
       { match: "/finance", title: "Finance" },
     ],
   },
