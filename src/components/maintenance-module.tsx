@@ -260,13 +260,13 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                       if (!partId) return;
                       setLogging(true);
                       try {
-                        const part = inventoryParts.find(p => p.id === partId);
-                        const cost = (part?.unit_cost || 0) * partQty;
-                        await logMaterialUsage({ ticket_id: selectedTicket.id, part_id: partId, quantity: partQty, cost });
+                        await logMaterialUsage({ ticket_id: selectedTicket.id, part_id: partId, quantity: partQty });
                         const usages = await fetchMaterialUsage(selectedTicket.id);
                         setMaterialUsage(usages || []);
+                        const refreshedParts = await fetchInventoryParts();
+                        setInventoryParts(refreshedParts || []);
                         setPartQty(1);
-                      } catch (e) { console.error(e); }
+                      } catch (e: any) { console.error(e); alert(e?.message || 'Unable to issue material.'); }
                       finally { setLogging(false); }
                     }} disabled={logging}>
                       {logging ? 'Logging...' : 'Add'}

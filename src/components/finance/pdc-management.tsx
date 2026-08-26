@@ -309,6 +309,30 @@ export function PdcManagement() {
     load();
   }, [leases]);
 
+  // Supabase Realtime: auto-refresh PDC list when fin_pdc_register or pdcs change.
+  useEffect(() => {
+    const channel = supabase
+      .channel("pdc-management:live")
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "fin_pdc_register" },
+        () => { load(); }
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "UPDATE", schema: "public", table: "pdcs" },
+        () => { load(); }
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "pdcs" },
+        () => { load(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function load() {
     setLoading(true);
     try {

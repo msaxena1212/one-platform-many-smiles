@@ -529,6 +529,8 @@ export type InventoryPart = {
   quantity_on_hand: number;
   unit_cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
+  unit_of_measure?: string;
 };
 
 export type MaterialUsage = {
@@ -538,6 +540,7 @@ export type MaterialUsage = {
   quantity: number;
   cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
 };
 
 export type PropertyImage = {
@@ -889,14 +892,22 @@ export async function fetchMaterialUsage(ticketId: string) {
   return data;
 }
 
-export async function logMaterialUsage(payload: { ticket_id: string; part_id?: string; quantity: number; cost: number }) {
-  const { data, error } = await supabase.from('material_usage').insert(payload).select().single();
+export async function logMaterialUsage(payload: { ticket_id: string; part_id: string; quantity: number }) {
+  const { data, error } = await supabase.rpc('issue_maintenance_material', {
+    p_ticket_id: payload.ticket_id,
+    p_part_id: payload.part_id,
+    p_quantity: payload.quantity,
+  });
   if (error) throw error;
-  return data;
+  return data as string;
 }
 
 export async function fetchInventoryParts() {
-  const { data, error } = await supabase.from('inventory_parts').select('*').order('name');
+  const { data, error } = await supabase
+    .from('inventory_parts')
+    .select('*')
+    .not('procurement_item_id', 'is', null)
+    .order('name');
   if (error) throw error;
   return data as InventoryPart[];
 }

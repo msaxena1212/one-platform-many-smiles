@@ -7,19 +7,19 @@ import { FinDepositsApi } from '../supabase-finance';
  */
 export async function collectSecurityDeposit(payload: {
   amount: number;
-  tenant_id: number;
-  property_id: number;
-  unit_id: number;
-  lease_id?: number;
+  tenant_id: string | number;
+  property_id: string | number;
+  unit_id: string | number;
+  lease_id?: string | number;
   mode: 'Cash' | 'Bank';
   ref: string;
 }) {
   // Post receipt journal (Dr Bank/Cash, Cr 21500)
   const voucher = await postLeaseDepositReceipt(
     payload.amount, 
-    payload.tenant_id, 
-    payload.property_id, 
-    payload.unit_id, 
+    payload.tenant_id as any, 
+    payload.property_id as any, 
+    payload.unit_id as any, 
     payload.mode, 
     payload.ref
   );
@@ -29,10 +29,10 @@ export async function collectSecurityDeposit(payload: {
     deposit_type: 'Security Deposit',
     coa_account_code: '21500',
     amount: payload.amount,
-    tenant_id: payload.tenant_id,
-    property_id: payload.property_id,
-    unit_id: payload.unit_id,
-    lease_id: payload.lease_id,
+    tenant_id: String(payload.tenant_id),
+    property_id: String(payload.property_id),
+    unit_id: String(payload.unit_id),
+    lease_id: payload.lease_id != null ? String(payload.lease_id) : undefined,
     status: 'Active',
     receipt_ref: voucher.voucher_number
   });
@@ -69,7 +69,7 @@ export async function transferDepositToRefundable(depositId: number | string) {
   });
 
   // Update Subledger
-  await FinDepositsApi.update(numId, { 
+  await FinDepositsApi.update(String(numId), { 
     coa_account_code: '21100', 
     status: 'Refundable' 
   });
@@ -114,5 +114,5 @@ export async function settleDeposit(depositId: number | string, deductions: numb
     lines
   });
 
-  await FinDepositsApi.update(numId, { status: refundAmount > 0 ? 'Refunded' : 'Settled' });
+  await FinDepositsApi.update(String(numId), { status: refundAmount > 0 ? 'Refunded' : 'Settled' });
 }

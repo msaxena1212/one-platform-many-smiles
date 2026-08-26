@@ -35,6 +35,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Printer,
   Receipt,
   RefreshCw,
   ShieldCheck,
@@ -709,6 +710,31 @@ function LeasingPage() {
     }
     fetchRealUnits();
   }, []);
+
+  // Supabase Realtime: subscribe to lease status changes from any session.
+  useEffect(() => {
+    let channel: ReturnType<typeof import('@/lib/supabase').supabase.channel> | null = null;
+    import('@/lib/supabase').then(({ supabase }) => {
+      channel = supabase
+        .channel("leasing-page:leases")
+        .on(
+          "postgres_changes" as any,
+          { event: "UPDATE", schema: "public", table: "leases" },
+          (payload: any) => {
+            const updated = payload.new;
+            if (!updated?.lease_number) return;
+            // Map the Supabase lease_status back into the local context lease.
+            setLeases(prev => prev.map(l =>
+              l.id === updated.lease_number
+                ? { ...l, status: updated.lease_status ?? l.status }
+                : l
+            ));
+          }
+        )
+        .subscribe();
+    });
+    return () => { channel && import('@/lib/supabase').then(({ supabase }) => supabase.removeChannel(channel!)); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Customer Dialog States ────────────────────────────────────
   const [viewCustomerOpen, setViewCustomerOpen] = useState(false);
@@ -1533,8 +1559,8 @@ function LeasingPage() {
     ];
     setVouchers((items) => [...newVouchers, ...items]);
 
-    // ── Post to Finance Store (Journal Ledger + Receipt Vouchers + AR) ──
-    // 1. PDC Collection Journal Entry: DR PDC In Hand (12900) / CR Customer PDC Liability (21400)
+    // ── Post to Finance Store (Journal Ledger + Receipt Vouchers) ──
+    // 1. PDC Collection: DR PDC In Hand (12900) / CR Customer PDC Liability (21400)
     if (pdcTotal > 0) {
       addJournalEntry({
         je_no: jeNo,
@@ -1546,6 +1572,9 @@ function LeasingPage() {
         cr_account: "Customer PDC Liability",
         cr_code: "21400",
         amount: pdcTotal,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
       // Receipt Voucher for Rent PDCs
       addFinanceVoucher({
@@ -1559,25 +1588,16 @@ function LeasingPage() {
         credit_code: "21400",
         amount: pdcTotal,
         method: collectForm.paymentMode,
-      });
-      // AR Receivable Invoice for full contract rent
-      addReceivableInvoice({
-        invoice_no: `INV-AR-${lease.id.toUpperCase()}-RENT`,
-        tenant: lease.tenantName,
-        property: lease.property,
-        unit: lease.unit,
-        date: today_str,
-        due_date: collectForm.endDate || lease.endDate,
-        stream: "Residential Lease",
-        account_code: "41100",
-        amount: pdcTotal,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
     }
 
-    // 2. Security Deposit Journal Entry
+    // 2. Security Deposit
     if (depAmt > 0) {
       const depDrAccount = collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand";
-      const depDrCode = collectForm.depositMode === "Cash" ? "10100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
+      const depDrCode = collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
       addJournalEntry({
         je_no: `${jeNo}-DEP`,
         posting_date: today_str,
@@ -1588,6 +1608,9 @@ function LeasingPage() {
         cr_account: "Security Deposit Liability",
         cr_code: "21500",
         amount: depAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
       // Receipt Voucher for Security Deposit
       addFinanceVoucher({
@@ -1601,6 +1624,9 @@ function LeasingPage() {
         credit_code: "21500",
         amount: depAmt,
         method: collectForm.depositMode,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
       // Cash book entry if cash
       if (collectForm.depositMode === "Cash") {
@@ -1622,11 +1648,14 @@ function LeasingPage() {
         date: today_str,
         name: `Agency Commission — ${lease.unit}`,
         debit: "Cash In Hand",
-        debit_code: "10100",
+        debit_code: "12100",
         credit: "Agency Commission Income",
-        credit_code: "41200",
+        credit_code: "41201",
         amount: agencyAmt,
         method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
     }
 
@@ -1638,11 +1667,14 @@ function LeasingPage() {
         date: today_str,
         name: `Admin Charges — ${lease.unit}`,
         debit: "Cash In Hand",
-        debit_code: "10100",
+        debit_code: "12100",
         credit: "Admin Charges Income",
-        credit_code: "41300",
+        credit_code: "41201",
         amount: adminAmt,
         method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
     }
 
@@ -1654,11 +1686,14 @@ function LeasingPage() {
         date: today_str,
         name: `Utility Deposit — ${lease.unit}`,
         debit: "Cash In Hand",
-        debit_code: "10100",
+        debit_code: "12100",
         credit: "Utility Deposit Liability",
         credit_code: "21600",
         amount: utilityAmt,
         method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
       });
     }
 
@@ -1965,49 +2000,6 @@ function LeasingPage() {
 
     setAddVoucherOpen(false);
     setAddVoucherForm({ leaseId: "", name: "Receipts Voucher - Rent", receiptNo: "", method: "PDC", period: "", debit: "PDC In Hand", credit: "Rental Income", amount: "", createPdc: true, pdcChequeNo: "", pdcBank: "", pdcDate: today.toISOString().split("T")[0] });
-  }
-
-  function addSecurityDeposit() {
-    const { leaseId, amount, method, receiptNo, chequeNo, bank, chequeDate, notes } = securityDepositForm;
-    if (!leaseId || !amount) { alert("Please select a lease and enter the deposit amount."); return; }
-    const isPdc = method === "PDC" || method === "Guarantee Cheque";
-    const newVoucher: Voucher = {
-      id: `v${vouchers.length + 1}`,
-      leaseId,
-      name: `Receipt Voucher - Security Deposit (${method})`,
-      receiptNo: receiptNo || `SD-${Date.now()}`,
-      method,
-      period: "Security Deposit",
-      debit: isPdc ? "PDC In Hand" : method === "Cash" ? "Cash In Hand" : "Bank Account",
-      credit: "Security Deposit Liability",
-      amount: Number(amount),
-      status: "draft",
-    };
-    setVouchers((items) => [newVoucher, ...items]);
-    if (isPdc && chequeNo) {
-      const newPdc: Pdc = {
-        id: `p${pdcs.length + 1}`,
-        leaseId,
-        chequeNo,
-        bank,
-        date: chequeDate,
-        amount: Number(amount),
-        status: "received",
-      };
-      setPdcs((items) => [newPdc, ...items]);
-    }
-    // Update lease security deposit
-    setLeases((items) => items.map((l) => l.id === leaseId ? { ...l, securityDeposit: l.securityDeposit + Number(amount) } : l));
-    recordAudit({
-      stage: "Security Deposit Received",
-      owner: "Finance Department",
-      input: `${method} — ${formatMoney(Number(amount))}${chequeNo ? ` — Cheque ${chequeNo}` : ""}`,
-      approval: "Cashier receipt",
-      status: "received",
-      output: `Security deposit ${newVoucher.receiptNo} recorded. ${notes || ""}`,
-    });
-    setSecurityDepositOpen(false);
-    setSecurityDepositForm({ leaseId: "", amount: "", method: "Cash", receiptNo: "", chequeNo: "", bank: "", chequeDate: today.toISOString().split("T")[0], notes: "" });
   }
 
   function discussRenewal() {

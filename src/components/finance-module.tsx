@@ -712,7 +712,7 @@ function FinanceDashboardSubModule() {
 function PostingPeriodSubModule() {
   const [data, setData] = useState<FinPostingPeriod[]>([]);
   const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     year: "2026",
     month: "9",
@@ -788,7 +788,7 @@ function PostingPeriodSubModule() {
     } else {
       // Create new
       const newPeriod: FinPostingPeriod = {
-        id: Date.now(),
+        id: String(Date.now()),
         period_name,
         year: y,
         month: m,
@@ -2185,22 +2185,22 @@ function BankSubModule() {
     try {
       const res = await FinBanksApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
-        { id: 2, code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" },
-        { id: 3, code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA" },
-        { id: 4, code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA" },
+        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
+        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" },
+        { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA" },
+        { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA" },
       ]);
     } catch {
       setData([
-        { id: 1, code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
-        { id: 2, code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" }
+        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
+        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" }
       ]);
     }
   }
 
   async function handleAdd() {
     try { await FinBanksApi.create(form); } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
     toast.success("Bank registered");
     setOpen(false);
   }
@@ -2251,27 +2251,27 @@ function BankSubModule() {
 function BankAccountSubModule() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<FinBankAccount[]>([]);
-  const [form, setForm] = useState({ bank_id: 1, account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Main Rent Operating Account", currency: "QAR", opening_balance: 1500000 });
+  const [form, setForm] = useState({ bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Main Rent Operating Account", currency: "QAR", opening_balance: 1500000 });
 
   useEffect(() => { load(); }, []);
   async function load() {
     try {
       const res = await FinBankAccountsApi.fetchAll();
       setData(res.length > 0 ? res : [
-        { id: 1, bank_id: 1, account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 },
-        { id: 2, bank_id: 2, account_number: "QA88CBQA00000000987654321", account_title: "ZYNO Escrow & Deposits Account (CBQ)", currency: "QAR", opening_balance: 450000 },
-        { id: 3, bank_id: 3, account_number: "QA22DOHB00000000554433221", account_title: "ZYNO Payroll & Disbursement (Doha Bank)", currency: "QAR", opening_balance: 200000 },
-      ]);
+        { id: "1", bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 },
+        { id: "2", bank_id: "2", account_number: "QA88CBQA00000000987654321", account_title: "ZYNO Escrow & Deposits Account (CBQ)", currency: "QAR", opening_balance: 450000 },
+        { id: "3", bank_id: "3", account_number: "QA22DOHB00000000554433221", account_title: "ZYNO Payroll & Disbursement (Doha Bank)", currency: "QAR", opening_balance: 200000 },
+      ] as FinBankAccount[]);
     } catch {
       setData([
-        { id: 1, bank_id: 1, account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 }
-      ]);
+        { id: "1", bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 }
+      ] as FinBankAccount[]);
     }
   }
 
   async function handleAdd() {
     try { await FinBankAccountsApi.create(form); } catch { }
-    setData(prev => [{ id: Date.now(), ...form }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form } as FinBankAccount, ...prev]);
     toast.success("Bank account created and mapped to GL Account 12000");
     setOpen(false);
   }
@@ -3802,7 +3802,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
       } else {
         setData([
           {
-            id: 1,
+            id: "1",
             contract_number: `CNT-${type === "Expense" ? "EXP" : "REV"}-001`,
             title: type === "Expense" ? "Comprehensive Facility Management Agreement" : "Corporate Office Lease Agreement",
             party_name: type === "Expense" ? "Gulf Facility Solutions WLL" : "Al Ameen Logistics WLL",
@@ -3817,7 +3817,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
     } catch {
       setData([
         {
-          id: 1,
+          id: "1",
           contract_number: `CNT-${type === "Expense" ? "EXP" : "REV"}-001`,
           title: type === "Expense" ? "Comprehensive Facility Management Agreement" : "Corporate Office Lease Agreement",
           party_name: type === "Expense" ? "Gulf Facility Solutions WLL" : "Al Ameen Logistics WLL",
@@ -3840,7 +3840,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
       await FinContractsApi.create({ ...form, type });
     } catch { }
 
-    setData(prev => [{ id: Date.now(), ...form, type }, ...prev]);
+    setData(prev => [{ id: String(Date.now()), ...form, type } as FinContract, ...prev]);
     toast.success(`${type} Contract saved successfully!`);
     setOpen(false);
   }

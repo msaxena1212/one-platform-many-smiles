@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 
 export type UnitStatus = "Available" | "Occupied" | "Reserved" | "Vacant - Under Maintenance";
 export type CustomerStatus = "draft" | "active" | "inactive" | "duplicate";
@@ -319,15 +320,77 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [appData, setAppData] = useState<PmsAppData>(readInitialData);
   const [syncing, setSyncing] = useState(true);
 
+  // BroadcastChannel: enables zero-latency cross-tab sync within the same origin.
+  const bcRef = useRef<BroadcastChannel | null>(null);
+
   useEffect(() => {
     setAppData(readInitialData());
     setSyncing(false);
+
+    // Open a shared BroadcastChannel so all tabs instantly share state mutations.
+    if (typeof BroadcastChannel !== "undefined") {
+      const bc = new BroadcastChannel("zyno-pms-sync");
+      bcRef.current = bc;
+      bc.onmessage = (event) => {
+        if (event.data?.type === "STATE_UPDATE" && event.data?.payload) {
+          const next = normalizeStoredData(event.data.payload);
+          if (next) setAppData(next);
+        }
+      };
+      return () => { bc.close(); };
+    }
   }, []);
 
+  // Persist to localStorage AND broadcast to other tabs + Supabase on every change.
   useEffect(() => {
     if (typeof window === "undefined" || syncing) return;
     const payload: PersistedAppData = { ...appData, _version: STORAGE_VERSION };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    // Broadcast to other tabs via BroadcastChannel (faster than storage events).
+    bcRef.current?.postMessage({ type: "STATE_UPDATE", payload });
+
+    // ── Supabase write-through (best-effort) ───────────────────────────────
+    // Persist lease STATUS changes — update rows matched by lease_number.
+    // We only attempt this for leases that have a meaningful status set.
+    appData.leases.forEach(lease => {
+      if (!lease.status) return;
+      supabase
+        .from("leases")
+        .update({
+          lease_status: lease.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("lease_number", lease.id)
+        .then(({ error }) => {
+          if (error && error.code !== "PGRST116") {
+            // PGRST116 = no rows matched — safe to ignore for seed data.
+            console.warn("[AppData] lease sync warn:", error.message);
+          }
+        });
+    });
+
+    // Persist PDC status changes — update rows matched by cheque_number.
+    appData.pdcs.forEach(pdc => {
+      if (!pdc.status) return;
+      const supabaseStatus =
+        pdc.status === "deposited" ? "deposited" :
+        pdc.status === "cleared"   ? "cleared"   :
+        pdc.status === "bounced"   ? "bounced"   :
+        pdc.status === "returned"  ? "returned"  :
+        pdc.status === "replaced"  ? "replaced"  :
+        pdc.status === "cancelled" ? "cancelled" :
+        "held";
+      supabase
+        .from("pdcs")
+        .update({ status: supabaseStatus, updated_at: new Date().toISOString() })
+        .eq("cheque_number", pdc.chequeNo)
+        .then(({ error }) => {
+          if (error && error.code !== "PGRST116") {
+            console.warn("[AppData] pdc sync warn:", error.message);
+          }
+        });
+    });
   }, [appData, syncing]);
 
   useEffect(() => {

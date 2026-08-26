@@ -66,10 +66,10 @@ export async function receivePdc(payload: {
   cheque_number:  string;
   cheque_date:    string;
   amount:         number;
-  tenant_id:      number;
-  property_id:    number;
-  unit_id:        number;
-  bank_id?:       number;
+  tenant_id:      string | number;
+  property_id:    string | number;
+  unit_id:        string | number;
+  bank_id?:       string | number;
   unitCode?:      string;
 }) {
   // 1. Persist to PDC Register
@@ -77,19 +77,19 @@ export async function receivePdc(payload: {
     cheque_number: payload.cheque_number,
     cheque_date:   payload.cheque_date,
     amount:        payload.amount,
-    tenant_id:     payload.tenant_id,
-    property_id:   payload.property_id,
-    unit_id:       payload.unit_id,
-    bank_id:       payload.bank_id,
+    tenant_id:     String(payload.tenant_id),
+    property_id:   String(payload.property_id),
+    unit_id:       String(payload.unit_id),
+    bank_id:       payload.bank_id != null ? String(payload.bank_id) : undefined,
     status:        'In Hand',
   });
 
   // 2. Post GL entry
   await postPdcCollection(
     payload.amount,
-    payload.tenant_id,
-    payload.property_id,
-    payload.unit_id,
+    payload.tenant_id as any,
+    payload.property_id as any,
+    payload.unit_id as any,
     payload.cheque_number,
     payload.unitCode,
   );

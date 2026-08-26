@@ -7,10 +7,10 @@ import { FinLegalReceivablesApi } from '../supabase-finance';
  */
 export async function escalateToLegal(payload: {
   amount: number;
-  tenant_id: number;
-  property_id: number;
-  unit_id: number;
-  lease_id?: number;
+  tenant_id: string | number;
+  property_id: string | number;
+  unit_id: string | number;
+  lease_id?: string | number;
   reason: string;
 }) {
   const today = new Date().toISOString().split('T')[0];
@@ -21,17 +21,17 @@ export async function escalateToLegal(payload: {
     voucher_type: 'Journal',
     description: `Legal Escalation: ${payload.reason}`,
     lines: [
-      { account_code: '12411', debit: payload.amount, credit: 0, tenant_id: payload.tenant_id, property_id: payload.property_id, unit_id: payload.unit_id },
-      { account_code: '12413', debit: 0, credit: payload.amount, tenant_id: payload.tenant_id, property_id: payload.property_id, unit_id: payload.unit_id }
+      { account_code: '12411', debit: payload.amount, credit: 0, tenant_id: payload.tenant_id as any, property_id: payload.property_id as any, unit_id: payload.unit_id as any },
+      { account_code: '12413', debit: 0, credit: payload.amount, tenant_id: payload.tenant_id as any, property_id: payload.property_id as any, unit_id: payload.unit_id as any }
     ]
   });
 
   // 2. Create Subledger Entry
   const legalRec = await FinLegalReceivablesApi.create({
-    tenant_id: payload.tenant_id,
-    property_id: payload.property_id,
-    unit_id: payload.unit_id,
-    lease_id: payload.lease_id,
+    tenant_id: String(payload.tenant_id),
+    property_id: String(payload.property_id),
+    unit_id: String(payload.unit_id),
+    lease_id: payload.lease_id != null ? String(payload.lease_id) : undefined,
     original_amount: payload.amount,
     outstanding_balance: payload.amount,
     escalation_date: today,
@@ -39,14 +39,18 @@ export async function escalateToLegal(payload: {
     status: 'Escalated'
   });
 
-  return legalRec;
+  return { legalRec, voucher };
 }
 
 /**
  * Recover Funds from a Legal Receivable
  */
-export async function recoverLegalFunds(legalId: number, amount: number, bankRef: string) {
-  const { data: legalRec, error } = await supabase.from('fin_legal_receivables').select('*').eq('id', legalId).single();
+export async function recoverLegalFunds(legalId: string | number, amount: number, bankRef: string) {
+  const { data: legalRec, error } = await supabase
+    .from('fin_legal_receivables')
+    .select('*')
+    .eq('id', legalId)
+    .single();
   if (error) throw error;
   if (legalRec.outstanding_balance < amount) throw new Error('Recovery amount exceeds outstanding balance.');
 
@@ -65,7 +69,7 @@ export async function recoverLegalFunds(legalId: number, amount: number, bankRef
   });
 
   const newBalance = legalRec.outstanding_balance - amount;
-  await FinLegalReceivablesApi.update(legalId, {
+  await FinLegalReceivablesApi.update(String(legalId), {
     outstanding_balance: newBalance,
     status: newBalance <= 0.001 ? 'Fully Recovered' : 'Partially Recovered'
   });

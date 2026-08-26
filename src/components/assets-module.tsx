@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { fetchAssets, createAsset, updateAsset, fetchProperties, fetchUnits, createProperty, updateProperty, createUnit, updateUnit, type Asset, type Property, type Unit } from "@/lib/supabase";
 import { useFinanceStore } from "@/lib/finance/finance-store";
+import { supabase } from "@/lib/supabase";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -694,12 +695,14 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                 const targetProp = properties.find(p => p.id === targetPropId);
                 const targetUnit = units.find(u => u.id === targetUnitId);
 
-                await updateAsset(transferAsset.id, {
-                  assigned_property_id: targetPropId || undefined,
-                  assigned_unit_id: targetUnitId || undefined,
-                  asset_status: targetPropId ? "Assigned" : "Available",
-                  remarks: targetProp ? `Transferred to ${targetProp.title} ${targetUnit ? `(Unit: ${targetUnit.unit_ref})` : ''}` : "Transferred to General Pool"
+                const { error: allocationError } = await supabase.rpc("allocate_procurement_asset", {
+                  p_asset_id: transferAsset.id,
+                  p_property_id: targetPropId,
+                  p_unit_id: targetUnitId,
+                  p_remarks: targetProp ? `Transferred to ${targetProp.title} ${targetUnit ? `(Unit: ${targetUnit.unit_ref})` : ''}` : "Transferred to General Pool",
+                  p_source: "ASSET_MANAGEMENT"
                 });
+                if (allocationError) throw allocationError;
 
                 // Update General Ledger note
                 const cost = Number(transferAsset.purchase_cost) || 0;

@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,9 @@ export interface FinanceVoucher {
   amount: number;
   method?: string;
   status: "Posted" | "Draft" | "Approved";
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface ReceivableInvoice {
@@ -361,6 +365,149 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [cashBookEntries, setCashBookEntries] = useState<CashBookEntry[]>(INITIAL_CASH_BOOK);
   const [pettyCashEntries, setPettyCashEntries] = useState<PettyCashEntry[]>(INITIAL_PETTY_CASH);
 
+  // ── Supabase: initial pull + realtime subscriptions ───────────────────────
+  // Track seen fin_voucher IDs to avoid duplicate toasts on startup.
+  const seenVoucherIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // 1. Pull existing fin_vouchers from Supabase and merge into local vouchers state.
+    supabase
+      .from("fin_vouchers")
+      .select("*")
+      .order("voucher_date", { ascending: false })
+      .then(({ data }) => {
+        if (!data?.length) return;
+        setVouchers(prev => {
+          const existingNos = new Set(prev.map(v => v.voucher_no));
+          const mapped: FinanceVoucher[] = data
+            .filter(r => !existingNos.has(r.voucher_number))
+            .map(r => ({
+              id: r.id,
+              voucher_no: r.voucher_number,
+              voucher_type: (r.voucher_type === "PV" ? "Payment Voucher" : r.voucher_type === "RV" ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
+              date: r.voucher_date,
+              name: r.description || r.voucher_number,
+              debit: r.reference_no || "Bank Operating Account",
+              debit_code: "12000",
+              credit: r.description || "Rental Revenue",
+              credit_code: "41100",
+              amount: Number(r.total_amount) || 0,
+              status: r.status === "posted" ? "Posted" : "Draft" as FinanceVoucher["status"],
+            }));
+          return mapped.length ? [...mapped, ...prev] : prev;
+        });
+        // Mark them as already-known so realtime won't re-toast them.
+        data.forEach(r => seenVoucherIds.current.add(r.id));
+      });
+    // Graceful degradation — local seed data remains if Supabase is unreachable.
+
+    // 2. Pull journal_entries from Supabase and merge.
+    supabase
+      .from("journal_entries")
+      .select("*, journal_lines(*, gl_accounts(code, name_en))")
+      .order("posting_date", { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        if (!data?.length) return;
+        setJournalEntries(prev => {
+          const existingNos = new Set(prev.map(j => j.je_no));
+          const mapped: JournalLedgerEntry[] = data
+            .filter(r => !existingNos.has(r.je_no))
+            .map(r => {
+              const drLine = r.journal_lines?.find((l: any) => l.debit > 0);
+              const crLine = r.journal_lines?.find((l: any) => l.credit > 0);
+              return {
+                id: r.id,
+                je_no: r.je_no,
+                posting_date: r.posting_date,
+                reference: r.source_id || r.je_no,
+                narration: r.narration || "",
+                dr_account: drLine?.gl_accounts?.name_en || "General Account",
+                dr_code: drLine?.gl_accounts?.code || "10000",
+                cr_account: crLine?.gl_accounts?.name_en || "General Account",
+                cr_code: crLine?.gl_accounts?.code || "10000",
+                amount: drLine?.debit || 0,
+                status: r.status || "Posted",
+              };
+            });
+          return mapped.length ? [...mapped, ...prev] : prev;
+        });
+      });
+    // Graceful degradation — local seed data remains if journal_entries is unreachable.
+
+    // 3. Subscribe to fin_vouchers INSERT events for real-time updates.
+    const voucherChannel = supabase
+      .channel("finance-store:fin_vouchers")
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "fin_vouchers" },
+        (payload: any) => {
+          const r = payload.new;
+          if (!r?.id || seenVoucherIds.current.has(r.id)) return;
+          seenVoucherIds.current.add(r.id);
+          const mapped: FinanceVoucher = {
+            id: r.id,
+            voucher_no: r.voucher_number,
+            voucher_type: (r.voucher_type === "PV" ? "Payment Voucher" : r.voucher_type === "RV" ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
+            date: r.voucher_date,
+            name: r.description || r.voucher_number,
+            debit: r.reference_no || "Bank Operating Account",
+            debit_code: "12000",
+            credit: r.description || "Rental Revenue",
+            credit_code: "41100",
+            amount: Number(r.total_amount) || 0,
+            status: "Posted",
+          };
+          setVouchers(prev => {
+            if (prev.some(v => v.id === r.id || v.voucher_no === r.voucher_number)) return prev;
+            return [mapped, ...prev];
+          });
+          toast.info(`Voucher ${r.voucher_number} posted to GL via Supabase.`);
+        }
+      )
+      .subscribe();
+
+    // 4. Subscribe to fin_accounting_events for visibility into posting-engine writes.
+    const eventChannel = supabase
+      .channel("finance-store:fin_accounting_events")
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "fin_accounting_events" },
+        (payload: any) => {
+          const r = payload.new;
+          if (!r?.id) return;
+          // Merge into journal entries for GL view.
+          const entry: JournalLedgerEntry = {
+            id: r.id,
+            je_no: r.reference_number || `EVT-${r.id.slice(0, 8).toUpperCase()}`,
+            posting_date: r.posting_date || r.event_date,
+            reference: r.source_id || r.reference_number || r.id,
+            narration: r.description || r.event_type,
+            dr_account: "Various (see lines)",
+            dr_code: "10000",
+            cr_account: "Various (see lines)",
+            cr_code: "10000",
+            amount: r.total_debit || 0,
+            status: "Posted",
+            property_name: (r.metadata as any)?.property_name,
+            unit_ref: (r.metadata as any)?.unit_ref,
+            tenant_name: (r.metadata as any)?.tenant_name,
+          };
+          setJournalEntries(prev => {
+            if (prev.some(j => j.id === r.id || j.je_no === entry.je_no)) return prev;
+            return [entry, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(voucherChannel);
+      supabase.removeChannel(eventChannel);
+    };
+  }, []);
+
+
   // ── Actions ───────────────────────────────────────────────────────────────
 
   function addJournalEntry(entry: Omit<JournalLedgerEntry, "id" | "status">) {
@@ -371,6 +518,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     };
     setJournalEntries(prev => [newEntry, ...prev]);
     toast.success(`Journal Entry ${newEntry.je_no} posted to General Ledger!`);
+
+    // Persist to Supabase journal_entries table (best-effort, fire-and-forget).
+    void Promise.resolve(
+      supabase.from("journal_entries").insert({
+        je_no: newEntry.je_no,
+        posting_date: newEntry.posting_date,
+        period: newEntry.posting_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7),
+        source_module: "Finance Store",
+        source_id: newEntry.reference || null,
+        narration: newEntry.narration || null,
+        status: "posted",
+      })
+    ).then(({ error }: any) => {
+      if (error) console.warn("[FinanceStore] journal_entries persist warn:", error.message);
+    });
   }
 
   function addGrnMapping(mapping: Omit<GrnCostMapping, "id">) {
@@ -426,6 +588,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     };
     setVouchers(prev => [newVch, ...prev]);
     toast.success(`${newVch.voucher_type} ${newVch.voucher_no} posted successfully!`);
+
+    // Persist to Supabase fin_vouchers (best-effort, fire-and-forget).
+    const typeCode = newVch.voucher_type === "Payment Voucher" ? "PV" : newVch.voucher_type === "Receipt Voucher" ? "RV" : "JV";
+    void Promise.resolve(
+      supabase.from("fin_vouchers").insert({
+        voucher_number: newVch.voucher_no,
+        voucher_date: newVch.date,
+        voucher_type: typeCode,
+        reference_no: newVch.debit_code || null,
+        description: newVch.name,
+        total_amount: newVch.amount,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id")
+    ).then(({ error, data }: any) => {
+      if (error) {
+        console.warn("[FinanceStore] fin_vouchers persist warn:", error.message);
+        return;
+      }
+      // Mark the newly inserted row as seen so realtime won't toast it again.
+      const insertedId = Array.isArray(data) ? data[0]?.id : (data as any)?.id;
+      if (insertedId) seenVoucherIds.current.add(String(insertedId));
+    });
   }
 
   function addReceivableInvoice(inv: Omit<ReceivableInvoice, "id" | "status">) {
@@ -749,9 +934,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const isDrAsset = vch.debit_code.startsWith("1");
       const isDrLiab = vch.debit_code.startsWith("2");
 
-      const propName = (vch as any).property || (vch as any).property_name || "Old Salata - Residence No:23";
-      const unitName = (vch as any).unit || (vch as any).unit_ref || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr" : "General Unit");
-      const tenantName = (vch as any).tenant || (vch as any).tenant_name || (vch.name.includes("Depreciation") ? "Internal Assets Desk" : "Corporate Accounts");
+      const propName = (vch as any).property_name || (vch as any).property || (vch.name.includes("Depreciation") ? "Main Portfolio (Corporate)" : "Main Portfolio");
+      const unitName = (vch as any).unit_ref || (vch as any).unit || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr" : "General");
+      const tenantName = (vch as any).tenant_name || (vch as any).tenant || (vch.name.includes("Depreciation") ? "Internal Assets Desk" : "Corporate / Admin");
 
       list.push({
         id: `tx-vch-dr-${vch.id}`,
