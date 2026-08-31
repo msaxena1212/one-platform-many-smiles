@@ -1,0 +1,461 @@
+[
+  {
+    "gl": "11000",
+    "gl_name": "PPE Land Cost",
+    "group": 11,
+    "group_name": "Fixed Assets",
+    "class": 110,
+    "class_name": "Fixed Assets",
+    "sl_count": 1
+  },
+  {
+    "gl": "12000",
+    "gl_name": "Bank",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 120,
+    "class_name": "Bank",
+    "sl_count": 1
+  },
+  {
+    "gl": "12100",
+    "gl_name": "Cash",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 121,
+    "class_name": "Cash",
+    "sl_count": 1
+  },
+  {
+    "gl": "12410",
+    "gl_name": "Sundry Debtors",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 124,
+    "class_name": "Accounts Receivables",
+    "sl_count": 1
+  },
+  {
+    "gl": "12411",
+    "gl_name": "Legal Receivables",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 124,
+    "class_name": "Accounts Receivables",
+    "sl_count": 1
+  },
+  {
+    "gl": "12412",
+    "gl_name": "Staff Current Account",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 124,
+    "class_name": "Accounts Receivables",
+    "sl_count": 1
+  },
+  {
+    "gl": "12413",
+    "gl_name": "Tenant Receivables",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 124,
+    "class_name": "Accounts Receivables",
+    "sl_count": 1
+  },
+  {
+    "gl": "12500",
+    "gl_name": "Prepaid Expenses",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 125,
+    "class_name": "Prepaid Expenses",
+    "sl_count": 1
+  },
+  {
+    "gl": "12600",
+    "gl_name": "Temp.Loan To Partners",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 126,
+    "class_name": "Temp.Loan To Partners",
+    "sl_count": 1
+  },
+  {
+    "gl": "12700",
+    "gl_name": "Inter Company Accounts",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 127,
+    "class_name": "Inter Company Accounts",
+    "sl_count": 1
+  },
+  {
+    "gl": "12800",
+    "gl_name": "Inventory",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 128,
+    "class_name": "Inventory",
+    "sl_count": 1
+  },
+  {
+    "gl": "12900",
+    "gl_name": "PDC In Hand",
+    "group": 12,
+    "group_name": "Current Assets",
+    "class": 129,
+    "class_name": "PDC In Hand",
+    "sl_count": 2
+  },
+  {
+    "gl": "13000",
+    "gl_name": "Related Parties Account",
+    "group": 13,
+    "group_name": "Current Assets",
+    "class": 130,
+    "class_name": "Related Parties Account",
+    "sl_count": 1
+  },
+  {
+    "gl": "21000",
+    "gl_name": "Sundry Creditors",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 210,
+    "class_name": "Accounts Payables",
+    "sl_count": 1
+  },
+  {
+    "gl": "21100",
+    "gl_name": "Tenant- Refundable Deposit",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 211,
+    "class_name": "Security Deposit Received",
+    "sl_count": 1
+  },
+  {
+    "gl": "21200",
+    "gl_name": "Tenant- Guarantee Cheque",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 212,
+    "class_name": "Guarantee Received",
+    "sl_count": 1
+  },
+  {
+    "gl": "21400",
+    "gl_name": "PDC Received-Leasing Customers",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 214,
+    "class_name": "PDC Received",
+    "sl_count": 1
+  },
+  {
+    "gl": "21500",
+    "gl_name": "Deposits - Leasing Customers",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 215,
+    "class_name": "Deposits Received",
+    "sl_count": 1
+  },
+  {
+    "gl": "21600",
+    "gl_name": "Accruals",
+    "group": 21,
+    "group_name": "Current Liabilities",
+    "class": 216,
+    "class_name": "Accruals",
+    "sl_count": 6
+  },
+  {
+    "gl": "22001",
+    "gl_name": "Provision for Leave Salary",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 220,
+    "class_name": "Provisions",
+    "sl_count": 1
+  },
+  {
+    "gl": "22002",
+    "gl_name": "Provision for End of Service",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 220,
+    "class_name": "Provisions",
+    "sl_count": 1
+  },
+  {
+    "gl": "22003",
+    "gl_name": "Provision for Air Ticket",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 220,
+    "class_name": "Provisions",
+    "sl_count": 1
+  },
+  {
+    "gl": "22004",
+    "gl_name": "Provision for Contingent Liabilities",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 220,
+    "class_name": "Provisions",
+    "sl_count": 1
+  },
+  {
+    "gl": "22005",
+    "gl_name": "Other Provisions (Liability)",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 220,
+    "class_name": "Provisions",
+    "sl_count": 6
+  },
+  {
+    "gl": "22100",
+    "gl_name": "Long Term from Related Parties",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 221,
+    "class_name": "Long Term Loans",
+    "sl_count": 1
+  },
+  {
+    "gl": "22101",
+    "gl_name": "Long Term Bank Loans",
+    "group": 22,
+    "group_name": "Non Current Liabilities",
+    "class": 221,
+    "class_name": "Long Term Loans",
+    "sl_count": 1
+  },
+  {
+    "gl": "221100",
+    "gl_name": "PROVISION FOR LEAVE SALARY",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "221000",
+    "class_name": "PROVISIONS",
+    "sl_count": 232
+  },
+  {
+    "gl": "221200",
+    "gl_name": "PROVISION FOR EOSB",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "221000",
+    "class_name": "PROVISIONS",
+    "sl_count": 232
+  },
+  {
+    "gl": "221300",
+    "gl_name": "PROVISION FOR CONTIGENT LIABILITES",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "221000",
+    "class_name": "PROVISIONS",
+    "sl_count": 4
+  },
+  {
+    "gl": "221400",
+    "gl_name": "OTHER PROVISIONS (LIABILITY)",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "221000",
+    "class_name": "PROVISIONS",
+    "sl_count": 16
+  },
+  {
+    "gl": "221500",
+    "gl_name": "TRAVEL PROVISIONS",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "221000",
+    "class_name": "PROVISIONS",
+    "sl_count": 10
+  },
+  {
+    "gl": "222400",
+    "gl_name": "LONG TERM FROM ASSOCIATES",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "222000",
+    "class_name": "LONGTERM LOANS",
+    "sl_count": 2
+  },
+  {
+    "gl": "222600",
+    "gl_name": "LONG TERM BANK LOANS",
+    "group": "22",
+    "group_name": "Non Current Liabilities",
+    "class": "222000",
+    "class_name": "LONGTERM LOANS",
+    "sl_count": 47
+  },
+  {
+    "gl": "31000",
+    "gl_name": "Capital",
+    "group": 31,
+    "group_name": "Capital",
+    "class": 310,
+    "class_name": "Capital",
+    "sl_count": 2
+  },
+  {
+    "gl": "31100",
+    "gl_name": "Owners Current Account",
+    "group": 31,
+    "group_name": "Capital",
+    "class": 310,
+    "class_name": "Capital",
+    "sl_count": 2
+  },
+  {
+    "gl": "31500",
+    "gl_name": "Retained Earnings Account",
+    "group": 31,
+    "group_name": "Capital",
+    "class": 315,
+    "class_name": "Retained Earnings",
+    "sl_count": 2
+  },
+  {
+    "gl": "32000",
+    "gl_name": "Reserve",
+    "group": 32,
+    "group_name": "Reserve",
+    "class": 320,
+    "class_name": "Reserve",
+    "sl_count": 1
+  },
+  {
+    "gl": "41100",
+    "gl_name": "Rental Revenue",
+    "group": 41,
+    "group_name": "Revenue",
+    "class": 411,
+    "class_name": "Direct Income",
+    "sl_count": 1
+  },
+  {
+    "gl": "41101",
+    "gl_name": "Property Management Fee",
+    "group": 41,
+    "group_name": "Revenue",
+    "class": 411,
+    "class_name": "Direct Income",
+    "sl_count": 1
+  },
+  {
+    "gl": "41201",
+    "gl_name": "Other Income",
+    "group": 41,
+    "group_name": "Revenue",
+    "class": 412,
+    "class_name": "Other Income",
+    "sl_count": 5
+  },
+  {
+    "gl": "41301",
+    "gl_name": "Gain/Loss of Sale of Fixed Assets",
+    "group": 41,
+    "group_name": "Revenue",
+    "class": 413,
+    "class_name": "Non Operating Income",
+    "sl_count": 1
+  },
+  {
+    "gl": "51001",
+    "gl_name": "Labour Outsource",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 510,
+    "class_name": "Direct Expenses",
+    "sl_count": 3
+  },
+  {
+    "gl": "51002",
+    "gl_name": "Annual Maintenance Contract",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 510,
+    "class_name": "Direct Expenses",
+    "sl_count": 6
+  },
+  {
+    "gl": "51003",
+    "gl_name": "Utilities & Other Direct Exp",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 510,
+    "class_name": "Direct Expenses",
+    "sl_count": 6
+  },
+  {
+    "gl": "51004",
+    "gl_name": "Repairs & Maintenance",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 510,
+    "class_name": "Direct Expenses",
+    "sl_count": 9
+  },
+  {
+    "gl": "51101",
+    "gl_name": "Staff Cost",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 16
+  },
+  {
+    "gl": "51102",
+    "gl_name": "General and Administrative Expenses",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 15
+  },
+  {
+    "gl": "51103",
+    "gl_name": "Head office expenses",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 1
+  },
+  {
+    "gl": "51104",
+    "gl_name": "Selling and Marketing Expenses",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 2
+  },
+  {
+    "gl": "51105",
+    "gl_name": "Finance Cost",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 1
+  },
+  {
+    "gl": "51106",
+    "gl_name": "Depreciation&Amortization",
+    "group": "51",
+    "group_name": "Expenditure",
+    "class": 511,
+    "class_name": "Indirect Expenses",
+    "sl_count": 11
+  }
+]

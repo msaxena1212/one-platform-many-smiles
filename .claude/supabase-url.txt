@@ -1,0 +1,4 @@
+PASTE THE DIRECT POSTGRES URL HERE (port 5432), e.g.
+postgres://postgres:YOURPASSWORD@db.rnebpqnzignwjeukgztz.supabase.co:5432/postgres
+
+When the URL is in place, tell Claude to run the migrations. After they finish, delete this file.
