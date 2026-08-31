@@ -57,6 +57,7 @@ const FINANCE_NAV = [
       { key: "vendor_list", label: "Vendor List", icon: Users },
       { key: "customer_list", label: "Customer List", icon: UserCheck },
       { key: "cost_center", label: "Cost Center", icon: Layers },
+      { key: "budget_head", label: "Budget Head & Type", icon: PieChart },
     ],
   },
   {
@@ -193,6 +194,7 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "vendor_list": return <VendorListSubModule />;
     case "customer_list": return <CustomerListSubModule />;
     case "cost_center": return <CostCenterSubModule />;
+    case "budget_head": return <BudgetHeadSubModule />;
 
     // Finance
     case "finance_dashboard": return <FinanceDashboardSubModule />;
@@ -407,8 +409,6 @@ function RegionSubModule() {
 
 function VendorListSubModule() {
   const [data, setData] = useState<FinVendor[]>([]);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "VEND-201", name: "Gulf Facility Solutions WLL", contact_person: "Eng. Tariq Mansoor", email: "support@gulffacility.qa", phone: "+974 4488 2211", tax_number: "CR-992817", status: "Active" as const });
 
   useEffect(() => { load(); }, []);
   async function load() {
@@ -425,61 +425,36 @@ function VendorListSubModule() {
       ]);
     }
   }
-  async function handleAdd() {
-    try { await FinVendorsApi.create(form); } catch { }
-    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
-    toast.success("Vendor added");
-    setOpen(false);
-  }
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Vendor Master Register</h3>
-          <p className="text-xs text-muted-foreground">Manage supplier and service provider accounts linked to AP invoices.</p>
+          <p className="text-xs text-muted-foreground">Supplier and service provider accounts linked to AP invoices (Read-Only).</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
+        <div className="rounded-md border border-cyan-200 bg-cyan-50 dark:bg-cyan-950/20 dark:border-cyan-900 px-3 py-1.5 text-xs text-cyan-900 dark:text-cyan-300">
+          Managed under <strong>Procurement → Vendors</strong>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
-          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">Code</TableHead><TableHead className="font-bold">Vendor Name</TableHead><TableHead className="font-bold">Contact Person</TableHead><TableHead className="font-bold">Phone / Email</TableHead><TableHead className="font-bold">Tax / CR No</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">Code</TableHead><TableHead className="font-bold">Vendor Name</TableHead><TableHead className="font-bold">Contact Person</TableHead><TableHead className="font-bold">Phone / Email</TableHead><TableHead className="font-bold">Tax / CR No</TableHead><TableHead className="font-bold">Status</TableHead></TableRow></TableHeader>
           <TableBody>
             {data.map((row) => (
               <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-mono text-xs font-bold text-primary">{row.code}</TableCell>
                 <TableCell className="font-semibold text-xs">{row.name}</TableCell>
-                <TableCell className="text-xs">{row.contact_person}</TableCell>
-                <TableCell className="text-xs">{row.phone} • {row.email}</TableCell>
-                <TableCell className="text-xs font-mono">{row.tax_number}</TableCell>
+                <TableCell className="text-xs">{row.contact_person || "—"}</TableCell>
+                <TableCell className="text-xs">{[row.phone, row.email].filter(Boolean).join(" • ") || "—"}</TableCell>
+                <TableCell className="text-xs font-mono">{row.tax_number || "—"}</TableCell>
+                <TableCell className="text-xs"><Badge variant={row.status === "Active" ? "default" : "secondary"}>{row.status || "Active"}</Badge></TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Add Vendor Master</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Vendor Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
-              <div><Label>Tax / CR Number</Label><Input value={form.tax_number} onChange={e => setForm({ ...form, tax_number: e.target.value })} /></div>
-            </div>
-            <div><Label>Company Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div><Label>Contact Person</Label><Input value={form.contact_person} onChange={e => setForm({ ...form, contact_person: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
-              <div><Label>Email</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save Vendor</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -614,13 +589,691 @@ function CostCenterSubModule() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1.1 BUDGET HEAD & TYPE SUB-MODULE (Linked with Cost Centers & GL Accounts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface BudgetHeadItem {
+  id: string;
+  code: string;
+  name: string;
+  budget_type: "CAPEX" | "OPEX";
+  cost_center_code: string;
+  cost_center_name: string;
+  account_code: string;
+  account_name: string;
+  allocated_budget: number;
+  financial_year: string;
+  status: "Active" | "Inactive";
+  description?: string;
+}
+
+const DEFAULT_BUDGET_HEADS: BudgetHeadItem[] = [
+  {
+    id: "bh-1",
+    code: "BH-MNT-PROP01",
+    name: "Maintenance & Repairs",
+    budget_type: "OPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    cost_center_name: "Old Salata Residence 23",
+    account_code: "50200",
+    account_name: "Repairs & Maintenance Expenses",
+    allocated_budget: 150000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Scheduled and breakdown facility maintenance, HVAC spares, electrical and plumbing replacements"
+  },
+  {
+    id: "bh-2",
+    code: "BH-AST-PROP01",
+    name: "Property Assets (Capital Additions)",
+    budget_type: "CAPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    cost_center_name: "Old Salata Residence 23",
+    account_code: "13000",
+    account_name: "Fixed Assets Portfolio",
+    allocated_budget: 350000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Capital expenditure for central chillers, heavy water booster pumps, and plant assets"
+  },
+  {
+    id: "bh-3",
+    code: "BH-AST-UNIT01",
+    name: "Unit Assets & Furnishings",
+    budget_type: "CAPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    cost_center_name: "Old Salata Residence 23",
+    account_code: "13000",
+    account_name: "Fixed Assets Portfolio",
+    allocated_budget: 120000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Furnished apartment upgrades, split ACs, high-end white goods and furniture replacements"
+  },
+  {
+    id: "bh-4",
+    code: "BH-SAL-OPS01",
+    name: "Staff Salaries & Site Payroll",
+    budget_type: "OPEX",
+    cost_center_code: "CC-DEPT-OPERATIONS",
+    cost_center_name: "Property Operations & Facilities",
+    account_code: "50100",
+    account_name: "Staff Salaries & Payroll",
+    allocated_budget: 280000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Site facility managers, on-site security guards, and cleaning crew payroll"
+  },
+  {
+    id: "bh-5",
+    code: "BH-CLN-PROP01",
+    name: "Cleaning & Sanitation Services",
+    budget_type: "OPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    cost_center_name: "Old Salata Residence 23",
+    account_code: "50300",
+    account_name: "Cleaning & Sanitation Services",
+    allocated_budget: 75000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Deep checkout cleaning, facade washing, and general pest control treatments"
+  },
+  {
+    id: "bh-6",
+    code: "BH-UTL-PROP01",
+    name: "Electricity & Water (Kahramaa)",
+    budget_type: "OPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    cost_center_name: "Old Salata Residence 23",
+    account_code: "50500",
+    account_name: "Electricity & Water (Kahramaa)",
+    allocated_budget: 180000,
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: "Common area utilities, district cooling (Qatar Cool), and main building Kahramaa accounts"
+  }
+];
+
+function BudgetHeadSubModule() {
+  const { allLedgerTransactions } = useFinanceStore();
+  const { units: sharedUnits } = useAppData();
+
+  const [budgetHeads, setBudgetHeads] = useState<BudgetHeadItem[]>(() => {
+    const saved = localStorage.getItem("zyno_finance_budget_heads");
+    if (saved) {
+      try { return JSON.parse(saved); } catch { }
+    }
+    return DEFAULT_BUDGET_HEADS;
+  });
+
+  const [costCenters, setCostCenters] = useState<FinCostCenter[]>([]);
+  const [selectedCostCenter, setSelectedCostCenter] = useState<string>("all");
+  const [selectedType, setSelectedType] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<BudgetHeadItem | null>(null);
+
+  const [form, setForm] = useState<{
+    code: string;
+    name: string;
+    budget_type: "CAPEX" | "OPEX";
+    cost_center_code: string;
+    account_code: string;
+    allocated_budget: string;
+    financial_year: string;
+    status: "Active" | "Inactive";
+    description: string;
+  }>({
+    code: "",
+    name: "",
+    budget_type: "OPEX",
+    cost_center_code: "CC-PROP-SALATA",
+    account_code: "50200",
+    allocated_budget: "100000",
+    financial_year: "FY 2026-2027",
+    status: "Active",
+    description: ""
+  });
+
+  // Save to localStorage
+  useEffect(() => {
+    localStorage.setItem("zyno_finance_budget_heads", JSON.stringify(budgetHeads));
+  }, [budgetHeads]);
+
+  // Load Cost Centers
+  useEffect(() => {
+    async function loadCC() {
+      try {
+        const dbData = await FinCostCentersApi.fetchAll();
+        const autoSeeds: FinCostCenter[] = [
+          { id: "cc-1", code: "CC-PROP-SALATA", name: "Old Salata Residence 23", manager: "Eng. Fahad", type: "Property" } as any,
+          { id: "cc-2", code: "CC-PROP-MANSOURA", name: "MANSOURA - BLDG06", manager: "Site Manager", type: "Property" } as any,
+          { id: "cc-3", code: "CC-DEPT-OPERATIONS", name: "Property Operations & Facilities", manager: "Head of Operations", type: "Department" } as any,
+          { id: "cc-4", code: "CC-CORP-ADMIN", name: "Corporate Headquarters & Admin", manager: "Finance Manager", type: "Corporate" } as any,
+        ];
+        const existingCodes = new Set((dbData || []).map((d: any) => d.code));
+        const merged = [...(dbData || []), ...autoSeeds.filter(s => !existingCodes.has(s.code))];
+        setCostCenters(merged);
+      } catch {
+        setCostCenters([
+          { id: "cc-1", code: "CC-PROP-SALATA", name: "Old Salata Residence 23", manager: "Eng. Fahad", type: "Property" } as any,
+          { id: "cc-2", code: "CC-PROP-MANSOURA", name: "MANSOURA - BLDG06", manager: "Site Manager", type: "Property" } as any,
+          { id: "cc-3", code: "CC-DEPT-OPERATIONS", name: "Property Operations & Facilities", manager: "Head of Operations", type: "Department" } as any,
+          { id: "cc-4", code: "CC-CORP-ADMIN", name: "Corporate Headquarters & Admin", manager: "Finance Manager", type: "Corporate" } as any,
+        ]);
+      }
+    }
+    loadCC();
+  }, []);
+
+  // Standard COA dictionary for Mapping
+  const COA_EXPENSE_ASSET_OPTIONS = [
+    { code: "50100", name: "Staff Salaries & Payroll", type: "OPEX" },
+    { code: "50200", name: "Repairs & Maintenance Expenses", type: "OPEX" },
+    { code: "50300", name: "Cleaning & Sanitation Services", type: "OPEX" },
+    { code: "50500", name: "Electricity & Water (Kahramaa)", type: "OPEX" },
+    { code: "50900", name: "Depreciation Expense", type: "OPEX" },
+    { code: "13000", name: "Fixed Assets Portfolio", type: "CAPEX" },
+    { code: "15000", name: "Capital Work-in-Progress (CWIP)", type: "CAPEX" },
+  ];
+
+  // Calculate actual live spending from General Ledger per Account / Cost Center
+  const actualsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    (allLedgerTransactions || []).forEach(tx => {
+      const code = tx.account_code || "";
+      const net = (tx.debit || 0) - (tx.credit || 0);
+      if (net > 0) {
+        map[code] = (map[code] || 0) + net;
+      }
+    });
+    return map;
+  }, [allLedgerTransactions]);
+
+  function handleOpenCreate() {
+    setEditingItem(null);
+    setForm({
+      code: `BH-${Date.now().toString().slice(-4)}`,
+      name: "",
+      budget_type: "OPEX",
+      cost_center_code: costCenters[0]?.code || "CC-PROP-SALATA",
+      account_code: "50200",
+      allocated_budget: "100000",
+      financial_year: "FY 2026-2027",
+      status: "Active",
+      description: ""
+    });
+    setDialogOpen(true);
+  }
+
+  function handleOpenEdit(item: BudgetHeadItem) {
+    setEditingItem(item);
+    setForm({
+      code: item.code,
+      name: item.name,
+      budget_type: item.budget_type,
+      cost_center_code: item.cost_center_code,
+      account_code: item.account_code,
+      allocated_budget: String(item.allocated_budget),
+      financial_year: item.financial_year,
+      status: item.status,
+      description: item.description || ""
+    });
+    setDialogOpen(true);
+  }
+
+  function handleSave() {
+    if (!form.name.trim() || !form.code.trim()) {
+      toast.error("Please provide both Budget Head Code and Name.");
+      return;
+    }
+
+    const cc = costCenters.find(c => c.code === form.cost_center_code);
+    const coa = COA_EXPENSE_ASSET_OPTIONS.find(a => a.code === form.account_code);
+    const allocated = parseFloat(form.allocated_budget) || 0;
+
+    if (editingItem) {
+      setBudgetHeads(prev => prev.map(bh => bh.id === editingItem.id ? {
+        ...bh,
+        code: form.code,
+        name: form.name,
+        budget_type: form.budget_type,
+        cost_center_code: form.cost_center_code,
+        cost_center_name: cc?.name || form.cost_center_code,
+        account_code: form.account_code,
+        account_name: coa?.name || "Mapped Account",
+        allocated_budget: allocated,
+        financial_year: form.financial_year,
+        status: form.status,
+        description: form.description
+      } : bh));
+      toast.success(`Budget Head ${form.code} updated successfully.`);
+    } else {
+      const newItem: BudgetHeadItem = {
+        id: `bh-${Date.now()}`,
+        code: form.code,
+        name: form.name,
+        budget_type: form.budget_type,
+        cost_center_code: form.cost_center_code,
+        cost_center_name: cc?.name || form.cost_center_code,
+        account_code: form.account_code,
+        account_name: coa?.name || "Mapped Account",
+        allocated_budget: allocated,
+        financial_year: form.financial_year,
+        status: form.status,
+        description: form.description
+      };
+      setBudgetHeads(prev => [newItem, ...prev]);
+      toast.success(`New Budget Head ${form.code} created.`);
+    }
+    setDialogOpen(false);
+  }
+
+  function handleDelete(id: string) {
+    if (!confirm("Are you sure you want to remove this Budget Head?")) return;
+    setBudgetHeads(prev => prev.filter(bh => bh.id !== id));
+    toast.success("Budget Head removed.");
+  }
+
+  // Filtered Budget Heads
+  const filteredList = useMemo(() => {
+    return budgetHeads.filter(bh => {
+      if (selectedCostCenter !== "all" && bh.cost_center_code !== selectedCostCenter) return false;
+      if (selectedType !== "all" && bh.budget_type !== selectedType) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!(
+          bh.code.toLowerCase().includes(q) ||
+          bh.name.toLowerCase().includes(q) ||
+          bh.cost_center_name.toLowerCase().includes(q) ||
+          bh.account_name.toLowerCase().includes(q) ||
+          bh.account_code.includes(q)
+        )) return false;
+      }
+      return true;
+    });
+  }, [budgetHeads, selectedCostCenter, selectedType, search]);
+
+  // Aggregate Metrics
+  const totalAllocated = useMemo(() => budgetHeads.reduce((s, b) => s + (b.allocated_budget || 0), 0), [budgetHeads]);
+  const totalCapex = useMemo(() => budgetHeads.filter(b => b.budget_type === "CAPEX").reduce((s, b) => s + (b.allocated_budget || 0), 0), [budgetHeads]);
+  const totalOpex = useMemo(() => budgetHeads.filter(b => b.budget_type === "OPEX").reduce((s, b) => s + (b.allocated_budget || 0), 0), [budgetHeads]);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-primary" /> Budget Head &amp; Budget Type Matrix
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Configure CAPEX &amp; OPEX budget heads mapped to Cost Centers and Chart of Accounts for automated procurement control &amp; live financial reporting.
+          </p>
+        </div>
+        <Button size="sm" onClick={handleOpenCreate} className="gap-2 bg-primary hover:bg-primary/90">
+          <Plus className="h-4 w-4" /> Create Budget Head
+        </Button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="p-3.5 bg-card/60 backdrop-blur-sm border shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground font-medium">Total Allocated Budget</span>
+            <Badge variant="outline" className="text-[10px] font-mono bg-blue-500/10 text-blue-600 border-blue-200">
+              {budgetHeads.length} Heads
+            </Badge>
+          </div>
+          <p className="text-lg font-bold font-mono text-primary mt-1">QAR {totalAllocated.toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Annual fiscal limit across all cost centers</p>
+        </Card>
+
+        <Card className="p-3.5 bg-card/60 backdrop-blur-sm border shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground font-medium">CAPEX (Capital Expenditure)</span>
+            <Badge variant="outline" className="text-[10px] font-mono bg-purple-500/10 text-purple-600 border-purple-200">
+              Assets &amp; Plant
+            </Badge>
+          </div>
+          <p className="text-lg font-bold font-mono text-purple-600 mt-1">QAR {totalCapex.toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Fixed assets, structural upgrades &amp; CWIP</p>
+        </Card>
+
+        <Card className="p-3.5 bg-card/60 backdrop-blur-sm border shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground font-medium">OPEX (Operational Expenditure)</span>
+            <Badge variant="outline" className="text-[10px] font-mono bg-emerald-500/10 text-emerald-600 border-emerald-200">
+              Operations &amp; Maintenance
+            </Badge>
+          </div>
+          <p className="text-lg font-bold font-mono text-emerald-600 mt-1">QAR {totalOpex.toLocaleString()}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Repairs, salaries, sanitation &amp; utilities</p>
+        </Card>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="p-3 rounded-lg border bg-muted/20 flex flex-col md:flex-row items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2 w-full md:w-auto flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search code, name, GL account..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-8 h-8 text-xs bg-background"
+            />
+          </div>
+
+          <Select value={selectedCostCenter} onValueChange={setSelectedCostCenter}>
+            <SelectTrigger className="h-8 text-xs w-[180px] bg-background">
+              <SelectValue placeholder="All Cost Centers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Cost Centers</SelectItem>
+              {costCenters.map(cc => (
+                <SelectItem key={cc.code} value={cc.code}>{cc.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={selectedType} onValueChange={setSelectedType}>
+            <SelectTrigger className="h-8 text-xs w-[130px] bg-background">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="CAPEX">CAPEX Only</SelectItem>
+              <SelectItem value="OPEX">OPEX Only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+          <Badge variant="outline" className="text-xs font-mono">{filteredList.length} Records</Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs"
+            onClick={() => { setSearch(""); setSelectedCostCenter("all"); setSelectedType("all"); }}
+          >
+            Reset
+          </Button>
+        </div>
+      </div>
+
+      {/* Data Table */}
+      <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Code</TableHead>
+              <TableHead className="font-bold">Budget Head Name</TableHead>
+              <TableHead className="font-bold">Type</TableHead>
+              <TableHead className="font-bold">Assigned Cost Center</TableHead>
+              <TableHead className="font-bold">Mapped GL Account</TableHead>
+              <TableHead className="font-bold text-right">Allocated Budget</TableHead>
+              <TableHead className="font-bold text-right">GL Actual Spend</TableHead>
+              <TableHead className="font-bold text-center">Utilization</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="w-20 text-center">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredList.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-xs">
+                  No Budget Heads found matching your filter criteria.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredList.map((row) => {
+                const actual = actualsMap[row.account_code] || 0;
+                const utilPercent = row.allocated_budget > 0 ? Math.min(100, Math.round((actual / row.allocated_budget) * 100)) : 0;
+                const isOver = actual > row.allocated_budget;
+
+                return (
+                  <TableRow key={row.id} className="hover:bg-muted/30 text-xs transition-colors">
+                    <TableCell className="font-mono font-bold text-primary">{row.code}</TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-foreground">{row.name}</div>
+                      {row.description && <div className="text-[10px] text-muted-foreground line-clamp-1">{row.description}</div>}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] font-semibold ${row.budget_type === 'CAPEX' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}
+                      >
+                        {row.budget_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium text-foreground">{row.cost_center_name}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground">{row.cost_center_code}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono font-bold text-primary">{row.account_code}</div>
+                      <div className="text-[10px] text-muted-foreground">{row.account_name}</div>
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-semibold">
+                      QAR {row.allocated_budget.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">
+                      QAR {actual.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <div className="w-12 bg-muted rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full ${isOver ? 'bg-rose-500' : utilPercent > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${utilPercent}%` }}
+                          />
+                        </div>
+                        <span className={`text-[10px] font-mono font-semibold ${isOver ? 'text-rose-600' : 'text-muted-foreground'}`}>
+                          {utilPercent}%
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={row.status === "Active" ? "default" : "secondary"} className="text-[10px]">
+                        {row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                          onClick={() => handleOpenEdit(row)}
+                          title="Edit Budget Head"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-rose-600"
+                          onClick={() => handleDelete(row.id)}
+                          title="Delete Budget Head"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modal Dialog Create / Edit */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <PieChart className="h-4 w-4 text-primary" />
+              {editingItem ? `Edit Budget Head (${editingItem.code})` : "Create New Budget Head"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Budget Head Code *</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. BH-MNT-PROP01"
+                  value={form.code}
+                  onChange={e => setForm({ ...form, code: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Budget Type *</Label>
+                <Select
+                  value={form.budget_type}
+                  onValueChange={(v: "CAPEX" | "OPEX") => setForm({
+                    ...form,
+                    budget_type: v,
+                    account_code: v === "CAPEX" ? "13000" : "50200"
+                  })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OPEX">OPEX (Operational Expenditure)</SelectItem>
+                    <SelectItem value="CAPEX">CAPEX (Capital Expenditure)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Budget Head Name *</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. Building Maintenance & Repairs"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Assigned Cost Center *</Label>
+                <Select
+                  value={form.cost_center_code}
+                  onValueChange={v => setForm({ ...form, cost_center_code: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select Cost Center" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {costCenters.map(cc => (
+                      <SelectItem key={cc.code} value={cc.code}>
+                        {cc.name} ({cc.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Mapped General Ledger Account *</Label>
+                <Select
+                  value={form.account_code}
+                  onValueChange={v => setForm({ ...form, account_code: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs font-mono">
+                    <SelectValue placeholder="Select Account Code" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COA_EXPENSE_ASSET_OPTIONS
+                      .filter(a => a.type === form.budget_type)
+                      .map(a => (
+                        <SelectItem key={a.code} value={a.code}>
+                          {a.code} - {a.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Allocated Fiscal Budget (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono"
+                  placeholder="0.00"
+                  value={form.allocated_budget}
+                  onChange={e => setForm({ ...form, allocated_budget: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Financial Year</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={form.financial_year}
+                  onChange={e => setForm({ ...form, financial_year: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Operational Description &amp; Scope</Label>
+              <Textarea
+                rows={2}
+                className="text-xs"
+                placeholder="Details of allowable expenses or procurement items under this head..."
+                value={form.description}
+                onChange={e => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-2 mt-2">
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
+              {editingItem ? "Update Budget Head" : "Create Budget Head"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. FINANCE SUB-MODULES
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FinanceDashboardSubModule() {
   const { vouchers: sharedVouchers, pdcs, leases } = useAppData();
 
-  const totalRentals = (leases || []).reduce((s, l) => s + (l.monthlyRent * 12 || 0), 0);
+  const activeLeases = (leases || []).filter((lease) => !["closed", "renewed"].includes(lease.status));
+  const totalRentals = activeLeases.reduce((sum, lease) => {
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    const effectiveEnd = new Date(lease.actualVacateDate || lease.plannedVacateDate || lease.endDate);
+    effectiveEnd.setHours(0, 0, 0, 0);
+    if (effectiveEnd < todayDate) return sum;
+
+    const monthsRemaining =
+      Math.max(
+        1,
+        (effectiveEnd.getFullYear() - todayDate.getFullYear()) * 12 +
+          (effectiveEnd.getMonth() - todayDate.getMonth()) +
+          (effectiveEnd.getDate() >= todayDate.getDate() ? 1 : 0),
+      );
+    return sum + ((lease.monthlyRent || 0) * monthsRemaining);
+  }, 0);
   const totalPdcs = (pdcs || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const totalVouchers = (sharedVouchers || []).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
@@ -631,7 +1284,7 @@ function FinanceDashboardSubModule() {
           <CardContent className="p-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Contract Assets</p>
             <h3 className="text-xl font-bold mt-1 text-primary font-mono">QR {totalRentals.toLocaleString()}</h3>
-            <p className="text-[10px] text-muted-foreground mt-1">{leases?.length || 3} Executed Tenancies</p>
+            <p className="text-[10px] text-muted-foreground mt-1">{activeLeases.length || 0} Active / Checkout Tenancies</p>
           </CardContent>
         </Card>
         <Card className="bg-emerald-500/5 border-emerald-500/20 shadow-sm">
@@ -1627,9 +2280,9 @@ function CreditDebitBuilderSubModule() {
 function GrnCostMappingSubModule() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState([
-    { grn_no: "GRN-2026-081", po_ref: "PO-2026-014", date: "2026-08-18", vendor: "Qatar Maintenance & HVAC Co.", description: "Central AC Compressor Replacement", amount: 14500, mapped_gl: "5020 - Repairs & Maintenance", property: "Old Salata - Residence No:23", status: "Mapped" },
-    { grn_no: "GRN-2026-082", po_ref: "PO-2026-018", date: "2026-08-15", vendor: "Gulf Facility Services", description: "Deep Cleaning & Disinfection Batch", amount: 8200, mapped_gl: "5030 - Cleaning & Sanitation", property: "Regency Residence Al Sadd 1", status: "Pending" },
-    { grn_no: "GRN-2026-083", po_ref: "PO-2026-022", date: "2026-08-10", vendor: "Doha Elevator Services WLL", description: "Bi-Annual Elevator Safety Sensors", amount: 6400, mapped_gl: "5040 - Elevator Maintenance", property: "Old Salata - Residence No:13", status: "Mapped" },
+    { grn_no: "GRN-2026-081", po_ref: "PO-2026-014", date: "2026-08-18", vendor: "Qatar Maintenance & HVAC Co.", description: "Central AC Compressor Replacement", amount: 14500, mapped_gl: "50200 - Repairs & Maintenance", property: "Old Salata - Residence No:23", status: "Mapped" },
+    { grn_no: "GRN-2026-082", po_ref: "PO-2026-018", date: "2026-08-15", vendor: "Gulf Facility Services", description: "Deep Cleaning & Disinfection Batch", amount: 8200, mapped_gl: "50300 - Cleaning & Sanitation", property: "Regency Residence Al Sadd 1", status: "Pending" },
+    { grn_no: "GRN-2026-083", po_ref: "PO-2026-022", date: "2026-08-10", vendor: "Doha Elevator Services WLL", description: "Bi-Annual Elevator Safety Sensors", amount: 6400, mapped_gl: "50400 - Elevator Maintenance", property: "Old Salata - Residence No:13", status: "Mapped" },
   ]);
 
   const [form, setForm] = useState({
@@ -1639,7 +2292,7 @@ function GrnCostMappingSubModule() {
     vendor: "Qatar Maintenance & HVAC Co.",
     description: "Plumbing Fittings & Valves Batch",
     amount: "4500",
-    mapped_gl: "5020 - Repairs & Maintenance",
+    mapped_gl: "50200 - Repairs & Maintenance",
     property: "Old Salata - Residence No:23",
   });
 
@@ -1700,24 +2353,30 @@ function GrnCostMappingSubModule() {
           <DialogHeader><DialogTitle>Map GRN Cost Allocation</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>GRN Number</Label><Input value={form.grn_no} onChange={e => setForm({ ...form, grn_no: e.target.value })} /></div>
-              <div><Label>PO Reference</Label><Input value={form.po_ref} onChange={e => setForm({ ...form, po_ref: e.target.value })} /></div>
             </div>
-            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>PO Reference</Label><Input value={form.po_ref} onChange={e => setForm({ ...form, po_ref: e.target.value })} /></div>
+              <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
+            </div>
             <div><Label>Item / Service Description</Label><Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Total Cost (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
               <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
             </div>
             <div>
-              <Label>Target GL Expense Account</Label>
+              <Label>Target GL Account</Label>
               <Select value={form.mapped_gl} onValueChange={v => setForm({ ...form, mapped_gl: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5020 - Repairs & Maintenance">5020 - Repairs & Maintenance</SelectItem>
-                  <SelectItem value="5030 - Cleaning & Sanitation">5030 - Cleaning & Sanitation</SelectItem>
-                  <SelectItem value="5040 - Elevator Maintenance">5040 - Elevator Maintenance</SelectItem>
+                  <SelectItem value="50200 - Repairs & Maintenance">50200 - Repairs & Maintenance</SelectItem>
+                  <SelectItem value="50300 - Cleaning & Sanitation">50300 - Cleaning & Sanitation</SelectItem>
+                  <SelectItem value="50400 - Elevator Maintenance">50400 - Elevator Maintenance</SelectItem>
+                  <SelectItem value="50500 - Utilities & Energy">50500 - Utilities & Energy</SelectItem>
+                  <SelectItem value="50100 - Staff Salaries & Maintenance Labor">50100 - Staff Salaries & Maintenance Labor</SelectItem>
                   <SelectItem value="13000 - Fixed Asset Equipment">13000 - Fixed Asset Equipment (Capitalized)</SelectItem>
+                  <SelectItem value="13100 - Building Improvements">13100 - Building Improvements</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1735,9 +2394,9 @@ function GrnCostMappingSubModule() {
 function PayableInvoiceSubModule() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState([
-    { invoice_no: "INV-AP-9901", vendor: "Qatar Maintenance & HVAC Co.", date: "2026-08-01", due_date: "2026-08-25", account: "5020 - Repairs & Maintenance", amount: 14500, status: "Unpaid" },
-    { invoice_no: "INV-AP-9902", vendor: "Kahramaa Utility Authority", date: "2026-08-05", due_date: "2026-08-20", account: "5050 - Electricity & Water", amount: 9850, status: "Paid" },
-    { invoice_no: "INV-AP-9903", vendor: "Doha Security Guards Co.", date: "2026-08-10", due_date: "2026-08-30", account: "5060 - Security Services", amount: 12000, status: "Unpaid" },
+    { invoice_no: "INV-AP-9901", vendor: "Qatar Maintenance & HVAC Co.", date: "2026-08-01", due_date: "2026-08-25", account: "50200 - Repairs & Maintenance", amount: 14500, status: "Unpaid" },
+    { invoice_no: "INV-AP-9902", vendor: "Kahramaa Utility Authority", date: "2026-08-05", due_date: "2026-08-20", account: "50500 - Utilities & Energy", amount: 9850, status: "Paid" },
+    { invoice_no: "INV-AP-9903", vendor: "Doha Security Guards Co.", date: "2026-08-10", due_date: "2026-08-30", account: "50600 - Security Services", amount: 12000, status: "Unpaid" },
   ]);
 
   const [form, setForm] = useState({
@@ -1745,7 +2404,7 @@ function PayableInvoiceSubModule() {
     vendor: "Qatar Maintenance & HVAC Co.",
     date: new Date().toISOString().split("T")[0],
     due_date: "2026-09-15",
-    account: "5020 - Repairs & Maintenance",
+    account: "50200 - Repairs & Maintenance",
     amount: "7500",
   });
 
@@ -1782,7 +2441,7 @@ function PayableInvoiceSubModule() {
               <TableHead className="font-bold">Vendor</TableHead>
               <TableHead className="font-bold">Bill Date</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
-              <TableHead className="font-bold">Expense Account</TableHead>
+              <TableHead className="font-bold">Expense GL Account</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
               <TableHead className="font-bold">Status</TableHead>
               <TableHead className="font-bold text-center">Action</TableHead>
@@ -1796,7 +2455,7 @@ function PayableInvoiceSubModule() {
                 <TableCell className="font-semibold">{row.vendor}</TableCell>
                 <TableCell>{row.date}</TableCell>
                 <TableCell>{row.due_date}</TableCell>
-                <TableCell className="text-blue-600">{row.account}</TableCell>
+                <TableCell className="text-blue-600 font-mono text-xs">{row.account}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
                 <TableCell>
                   <Badge variant={row.status === "Paid" ? "default" : "destructive"} className="text-[10px]">
@@ -1821,23 +2480,30 @@ function PayableInvoiceSubModule() {
           <DialogHeader><DialogTitle>Create Accounts Payable Invoice</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
               <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
-            <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Bill Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
             </div>
             <div>
-              <Label>Expense Account</Label>
+              <Label>Expense GL Account</Label>
               <Select value={form.account} onValueChange={v => setForm({ ...form, account: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5020 - Repairs & Maintenance">5020 - Repairs & Maintenance</SelectItem>
-                  <SelectItem value="5050 - Electricity & Water">5050 - Electricity & Water</SelectItem>
-                  <SelectItem value="5060 - Security Services">5060 - Security Services</SelectItem>
-                  <SelectItem value="5030 - Cleaning & Sanitation">5030 - Cleaning & Sanitation</SelectItem>
+                  <SelectItem value="50200 - Repairs & Maintenance">50200 - Repairs & Maintenance</SelectItem>
+                  <SelectItem value="50500 - Utilities & Energy (Kahramaa)">50500 - Utilities & Energy</SelectItem>
+                  <SelectItem value="50600 - Security Services">50600 - Security Services</SelectItem>
+                  <SelectItem value="50300 - Cleaning & Sanitation">50300 - Cleaning & Sanitation</SelectItem>
+                  <SelectItem value="50100 - Staff Salaries & Allowances">50100 - Staff Salaries & Allowances</SelectItem>
+                  <SelectItem value="50400 - Elevator Maintenance">50400 - Elevator Maintenance</SelectItem>
+                  <SelectItem value="50700 - Insurance Expenses">50700 - Insurance Expenses</SelectItem>
+                  <SelectItem value="50800 - Property Management & Legal Fees">50800 - Legal & Advisory Fees</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1874,6 +2540,26 @@ function PayableInvoiceSubModule() {
   );
 }
 
+const COMMON_GL_ACCOUNTS = [
+  { code: "12000", name: "12000 - Bank Operating Account (QNB/CBQ)" },
+  { code: "12100", name: "12100 - Cash In Hand (Office Vault)" },
+  { code: "12411", name: "12411 - Legal Receivables (Defaulted Cases)" },
+  { code: "12413", name: "12413 - Tenant Receivables (AR)" },
+  { code: "12900", name: "12900 - PDC In Hand / Undeposited Cheques" },
+  { code: "20100", name: "20100 - Accounts Payable (Suppliers/Vendors)" },
+  { code: "21100", name: "21100 - Tenant Security Deposits" },
+  { code: "41100", name: "41100 - Rental Revenue" },
+  { code: "41200", name: "41200 - Parking Fee Revenue" },
+  { code: "41300", name: "41300 - Utility Recovery Revenue" },
+  { code: "50100", name: "50100 - Staff Salaries & Allowances" },
+  { code: "50200", name: "50200 - Repairs & Maintenance" },
+  { code: "50300", name: "50300 - Cleaning & Sanitation" },
+  { code: "50400", name: "50400 - Elevator Maintenance" },
+  { code: "50500", name: "50500 - Utilities & Electricity (Kahramaa)" },
+  { code: "50600", name: "50600 - Security Services" },
+  { code: "50800", name: "50800 - Legal & Professional Fees" },
+];
+
 function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment Voucher" | "Receipt Voucher" }) {
   const { vouchers: sharedVouchers, setVouchers: setSharedVouchers } = useAppData();
   const [open, setOpen] = useState(false);
@@ -1882,8 +2568,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
     date: new Date().toISOString().split("T")[0],
     name: type === "Payment Voucher" ? "Payment to Contractor" : type === "Receipt Voucher" ? "Direct Rent Collection" : "General Adjustment",
-    debit: type === "Payment Voucher" ? "2010 - Accounts Payable" : type === "Receipt Voucher" ? "12000 - Bank Account" : "5020 - Repairs Expense",
-    credit: type === "Payment Voucher" ? "12000 - Bank Account" : type === "Receipt Voucher" ? "41100 - Rental Income" : "10100 - Cash In Hand",
+    debit: type === "Payment Voucher" ? "20100 - Accounts Payable (Suppliers/Vendors)" : type === "Receipt Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : "50200 - Repairs & Maintenance",
+    credit: type === "Payment Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : type === "Receipt Voucher" ? "41100 - Rental Revenue" : "12100 - Cash In Hand (Office Vault)",
     amount: "5000",
     method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Cash" : "Batch",
   });
@@ -1957,11 +2643,10 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
             <TableRow className="bg-muted/50 text-xs">
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">Voucher #</TableHead>
-              <TableHead className="font-bold">Date / Period</TableHead>
               <TableHead className="font-bold">Name & Description</TableHead>
               <TableHead className="font-bold">Method</TableHead>
-              <TableHead className="font-bold">Debit Account</TableHead>
-              <TableHead className="font-bold">Credit Account</TableHead>
+              <TableHead className="font-bold">Debit Account (GL)</TableHead>
+              <TableHead className="font-bold">Credit Account (GL)</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
               <TableHead className="font-bold">Status</TableHead>
             </TableRow>
@@ -1969,13 +2654,17 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
           <TableBody>
             {[...filtered].sort((a, b) => new Date(b.period || "2026-08-18").getTime() - new Date(a.period || "2026-08-18").getTime()).map((v) => (
               <TableRow key={v.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{v.period || "2026-08-18"}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{(() => {
+                  const raw = (v as any).date || v.period || "2026-08-18";
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+                  const d = new Date(raw);
+                  return !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : "2026-08-18";
+                })()}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{v.receiptNo || v.id}</TableCell>
-                <TableCell>{v.period || "2026-08-18"}</TableCell>
                 <TableCell className="font-medium">{v.name}</TableCell>
                 <TableCell><Badge variant="outline" className="text-[10px]">{v.method || "System"}</Badge></TableCell>
-                <TableCell className="font-mono text-blue-600">{v.debit}</TableCell>
-                <TableCell className="font-mono text-emerald-600">{v.credit}</TableCell>
+                <TableCell className="font-mono text-blue-600 text-xs">{v.debit}</TableCell>
+                <TableCell className="font-mono text-emerald-600 text-xs">{v.credit}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{Number(v.amount).toLocaleString()}</TableCell>
                 <TableCell><Badge variant="default" className="text-[10px] capitalize">{v.status || "Posted"}</Badge></TableCell>
               </TableRow>
@@ -1989,13 +2678,29 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
           <DialogHeader><DialogTitle>Create {type}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>Voucher #</Label><Input value={form.voucher_no} onChange={e => setForm({ ...form, voucher_no: e.target.value })} /></div>
-              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             </div>
             <div><Label>Description / Narration</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Debit Account</Label><Input value={form.debit} onChange={e => setForm({ ...form, debit: e.target.value })} /></div>
-              <div><Label>Credit Account</Label><Input value={form.credit} onChange={e => setForm({ ...form, credit: e.target.value })} /></div>
+              <div>
+                <Label>Debit GL Account</Label>
+                <Select value={form.debit} onValueChange={v => setForm({ ...form, debit: v })}>
+                  <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Credit GL Account</Label>
+                <Select value={form.credit} onValueChange={v => setForm({ ...form, credit: v })}>
+                  <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
@@ -2049,9 +2754,9 @@ function ReceivableInvoiceSubModule() {
   const { leases } = useAppData();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState([
-    { invoice_no: "INV-AR-8801", tenant: "Mr. Hafeez Shaik", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", date: "2026-08-01", due_date: "2026-08-10", stream: "Monthly Rent", amount: 5600, status: "Paid" },
-    { invoice_no: "INV-AR-8802", tenant: "M/S. Al Ameen Real Estate", property: "Old Salata - Residence No:23", unit: "AAA - GF1", date: "2026-08-01", due_date: "2026-08-15", stream: "Commercial Rent", amount: 5500, status: "Overdue" },
-    { invoice_no: "INV-AR-8803", tenant: "Vivek Viswakumaran Nair", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", date: "2026-08-01", due_date: "2026-08-05", stream: "Residential Lease", amount: 4000, status: "Paid" },
+    { invoice_no: "INV-AR-8801", tenant: "Mr. Hafeez Shaik", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", date: "2026-08-01", due_date: "2026-08-10", stream: "41100 - Rental Revenue", amount: 5600, status: "Paid" },
+    { invoice_no: "INV-AR-8802", tenant: "M/S. Al Ameen Real Estate", property: "Old Salata - Residence No:23", unit: "AAA - GF1", date: "2026-08-01", due_date: "2026-08-15", stream: "41100 - Commercial Rental Revenue", amount: 5500, status: "Overdue" },
+    { invoice_no: "INV-AR-8803", tenant: "Vivek Viswakumaran Nair", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", date: "2026-08-01", due_date: "2026-08-05", stream: "41100 - Residential Lease", amount: 4000, status: "Paid" },
   ]);
 
   const [form, setForm] = useState({
@@ -2061,7 +2766,7 @@ function ReceivableInvoiceSubModule() {
     unit: "AAA - Flat16",
     date: new Date().toISOString().split("T")[0],
     due_date: "2026-09-05",
-    stream: "Monthly Rent",
+    stream: "41100 - Rental Revenue",
     amount: "5600",
   });
 
@@ -2092,7 +2797,7 @@ function ReceivableInvoiceSubModule() {
               <TableHead className="font-bold">Invoice #</TableHead>
               <TableHead className="font-bold">Tenant / Customer</TableHead>
               <TableHead className="font-bold">Property & Unit</TableHead>
-              <TableHead className="font-bold">Billing Stream</TableHead>
+              <TableHead className="font-bold">Revenue GL Account</TableHead>
               <TableHead className="font-bold">Issue Date</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
@@ -2106,7 +2811,7 @@ function ReceivableInvoiceSubModule() {
                 <TableCell className="font-mono font-bold text-primary">{row.invoice_no}</TableCell>
                 <TableCell className="font-semibold">{row.tenant}</TableCell>
                 <TableCell className="text-muted-foreground">{row.property} — {row.unit}</TableCell>
-                <TableCell>{row.stream}</TableCell>
+                <TableCell className="font-mono text-xs text-blue-600">{row.stream}</TableCell>
                 <TableCell>{row.date}</TableCell>
                 <TableCell>{row.due_date}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
@@ -2126,10 +2831,13 @@ function ReceivableInvoiceSubModule() {
           <DialogHeader><DialogTitle>Create Accounts Receivable Invoice</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Tenant Name</Label><Input value={form.tenant} onChange={e => setForm({ ...form, tenant: e.target.value })} /></div>
               <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             </div>
-            <div><Label>Tenant Name</Label><Input value={form.tenant} onChange={e => setForm({ ...form, tenant: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
               <div><Label>Unit</Label><Input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
@@ -2137,6 +2845,20 @@ function ReceivableInvoiceSubModule() {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Issue Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
               <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+            </div>
+            <div>
+              <Label>Target Revenue GL Account</Label>
+              <Select value={form.stream} onValueChange={v => setForm({ ...form, stream: v })}>
+                <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="41100 - Rental Revenue">41100 - Rental Revenue (Residential/Commercial)</SelectItem>
+                  <SelectItem value="41200 - Parking Fee Revenue">41200 - Parking Space / Slot Fee</SelectItem>
+                  <SelectItem value="41300 - Utility Recovery Revenue">41300 - Utility & Electricity Recovery</SelectItem>
+                  <SelectItem value="41400 - Common Area Maintenance (CAM)">41400 - Common Area Maintenance (CAM)</SelectItem>
+                  <SelectItem value="41500 - Management & Admin Fee">41500 - Management & Admin Fee</SelectItem>
+                  <SelectItem value="41600 - Late Fee & Penalties">41600 - Late Fee & Penalties</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Live GL / COA Impact Preview */}
@@ -2154,7 +2876,7 @@ function ReceivableInvoiceSubModule() {
                   </div>
                   <div className="bg-background p-2 rounded border border-rose-200">
                     <span className="text-rose-600 dark:text-rose-400 font-bold block">Credit (Revenue):</span>
-                    <span>41100 - Rental Revenue ({form.stream || 'Rent'})</span>
+                    <span>{form.stream}</span>
                     <span className="block font-bold text-rose-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
                   </div>
                 </div>
@@ -2251,13 +2973,27 @@ function BankSubModule() {
 function BankAccountSubModule() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<FinBankAccount[]>([]);
+  const [banksList, setBanksList] = useState<FinBank[]>([]);
   const [form, setForm] = useState({ bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Main Rent Operating Account", currency: "QAR", opening_balance: 1500000 });
 
   useEffect(() => { load(); }, []);
   async function load() {
     try {
-      const res = await FinBankAccountsApi.fetchAll();
-      setData(res.length > 0 ? res : [
+      const [resAcc, resBanks] = await Promise.all([
+        FinBankAccountsApi.fetchAll().catch(() => []),
+        FinBanksApi.fetchAll().catch(() => [])
+      ]);
+      const defaultBanks: FinBank[] = [
+        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
+        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" },
+        { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA" },
+        { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA" },
+        { id: "5", code: "MAR", name: "Masraf Al Rayan", swift_code: "MARKQAQA" },
+        { id: "6", code: "DUKHAN", name: "Dukhan Bank", swift_code: "BARQAQA" },
+      ];
+      setBanksList(resBanks.length > 0 ? resBanks : defaultBanks);
+
+      setData(resAcc.length > 0 ? resAcc : [
         { id: "1", bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 },
         { id: "2", bank_id: "2", account_number: "QA88CBQA00000000987654321", account_title: "ZYNO Escrow & Deposits Account (CBQ)", currency: "QAR", opening_balance: 450000 },
         { id: "3", bank_id: "3", account_number: "QA22DOHB00000000554433221", account_title: "ZYNO Payroll & Disbursement (Doha Bank)", currency: "QAR", opening_balance: 200000 },
@@ -2276,6 +3012,11 @@ function BankAccountSubModule() {
     setOpen(false);
   }
 
+  function getBankName(bankId: string) {
+    const b = banksList.find(x => String(x.id) === String(bankId) || x.code === bankId);
+    return b ? b.name : "Qatar National Bank (QNB)";
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -2288,11 +3029,20 @@ function BankAccountSubModule() {
 
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
-          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">IBAN / Account #</TableHead><TableHead className="font-bold">Account Title</TableHead><TableHead className="font-bold">Currency</TableHead><TableHead className="text-right font-bold">Current Balance (QAR)</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Bank Name</TableHead>
+              <TableHead className="font-bold">IBAN / Account #</TableHead>
+              <TableHead className="font-bold">Account Title</TableHead>
+              <TableHead className="font-bold">Currency</TableHead>
+              <TableHead className="text-right font-bold">Current Balance (QAR)</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
             {data.map(a => (
               <TableRow key={a.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono font-bold text-primary">{a.account_number}</TableCell>
+                <TableCell className="font-semibold text-primary">{getBankName(a.bank_id)}</TableCell>
+                <TableCell className="font-mono font-bold">{a.account_number}</TableCell>
                 <TableCell className="font-medium">{a.account_title}</TableCell>
                 <TableCell><Badge variant="outline" className="text-[10px]">{a.currency}</Badge></TableCell>
                 <TableCell className="text-right font-mono font-bold text-emerald-600">{Number(a.opening_balance).toLocaleString()}</TableCell>
@@ -2306,6 +3056,19 @@ function BankAccountSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Bank Account</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
+            <div>
+              <Label>Select Bank Institution <span className="text-destructive">*</span></Label>
+              <Select value={form.bank_id} onValueChange={v => setForm({ ...form, bank_id: v })}>
+                <SelectTrigger className="text-xs"><SelectValue placeholder="Select Registered Bank" /></SelectTrigger>
+                <SelectContent>
+                  {banksList.map(b => (
+                    <SelectItem key={b.id} value={String(b.id)} className="text-xs">
+                      {b.name} ({b.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>IBAN / Account Number</Label><Input value={form.account_number} onChange={e => setForm({ ...form, account_number: e.target.value })} /></div>
             <div><Label>Account Title</Label><Input value={form.account_title} onChange={e => setForm({ ...form, account_title: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -2324,12 +3087,13 @@ function BankAccountSubModule() {
 }
 
 function BankClearanceSubModule() {
+  const { bankClearances, addBankClearance } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState([
-    { ref: "CHQ-01000049", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" },
-    { ref: "CHQ-01000050", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" },
-    { ref: "WIRE-TX-9912", bank: "QNB Main Account", type: "Utility Transfer", amount: 9850, date: "2026-08-08", status: "Cleared" },
-    { ref: "CHQ-2001", bank: "Doha Bank", type: "PDC Deposit", amount: 5500, date: "2026-08-12", status: "Pending Clearance" },
+    { ref: "CHQ-01000049", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" as const },
+    { ref: "CHQ-01000050", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" as const },
+    { ref: "WIRE-TX-9912", bank: "QNB Main Account", type: "Utility Transfer", amount: 9850, date: "2026-08-08", status: "Cleared" as const },
+    { ref: "CHQ-2001", bank: "Doha Bank", type: "PDC Deposit", amount: 5500, date: "2026-08-12", status: "Pending Clearance" as const },
   ]);
 
   const [form, setForm] = useState({
@@ -2338,12 +3102,21 @@ function BankClearanceSubModule() {
     type: "PDC Clearance",
     amount: "5600",
     date: new Date().toISOString().split("T")[0],
-    status: "Cleared",
+    status: "Cleared" as const,
   });
 
+  const combinedClearances = [...bankClearances, ...data];
+
   function handleAdd() {
-    setData(prev => [{ ...form, amount: parseFloat(form.amount) || 0 }, ...prev]);
-    toast.success(`Clearance recorded for ${form.ref}`);
+    const amt = parseFloat(form.amount) || 0;
+    addBankClearance({
+      ref: form.ref,
+      bank: form.bank,
+      type: form.type,
+      amount: amt,
+      date: form.date,
+      status: form.status,
+    });
     setOpen(false);
   }
 
@@ -2371,7 +3144,7 @@ function BankClearanceSubModule() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...data].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row, idx) => (
+            {[...combinedClearances].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row, idx) => (
               <TableRow key={idx} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.ref}</TableCell>
@@ -2394,11 +3167,37 @@ function BankClearanceSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Record Bank Clearance</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Cheque / Reference Number</Label><Input value={form.ref} onChange={e => setForm({ ...form, ref: e.target.value })} /></div>
-            <div><Label>Bank</Label><Input value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Cheque / Reference Number</Label><Input value={form.ref} onChange={e => setForm({ ...form, ref: e.target.value })} /></div>
+            </div>
+            <div>
+              <Label>Bank Account</Label>
+              <Select value={form.bank} onValueChange={v => setForm({ ...form, bank: v })}>
+                <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Qatar National Bank (QNB)">Qatar National Bank (QNB)</SelectItem>
+                  <SelectItem value="Commercial Bank of Qatar (CBQ)">Commercial Bank of Qatar (CBQ)</SelectItem>
+                  <SelectItem value="Doha Bank">Doha Bank</SelectItem>
+                  <SelectItem value="Qatar Islamic Bank (QIB)">Qatar Islamic Bank (QIB)</SelectItem>
+                  <SelectItem value="Masraf Al Rayan">Masraf Al Rayan</SelectItem>
+                  <SelectItem value="Dukhan Bank">Dukhan Bank</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div><Label>Clearance Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div>
+                <Label>Clearance Status</Label>
+                <Select value={form.status} onValueChange={(v: any) => setForm({ ...form, status: v })}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cleared">Cleared</SelectItem>
+                    <SelectItem value="Pending Clearance">Pending Clearance</SelectItem>
+                    <SelectItem value="Returned">Returned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -2412,29 +3211,35 @@ function BankClearanceSubModule() {
 }
 
 function BankReconciliationSubModule() {
+  const { bankReconciliations, addBankReconciliation } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState([
-    { id: 1, account_number: "QA55QNBA00000000123456789", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 1500000, statement_balance: 1500000, status: "Reconciled" },
-    { id: 2, account_number: "QA88CBQA00000000987654321", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 450000, statement_balance: 450000, status: "Reconciled" },
+    { id: "1", account_number: "QA55QNBA00000000123456789", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 1500000, statement_balance: 1500000, difference: 0, status: "Reconciled" as const },
+    { id: "2", account_number: "QA88CBQA00000000987654321", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 450000, statement_balance: 450000, difference: 0, status: "Reconciled" as const },
   ]);
 
   const [form, setForm] = useState({
     account_number: "QA55QNBA00000000123456789",
     statement_date: new Date().toISOString().split("T")[0],
+    entry_date: new Date().toISOString().split("T")[0],
     book_balance: "1500000",
     statement_balance: "1500000",
   });
 
+  const combinedReconciliations = [...bankReconciliations, ...data];
   const bBal = parseFloat(form.book_balance) || 0;
   const sBal = parseFloat(form.statement_balance) || 0;
   const diff = bBal - sBal;
 
   function handleAdd() {
-    setData(prev => [
-      { id: Date.now(), account_number: form.account_number, statement_date: form.statement_date, entry_date: new Date().toISOString().split("T")[0], book_balance: bBal, statement_balance: sBal, status: diff === 0 ? "Reconciled" : "Discrepancy" },
-      ...prev
-    ]);
-    toast.success(`Bank Reconciliation for ${form.statement_date} completed!`);
+    addBankReconciliation({
+      account_number: form.account_number,
+      statement_date: form.statement_date,
+      book_balance: bBal,
+      statement_balance: sBal,
+      difference: diff,
+      status: diff === 0 ? "Reconciled" : "Discrepancy"
+    });
     setOpen(false);
   }
 
@@ -2462,9 +3267,9 @@ function BankReconciliationSubModule() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...data].sort((a, b) => new Date(b.statement_date || "").getTime() - new Date(a.statement_date || "").getTime()).map(r => (
+            {[...combinedReconciliations].sort((a, b) => new Date(b.statement_date || "").getTime() - new Date(a.statement_date || "").getTime()).map(r => (
               <TableRow key={r.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{r.entry_date || r.statement_date}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{(r as any).entry_date || r.statement_date}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{r.account_number}</TableCell>
                 <TableCell>{r.statement_date}</TableCell>
                 <TableCell className="text-right font-mono font-semibold">{r.book_balance.toLocaleString()}</TableCell>
@@ -2488,10 +3293,14 @@ function BankReconciliationSubModule() {
                 <SelectContent>
                   <SelectItem value="QA55QNBA00000000123456789">QA55QNBA00000000123456789 - QNB Main</SelectItem>
                   <SelectItem value="QA88CBQA00000000987654321">QA88CBQA00000000987654321 - CBQ Escrow</SelectItem>
+                  <SelectItem value="QA22DOHB00000000554433221">QA22DOHB00000000554433221 - Doha Bank Payroll</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>Statement Date</Label><Input type="date" value={form.statement_date} onChange={e => setForm({ ...form, statement_date: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Entry Date</Label><Input type="date" value={form.entry_date} onChange={e => setForm({ ...form, entry_date: e.target.value })} /></div>
+              <div><Label>Statement Date</Label><Input type="date" value={form.statement_date} onChange={e => setForm({ ...form, statement_date: e.target.value })} /></div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>GL Book Balance (QAR)</Label><Input type="number" value={form.book_balance} onChange={e => setForm({ ...form, book_balance: e.target.value })} /></div>
               <div><Label>Bank Statement Balance</Label><Input type="number" value={form.statement_balance} onChange={e => setForm({ ...form, statement_balance: e.target.value })} /></div>
@@ -2723,18 +3532,10 @@ function RevenueGenerationSubModule() {
       }
     });
 
-    // Baseline seeds when no filter applied so P&L looks realistic
-    if (periodFilter === "all") {
-      totals["41100"] = Math.max(totals["41100"], 385000);
-      totals["41200"] = Math.max(totals["41200"], 18500);
-      totals["41300"] = Math.max(totals["41300"], 9850);
-      totals["41400"] = Math.max(totals["41400"], 14200);
-      totals["41500"] = Math.max(totals["41500"], 12000);
-      totals["41600"] = Math.max(totals["41600"], 4750);
-    }
-
+    // Pure aggregation from actual posted revenue transactions
     return totals;
   }, [receivableInvoices, vouchers, journalEntries, periodFilter]);
+
 
   const totalRevenue = Object.values(revenueByCode).reduce((s, v) => s + v, 0);
 
@@ -3106,7 +3907,7 @@ function GeneralLedgerReportSubModule() {
   const [sortField, setSortField] = useState<"date" | "account_code" | "debit" | "credit">("date");
   const [sortAsc, setSortAsc] = useState<boolean>(false); // Descending order based on date default
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 100;
+  const [pageSize, setPageSize] = useState<number>(25);
 
   // ── Compute ascending filter options ──────────────────────────────────────
   const txList: any[] = allLedgerTransactions || [];
@@ -3202,8 +4003,12 @@ function GeneralLedgerReportSubModule() {
     return list;
   }, [txList, selectedProperty, selectedUnit, selectedCustomer, selectedSource, selectedMonth, startDate, endDate, search, sortField, sortAsc]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
+  const effectivePageSize = pageSize === 0 ? Math.max(1, filtered.length) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / effectivePageSize));
+  const paginated = useMemo(() => {
+    if (pageSize === 0) return filtered;
+    return filtered.slice((page - 1) * effectivePageSize, page * effectivePageSize);
+  }, [filtered, page, pageSize, effectivePageSize]);
 
   const totalDebit = useMemo(() => filtered.reduce((s, tx) => s + (tx.debit || 0), 0), [filtered]);
   const totalCredit = useMemo(() => filtered.reduce((s, tx) => s + (tx.credit || 0), 0), [filtered]);
@@ -3377,15 +4182,34 @@ function GeneralLedgerReportSubModule() {
         </div>
       </div>
 
-      {/* Summary Banner */}
-      <div className="flex items-center justify-between text-xs px-1">
-        <span className="text-muted-foreground">
-          Showing <strong className="text-foreground">{filtered.length}</strong> of {txList.length} postings
-          {selectedProperty !== "all" ? ` • Property: ${selectedProperty}` : ""}
-          {selectedUnit !== "all" ? ` • Unit: ${selectedUnit}` : ""}
-          {selectedCustomer !== "all" ? ` • Customer: ${selectedCustomer}` : ""}
-          {selectedMonth !== "all" ? ` • Month: ${selectedMonth}` : ""}
-        </span>
+      {/* Summary Banner with Page Size Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-muted-foreground">
+            Showing <strong className="text-foreground">{pageSize === 0 ? filtered.length : Math.min(effectivePageSize, filtered.length - (page - 1) * effectivePageSize)}</strong> of <strong className="text-foreground">{filtered.length}</strong> postings
+            {selectedProperty !== "all" ? ` • Property: ${selectedProperty}` : ""}
+            {selectedUnit !== "all" ? ` • Unit: ${selectedUnit}` : ""}
+            {selectedCustomer !== "all" ? ` • Customer: ${selectedCustomer}` : ""}
+            {selectedMonth !== "all" ? ` • Month: ${selectedMonth}` : ""}
+          </span>
+          <div className="flex items-center gap-1 ml-2 border-l pl-2">
+            <span className="text-[11px] text-muted-foreground">Rows:</span>
+            {[25, 50, 100, 0].map(size => (
+              <button
+                key={size}
+                type="button"
+                onClick={() => { setPageSize(size); setPage(1); }}
+                className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                  pageSize === size
+                    ? "bg-primary text-primary-foreground font-bold"
+                    : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                }`}
+              >
+                {size === 0 ? "All" : size}
+              </button>
+            ))}
+          </div>
+        </div>
         <span className="font-mono text-xs">
           Balance: <span className={`font-bold ${Math.abs(totalDebit - totalCredit) < 1 ? "text-emerald-600" : "text-red-600"}`}>
             {Math.abs(totalDebit - totalCredit) < 1 ? "✓ Balanced" : `Out by QR ${Math.abs(totalDebit - totalCredit).toLocaleString()}`}
@@ -3394,7 +4218,7 @@ function GeneralLedgerReportSubModule() {
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden bg-card">
+      <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs">
@@ -3449,16 +4273,28 @@ function GeneralLedgerReportSubModule() {
         </Table>
       </div>
 
-      {/* Pagination */}
-      {filtered.length > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
-          <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-7" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</Button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => Math.abs(p - page) <= 2).map(p => (
-              <Button key={p} size="sm" variant={p === page ? "default" : "outline"} className="h-7 w-7 p-0" onClick={() => setPage(p)}>{p}</Button>
-            ))}
-            <Button size="sm" variant="outline" className="h-7" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</Button>
+      {/* Pagination Controls */}
+      {pageSize !== 0 && filtered.length > effectivePageSize && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground pt-1 pb-4">
+          <span>Showing {((page - 1) * effectivePageSize) + 1}–{Math.min(page * effectivePageSize, filtered.length)} of {filtered.length} postings (Page {page} of {totalPages})</span>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>← Prev</Button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+              .map((p, idx, arr) => (
+                <span key={p} className="flex items-center">
+                  {idx > 0 && arr[idx - 1] !== p - 1 && <span className="px-1 text-muted-foreground">…</span>}
+                  <Button
+                    size="sm"
+                    variant={p === page ? "default" : "outline"}
+                    className="h-7 w-7 p-0 text-xs"
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </Button>
+                </span>
+              ))}
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next →</Button>
           </div>
         </div>
       )}

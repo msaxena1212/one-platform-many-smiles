@@ -96,6 +96,8 @@ export function PayrollSync() {
         {
           employee_id: `DEPT-${form.department.slice(0, 4).toUpperCase()}`,
           department: form.department,
+          // External payroll system's account code — resolved against
+          // fin_coa_accounts by payrollIntegrationService.
           account_code: '50100',
           debit: basic + allow + ot,
           credit: 0,
@@ -105,6 +107,8 @@ export function PayrollSync() {
         {
           employee_id: 'BANK-TREASURY',
           department: 'Treasury',
+          // External payroll system's account code — resolved against
+          // fin_coa_accounts by payrollIntegrationService.
           account_code: '12000',
           debit: 0,
           credit: netPayable,
@@ -116,6 +120,8 @@ export function PayrollSync() {
       payload.lines.push({
         employee_id: 'PAYROLL-DEDUCTIONS',
         department: 'HR Operations',
+        // External payroll system's account code — resolved against
+        // fin_coa_accounts by payrollIntegrationService.
         account_code: '21900',
         debit: 0,
         credit: ded,

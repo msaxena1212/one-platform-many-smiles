@@ -122,17 +122,17 @@ function getActionConfig(action: "deposit" | "clear" | "return" | "cancel", cheq
   // return — 4 GL lines (paired)
   return {
     action,
-    title: "Confirm PDC Return / Bounce",
-    description: `You are marking Cheque #${chequeNo} (${tenantName}) of ${fmtAmt} as returned / bounced.`,
+    title: "Confirm PDC Cheque Return / Dishonour",
+    description: `You are executing Cheque Return / Bounce for Cheque #${chequeNo} (${tenantName}) of ${fmtAmt}.`,
     icon: <RotateCcw className="h-5 w-5 text-red-600" />,
     color: "red",
     newStatus: "Returned",
     newSharedStatus: "bounced",
     impacts: [
-      { type: "Debit",  account: "PDC In Hand",                  code: "12900", description: "Cheque physically returned to hand" },
-      { type: "Credit", account: "Bank Account",                  code: "12000", description: "Bank credit reversed on bounce" },
-      { type: "Debit",  account: "Receivable - Unit Account",     code: "12413", description: "Outstanding receivable re-exposed" },
-      { type: "Credit", account: "Customer(PDC) - Unit Account",  code: "21400", description: "PDC liability reversed" },
+      { type: "Debit",  account: "PDC In Hand",                  code: "12900", description: "Cheque physically returned to hand (Dr 12900)" },
+      { type: "Credit", account: "Bank Account",                 code: "12000", description: "Bank Account clawback on dishonour (Cr 12000)" },
+      { type: "Debit",  account: "Receivable - Unit Account",    code: "12413", description: "Tenant dues restored in Unit Account (Dr 12413)" },
+      { type: "Credit", account: "Customer(PDC) - Unit Account", code: "21400", description: "Customer(PDC) liability reversed (Cr 21400)" },
     ],
   };
 }
@@ -304,10 +304,10 @@ export function PdcManagement() {
   const [sortField, setSortField] = useState<"cheque_date" | "cheque_number" | "tenant_name" | "amount">("cheque_date");
   const [sortAsc, setSortAsc] = useState<boolean>(false); // Descending order based on date default
 
-  // Load data from DB & context
+  // Load data from DB & context — run once on mount. Realtime channel below handles live updates.
   useEffect(() => {
     load();
-  }, [leases]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Supabase Realtime: auto-refresh PDC list when fin_pdc_register or pdcs change.
   useEffect(() => {
@@ -770,23 +770,23 @@ export function PdcManagement() {
       ));
 
       // 3. Mirror into Finance store Journal Audit & Sub-Ledger:
-      // Entry A: Cash Collection & Deposit (DR 12000 Bank Operating Account / CR 12100 Cash In Hand)
+      // Entry 1: Cash Receipt (DR 12100 Cash In Hand / CR 12413 Receivable - Unit Account)
       addJournalEntry({
-        je_no: `JE-CSH-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        je_no: `JE-CSH-REC-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
         posting_date: receiptDate,
-        reference: `CSH-CHQ-${chqNo}`,
-        narration: `Cash Deposit in lieu of PDC Cheque #${chqNo}${discrepancy !== 0 ? ` (Discrepancy: ${discrepancy > 0 ? '+' : ''}${discrepancy} QAR from original QAR ${originalAmt})` : ''} | ${pdc.tenant_name || "Tenant"}${cashNotes ? ` — ${cashNotes}` : ''}`,
-        dr_account: "Bank Operating Account",
-        dr_code: "12000",
-        cr_account: "Cash In Hand",
-        cr_code: "12100",
+        reference: `CSH-REC-${chqNo}`,
+        narration: `Cash Received at counter in lieu of PDC Cheque #${chqNo} | ${pdc.tenant_name || "Tenant"}${cashNotes ? ` — ${cashNotes}` : ''}`,
+        dr_account: "Cash In Hand",
+        dr_code: "12100",
+        cr_account: "Receivable - Unit Account",
+        cr_code: "12413",
         amount: confirmedAmt,
         property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
         unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
         tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
       });
 
-      // Entry B: Cheque Cancellation Reversal (DR 21400 Customer PDC Liability / CR 12900 PDC In Hand)
+      // Entry 2: Cheque Return Reversal (DR 21400 Customer(PDC) - Unit Account / CR 12900 PDC In Hand)
       addJournalEntry({
         je_no: `JE-CXL-CHQ-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
         posting_date: receiptDate,
@@ -797,6 +797,22 @@ export function PdcManagement() {
         cr_account: "PDC In Hand",
         cr_code: "12900",
         amount: originalAmt,
+        property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
+        unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+        tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
+      });
+
+      // Entry 3: Cash Deposited to Bank (DR 12000 Bank Account / CR 12100 Cash In Hand)
+      addJournalEntry({
+        je_no: `JE-CSH-DEP-${String(chqNo).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
+        posting_date: receiptDate,
+        reference: `BNK-DEP-${chqNo}`,
+        narration: `Counter Cash Deposited to Bank for replaced PDC #${chqNo}`,
+        dr_account: "Bank Account",
+        dr_code: "12000",
+        cr_account: "Cash In Hand",
+        cr_code: "12100",
+        amount: confirmedAmt,
         property_name: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Old Salata - Residence No:23",
         unit_ref: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
         tenant_name: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Tenant",
@@ -1645,12 +1661,12 @@ export function PdcManagement() {
                       General Ledger / Sub-Ledger (COA) Accounts Impacted
                     </div>
 
-                    {/* 1. Cash Inflow Group */}
+                    {/* 1. Cash Receipt Group */}
                     <div className="space-y-2">
                       <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Part 1: Cash Collection &amp; Bank Deposit
+                        Part 1: Cash Collection at Counter
                       </div>
-                      {/* Debit Card: Bank Operating Account */}
+                      {/* Debit Card: Cash In Hand */}
                       <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
                         <div className="mt-0.5">
                           <ArrowUpRight className="h-4 w-4 text-emerald-600" />
@@ -1661,14 +1677,14 @@ export function PdcManagement() {
                               Debit
                             </span>
                             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              GL 12000
+                              GL 12100
                             </span>
                             <span className="text-xs font-semibold text-foreground">
-                              Bank Operating Account
+                              Cash In Hand
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Cash received deposited into Bank Account (Dr Bank 12000)
+                            Physical cash collected at counter from tenant
                           </p>
                         </div>
                         <div className="text-xs font-mono font-bold tabular-nums text-foreground">
@@ -1676,7 +1692,7 @@ export function PdcManagement() {
                         </div>
                       </div>
 
-                      {/* Credit Card: Cash In Hand */}
+                      {/* Credit Card: Receivable - Unit Account */}
                       <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
                         <div className="mt-0.5">
                           <ArrowDownLeft className="h-4 w-4 text-amber-600" />
@@ -1686,15 +1702,15 @@ export function PdcManagement() {
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
                               Credit
                             </span>
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              GL 12100
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                              GL 12413
                             </span>
                             <span className="text-xs font-semibold text-foreground">
-                              Cash In Hand
+                              Receivable- Unit Account
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Cash holding settled / offset against replacement cheque
+                            Tenant unit receivable offset &amp; settled
                           </p>
                         </div>
                         <div className="text-xs font-mono font-bold tabular-nums text-foreground">
@@ -1722,7 +1738,7 @@ export function PdcManagement() {
                               GL 21400
                             </span>
                             <span className="text-xs font-semibold text-foreground">
-                              Customer(PDC) - Unit Account
+                              Customer(PDC)- Unit Account
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -1748,15 +1764,73 @@ export function PdcManagement() {
                               GL 12900
                             </span>
                             <span className="text-xs font-semibold text-foreground">
-                              PDC In Hand
+                              PDC in hand
                             </span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            PDC In Hand holding account cleared
+                            Physical cheque removed from holding custody
                           </p>
                         </div>
                         <div className="text-xs font-mono font-bold tabular-nums text-foreground">
                           QAR {Number(cashPdc.amount || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Bank Account Deposit Group */}
+                    <div className="space-y-2 pt-1 border-t border-purple-200/60">
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        Part 3: Bank Account Deposit
+                      </div>
+                      {/* Debit Card: Bank Account */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                              Debit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              GL 12000
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              Bank Account
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Cash deposited into bank operating account
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
+                        </div>
+                      </div>
+
+                      {/* Credit Card: Cash In Hand Settlement */}
+                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                        <div className="mt-0.5">
+                          <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                              Credit
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                              GL 12100
+                            </span>
+                            <span className="text-xs font-semibold text-foreground">
+                              Cash In Hand
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Counter cash till cleared upon bank deposit
+                          </p>
+                        </div>
+                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
                         </div>
                       </div>
                     </div>

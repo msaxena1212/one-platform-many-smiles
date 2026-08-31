@@ -164,6 +164,10 @@ type Lease = {
   sharedWithTenant?: boolean;
   collectionCompleted: boolean;
   renewalOf?: string;
+  plannedVacateDate?: string;
+  actualVacateDate?: string;
+  earlyVacate?: boolean;
+  earlyVacateReason?: string;
 };
 
 type Pdc = {
@@ -268,6 +272,8 @@ type CheckoutCase = {
   noticeDate: string;
   nonRenewalNotice?: string;
   moveOutDate: string;
+  originalLeaseEndDate?: string;
+  earlyVacate?: boolean;
   inspectionDate: string;
   comparisonSummary: string;
   outstandingCharges?: string;
@@ -286,10 +292,20 @@ type Settlement = {
   outstandingRent: number;
   damages: number;
   utilityCharges: number;
+  cleaningCharges: number;
+  restorationCharges: number;
   otherDeductions: number;
   refundableBalance?: number;
   unitDisposition?: Unit["status"];
   approval: "draft" | "pending_approval" | "approved" | "paid";
+  settlementMode?: "DEDUCT_FROM_DEPOSIT" | "PAY_SEPARATELY";
+  damagePaymentMode?: "Bank Transfer" | "Cash" | "Cheque" | "Bank Guarantee";
+  paymentProofUrl?: string;
+  paymentProofFileName?: string;
+  paymentRefNo?: string;
+  payerBank?: string;
+  paymentDate?: string;
+  bgExpiryDate?: string;
 };
 
 type Voucher = {
@@ -677,6 +693,8 @@ function LeasingPage() {
       outstandingRent: 0,
       damages: 650,
       utilityCharges: 220,
+      cleaningCharges: 0,
+      restorationCharges: 0,
       otherDeductions: 0,
       refundableBalance: 4230,
       unitDisposition: "Vacant - Under Maintenance",
@@ -937,13 +955,22 @@ function LeasingPage() {
     paymentMode: "PDC" as "PDC" | "Cash" | "Bank Transfer" | "Guarantee Cheque",
     chequeBank: "QNB",
     payerName: "",
+    // Type 1: Unit Security Deposit (GL 21500)
     depositAmount: "",
     depositMode: "Cash" as string,
     depositChequeNo: "",
     depositChequeBank: "",
+    // Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100)
+    utilityDeposit: "0", // Kahramaa Electricity/Water (21100003)
+    qatarCoolDeposit: "0", // Qatar Cool (21100004)
+    reservationDeposit: "0", // Reservation Advance (21100001)
+    serviceFeeDeposit: "0", // Service Fee / Key Deposit (21100005)
+    guaranteeChequeDeposit: "0", // Guarantee Cheque (21100006)
+    guaranteeChequeNo: "",
+    guaranteeChequeBank: "QNB",
+    // One-time fees
     agencyCommission: "0",
     adminCharges: "0",
-    utilityDeposit: "0",
     cashierName: "",
     notes: "",
     receiptFile: "",
@@ -959,6 +986,7 @@ function LeasingPage() {
   // Receipt Modal State
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [receiptModalData, setReceiptModalData] = useState<TenantReceiptDetails | null>(null);
+  const [receiptModalSecondaryData, setReceiptModalSecondaryData] = useState<TenantReceiptDetails | null>(null);
 
   // Submit to Landlord
   const [submitLandlordOpen, setSubmitLandlordOpen] = useState(false);
@@ -1083,10 +1111,10 @@ function LeasingPage() {
     cleaningCharges: "0",
     restorationCharges: "0",
     outstandingRent: "0",
-    damagesAmount: "650",
+    damagesAmount: "0",
     utilityCharges: "0",
     otherDeductions: "0",
-    photos: "12",
+    photos: "0",
     checkoutPhotos: "",
     checkoutReportFile: "",
     handoverConditionSummary: "",
@@ -1123,11 +1151,28 @@ function LeasingPage() {
 
   // ── Security Deposit Settle & Refund Modal ─────────────────────────
   const [settleRefundOpen, setSettleRefundOpen] = useState(false);
+  const [settleRefundStep, setSettleRefundStep] = useState<1 | 2>(1);
   const [selectedSettlement, setSelectedSettlement] = useState<Settlement | null>(null);
   const [settleRefundForm, setSettleRefundForm] = useState({
     refundAmount: "",
     paymentMethod: "Bank Transfer",
+    settlementMode: "DEDUCT_FROM_DEPOSIT" as "DEDUCT_FROM_DEPOSIT" | "PAY_SEPARATELY",
+    damagePaymentMode: "Bank Transfer" as "Bank Transfer" | "Cash" | "Cheque" | "Bank Guarantee",
+    damages: "0",
+    outstandingRent: "0",
+    utilityCharges: "0",
+    cleaningCharges: "0",
+    restorationCharges: "0",
+    otherDeductions: "0",
+    damageRemarks: "",
     notes: "",
+    // Payment details when customer pays separately
+    paymentRefNo: "",
+    payerBank: "QNB",
+    paymentDate: today.toISOString().split("T")[0],
+    bgExpiryDate: "",
+    paymentProofFileName: "",
+    paymentProofData: "",
   });
 
   // ── Discuss Renewal Dialog ───────────────────────────────────────
@@ -1203,6 +1248,71 @@ function LeasingPage() {
       },
       ...items,
     ]);
+  }
+
+  function releaseFuturePdcExposure(lease: Lease, vacateDate: string) {
+    const effectiveVacateTs = new Date(vacateDate).getTime();
+    const pendingStatuses: PdcStatus[] = ["received", "replaced"];
+    const futurePdcs = pdcs.filter((item) =>
+      item.leaseId === lease.id &&
+      pendingStatuses.includes(item.status) &&
+      new Date(item.date).getTime() > effectiveVacateTs,
+    );
+
+    if (futurePdcs.length === 0) {
+      return { returnedCount: 0, returnedAmount: 0 };
+    }
+
+    setPdcs((items) => items.map((item) => (
+      futurePdcs.some((pdc) => pdc.id === item.id)
+        ? { ...item, status: "returned" as PdcStatus }
+        : item
+    )));
+
+    const returnedAmount = futurePdcs.reduce((sum, item) => sum + item.amount, 0);
+    const voucherNo = `JV-PDC-RET-${Date.now().toString().slice(-6)}`;
+
+    addJournalEntry({
+      je_no: voucherNo,
+      posting_date: vacateDate,
+      reference: `Early vacate PDC return: ${lease.tenantName}`,
+      narration: `Future rent PDCs returned after early vacate for ${lease.unit}`,
+      dr_account: "Customer PDC Liability",
+      dr_code: "21400",
+      cr_account: "PDC In Hand",
+      cr_code: "12900",
+      amount: returnedAmount,
+      property_name: lease.property,
+      unit_ref: lease.unit,
+      tenant_name: lease.tenantName,
+    });
+
+    setVouchers((items) => [
+      {
+        id: `v${items.length + 1}`,
+        leaseId: lease.id,
+        name: "Journal Voucher - Future PDCs Returned on Early Vacate",
+        receiptNo: voucherNo,
+        method: "Journal",
+        period: `PDCs after ${vacateDate}`,
+        debit: "Customer PDC Liability (21400)",
+        credit: "PDC In Hand (12900)",
+        amount: returnedAmount,
+        status: "posted",
+      },
+      ...items,
+    ]);
+
+    recordAudit({
+      stage: "Early Vacate PDC Return",
+      owner: "Finance Department",
+      input: `${futurePdcs.length} future PDC(s) after ${vacateDate}`,
+      approval: "Lease early termination settlement",
+      status: "completed",
+      output: `Returned ${futurePdcs.length} pending PDC(s) totalling ${formatMoney(returnedAmount)} and reversed PDC exposure from finance reports`,
+    });
+
+    return { returnedCount: futurePdcs.length, returnedAmount };
   }
 
   function createReservation() {
@@ -1545,22 +1655,33 @@ function LeasingPage() {
 
     const agencyAmt = Number(collectForm.agencyCommission) || 0;
     const adminAmt = Number(collectForm.adminCharges) || 0;
-    const utilityAmt = Number(collectForm.utilityDeposit) || 0;
+    // Type 1: Unit Security Deposit (GL 21500)
     const depAmt = Number(collectForm.depositAmount) || lease.securityDeposit;
+    // Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100)
+    const utilityAmt = Number(collectForm.utilityDeposit) || 0; // Kahramaa (21100003)
+    const qatarCoolAmt = Number(collectForm.qatarCoolDeposit) || 0; // Qatar Cool (21100004)
+    const reservationAmt = Number(collectForm.reservationDeposit) || 0; // Reservation Advance (21100001)
+    const serviceFeeAmt = Number(collectForm.serviceFeeDeposit) || 0; // Service Fee (21100005)
+    const guaranteeChequeAmt = Number(collectForm.guaranteeChequeDeposit) || 0; // Guarantee Cheque (21100006)
+
     const today_str = today.toISOString().split("T")[0];
     const jeNo = `JE-COLL-${lease.id.toUpperCase()}-${Date.now().toString().slice(-6)}`;
 
     const newVouchers: Voucher[] = [
       { id: `v${vouchers.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`, debit: "PDC In Hand", credit: `Customer(PDC)-${lease.unit}`, amount: pdcTotal, status: "posted" },
-      { id: `v${vouchers.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: collectForm.depositMode === "Cash" ? "Cash In Hand" : "PDC In Hand", credit: "Security Deposit Liability", amount: depAmt, status: "posted" },
-      ...(agencyAmt > 0 ? [{ id: `v${vouchers.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Agency Commission", receiptNo: `RV-${lease.id}-03`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Agency Commission Income", amount: agencyAmt, status: "posted" as const }] : []),
-      ...(adminAmt > 0 ? [{ id: `v${vouchers.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Admin Charges", receiptNo: `RV-${lease.id}-04`, method: "Cash", period: "One-time", debit: "Cash In Hand", credit: "Admin Charges Income", amount: adminAmt, status: "posted" as const }] : []),
-      ...(utilityAmt > 0 ? [{ id: `v${vouchers.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Utility Deposit", receiptNo: `RV-${lease.id}-05`, method: "Cash", period: "Utility deposit", debit: "Cash In Hand", credit: "Utility Deposit Liability", amount: utilityAmt, status: "posted" as const }] : []),
+      { id: `v${vouchers.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Unit Security Deposit (21500)", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Unit Security Deposit", debit: collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand", credit: "Security Deposit Liability (21500)", amount: depAmt, status: "posted" },
+      ...(utilityAmt > 0 ? [{ id: `v${vouchers.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Kahramaa Deposit (21100)", receiptNo: `RV-${lease.id}-03`, method: "Cash", period: "Kahramaa Utility Deposit", debit: "Cash In Hand", credit: "Refundable Security Deposit - Tenant (21100003)", amount: utilityAmt, status: "posted" as const }] : []),
+      ...(qatarCoolAmt > 0 ? [{ id: `v${vouchers.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Qatar Cool Deposit (21100)", receiptNo: `RV-${lease.id}-04`, method: "Cash", period: "Qatar Cool Deposit", debit: "Cash In Hand", credit: "Refundable Security Deposit - Tenant (21100004)", amount: qatarCoolAmt, status: "posted" as const }] : []),
+      ...(reservationAmt > 0 ? [{ id: `v${vouchers.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Reservation Advance (21100)", receiptNo: `RV-${lease.id}-05`, method: "Cash", period: "Reservation Advance Deposit", debit: "Cash In Hand", credit: "Refundable Security Deposit - Tenant (21100001)", amount: reservationAmt, status: "posted" as const }] : []),
+      ...(serviceFeeAmt > 0 ? [{ id: `v${vouchers.length + 6}`, leaseId: lease.id, name: "Receipts Voucher - Service Fee / Key Deposit (21100)", receiptNo: `RV-${lease.id}-06`, method: "Cash", period: "Service Fee Deposit", debit: "Cash In Hand", credit: "Refundable Security Deposit - Tenant (21100005)", amount: serviceFeeAmt, status: "posted" as const }] : []),
+      ...(guaranteeChequeAmt > 0 ? [{ id: `v${vouchers.length + 7}`, leaseId: lease.id, name: "Receipts Voucher - Guarantee Cheque (21100)", receiptNo: `RV-${lease.id}-07`, method: "Guarantee Cheque", period: "Guarantee Cheque Security", debit: "PDC In Hand", credit: "Refundable Security Deposit - Tenant (21100006)", amount: guaranteeChequeAmt, status: "posted" as const }] : []),
+      ...(agencyAmt > 0 ? [{ id: `v${vouchers.length + 8}`, leaseId: lease.id, name: "Receipts Voucher - Agency Commission", receiptNo: `RV-${lease.id}-08`, method: "Cash", period: "One-time fee", debit: "Cash In Hand", credit: "Agency Commission Income", amount: agencyAmt, status: "posted" as const }] : []),
+      ...(adminAmt > 0 ? [{ id: `v${vouchers.length + 9}`, leaseId: lease.id, name: "Receipts Voucher - Admin Charges", receiptNo: `RV-${lease.id}-09`, method: "Cash", period: "One-time fee", debit: "Cash In Hand", credit: "Admin Charges Income", amount: adminAmt, status: "posted" as const }] : []),
     ];
     setVouchers((items) => [...newVouchers, ...items]);
 
     // ── Post to Finance Store (Journal Ledger + Receipt Vouchers) ──
-    // 1. PDC Collection: DR PDC In Hand (12900) / CR Customer PDC Liability (21400)
+    // 1. PDC Rent Collection: DR PDC In Hand (12900) / CR Customer PDC Liability (21400)
     if (pdcTotal > 0) {
       addJournalEntry({
         je_no: jeNo,
@@ -1576,7 +1697,6 @@ function LeasingPage() {
         unit_ref: lease.unit,
         tenant_name: lease.tenantName,
       });
-      // Receipt Voucher for Rent PDCs
       addFinanceVoucher({
         voucher_no: `VCH-REC-${lease.id.toUpperCase()}-RENT`,
         voucher_type: "Receipt Voucher",
@@ -1594,7 +1714,7 @@ function LeasingPage() {
       });
     }
 
-    // 2. Security Deposit
+    // 2. Type 1: Unit Security Deposit (GL 21500)
     if (depAmt > 0) {
       const depDrAccount = collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand";
       const depDrCode = collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
@@ -1602,7 +1722,7 @@ function LeasingPage() {
         je_no: `${jeNo}-DEP`,
         posting_date: today_str,
         reference: `RV-${lease.id}-02`,
-        narration: `Security Deposit Receipt — ${lease.tenantName} / ${lease.unit} via ${collectForm.depositMode}`,
+        narration: `Unit Security Deposit (GL 21500) — ${lease.tenantName} / ${lease.unit} via ${collectForm.depositMode}`,
         dr_account: depDrAccount,
         dr_code: depDrCode,
         cr_account: "Security Deposit Liability",
@@ -1612,12 +1732,11 @@ function LeasingPage() {
         unit_ref: lease.unit,
         tenant_name: lease.tenantName,
       });
-      // Receipt Voucher for Security Deposit
       addFinanceVoucher({
         voucher_no: `VCH-REC-${lease.id.toUpperCase()}-DEP`,
         voucher_type: "Receipt Voucher",
         date: today_str,
-        name: `Security Deposit — ${lease.unit} via ${collectForm.depositMode}`,
+        name: `Unit Security Deposit — ${lease.unit} via ${collectForm.depositMode}`,
         debit: depDrAccount,
         debit_code: depDrCode,
         credit: "Security Deposit Liability",
@@ -1628,19 +1747,212 @@ function LeasingPage() {
         unit_ref: lease.unit,
         tenant_name: lease.tenantName,
       });
-      // Cash book entry if cash
       if (collectForm.depositMode === "Cash") {
         addCashBookEntry({
           date: today_str,
           voucher: `RV-${lease.id}-02`,
-          description: `Security Deposit Cash — ${lease.tenantName} / ${lease.unit}`,
+          description: `Unit Security Deposit Cash — ${lease.tenantName} / ${lease.unit}`,
           type: "in",
           amount: depAmt,
         });
       }
     }
 
-    // 3. Agency Commission Receipt Voucher
+    // 3. Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100)
+    // 3a. Kahramaa Utility Deposit (GL 21100003 / 21600)
+    if (utilityAmt > 0) {
+      addJournalEntry({
+        je_no: `${jeNo}-UTL`,
+        posting_date: today_str,
+        reference: `RV-${lease.id}-UTL`,
+        narration: `Kahramaa Deposit (GL 21100) — ${lease.tenantName} / ${lease.unit}`,
+        dr_account: "Cash In Hand",
+        dr_code: "12100",
+        cr_account: "Kahramaa Utility Deposit - Tenant",
+        cr_code: "21100003",
+        amount: utilityAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addFinanceVoucher({
+        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-UTL`,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Kahramaa Deposit (21100) — ${lease.unit}`,
+        debit: "Cash In Hand",
+        debit_code: "12100",
+        credit: "Kahramaa Utility Deposit - Tenant",
+        credit_code: "21100003",
+        amount: utilityAmt,
+        method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addCashBookEntry({
+        date: today_str,
+        voucher: `RV-${lease.id}-UTL`,
+        description: `Kahramaa Utility Deposit — ${lease.tenantName} / ${lease.unit}`,
+        type: "in",
+        amount: utilityAmt,
+      });
+    }
+
+    // 3b. Qatar Cool Deposit (GL 21100004)
+    if (qatarCoolAmt > 0) {
+      addJournalEntry({
+        je_no: `${jeNo}-QC`,
+        posting_date: today_str,
+        reference: `RV-${lease.id}-QC`,
+        narration: `Qatar Cool Deposit (GL 21100) — ${lease.tenantName} / ${lease.unit}`,
+        dr_account: "Cash In Hand",
+        dr_code: "12100",
+        cr_account: "Qatar Cool Deposit - Tenant",
+        cr_code: "21100004",
+        amount: qatarCoolAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addFinanceVoucher({
+        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-QC`,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Qatar Cool Deposit (21100) — ${lease.unit}`,
+        debit: "Cash In Hand",
+        debit_code: "12100",
+        credit: "Qatar Cool Deposit - Tenant",
+        credit_code: "21100004",
+        amount: qatarCoolAmt,
+        method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addCashBookEntry({
+        date: today_str,
+        voucher: `RV-${lease.id}-QC`,
+        description: `Qatar Cool Deposit Cash — ${lease.tenantName} / ${lease.unit}`,
+        type: "in",
+        amount: qatarCoolAmt,
+      });
+    }
+
+    // 3c. Reservation Advance Deposit (GL 21100001)
+    if (reservationAmt > 0) {
+      addJournalEntry({
+        je_no: `${jeNo}-RES`,
+        posting_date: today_str,
+        reference: `RV-${lease.id}-RES`,
+        narration: `Reservation Advance Deposit (GL 21100) — ${lease.tenantName} / ${lease.unit}`,
+        dr_account: "Cash In Hand",
+        dr_code: "12100",
+        cr_account: "Reservation Advance - Tenant",
+        cr_code: "21100001",
+        amount: reservationAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addFinanceVoucher({
+        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-RES`,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Reservation Advance Deposit (21100) — ${lease.unit}`,
+        debit: "Cash In Hand",
+        debit_code: "12100",
+        credit: "Reservation Advance - Tenant",
+        credit_code: "21100001",
+        amount: reservationAmt,
+        method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addCashBookEntry({
+        date: today_str,
+        voucher: `RV-${lease.id}-RES`,
+        description: `Reservation Advance Deposit Cash — ${lease.tenantName} / ${lease.unit}`,
+        type: "in",
+        amount: reservationAmt,
+      });
+    }
+
+    // 3d. Service Fee / Key Deposit (GL 21100005)
+    if (serviceFeeAmt > 0) {
+      addJournalEntry({
+        je_no: `${jeNo}-SVC`,
+        posting_date: today_str,
+        reference: `RV-${lease.id}-SVC`,
+        narration: `Service Fee Deposit (GL 21100) — ${lease.tenantName} / ${lease.unit}`,
+        dr_account: "Cash In Hand",
+        dr_code: "12100",
+        cr_account: "Service Fee Deposit - Tenant",
+        cr_code: "21100005",
+        amount: serviceFeeAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addFinanceVoucher({
+        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-SVC`,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Service Fee Deposit (21100) — ${lease.unit}`,
+        debit: "Cash In Hand",
+        debit_code: "12100",
+        credit: "Service Fee Deposit - Tenant",
+        credit_code: "21100005",
+        amount: serviceFeeAmt,
+        method: "Cash",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addCashBookEntry({
+        date: today_str,
+        voucher: `RV-${lease.id}-SVC`,
+        description: `Service Fee Deposit Cash — ${lease.tenantName} / ${lease.unit}`,
+        type: "in",
+        amount: serviceFeeAmt,
+      });
+    }
+
+    // 3e. Guarantee Cheque Security (GL 21100006)
+    if (guaranteeChequeAmt > 0) {
+      addJournalEntry({
+        je_no: `${jeNo}-GCHQ`,
+        posting_date: today_str,
+        reference: `RV-${lease.id}-GCHQ`,
+        narration: `Guarantee Cheque Security Deposit (GL 21100) — ${lease.tenantName} / ${lease.unit} (${collectForm.guaranteeChequeNo || "CHQ-GNT"})`,
+        dr_account: "PDC In Hand",
+        dr_code: "12900",
+        cr_account: "Guarantee Cheque Liability",
+        cr_code: "21100006",
+        amount: guaranteeChequeAmt,
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+      addFinanceVoucher({
+        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-GCHQ`,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Guarantee Cheque Security (21100) — ${lease.unit}`,
+        debit: "PDC In Hand",
+        debit_code: "12900",
+        credit: "Guarantee Cheque Liability",
+        credit_code: "21100006",
+        amount: guaranteeChequeAmt,
+        method: "Guarantee Cheque",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+    }
+
+    // 4. One-Time Non-Refundable Revenues
     if (agencyAmt > 0) {
       addFinanceVoucher({
         voucher_no: `VCH-REC-${lease.id.toUpperCase()}-AGN`,
@@ -1659,7 +1971,6 @@ function LeasingPage() {
       });
     }
 
-    // 4. Admin Charges Receipt Voucher
     if (adminAmt > 0) {
       addFinanceVoucher({
         voucher_no: `VCH-REC-${lease.id.toUpperCase()}-ADM`,
@@ -1678,25 +1989,6 @@ function LeasingPage() {
       });
     }
 
-    // 5. Utility Deposit Receipt Voucher
-    if (utilityAmt > 0) {
-      addFinanceVoucher({
-        voucher_no: `VCH-REC-${lease.id.toUpperCase()}-UTL`,
-        voucher_type: "Receipt Voucher",
-        date: today_str,
-        name: `Utility Deposit — ${lease.unit}`,
-        debit: "Cash In Hand",
-        debit_code: "12100",
-        credit: "Utility Deposit Liability",
-        credit_code: "21600",
-        amount: utilityAmt,
-        method: "Cash",
-        property_name: lease.property,
-        unit_ref: lease.unit,
-        tenant_name: lease.tenantName,
-      });
-    }
-
     advanceLease(lease, "collection_completed", {
       collectionCompleted: true,
       pdcCount: nextPdcs.length,
@@ -1707,14 +1999,14 @@ function LeasingPage() {
     recordAudit({
       stage: "Collection & Receipt Generation",
       owner: `Finance Cashier${collectForm.cashierName ? " – " + collectForm.cashierName : ""}`,
-      input: `${nextPdcs.length} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
+      input: `${nextPdcs.length} PDCs (${collectForm.chequeBank}), unit deposit ${collectForm.depositMode} QR ${depAmt.toLocaleString()}${utilityAmt > 0 ? ", Kahramaa " + formatMoney(utilityAmt) : ""}${qatarCoolAmt > 0 ? ", Qatar Cool " + formatMoney(qatarCoolAmt) : ""}${reservationAmt > 0 ? ", Reservation " + formatMoney(reservationAmt) : ""}${serviceFeeAmt > 0 ? ", Service Fee " + formatMoney(serviceFeeAmt) : ""}${guaranteeChequeAmt > 0 ? ", Guarantee Cheque " + formatMoney(guaranteeChequeAmt) : ""}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
-      output: (collectForm.notes || "Rent, deposit and fee collection receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
+      output: (collectForm.notes || "Rent, security deposits (Type 1 GL 21500 & Type 2 GL 21100), and fee collection receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
 
     // Auto-generate official printable receipt
-    const totalCollectedAmt = pdcTotal + depAmt + agencyAmt + adminAmt + utilityAmt;
+    const totalCollectedAmt = pdcTotal + depAmt + utilityAmt + qatarCoolAmt + reservationAmt + serviceFeeAmt + guaranteeChequeAmt + agencyAmt + adminAmt;
     const generatedReceipt: TenantReceiptDetails = {
       receiptNo: `REC-${Date.now().toString().slice(-6)}`,
       acknowledgementNo: `ACK-${lease.id.toUpperCase()}`,
@@ -1755,10 +2047,11 @@ function LeasingPage() {
       utilityDeposit: utilityAmt,
       totalCollected: totalCollectedAmt,
       cashierName: collectForm.cashierName || "Finance Cashier",
-      notes: collectForm.notes || "Official receipt acknowledged for rent cheques, security deposit, and applicable fees.",
+      notes: collectForm.notes || "Official receipt acknowledged for rent cheques, Unit Security Deposit (GL 21500), Ancillary Refundable Deposits (GL 21100), and applicable fees.",
     };
 
     setReceiptModalData(generatedReceipt);
+    setReceiptModalSecondaryData(null);
     setReceiptModalOpen(true);
     setCollectOpen(false);
   }
@@ -1885,7 +2178,7 @@ function LeasingPage() {
       setPdcs((items) => [newPdc, ...items]);
     }
 
-    // 3. Mirror into FinanceStore Sub-Ledger & General Ledger
+    // 3. Mirror into FinanceStore Sub-Ledger & General Ledger (addFinanceVoucher posts directly to GL)
     addFinanceVoucher({
       voucher_no: vchNo,
       voucher_type: name.includes("Deposit") ? "Receipt Voucher" : name.includes("Payment") ? "Payment Voucher" : "Receipt Voucher",
@@ -1901,21 +2194,6 @@ function LeasingPage() {
       unit: unitCode,
       tenant: lease?.tenantName || "Tenant",
     } as any);
-
-    addJournalEntry({
-      je_no: `JE-${vchNo}`,
-      posting_date: today.toISOString().split("T")[0],
-      reference: vchNo,
-      narration: `${name} | ${period || "Lease Voucher"} | ${lease?.tenantName || "Tenant"} (${unitCode})`,
-      dr_account: accounts.debit,
-      dr_code: accounts.debit.includes("Cash") ? "12100" : accounts.debit.includes("PDC") ? "12900" : "12000",
-      cr_account: accounts.credit,
-      cr_code: accounts.credit.includes("Security") ? "21500" : accounts.credit.includes("PDC") ? "21400" : "41100",
-      amount: numAmount,
-      property_name: lease?.property || "Old Salata - Residence No:23",
-      unit_ref: unitCode,
-      tenant_name: lease?.tenantName || "Tenant",
-    });
 
     // 4. Post through the central Accounting Event -> Atomic Posting Engine
     try {
@@ -2110,13 +2388,33 @@ function LeasingPage() {
 
   function openSettleRefundModal(settlement: Settlement) {
     setSelectedSettlement(settlement);
-    const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges + settlement.otherDeductions;
-    const calcRefund = Math.max(0, settlement.depositReceived - deductions);
+    const deductions = (settlement.outstandingRent || 0) + (settlement.damages || 0) + (settlement.utilityCharges || 0)
+      + (settlement.cleaningCharges || 0) + (settlement.restorationCharges || 0) + (settlement.otherDeductions || 0);
+    const initialMode = (settlement.settlementMode || "DEDUCT_FROM_DEPOSIT") as "DEDUCT_FROM_DEPOSIT" | "PAY_SEPARATELY";
+    const calcRefund = initialMode === "PAY_SEPARATELY" 
+      ? settlement.depositReceived 
+      : Math.max(0, settlement.depositReceived - deductions);
     setSettleRefundForm({
+      damages: String(settlement.damages || 0),
+      outstandingRent: String(settlement.outstandingRent || 0),
+      utilityCharges: String(settlement.utilityCharges || 0),
+      cleaningCharges: String(settlement.cleaningCharges || 0),
+      restorationCharges: String(settlement.restorationCharges || 0),
+      otherDeductions: String(settlement.otherDeductions || 0),
       refundAmount: String(calcRefund),
       paymentMethod: "Bank Transfer",
+      settlementMode: initialMode,
+      damagePaymentMode: settlement.damagePaymentMode || "Bank Transfer",
+      damageRemarks: "",
       notes: `Security deposit settlement and refund for Lease ${settlement.leaseId}`,
+      paymentRefNo: settlement.paymentRefNo || "",
+      payerBank: settlement.payerBank || (settlement.damagePaymentMode === "Cash" ? "Cash In Hand" : "QNB"),
+      paymentDate: settlement.paymentDate || today.toISOString().split("T")[0],
+      bgExpiryDate: settlement.bgExpiryDate || "",
+      paymentProofFileName: settlement.paymentProofFileName || "",
+      paymentProofData: settlement.paymentProofUrl || "",
     });
+    setSettleRefundStep(1);
     setSettleRefundOpen(true);
   }
 
@@ -2124,148 +2422,433 @@ function LeasingPage() {
     if (!selectedSettlement) return;
     const settlement = selectedSettlement;
     const lease = leases.find((item) => item.id === settlement.leaseId);
-    const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges + settlement.otherDeductions;
-    const customRefund = parseFloat(settleRefundForm.refundAmount);
-    const refundable = !isNaN(customRefund) ? customRefund : Math.max(0, settlement.depositReceived - deductions);
+    const checkout = checkouts.find((item) => item.leaseId === settlement.leaseId);
     const settlementDate = today.toISOString().split("T")[0];
     const pvNo = `PV-SET-${Date.now().toString().slice(-6)}`;
     const jvNo = `JV-SET-${Date.now().toString().slice(-6)}`;
+    const rvDmgNo = `RV-DMG-${Date.now().toString().slice(-6)}`;
+    const isBank = settleRefundForm.paymentMethod !== "Cash";
+    const bankCrCode = isBank ? "12000" : "12100";
+    const bankCrName = isBank ? "Bank Operating Account" : "Cash In Hand";
+    const mode = settleRefundForm.settlementMode;
+    const dmgPayMode = settleRefundForm.damagePaymentMode || "Bank Transfer";
 
-    // 1. Mark settlement as paid
-    setSettlements((items) => items.map((item) => (item.id === settlement.id ? { ...item, approval: "paid" } : item)));
+    // Dynamic debit account for customer separate damage payment
+    let dmgDrAccount = "Bank Operating Account";
+    let dmgDrCode = "12000";
+    if (dmgPayMode === "Cash") {
+      dmgDrAccount = "Cash In Hand";
+      dmgDrCode = "12100";
+    } else if (dmgPayMode === "Cheque") {
+      dmgDrAccount = "Cheques / PDC In Hand";
+      dmgDrCode = "12200";
+    } else if (dmgPayMode === "Bank Guarantee") {
+      dmgDrAccount = "Bank Guarantee Security Held";
+      dmgDrCode = "12500";
+    }
 
-    // 2. Post sub-ledger vouchers (local state)
+    // Resolved deduction totals from the active form (allows PM to adjust tenant-shared damage amounts)
+    const damages = parseFloat(settleRefundForm.damages) || 0;
+    const outstandingRent = parseFloat(settleRefundForm.outstandingRent) || 0;
+    const utilityCharges = parseFloat(settleRefundForm.utilityCharges) || 0;
+    const cleaningCharges = parseFloat(settleRefundForm.cleaningCharges) || 0;
+    const restorationCharges = parseFloat(settleRefundForm.restorationCharges) || 0;
+    const otherDeductions = parseFloat(settleRefundForm.otherDeductions) || 0;
+    const totalDeductions = damages + outstandingRent + utilityCharges + cleaningCharges + restorationCharges + otherDeductions;
+    const grossDeposit = settlement.depositReceived;
+
+    const customRefund = parseFloat(settleRefundForm.refundAmount);
+    const refundable = !isNaN(customRefund) ? customRefund : (mode === "PAY_SEPARATELY" ? grossDeposit : Math.max(0, grossDeposit - totalDeductions));
+
+    // 1. Mark settlement as paid and record updated deduction amounts and chosen mode
+    setSettlements((items) => items.map((item) =>
+      item.id === settlement.id ? {
+        ...item,
+        damages,
+        outstandingRent,
+        utilityCharges,
+        cleaningCharges,
+        restorationCharges,
+        otherDeductions,
+        refundableBalance: mode === "PAY_SEPARATELY" ? grossDeposit : Math.max(0, grossDeposit - totalDeductions),
+        approval: "paid",
+        settlementMode: mode,
+        damagePaymentMode: mode === "PAY_SEPARATELY" ? dmgPayMode : undefined,
+        paymentRefNo: mode === "PAY_SEPARATELY" ? settleRefundForm.paymentRefNo : undefined,
+        payerBank: mode === "PAY_SEPARATELY" ? settleRefundForm.payerBank : undefined,
+        paymentDate: mode === "PAY_SEPARATELY" ? settleRefundForm.paymentDate : undefined,
+        bgExpiryDate: mode === "PAY_SEPARATELY" && dmgPayMode === "Bank Guarantee" ? settleRefundForm.bgExpiryDate : undefined,
+        paymentProofFileName: mode === "PAY_SEPARATELY" ? settleRefundForm.paymentProofFileName : undefined,
+        paymentProofUrl: mode === "PAY_SEPARATELY" ? settleRefundForm.paymentProofData : undefined,
+      } : item
+    ));
+
+    const propName = lease?.property || "Old Salata - Residence No:23";
+    const unitRef = lease?.unit || "Unit";
+    const tenantName = lease?.tenantName || "Tenant";
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SCENARIO 1 — PAY_SEPARATELY: Customer pays damages out-of-pocket
+    //   Step 1: Damage recognized → DR 12413 Tenant AR / CR 41400 Recovery
+    //   Step 2: Customer pays AR → DR Bank/Cash/Cheque/BG / CR 12413 Tenant AR
+    //   Step 3: Deposit liability released → DR 21500 / CR 12000/12100 (full)
+    // ─────────────────────────────────────────────────────────────────────
+    if (mode === "PAY_SEPARATELY") {
+      // Step 1: Recognize each damage charge into Tenant AR
+      if (damages > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A1`, posting_date: settlementDate,
+          reference: `Damage charge: ${tenantName}`,
+          narration: `Damage / repair charge recognized as Tenant AR — ${unitRef}${settleRefundForm.damageRemarks ? ` | ${settleRefundForm.damageRemarks}` : ''}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "Repairs & Maintenance Recovery", cr_code: "41400",
+          amount: damages, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      if (outstandingRent > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A2`, posting_date: settlementDate,
+          reference: `Outstanding rent: ${tenantName}`,
+          narration: `Outstanding rent recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "Rental Revenue / Income", cr_code: "41100",
+          amount: outstandingRent, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      if (utilityCharges > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A3`, posting_date: settlementDate,
+          reference: `Utility charges: ${tenantName}`,
+          narration: `Final Kahramaa / utility charges recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "CAM & Maintenance Recovery", cr_code: "41400",
+          amount: utilityCharges, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      const otherTotal = cleaningCharges + restorationCharges + otherDeductions;
+      if (otherTotal > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A4`, posting_date: settlementDate,
+          reference: `Other charges: ${tenantName}`,
+          narration: `Cleaning / restoration / admin charges recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "CAM & Maintenance Recovery", cr_code: "41400",
+          amount: otherTotal, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+
+      // Step 2 & 3: Damage collection and Deposit refund are handled via Receipt Voucher & Payment Voucher (addFinanceVoucher) below to prevent duplicate GL postings.
+      if (totalDeductions > 0) {
+        // Add Receipt Voucher for the tenant's damage payment
+        addFinanceVoucher({
+          voucher_no: rvDmgNo,
+          voucher_type: "Receipt Voucher",
+          date: settleRefundForm.paymentDate || settlementDate,
+          name: `Tenant Damage Charges Settlement Collection (${dmgPayMode}) — ${tenantName}${settleRefundForm.paymentRefNo ? ` (Ref: ${settleRefundForm.paymentRefNo})` : ''}`,
+          debit: dmgDrAccount,
+          debit_code: dmgDrCode,
+          credit: "Tenant Receivables",
+          credit_code: "12413",
+          amount: totalDeductions,
+          method: dmgPayMode,
+          property_name: propName,
+          unit_ref: unitRef,
+          tenant_name: tenantName,
+        } as any);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+    // SCENARIO 2 — DEDUCT_FROM_DEPOSIT: Damages deducted from security deposit
+    //   Step 1: Damage recognized → DR 12413 Tenant AR / CR 41400 Recovery
+    //   Step 2: Deposit deduction → DR 21500 / CR 12413 Tenant AR (min(deposit, damage))
+    //   Step 3: Remaining deposit refund → DR 21500 / CR 12000/12100
+    // ─────────────────────────────────────────────────────────────────────
+    else {
+      // Step 1: Recognize each damage charge into Tenant AR
+      if (damages > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A1`, posting_date: settlementDate,
+          reference: `Damage charge: ${tenantName}`,
+          narration: `Damage / repair charge recognized as Tenant AR — ${unitRef}${settleRefundForm.damageRemarks ? ` | ${settleRefundForm.damageRemarks}` : ''}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "Repairs & Maintenance Recovery", cr_code: "41400",
+          amount: damages, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      if (outstandingRent > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A2`, posting_date: settlementDate,
+          reference: `Outstanding rent: ${tenantName}`,
+          narration: `Outstanding rent recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "Rental Revenue / Income", cr_code: "41100",
+          amount: outstandingRent, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      if (utilityCharges > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A3`, posting_date: settlementDate,
+          reference: `Utility charges: ${tenantName}`,
+          narration: `Final Kahramaa / utility charges recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "CAM & Maintenance Recovery", cr_code: "41400",
+          amount: utilityCharges, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+      const otherTotal = cleaningCharges + restorationCharges + otherDeductions;
+      if (otherTotal > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-A4`, posting_date: settlementDate,
+          reference: `Other charges: ${tenantName}`,
+          narration: `Cleaning / restoration / admin charges recognized as Tenant AR — ${unitRef}`,
+          dr_account: "Tenant Receivables", dr_code: "12413",
+          cr_account: "CAM & Maintenance Recovery", cr_code: "41400",
+          amount: otherTotal, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+
+      // Step 2: Deposit deduction — capped at deposit balance (never negative)
+      const depositDeduction = Math.min(grossDeposit, totalDeductions);
+      const remainingAR = Math.max(0, totalDeductions - grossDeposit);
+      if (depositDeduction > 0) {
+        addJournalEntry({
+          je_no: `${jvNo}-B`, posting_date: settlementDate,
+          reference: `Deposit deduction: ${tenantName}`,
+          narration: `Security deposit applied against approved damages/charges (AR settled) — ${unitRef}`,
+          dr_account: "Security Deposit Liability", dr_code: "21500",
+          cr_account: "Tenant Receivables", cr_code: "12413",
+          amount: depositDeduction, property_name: propName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+      }
+
+      if (remainingAR > 0) {
+        toast.warning(`⚠ Damage (QR ${totalDeductions.toLocaleString()}) exceeds deposit (QR ${grossDeposit.toLocaleString()}). Residual AR of QR ${remainingAR.toLocaleString()} remains outstanding.`);
+      }
+
+      // Step 3: Refund remaining deposit balance (if any) is handled exclusively via Payment Voucher (addFinanceVoucher) below to prevent duplicate GL postings.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Common: Post finance voucher (PV) for the actual cash/bank refund paid
+    // ─────────────────────────────────────────────────────────────────────
+    if (refundable > 0) {
+      addFinanceVoucher({
+        voucher_no: pvNo,
+        voucher_type: "Payment Voucher",
+        date: settlementDate,
+        name: `Tenant Security Deposit Refund — ${tenantName}`,
+        debit: "Security Deposit Liability",
+        debit_code: "21500",
+        credit: bankCrName,
+        credit_code: bankCrCode,
+        amount: refundable,
+        method: settleRefundForm.paymentMethod,
+        property_name: propName,
+        unit_ref: unitRef,
+        tenant_name: tenantName,
+      } as any);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Sync with Live Cash Book & Cash On Hand if Cash is used
+    // ─────────────────────────────────────────────────────────────────────
+    if (mode === "PAY_SEPARATELY" && dmgPayMode === "Cash" && totalDeductions > 0) {
+      addCashBookEntry({
+        date: settlementDate,
+        voucher: rvDmgNo,
+        description: `Damage Cash Collection — ${tenantName} / ${unitRef}`,
+        type: "in",
+        amount: totalDeductions,
+      });
+    }
+
+    if (settleRefundForm.paymentMethod === "Cash") {
+      const cashRefundAmt = mode === "PAY_SEPARATELY" ? grossDeposit : refundable;
+      if (cashRefundAmt > 0) {
+        addCashBookEntry({
+          date: settlementDate,
+          voucher: pvNo,
+          description: `Security Deposit Cash Refund — ${tenantName} / ${unitRef}`,
+          type: "out",
+          amount: cashRefundAmt,
+        });
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Post sub-ledger voucher entries (local state for vouchers tab)
+    // ─────────────────────────────────────────────────────────────────────
     setVouchers((items) => [
-      { id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: "Settlement — Release Security Deposit Liability", receiptNo: jvNo, method: "Journal", period: "Final checkout", debit: "Security Deposit Liability (21500)", credit: "Bank Operating Account (12000)", amount: settlement.depositReceived, status: "posted" },
-      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Payment Voucher — Tenant Security Refund", receiptNo: pvNo, method: settleRefundForm.paymentMethod, period: "Refund", debit: "Bank Operating Account (12000)", credit: "Payable - Refund Account (21300)", amount: refundable, status: "posted" },
+      ...(mode === "PAY_SEPARATELY" && totalDeductions > 0 ? [{ id: `v${items.length + 1}`, leaseId: settlement.leaseId, name: `Receipt Voucher — Tenant Damages Paid (${dmgPayMode}${settleRefundForm.paymentRefNo ? ` • Ref: ${settleRefundForm.paymentRefNo}` : ''})`, receiptNo: rvDmgNo, method: dmgPayMode, period: "Damage settlement", debit: dmgDrAccount, credit: "Tenant Receivables (12413)", amount: totalDeductions, status: "posted" as const }] : []),
+      { id: `v${items.length + 2}`, leaseId: settlement.leaseId, name: "Settlement — Security Deposit Liability Released", receiptNo: jvNo, method: "Journal", period: "Final checkout", debit: "Security Deposit Liability (21500)", credit: bankCrName, amount: refundable > 0 ? refundable : grossDeposit, status: "posted" as const },
+      ...(refundable > 0 ? [{ id: `v${items.length + 3}`, leaseId: settlement.leaseId, name: "Payment Voucher — Tenant Security Refund", receiptNo: pvNo, method: settleRefundForm.paymentMethod, period: "Refund", debit: bankCrName, credit: "Refund Payable (21300)", amount: refundable, status: "posted" as const }] : []),
+      ...(mode === "DEDUCT_FROM_DEPOSIT" && totalDeductions > 0 ? [{ id: `v${items.length + 4}`, leaseId: settlement.leaseId, name: "Deductions — Deducted from Security Deposit", receiptNo: `${jvNo}-D`, method: "Journal", period: "Deductions", debit: "Security Deposit Liability (21500)", credit: "Tenant Receivables (12413)", amount: Math.min(grossDeposit, totalDeductions), status: "posted" as const }] : []),
       ...items,
     ]);
 
-    // 3. Post GL double-entry journal entries via FinanceStore
-    // Part A: Release the security deposit liability → DR 21500 Security Deposit Liability / CR 12000 Bank Operating Account
-    addJournalEntry({
-      je_no: jvNo,
-      posting_date: settlementDate,
-      reference: `Settlement: ${lease?.tenantName || settlement.leaseId}`,
-      narration: `Security deposit refund upon lease closure — ${lease?.unit || ""}, Gross Deposit: QR ${settlement.depositReceived.toLocaleString()}, Net Refund Paid: QR ${refundable.toLocaleString()}`,
-      dr_account: "Security Deposit Liability",
-      dr_code: "21500",
-      cr_account: "Bank Operating Account",
-      cr_code: "12000",
-      amount: settlement.depositReceived,
-      property_name: lease?.property || "Old Salata - Residence No:23",
-      unit_ref: lease?.unit || "Unit",
-      tenant_name: lease?.tenantName || "Tenant",
-    });
-
-    // Part B: Post deductions — DR various expense/recovery accounts / CR Security Deposit Liability (offset)
-    if (settlement.damages > 0) {
-      addJournalEntry({
-        je_no: `${jvNo}-A`,
-        posting_date: settlementDate,
-        reference: `Damage recovery: ${lease?.tenantName || ""}`,
-        narration: `Damage deduction from security deposit — ${lease?.unit || ""}`,
-        dr_account: "Damage Recovery Receivable",
-        dr_code: "12413",
-        cr_account: "Repairs & Maintenance Recovery",
-        cr_code: "41400",
-        amount: settlement.damages,
-        property_name: lease?.property || "Old Salata - Residence No:23",
-        unit_ref: lease?.unit || "Unit",
-        tenant_name: lease?.tenantName || "Tenant",
-      });
-    }
-
-    if (settlement.outstandingRent > 0) {
-      addJournalEntry({
-        je_no: `${jvNo}-B`,
-        posting_date: settlementDate,
-        reference: `Outstanding rent recovery: ${lease?.tenantName || ""}`,
-        narration: `Rent outstanding cleared from security deposit — ${lease?.unit || ""}`,
-        dr_account: "Rent Receivable",
-        dr_code: "12100",
-        cr_account: "Rental Revenue",
-        cr_code: "41100",
-        amount: settlement.outstandingRent,
-        property_name: lease?.property || "Old Salata - Residence No:23",
-        unit_ref: lease?.unit || "Unit",
-        tenant_name: lease?.tenantName || "Tenant",
-      });
-    }
-
-    // 4. Post finance voucher (FinanceStore sub-ledger)
-    addFinanceVoucher({
-      voucher_no: pvNo,
-      voucher_type: "Payment Voucher",
-      date: settlementDate,
-      name: `Tenant Security Deposit Refund — ${lease?.tenantName || settlement.leaseId}`,
-      debit: "Security Deposit Liability",
-      debit_code: "21500",
-      credit: "Bank Operating Account",
-      credit_code: "12000",
-      amount: refundable,
-      method: settleRefundForm.paymentMethod,
-      property: lease?.property || "Old Salata - Residence No:23",
-      unit: lease?.unit || "Unit",
-      tenant: lease?.tenantName || "Tenant",
-    } as any);
+    const earlyVacateDate = checkout?.moveOutDate || lease?.plannedVacateDate;
+    const isEarlyVacate = Boolean(
+      lease &&
+      earlyVacateDate &&
+      new Date(earlyVacateDate).getTime() < new Date(lease.endDate).getTime(),
+    );
+    const pdcRelease = lease && isEarlyVacate && earlyVacateDate
+      ? releaseFuturePdcExposure(lease, earlyVacateDate)
+      : { returnedCount: 0, returnedAmount: 0 };
 
     // 5. Close lease and update unit disposition
     if (lease) {
-      setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
+      setLeases((items) => items.map((item) => (
+        item.id === lease.id
+          ? {
+              ...item,
+              status: "closed",
+              endDate: earlyVacateDate || item.endDate,
+              actualVacateDate: earlyVacateDate || settlementDate,
+              plannedVacateDate: earlyVacateDate || item.plannedVacateDate,
+              earlyVacate: isEarlyVacate || item.earlyVacate,
+              earlyVacateReason: isEarlyVacate ? (item.earlyVacateReason || "Tenant vacated before lease expiry") : item.earlyVacateReason,
+            }
+          : item
+      )));
       setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition || "Vacant - Under Maintenance") as Unit["status"] } : item)));
     }
 
-    // 6. Open a settlement receipt modal
-    const receiptData: TenantReceiptDetails = {
-      receiptNo: pvNo,
-      acknowledgementNo: jvNo,
-      date: settlementDate,
-      tenantName: lease?.tenantName || "Valued Tenant",
-      tenantPhone: "",
-      tenantEmail: "",
-      tenantQid: "",
-      propertyName: lease?.property || "Old Salata - Residence No:23",
-      unitRef: lease?.unit || "Unit",
-      leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-${settlement.leaseId}`,
-      leaseStartDate: lease?.startDate || settlementDate,
-      leaseEndDate: lease?.endDate || settlementDate,
-      monthlyRent: lease?.monthlyRent || 0,
-      totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : 0,
-      depositAmount: settlement.depositReceived,
-      depositMode: "Security Deposit Refund",
-      pdcCount: 0,
-      pdcs: [],
-      vouchers: [
-        { receiptNo: jvNo, name: "Security Deposit Released (21500 → 12000)", amount: settlement.depositReceived, method: "Journal", debit: "Security Deposit Liability", credit: "Bank Operating Account" },
-        { receiptNo: pvNo, name: "Net Security Deposit Refund Paid", amount: refundable, method: settleRefundForm.paymentMethod, debit: "Bank Operating Account", credit: "Refund Payable" },
-        ...(settlement.damages > 0 ? [{ receiptNo: `${jvNo}-A`, name: `Damage Recovery Deducted`, amount: settlement.damages, method: "Deduction", debit: "Damage Receivable (12413)", credit: "Repairs Recovery (41400)" }] : []),
-        ...(settlement.outstandingRent > 0 ? [{ receiptNo: `${jvNo}-B`, name: `Outstanding Rent Recovered`, amount: settlement.outstandingRent, method: "Deduction", debit: "Rent Receivable (12100)", credit: "Rental Revenue (41100)" }] : []),
-        ...(settlement.utilityCharges > 0 ? [{ receiptNo: `${jvNo}-C`, name: `Utility Charges Deducted`, amount: settlement.utilityCharges, method: "Deduction", debit: "Utility Receivable", credit: "Utility Recovery" }] : []),
-      ],
-      agencyCommission: 0,
-      adminCharges: 0,
-      utilityDeposit: settlement.utilityCharges,
-      totalCollected: refundable,
-      cashierName: "Finance Department",
-      notes: `Refundable Security Deposit Settlement — Gross Deposit: QR ${settlement.depositReceived.toLocaleString()} | Total Deductions: QR ${deductions.toLocaleString()} | Net Refund Paid: QR ${refundable.toLocaleString()} | Mode: ${settleRefundForm.paymentMethod}${settleRefundForm.notes ? ` | Remarks: ${settleRefundForm.notes}` : ''}`,
-    };
+    // 6. Generate official receipt details for the receipt modal
+    let primaryReceipt: TenantReceiptDetails;
+    let secondaryReceipt: TenantReceiptDetails | null = null;
 
-    setReceiptModalData(receiptData);
+    if (mode === "PAY_SEPARATELY") {
+      // ── RECEIPT 1: Damage & Repair Charges Collection (Receipt Voucher) ──
+      primaryReceipt = {
+        receiptNo: rvDmgNo,
+        acknowledgementNo: jvNo,
+        date: settlementDate,
+        tenantName: tenantName,
+        tenantPhone: "",
+        tenantEmail: "",
+        tenantQid: "",
+        propertyName: propName,
+        unitRef: unitRef,
+        leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-${settlement.leaseId}`,
+        leaseStartDate: lease?.startDate || settlementDate,
+        leaseEndDate: lease?.endDate || settlementDate,
+        monthlyRent: lease?.monthlyRent || 0,
+        totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : 0,
+        depositAmount: 0,
+        depositMode: `Damage Settlement Collection (${dmgPayMode})`,
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [
+          { receiptNo: rvDmgNo, name: `Damage Charges Paid by Tenant (${dmgPayMode}${settleRefundForm.paymentRefNo ? ` • Ref: ${settleRefundForm.paymentRefNo}` : ''})`, amount: totalDeductions, method: dmgPayMode, debit: dmgDrAccount, credit: "Tenant Receivables (12413)" },
+          ...(damages > 0 ? [{ receiptNo: `${jvNo}-A1`, name: `Damage / Repair Costs`, amount: damages, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Repairs Recovery (41400)" }] : []),
+          ...(outstandingRent > 0 ? [{ receiptNo: `${jvNo}-A2`, name: `Outstanding Rent Recovered`, amount: outstandingRent, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Rental Revenue (41100)" }] : []),
+          ...(utilityCharges > 0 ? [{ receiptNo: `${jvNo}-A3`, name: `Kahramaa / Utility Charges`, amount: utilityCharges, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Utility Recovery (41400)" }] : []),
+          ...(cleaningCharges > 0 ? [{ receiptNo: `${jvNo}-A4`, name: `Deep Cleaning Charges`, amount: cleaningCharges, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Cleaning Recovery (41400)" }] : []),
+          ...(restorationCharges > 0 ? [{ receiptNo: `${jvNo}-A5`, name: `Painting / Restoration Charges`, amount: restorationCharges, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Restoration Recovery (41400)" }] : []),
+          ...(otherDeductions > 0 ? [{ receiptNo: `${jvNo}-A6`, name: `Other Charges`, amount: otherDeductions, method: dmgPayMode, debit: "Tenant AR (12413)", credit: "Admin Recovery (41400)" }] : []),
+        ],
+        agencyCommission: 0,
+        adminCharges: 0,
+        utilityDeposit: utilityCharges,
+        totalCollected: totalDeductions,
+        cashierName: "Finance Department",
+        notes: `Damage Settlement Collection Receipt | Channel: ${dmgPayMode}${settleRefundForm.paymentRefNo ? ` | Instrument/Ref: ${settleRefundForm.paymentRefNo}` : ''}${settleRefundForm.payerBank ? ` | Source/Bank: ${settleRefundForm.payerBank}` : ''}${dmgPayMode === "Bank Guarantee" && settleRefundForm.bgExpiryDate ? ` | BG Expiry: ${settleRefundForm.bgExpiryDate}` : ''}${settleRefundForm.paymentProofFileName ? ` | Attached Proof: ${settleRefundForm.paymentProofFileName}` : ''}${settleRefundForm.damageRemarks ? ` | Damage Agreement: ${settleRefundForm.damageRemarks}` : ''}`,
+      };
+
+      // ── RECEIPT 2: Full Security Deposit Refund Voucher (Payment Voucher) ──
+      secondaryReceipt = {
+        receiptNo: pvNo,
+        acknowledgementNo: jvNo,
+        date: settlementDate,
+        tenantName: tenantName,
+        tenantPhone: "",
+        tenantEmail: "",
+        tenantQid: "",
+        propertyName: propName,
+        unitRef: unitRef,
+        leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-${settlement.leaseId}`,
+        leaseStartDate: lease?.startDate || settlementDate,
+        leaseEndDate: lease?.endDate || settlementDate,
+        monthlyRent: lease?.monthlyRent || 0,
+        totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : 0,
+        depositAmount: grossDeposit,
+        depositMode: `Full Deposit Refund (${settleRefundForm.paymentMethod})`,
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [
+          { receiptNo: jvNo, name: `Security Deposit Liability Released (21500 → ${bankCrCode})`, amount: grossDeposit, method: "Journal", debit: "Security Deposit Liability (21500)", credit: bankCrName },
+          { receiptNo: pvNo, name: `Security Deposit Refund Paid (${settleRefundForm.paymentMethod})`, amount: refundable > 0 ? refundable : grossDeposit, method: settleRefundForm.paymentMethod, debit: bankCrName, credit: "Refund Payable (21300)" },
+        ],
+        agencyCommission: 0,
+        adminCharges: 0,
+        utilityDeposit: 0,
+        totalCollected: refundable > 0 ? refundable : grossDeposit,
+        cashierName: "Finance Department",
+        notes: `Full Security Deposit Liability Refund (Damages settled separately via ${dmgPayMode}) | Gross Deposit: QR ${grossDeposit.toLocaleString()} | Refund Paid: QR ${(refundable > 0 ? refundable : grossDeposit).toLocaleString()} via ${settleRefundForm.paymentMethod}${settleRefundForm.notes ? ` | Remarks: ${settleRefundForm.notes}` : ''}`,
+      };
+    } else {
+      // ── Deduct From Deposit Mode: Single Consolidated Receipt ──
+      primaryReceipt = {
+        receiptNo: pvNo,
+        acknowledgementNo: jvNo,
+        date: settlementDate,
+        tenantName: tenantName,
+        tenantPhone: "",
+        tenantEmail: "",
+        tenantQid: "",
+        propertyName: propName,
+        unitRef: unitRef,
+        leaseNo: lease ? `LES-${lease.id.toUpperCase()}` : `LES-${settlement.leaseId}`,
+        leaseStartDate: lease?.startDate || settlementDate,
+        leaseEndDate: lease?.endDate || settlementDate,
+        monthlyRent: lease?.monthlyRent || 0,
+        totalContractRent: lease ? lease.monthlyRent * (lease.pdcCount || 12) : 0,
+        depositAmount: grossDeposit,
+        depositMode: `Security Deposit Refund (Deductions Applied)`,
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [
+          { receiptNo: jvNo, name: `Security Deposit Released (21500 → ${bankCrCode})`, amount: refundable > 0 ? refundable : grossDeposit, method: "Journal", debit: "Security Deposit Liability (21500)", credit: bankCrName },
+          ...(refundable > 0 ? [{ receiptNo: pvNo, name: `Security Deposit Refund Paid (${settleRefundForm.paymentMethod})`, amount: refundable, method: settleRefundForm.paymentMethod, debit: bankCrName, credit: "Refund Payable (21300)" }] : []),
+          ...(damages > 0 ? [{ receiptNo: `${jvNo}-A1`, name: `Damage / Repair Costs (Deducted from Deposit)`, amount: damages, method: "Deduction", debit: "Tenant AR (12413)", credit: "Repairs Recovery (41400)" }] : []),
+          ...(outstandingRent > 0 ? [{ receiptNo: `${jvNo}-A2`, name: `Outstanding Rent Recovered`, amount: outstandingRent, method: "Deduction", debit: "Tenant AR (12413)", credit: "Rental Revenue (41100)" }] : []),
+          ...(utilityCharges > 0 ? [{ receiptNo: `${jvNo}-A3`, name: `Kahramaa / Utility Charges`, amount: utilityCharges, method: "Deduction", debit: "Tenant AR (12413)", credit: "Utility Recovery (41400)" }] : []),
+          ...(cleaningCharges > 0 ? [{ receiptNo: `${jvNo}-A4`, name: `Deep Cleaning Charges`, amount: cleaningCharges, method: "Deduction", debit: "Tenant AR (12413)", credit: "Cleaning Recovery (41400)" }] : []),
+          ...(restorationCharges > 0 ? [{ receiptNo: `${jvNo}-A5`, name: `Painting / Restoration Charges`, amount: restorationCharges, method: "Deduction", debit: "Tenant AR (12413)", credit: "Restoration Recovery (41400)" }] : []),
+          ...(otherDeductions > 0 ? [{ receiptNo: `${jvNo}-A6`, name: `Other Administrative Charges`, amount: otherDeductions, method: "Deduction", debit: "Tenant AR (12413)", credit: "Admin Recovery (41400)" }] : []),
+        ],
+        agencyCommission: 0,
+        adminCharges: 0,
+        utilityDeposit: utilityCharges,
+        totalCollected: refundable,
+        cashierName: "Finance Department",
+        notes: `Settlement Mode: Deductions from Deposit | Gross Deposit: QR ${grossDeposit.toLocaleString()} | Total Deductions: QR ${totalDeductions.toLocaleString()} | Net Refund Paid: QR ${refundable.toLocaleString()} | Refund Channel: ${settleRefundForm.paymentMethod}${settleRefundForm.damageRemarks ? ` | Damage Agreement: ${settleRefundForm.damageRemarks}` : ''}${settleRefundForm.notes ? ` | Remarks: ${settleRefundForm.notes}` : ''}`,
+      };
+      secondaryReceipt = null;
+    }
+
+    setReceiptModalData(primaryReceipt);
+    setReceiptModalSecondaryData(secondaryReceipt);
     setReceiptModalOpen(true);
     setSettleRefundOpen(false);
 
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
       owner: "Finance Department",
-      input: `Deposit ${formatMoney(settlement.depositReceived)}, deductions ${formatMoney(deductions)}, refund ${formatMoney(refundable)}`,
+      input: `Deposit ${formatMoney(grossDeposit)}, deductions ${formatMoney(totalDeductions)}, refund ${formatMoney(refundable)}, mode: ${mode}${mode === "PAY_SEPARATELY" ? ` (${dmgPayMode}, ref: ${settleRefundForm.paymentRefNo || 'N/A'})` : ''}`,
       approval: "Settlement approval",
       status: "closed",
-      output: `GL posted: DR 21500/CR 12000 (${formatMoney(settlement.depositReceived)}). PV ${pvNo} generated. Lease closed. Unit → ${settlement.unitDisposition || "Vacant"}.`,
+      output: `GL posted (${mode}): DR 21500 / CR ${bankCrCode}. ${mode === "PAY_SEPARATELY" && totalDeductions > 0 ? `RV ${rvDmgNo} (DR ${dmgDrCode} / CR 12413 via ${dmgPayMode}). ` : ''}PV ${pvNo}. Lease closed. Unit → ${settlement.unitDisposition || "Vacant"}.`,
     });
 
-    toast.success(`Settlement approved! Net refund QR ${refundable.toLocaleString()} — Payment Voucher ${pvNo} posted to GL.`);
+    toast.success(
+      mode === "PAY_SEPARATELY"
+        ? `Settlement approved! Generated 2 receipts: Damage collection (${dmgPayMode} QR ${totalDeductions.toLocaleString()}) & Full deposit refund (QR ${grossDeposit.toLocaleString()}).`
+        : `Settlement approved! Net refund of QR ${refundable.toLocaleString()} paid. Receipt generated.`
+    );
   }
+
 
   function issueKeyNotice(lease: Lease) {
     const blocked = !(lease.status === "fully_signed" && lease.collectionCompleted);
@@ -2440,8 +3023,21 @@ function LeasingPage() {
   }
 
   function startCheckout(lease: Lease) {
+    const moveOutDate = startCheckoutForm.moveOutDate || lease.endDate;
+    const isEarlyVacate = new Date(moveOutDate).getTime() < new Date(lease.endDate).getTime();
+
     // 1. Update lease status
-    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "non_renewal" as LeaseStatus } : item)));
+    setLeases((items) => items.map((item) => (
+      item.id === lease.id
+        ? {
+            ...item,
+            status: "checkout" as LeaseStatus,
+            plannedVacateDate: moveOutDate,
+            earlyVacate: isEarlyVacate,
+            earlyVacateReason: isEarlyVacate ? (startCheckoutForm.notes || "Tenant requested vacating before lease expiry") : item.earlyVacateReason,
+          }
+        : item
+    )));
     
     // 2. Update renewal case status to non_renewal
     setRenewals((items) => items.map((item) => (item.leaseId === lease.id ? { ...item, status: "non_renewal" as RenewalCase["status"] } : item)));
@@ -2453,10 +3049,12 @@ function LeasingPage() {
         id: existing?.id || `co${items.length + 1}`,
         leaseId: lease.id,
         noticeDate: startCheckoutForm.noticeDate || today.toISOString().split("T")[0],
-        moveOutDate: startCheckoutForm.moveOutDate || lease.endDate,
+        moveOutDate,
+        originalLeaseEndDate: lease.endDate,
+        earlyVacate: isEarlyVacate,
         inspectionDate: startCheckoutForm.inspectionDate || addDays(new Date(lease.endDate), -3),
         comparisonSummary: "Pending final comparison with original check-in report",
-        nonRenewalNotice: startCheckoutForm.notes || "Tenant non-renewal notice received",
+        nonRenewalNotice: startCheckoutForm.notes || (isEarlyVacate ? "Tenant early vacate notice received" : "Tenant non-renewal notice received"),
         outstandingCharges: startCheckoutForm.outstandingCharges,
         utilityClearanceRequirements: startCheckoutForm.utilityClearanceRequirements,
         keyReturnRequirements: startCheckoutForm.keyReturnRequirements,
@@ -2472,15 +3070,17 @@ function LeasingPage() {
     });
 
     recordAudit({
-      stage: "Non-Renewal & Check-Out",
+      stage: isEarlyVacate ? "Early Vacate & Check-Out" : "Non-Renewal & Check-Out",
       owner: "Leasing Department",
-      input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${startCheckoutForm.moveOutDate}, inspection ${startCheckoutForm.inspectionDate}`,
-      approval: "Tenant non-renewal notice",
+      input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${moveOutDate}, lease expiry ${lease.endDate}, inspection ${startCheckoutForm.inspectionDate}`,
+      approval: isEarlyVacate ? "Tenant early vacate notice" : "Tenant non-renewal notice",
       status: "planned",
-      output: startCheckoutForm.notes || "Checkout case opened with finance, utility and key-return requirements",
+      output: startCheckoutForm.notes || (isEarlyVacate
+        ? "Early vacate checkout case opened; future PDCs and deposit settlement will be adjusted at closure"
+        : "Checkout case opened with finance, utility and key-return requirements"),
     });
 
-    toast.success(`Non-Renewal initiated for ${lease.tenantName}. Checkout case opened.`);
+    toast.success(`${isEarlyVacate ? "Early vacate" : "Non-renewal"} initiated for ${lease.tenantName}. Checkout case opened.`);
     setStartCheckoutOpen(false);
   }
 
@@ -2517,16 +3117,25 @@ function LeasingPage() {
       },
       ...items,
     ]);
+    const _outstandingRent = Number(completeCheckoutForm.outstandingRent) || 0;
+    const _damages = Number(completeCheckoutForm.damagesAmount) || 0;
+    const _utility = Number(completeCheckoutForm.utilityCharges) || 0;
+    const _cleaning = Number(completeCheckoutForm.cleaningCharges) || 0;
+    const _restoration = Number(completeCheckoutForm.restorationCharges) || 0;
+    const _other = Number(completeCheckoutForm.otherDeductions) || 0;
+    const _totalDeductions = _outstandingRent + _damages + _utility + _cleaning + _restoration + _other;
     setSettlements((items) => [
       {
         id: `s${items.length + 1}`,
         leaseId: lease.id,
         depositReceived: lease.securityDeposit,
-        outstandingRent: Number(completeCheckoutForm.outstandingRent) || 0,
-        damages: Number(completeCheckoutForm.damagesAmount) || 0,
-        utilityCharges: 0,
-        otherDeductions: (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0),
-        refundableBalance: lease.securityDeposit - ((Number(completeCheckoutForm.outstandingRent) || 0) + (Number(completeCheckoutForm.damagesAmount) || 0) + (Number(completeCheckoutForm.cleaningCharges) || 0) + (Number(completeCheckoutForm.restorationCharges) || 0)),
+        outstandingRent: _outstandingRent,
+        damages: _damages,
+        utilityCharges: _utility,
+        cleaningCharges: _cleaning,
+        restorationCharges: _restoration,
+        otherDeductions: _other,
+        refundableBalance: Math.max(0, lease.securityDeposit - _totalDeductions),
         unitDisposition: completeCheckoutForm.unitDisposition,
         approval: "pending_approval",
       },
@@ -2538,7 +3147,7 @@ function LeasingPage() {
       input: "Condition, meters, keys, utilities, damages, missing items, cleaning/restoration review",
       approval: "Tenant acknowledgement",
       status: "ready_for_settlement",
-      output: "Settlement draft created with damages, cleaning/restoration and unit-disposition recommendation",
+      output: `${checkout.earlyVacate ? "Early vacate" : "Checkout"} settlement draft created with damages, cleaning/restoration and refund recommendation`,
     });
     setCompleteCheckoutOpen(false);
   }
@@ -3547,23 +4156,31 @@ function LeasingPage() {
               );
             })()}
 
-            {/* Security Deposit Section */}
-            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Security Deposit & Applicable Fees</p>
+            {/* ── Type 1: Security Deposit for Unit (GL 21500) ── */}
+            <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-blue-300">
+                    GL 21500
+                  </Badge>
+                  <p className="text-xs font-bold uppercase tracking-wider text-foreground">Type 1: Security Deposit for Unit</p>
+                </div>
+                <span className="text-[11px] text-muted-foreground">Standard tenancy premise deposit</span>
+              </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Security Deposit Mode">
+                <Field label="Deposit Payment Mode">
                   <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="PDC">PDC (Cheque)</SelectItem>
-                      <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
+                      <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
+                      <SelectItem value="Bank Transfer">Bank Operating (12000)</SelectItem>
+                      <SelectItem value="PDC">PDC / Cheque (12900)</SelectItem>
+                      <SelectItem value="Guarantee Cheque">Bank Guarantee Cheque (12900)</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field label="Security Deposit Amount">
-                  <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit}`} />
+                <Field label="Unit Deposit Amount (QAR)">
+                  <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit || 5600}`} />
                 </Field>
               </div>
 
@@ -3573,20 +4190,56 @@ function LeasingPage() {
                     <Input value={collectForm.depositChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
                   </Field>
                   <Field label="Deposit Cheque Bank">
-                    <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ" />
+                    <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, Doha Bank" />
                   </Field>
                 </div>
               )}
+            </div>
 
-              <div className="grid grid-cols-3 gap-3 pt-1">
+            {/* ── Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100) ── */}
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300">
+                    GL 21100 (Default Refundable)
+                  </Badge>
+                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-200">
+                    Type 2: Ancillary Refundable Deposits &amp; Guarantees
+                  </p>
+                </div>
+                <span className="text-[11px] text-emerald-700 dark:text-emerald-400">By-default refundable liabilities</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Field label="Kahramaa Deposit (21100003)">
+                  <Input type="number" value={collectForm.utilityDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, utilityDeposit: e.target.value }))} placeholder="0" />
+                </Field>
+                <Field label="Qatar Cool Deposit (21100004)">
+                  <Input type="number" value={collectForm.qatarCoolDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, qatarCoolDeposit: e.target.value }))} placeholder="0" />
+                </Field>
+                <Field label="Reservation Advance (21100001)">
+                  <Input type="number" value={collectForm.reservationDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, reservationDeposit: e.target.value }))} placeholder="0" />
+                </Field>
+                <Field label="Service Fee Deposit (21100005)">
+                  <Input type="number" value={collectForm.serviceFeeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, serviceFeeDeposit: e.target.value }))} placeholder="0" />
+                </Field>
+                <Field label="Guarantee Cheque Amount (21100006)">
+                  <Input type="number" value={collectForm.guaranteeChequeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeDeposit: e.target.value }))} placeholder="0" />
+                </Field>
+                <Field label="Guarantee Cheque No. / Bank">
+                  <Input value={collectForm.guaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-9988 (CBQ)" />
+                </Field>
+              </div>
+            </div>
+
+            {/* ── One-Time Non-Refundable Fees ── */}
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">One-Time Non-Refundable Fees (Revenue 41201)</p>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Agency Commission (QR)">
                   <Input type="number" value={collectForm.agencyCommission} onChange={(e) => setCollectForm((f) => ({ ...f, agencyCommission: e.target.value }))} placeholder="0" />
                 </Field>
                 <Field label="Admin Charges (QR)">
                   <Input type="number" value={collectForm.adminCharges} onChange={(e) => setCollectForm((f) => ({ ...f, adminCharges: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Utility Deposit (QR)">
-                  <Input type="number" value={collectForm.utilityDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, utilityDeposit: e.target.value }))} placeholder="0" />
                 </Field>
               </div>
             </div>
@@ -3596,23 +4249,31 @@ function LeasingPage() {
               const pdcAmt = (collectForm.customCheques || []).filter(c => Number(c.amount) > 0).reduce((s, c) => s + Number(c.amount), 0) || (signatureWorkflowLease.monthlyRent * (collectForm.pdcCount || 12));
               const depAmt = Number(collectForm.depositAmount) || signatureWorkflowLease.securityDeposit;
               const depDrLabel = collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand";
-              const depDrCode = collectForm.depositMode === "Cash" ? "10100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
+              const depDrCode = collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
+              const utilityAmt = Number(collectForm.utilityDeposit) || 0;
+              const qatarCoolAmt = Number(collectForm.qatarCoolDeposit) || 0;
+              const reservationAmt = Number(collectForm.reservationDeposit) || 0;
+              const serviceFeeAmt = Number(collectForm.serviceFeeDeposit) || 0;
+              const guaranteeChequeAmt = Number(collectForm.guaranteeChequeDeposit) || 0;
               const agencyAmt = Number(collectForm.agencyCommission) || 0;
               const adminAmt = Number(collectForm.adminCharges) || 0;
-              const utilityAmt = Number(collectForm.utilityDeposit) || 0;
 
-              const impacts: Array<{ label: string; dr: string; drCode: string; cr: string; crCode: string; amount: number }> = [];
-              if (pdcAmt > 0) impacts.push({ label: "Rent PDCs In Hand", dr: "PDC In Hand", drCode: "12900", cr: "Customer PDC Liability", crCode: "21400", amount: pdcAmt });
-              if (depAmt > 0) impacts.push({ label: `Security Deposit (${collectForm.depositMode})`, dr: depDrLabel, drCode: depDrCode, cr: "Security Deposit Liability", crCode: "21500", amount: depAmt });
-              if (agencyAmt > 0) impacts.push({ label: "Agency Commission", dr: "Cash In Hand", drCode: "10100", cr: "Agency Commission Income", crCode: "41200", amount: agencyAmt });
-              if (adminAmt > 0) impacts.push({ label: "Admin Charges", dr: "Cash In Hand", drCode: "10100", cr: "Admin Charges Income", crCode: "41300", amount: adminAmt });
-              if (utilityAmt > 0) impacts.push({ label: "Utility Deposit", dr: "Cash In Hand", drCode: "10100", cr: "Utility Deposit Liability", crCode: "21600", amount: utilityAmt });
+              const impacts: Array<{ label: string; category: string; dr: string; drCode: string; cr: string; crCode: string; amount: number }> = [];
+              if (pdcAmt > 0) impacts.push({ label: "Rent PDCs In Hand", category: "Rent", dr: "PDC In Hand", drCode: "12900", cr: "Customer PDC Liability", crCode: "21400", amount: pdcAmt });
+              if (depAmt > 0) impacts.push({ label: `Type 1: Unit Security Deposit (${collectForm.depositMode})`, category: "Deposit (21500)", dr: depDrLabel, drCode: depDrCode, cr: "Security Deposit Liability", crCode: "21500", amount: depAmt });
+              if (utilityAmt > 0) impacts.push({ label: "Type 2: Kahramaa Utility Deposit", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Kahramaa Deposit - Tenant", crCode: "21100003", amount: utilityAmt });
+              if (qatarCoolAmt > 0) impacts.push({ label: "Type 2: Qatar Cool Deposit", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Qatar Cool Deposit - Tenant", crCode: "21100004", amount: qatarCoolAmt });
+              if (reservationAmt > 0) impacts.push({ label: "Type 2: Reservation Advance", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Reservation Advance - Tenant", crCode: "21100001", amount: reservationAmt });
+              if (serviceFeeAmt > 0) impacts.push({ label: "Type 2: Service Fee Deposit", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Service Fee Deposit - Tenant", crCode: "21100005", amount: serviceFeeAmt });
+              if (guaranteeChequeAmt > 0) impacts.push({ label: "Type 2: Guarantee Cheque Security", category: "Deposit (21100)", dr: "PDC In Hand", drCode: "12900", cr: "Guarantee Cheque Liability", crCode: "21100006", amount: guaranteeChequeAmt });
+              if (agencyAmt > 0) impacts.push({ label: "Agency Commission", category: "Revenue", dr: "Cash In Hand", drCode: "12100", cr: "Agency Commission Income", crCode: "41201", amount: agencyAmt });
+              if (adminAmt > 0) impacts.push({ label: "Admin Charges", category: "Revenue", dr: "Cash In Hand", drCode: "12100", cr: "Admin Charges Income", crCode: "41201", amount: adminAmt });
 
               return (
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-2">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Finance Ledgers & Accounts Updated on Collection</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Finance Ledgers &amp; Accounts Updated on Collection</p>
                   </div>
                   <div className="border rounded bg-background overflow-hidden">
                     <table className="w-full text-xs">
@@ -4399,158 +5060,628 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── SECURITY DEPOSIT SETTLE & REFUND MODAL ─────────────── */}
+      {/* ── SECURITY DEPOSIT SETTLE & REFUND MODAL (2-STEP WIZARD) ─────────────── */}
       <Dialog open={settleRefundOpen} onOpenChange={setSettleRefundOpen}>
-        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-bold">
-              <ShieldCheck className="h-5 w-5 text-purple-600" />
-              Settle &amp; Refund Security Deposit
-            </DialogTitle>
+        <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-1">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                <ShieldCheck className="h-5 w-5 text-purple-600" />
+                Settle &amp; Refund Security Deposit
+              </DialogTitle>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold">
+                <span className={`px-2 py-0.5 rounded-full ${settleRefundStep === 1 ? "bg-purple-600 text-white" : "bg-purple-100 text-purple-800"}`}>
+                  1. Deductions
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span className={`px-2 py-0.5 rounded-full ${settleRefundStep === 2 ? "bg-purple-600 text-white" : "bg-muted text-muted-foreground"}`}>
+                  2. Payment &amp; GL
+                </span>
+              </div>
+            </div>
             <DialogDescription className="text-xs">
-              Review checkout deductions, configure final tenant refund amount, and execute balanced double-entry GL journal posting.
+              {settleRefundStep === 1 
+                ? "Step 1 of 2: Review and adjust tenant damage deductions and select settlement mode."
+                : "Step 2 of 2: Configure payment details, review GL journal posting, and issue receipt."}
             </DialogDescription>
           </DialogHeader>
 
           {selectedSettlement && (() => {
             const lease = leases.find(l => l.id === selectedSettlement.leaseId);
-            const totalDeductions = selectedSettlement.outstandingRent + selectedSettlement.damages + selectedSettlement.utilityCharges + selectedSettlement.otherDeductions;
+            const damages = parseFloat(settleRefundForm.damages) || 0;
+            const outstandingRent = parseFloat(settleRefundForm.outstandingRent) || 0;
+            const utilityCharges = parseFloat(settleRefundForm.utilityCharges) || 0;
+            const cleaningCharges = parseFloat(settleRefundForm.cleaningCharges) || 0;
+            const restorationCharges = parseFloat(settleRefundForm.restorationCharges) || 0;
+            const otherDeductions = parseFloat(settleRefundForm.otherDeductions) || 0;
+            const totalDeductions = damages + outstandingRent + utilityCharges + cleaningCharges + restorationCharges + otherDeductions;
             const grossDeposit = selectedSettlement.depositReceived || (lease?.securityDeposit || 0);
             const maxCalculated = Math.max(0, grossDeposit - totalDeductions);
             const enteredRefund = parseFloat(settleRefundForm.refundAmount) || 0;
+            const mode = settleRefundForm.settlementMode;
+            const dmgPayMode = settleRefundForm.damagePaymentMode || "Bank Transfer";
+            const isBank = settleRefundForm.paymentMethod !== "Cash";
+            const bankLabel = isBank ? "12000 Bank Operating Account" : "12100 Cash In Hand";
+            
+            let dmgDrLabel = "12000 Bank Operating Account";
+            if (dmgPayMode === "Cash") {
+              dmgDrLabel = "12100 Cash In Hand";
+            } else if (dmgPayMode === "Cheque") {
+              dmgDrLabel = "12200 Cheques / PDC In Hand";
+            } else if (dmgPayMode === "Bank Guarantee") {
+              dmgDrLabel = "12500 Bank Guarantee Security Held";
+            }
+
+            const depositDeduction = Math.min(grossDeposit, totalDeductions);
+            const remainingAR = Math.max(0, totalDeductions - grossDeposit);
+
+            const handleDeductionChange = (field: string, val: string) => {
+              const updatedForm = { ...settleRefundForm, [field]: val };
+              const d = parseFloat(field === "damages" ? val : updatedForm.damages) || 0;
+              const r = parseFloat(field === "outstandingRent" ? val : updatedForm.outstandingRent) || 0;
+              const u = parseFloat(field === "utilityCharges" ? val : updatedForm.utilityCharges) || 0;
+              const c = parseFloat(field === "cleaningCharges" ? val : updatedForm.cleaningCharges) || 0;
+              const res = parseFloat(field === "restorationCharges" ? val : updatedForm.restorationCharges) || 0;
+              const o = parseFloat(field === "otherDeductions" ? val : updatedForm.otherDeductions) || 0;
+              const tot = d + r + u + c + res + o;
+              if (updatedForm.settlementMode === "DEDUCT_FROM_DEPOSIT") {
+                updatedForm.refundAmount = String(Math.max(0, grossDeposit - tot));
+              } else {
+                updatedForm.refundAmount = String(grossDeposit);
+              }
+              setSettleRefundForm(updatedForm);
+            };
 
             return (
-              <div className="space-y-3.5 py-1 text-xs">
-                {/* Lease & Tenant Header Card */}
-                <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-xs">
-                  <div className="flex justify-between">
+              <div className="space-y-3 py-1 text-xs">
+                {/* Compact Tenant & Property Summary Header */}
+                <div className="rounded-lg border bg-muted/40 p-2.5 space-y-1 text-xs">
+                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground font-medium">Tenant / Customer:</span>
                     <span className="font-semibold text-foreground">{lease?.tenantName || selectedSettlement.leaseId}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground font-medium">Property &amp; Unit:</span>
                     <span>{lease?.property || "Old Salata - Residence No:23"} • {lease?.unit || "Unit"}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground font-medium">Lease Period:</span>
-                    <span>{lease?.startDate || "-"} to {lease?.endDate || "-"}</span>
-                  </div>
                 </div>
 
-                {/* Financial Breakdown Card */}
-                <div className="rounded-lg border bg-purple-50/50 border-purple-200 p-3 space-y-2.5">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900 block">
-                    Security Deposit Settlement Calculation (Refundable)
-                  </span>
+                {/* ── STEP 1: DEDUCTIONS & MODE SELECTION ────────────────────────── */}
+                {settleRefundStep === 1 && (
+                  <div className="space-y-3">
+                    {/* Settlement Mode Selector */}
+                    <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 block">
+                          Damage Settlement Mode
+                        </span>
+                        <span className="text-[10px] text-amber-800 font-medium">Select accounting treatment</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettleRefundForm(f => ({ ...f, settlementMode: "DEDUCT_FROM_DEPOSIT", refundAmount: String(maxCalculated) }));
+                          }}
+                          className={`rounded-lg border p-2 text-left text-[11px] transition-all ${mode === "DEDUCT_FROM_DEPOSIT"
+                            ? "border-purple-500 bg-purple-50 text-purple-900 font-semibold ring-1 ring-purple-400"
+                            : "border-border bg-background text-muted-foreground hover:border-purple-300"}`}
+                        >
+                          <div className="font-semibold mb-0.5">✂ Deduct from Deposit</div>
+                          <div className="text-[10px] opacity-75">Offset damages from deposit liability. Refund remainder.</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettleRefundForm(f => ({ ...f, settlementMode: "PAY_SEPARATELY", refundAmount: String(grossDeposit) }));
+                          }}
+                          className={`rounded-lg border p-2 text-left text-[11px] transition-all ${mode === "PAY_SEPARATELY"
+                            ? "border-blue-500 bg-blue-50 text-blue-900 font-semibold ring-1 ring-blue-400"
+                            : "border-border bg-background text-muted-foreground hover:border-blue-300"}`}
+                        >
+                          <div className="font-semibold mb-0.5">💳 Customer Pays Separately</div>
+                          <div className="text-[10px] opacity-75">Customer pays via Cash, Cheque, Bank, or BG. Full deposit refunded.</div>
+                        </button>
+                      </div>
+                      {mode === "PAY_SEPARATELY" && (
+                        <div className="text-[10px] text-blue-800 bg-blue-50 rounded p-1.5 border border-blue-200">
+                          ℹ <strong>Customer Pays Separately Mode:</strong> Customer pays <strong>QAR {totalDeductions.toLocaleString()}</strong> directly for damages &amp; repair charges (via Cash, Cheque, Bank Transfer, or Bank Guarantee). A <strong>Receipt Voucher</strong> will be recorded with payment proof, and the full deposit of <strong>QAR {grossDeposit.toLocaleString()}</strong> will be released untouched.
+                        </div>
+                      )}
+                      {mode === "DEDUCT_FROM_DEPOSIT" && remainingAR > 0 && (
+                        <div className="text-[10px] text-red-700 bg-red-50 rounded p-1.5 border border-red-200">
+                          ⚠ Damages (QAR {totalDeductions.toLocaleString()}) exceed deposit (QAR {grossDeposit.toLocaleString()}). Residual AR of QAR {remainingAR.toLocaleString()} remains outstanding.
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="p-2 rounded bg-background border">
-                      <span className="text-muted-foreground block text-[10px]">Gross Deposit Held:</span>
-                      <span className="font-bold text-foreground font-mono">QAR {grossDeposit.toLocaleString()}</span>
-                    </div>
-                    <div className="p-2 rounded bg-background border">
-                      <span className="text-muted-foreground block text-[10px]">Itemized Deductions:</span>
-                      <span className="font-bold text-destructive font-mono">-QAR {totalDeductions.toLocaleString()}</span>
-                    </div>
-                    <div className="p-2 rounded bg-background border border-emerald-300 bg-emerald-50/70">
-                      <span className="text-emerald-800 block text-[10px] font-semibold">Net Calculated Refund:</span>
-                      <span className="font-bold text-emerald-700 font-mono">QAR {maxCalculated.toLocaleString()}</span>
-                    </div>
-                  </div>
+                    {/* ── Separate Payment Recording & Slip Upload Card ─────────── */}
+                    {mode === "PAY_SEPARATELY" && totalDeductions > 0 && (
+                      <div className="rounded-lg border border-blue-300 bg-blue-50/70 p-2.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                            <Upload className="h-3.5 w-3.5 text-blue-600" />
+                            Tenant Payment Details &amp; Proof Upload
+                          </span>
+                          <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-800 bg-blue-100 font-semibold">
+                            Separate Collection
+                          </Badge>
+                        </div>
 
-                  {/* Deduction breakdown summary */}
-                  <div className="text-[11px] space-y-1 text-muted-foreground pt-1 border-t border-purple-200/60">
-                    <div className="flex justify-between">
-                      <span>• Damage / Repair Deductions:</span>
-                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.damages.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Outstanding Rent Recovered:</span>
-                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.outstandingRent.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Kahramaa &amp; Utility Charges:</span>
-                      <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.utilityCharges.toLocaleString()}</span>
-                    </div>
-                    {selectedSettlement.otherDeductions > 0 && (
-                      <div className="flex justify-between">
-                        <span>• Other Admin Charges:</span>
-                        <span className="font-mono font-medium text-foreground">QAR {selectedSettlement.otherDeductions.toLocaleString()}</span>
+                        {/* Damage Payment Channel Tabs: Bank Transfer, Cash, Cheque, Bank Guarantee */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-blue-950">Payment Channel / Instrument</Label>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSettleRefundForm(f => ({ ...f, damagePaymentMode: "Bank Transfer", payerBank: f.payerBank === "Cash In Hand" ? "QNB" : f.payerBank }))}
+                              className={`rounded border px-2 py-1.5 text-center text-[11px] font-medium transition-all ${dmgPayMode === "Bank Transfer"
+                                ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:bg-muted"}`}
+                            >
+                              🏦 Bank Transfer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettleRefundForm(f => ({ ...f, damagePaymentMode: "Cash", payerBank: "Cash In Hand" }))}
+                              className={`rounded border px-2 py-1.5 text-center text-[11px] font-medium transition-all ${dmgPayMode === "Cash"
+                                ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:bg-muted"}`}
+                            >
+                              💵 Cash In Hand
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettleRefundForm(f => ({ ...f, damagePaymentMode: "Cheque", payerBank: f.payerBank === "Cash In Hand" ? "Commercial Bank" : f.payerBank }))}
+                              className={`rounded border px-2 py-1.5 text-center text-[11px] font-medium transition-all ${dmgPayMode === "Cheque"
+                                ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:bg-muted"}`}
+                            >
+                              📝 Bank Cheque
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettleRefundForm(f => ({ ...f, damagePaymentMode: "Bank Guarantee", payerBank: f.payerBank === "Cash In Hand" ? "QNB" : f.payerBank }))}
+                              className={`rounded border px-2 py-1.5 text-center text-[11px] font-medium transition-all ${dmgPayMode === "Bank Guarantee"
+                                ? "border-amber-600 bg-amber-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:bg-muted"}`}
+                            >
+                              🛡 Bank Guarantee
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Dynamic fields based on payment mode */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-medium text-blue-950">
+                              {dmgPayMode === "Cash" ? "Cash Receipt / Slip #" :
+                               dmgPayMode === "Cheque" ? "Cheque Number #" :
+                               dmgPayMode === "Bank Guarantee" ? "Bank Guarantee (BG) Ref #" :
+                               "Transaction / Wire Ref #"} <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                              className="h-7 text-xs font-mono bg-background"
+                              placeholder={
+                                dmgPayMode === "Cash" ? "e.g. CRV-4019" :
+                                dmgPayMode === "Cheque" ? "e.g. CHQ-0018492" :
+                                dmgPayMode === "Bank Guarantee" ? "e.g. BG-QNB-2026-8812" :
+                                "e.g. TRX-CBQ-90123"
+                              }
+                              value={settleRefundForm.paymentRefNo}
+                              onChange={(e) => setSettleRefundForm({ ...settleRefundForm, paymentRefNo: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-medium text-blue-950">
+                              {dmgPayMode === "Cash" ? "Receiving Location / Counter" :
+                               dmgPayMode === "Bank Guarantee" ? "Issuing Bank Name" :
+                               dmgPayMode === "Cheque" ? "Drawn Bank Name" :
+                               "Payer Bank Name"}
+                            </Label>
+                            <Input
+                              className="h-7 text-xs bg-background"
+                              placeholder={
+                                dmgPayMode === "Cash" ? "e.g. Finance Cashier Desk" :
+                                dmgPayMode === "Bank Guarantee" ? "e.g. Qatar National Bank (QNB)" :
+                                "e.g. QNB / CBQ / Doha Bank"
+                              }
+                              value={settleRefundForm.payerBank}
+                              onChange={(e) => setSettleRefundForm({ ...settleRefundForm, payerBank: e.target.value })}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-medium text-blue-950">
+                              {dmgPayMode === "Cheque" ? "Cheque Date" :
+                               dmgPayMode === "Bank Guarantee" ? "BG Issue Date" :
+                               "Payment / Receipt Date"}
+                            </Label>
+                            <Input
+                              type="date"
+                              className="h-7 text-xs bg-background"
+                              value={settleRefundForm.paymentDate}
+                              onChange={(e) => setSettleRefundForm({ ...settleRefundForm, paymentDate: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Extra field for Bank Guarantee Expiry */}
+                        {dmgPayMode === "Bank Guarantee" && (
+                          <div className="grid grid-cols-2 gap-2 bg-amber-100/60 p-2 rounded border border-amber-200">
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-semibold text-amber-950">
+                                Bank Guarantee Expiry Date <span className="text-destructive">*</span>
+                              </Label>
+                              <Input
+                                type="date"
+                                className="h-7 text-xs bg-background font-mono"
+                                value={settleRefundForm.bgExpiryDate}
+                                onChange={(e) => setSettleRefundForm({ ...settleRefundForm, bgExpiryDate: e.target.value })}
+                              />
+                            </div>
+                            <div className="text-[10px] text-amber-900 flex items-center pt-2">
+                              🛡 <em>Bank Guarantee serves as secure payment instrument held against damage clearance (GL 12500).</em>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* File Upload Box */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-blue-950">
+                            {dmgPayMode === "Cash" ? "Upload Signed Cash Receipt / Counter Slip" :
+                             dmgPayMode === "Cheque" ? "Upload Cheque Leaf Copy (Front & Back)" :
+                             dmgPayMode === "Bank Guarantee" ? "Upload Bank Guarantee Certificate / Official Letter" :
+                             "Upload Payment Slip / Bank Transfer Confirmation"}
+                          </Label>
+                          {settleRefundForm.paymentProofFileName ? (
+                            <div className="flex items-center justify-between p-2 rounded bg-background border border-emerald-300">
+                              <div className="flex items-center gap-2 overflow-hidden">
+                                <FileCheck2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                <span className="text-xs font-medium truncate text-foreground">{settleRefundForm.paymentProofFileName}</span>
+                                <Badge className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0">Attached</Badge>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-[10px] text-destructive hover:bg-destructive/10 px-2"
+                                onClick={() => setSettleRefundForm({ ...settleRefundForm, paymentProofFileName: "", paymentProofData: "" })}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ) : (
+                            <label className="flex flex-col items-center justify-center p-2.5 border-2 border-dashed border-blue-300 rounded-lg cursor-pointer bg-background hover:bg-blue-50/50 transition-colors">
+                              <div className="flex items-center gap-2 text-blue-700">
+                                <Upload className="h-3.5 w-3.5" />
+                                <span className="text-xs font-medium">
+                                  {dmgPayMode === "Cash" ? "Click to upload signed cash voucher / receipt copy" :
+                                   dmgPayMode === "Cheque" ? "Click to upload scanned cheque leaf copy" :
+                                   dmgPayMode === "Bank Guarantee" ? "Click to upload scanned BG certificate / letter" :
+                                   "Click to upload bank transfer slip / screenshot"}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-0.5">PNG, JPG, PDF up to 10MB</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                      setSettleRefundForm((prev) => ({
+                                        ...prev,
+                                        paymentProofFileName: file.name,
+                                        paymentProofData: reader.result as string,
+                                      }));
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                          )}
+                        </div>
                       </div>
                     )}
-                  </div>
-                </div>
 
-                {/* Refund input & payment mode */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold">
-                      Actual Refund Amount to Pay (QAR) <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      className="h-8 text-xs font-mono font-bold"
-                      value={settleRefundForm.refundAmount}
-                      onChange={(e) => setSettleRefundForm({ ...settleRefundForm, refundAmount: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold">Refund Payment Method</Label>
-                    <Select
-                      value={settleRefundForm.paymentMethod}
-                      onValueChange={(v) => setSettleRefundForm({ ...settleRefundForm, paymentMethod: v })}
-                    >
-                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="Cheque">Bank Cheque</SelectItem>
-                        <SelectItem value="Cash">Cash In Hand</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+                    {/* Editable Damage & Deduction Details */}
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                          ✏ Update Damage &amp; Repair Details (Tenant-Agreed)
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">Editable before final posting</span>
+                      </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold">Settlement &amp; Refund Remarks</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="e.g. Unit inspected, keys handed back, net deposit returned via bank transfer"
-                    value={settleRefundForm.notes}
-                    onChange={(e) => setSettleRefundForm({ ...settleRefundForm, notes: e.target.value })}
-                  />
-                </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Damage / Repairs (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.damages}
+                            onChange={(e) => handleDeductionChange("damages", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Outstanding Rent (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.outstandingRent}
+                            onChange={(e) => handleDeductionChange("outstandingRent", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Kahramaa / Utilities (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.utilityCharges}
+                            onChange={(e) => handleDeductionChange("utilityCharges", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Deep Cleaning (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.cleaningCharges}
+                            onChange={(e) => handleDeductionChange("cleaningCharges", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Painting / Restoration (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.restorationCharges}
+                            onChange={(e) => handleDeductionChange("restorationCharges", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-medium text-muted-foreground">Other Charges (QAR)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            className="h-7 text-xs font-mono bg-background"
+                            value={settleRefundForm.otherDeductions}
+                            onChange={(e) => handleDeductionChange("otherDeductions", e.target.value)}
+                          />
+                        </div>
+                      </div>
 
-                {/* GL Double-Entry preview */}
-                <div className="rounded-lg border bg-muted/30 p-2.5 space-y-1 text-[11px]">
-                  <span className="font-semibold text-muted-foreground uppercase text-[10px] block">
-                    Automatic Double-Entry Posting on Execution:
-                  </span>
-                  <div className="flex justify-between font-mono">
-                    <span className="text-emerald-700">DR 21500 Security Deposit Liability (Gross)</span>
-                    <span className="font-bold">QAR {grossDeposit.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between font-mono">
-                    <span className="text-blue-700">CR 12000 Bank Operating Account (Net Refund)</span>
-                    <span className="font-bold">QAR {enteredRefund.toLocaleString()}</span>
-                  </div>
-                  {totalDeductions > 0 && (
-                    <div className="flex justify-between font-mono text-muted-foreground">
-                      <span>CR 41400 / 41100 Deductions &amp; Recoveries</span>
-                      <span>QAR {totalDeductions.toLocaleString()}</span>
+                      <div className="space-y-1 pt-1">
+                        <Label className="text-[10px] font-medium text-muted-foreground">Tenant Damage Agreement / Quotation Notes</Label>
+                        <Input
+                          className="h-7 text-xs bg-background"
+                          placeholder="e.g. Tenant agreed to pay QR 650 for wall repair and faucet replacement"
+                          value={settleRefundForm.damageRemarks}
+                          onChange={(e) => setSettleRefundForm({ ...settleRefundForm, damageRemarks: e.target.value })}
+                        />
+                      </div>
                     </div>
+
+                    {/* Financial Summary Card */}
+                    <div className="rounded-lg border bg-purple-50/50 border-purple-200 p-2.5 space-y-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900 block">
+                        Settlement Financial Summary
+                      </span>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="p-2 rounded bg-background border">
+                          <span className="text-muted-foreground block text-[10px]">Gross Deposit Held:</span>
+                          <span className="font-bold text-foreground font-mono">QAR {grossDeposit.toLocaleString()}</span>
+                        </div>
+                        <div className="p-2 rounded bg-background border">
+                          <span className="text-muted-foreground block text-[10px]">Total Damages / Deductions:</span>
+                          <span className="font-bold text-destructive font-mono">-QAR {totalDeductions.toLocaleString()}</span>
+                        </div>
+                        <div className="p-2 rounded bg-background border border-emerald-300 bg-emerald-50/70">
+                          <span className="text-emerald-800 block text-[10px] font-semibold">
+                            {mode === "PAY_SEPARATELY" ? "Deposit Refund:" : "Net Refund to Pay:"}
+                          </span>
+                          <span className="font-bold text-emerald-700 font-mono">
+                            QAR {mode === "PAY_SEPARATELY" ? grossDeposit.toLocaleString() : maxCalculated.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── STEP 2: PAYMENT, GL POSTINGS & CONFIRMATION ──────────────── */}
+                {settleRefundStep === 2 && (
+                  <div className="space-y-3">
+                    {/* Mode & Calculation Recap Badge */}
+                    <div className="rounded-lg border border-purple-200 bg-purple-50/60 p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground block">Selected Settlement Mode</span>
+                          <span className="font-semibold text-purple-900 text-xs">
+                            {mode === "DEDUCT_FROM_DEPOSIT" ? "✂ Deductions from Deposit" : `💳 Customer Pays Separately (${dmgPayMode})`}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-muted-foreground block">
+                            {mode === "PAY_SEPARATELY" ? `Damage Collection (${dmgPayMode})` : "Total Deductions Applied"}
+                          </span>
+                          <span className="font-mono font-bold text-xs text-foreground">
+                            QAR {totalDeductions.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {mode === "PAY_SEPARATELY" && (settleRefundForm.paymentProofFileName || settleRefundForm.paymentRefNo) && (
+                        <div className="flex items-center justify-between text-[10px] text-blue-900 bg-blue-100/70 rounded px-2 py-1 border border-blue-200">
+                          <span>
+                            Channel: <strong>{dmgPayMode}</strong> • Ref: <strong>{settleRefundForm.paymentRefNo || "N/A"}</strong> • Source: <strong>{settleRefundForm.payerBank || "N/A"}</strong>
+                            {dmgPayMode === "Bank Guarantee" && settleRefundForm.bgExpiryDate && ` • Exp: ${settleRefundForm.bgExpiryDate}`}
+                          </span>
+                          {settleRefundForm.paymentProofFileName && (
+                            <span className="flex items-center gap-1 font-medium text-emerald-800">
+                              <FileCheck2 className="h-3 w-3 text-emerald-600" /> Proof Attached
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Payment Configuration */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold">
+                          {mode === "PAY_SEPARATELY" ? "Deposit Refund Amount (QAR)" : "Actual Refund to Pay (QAR)"} <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-8 text-xs font-mono font-bold"
+                          value={settleRefundForm.refundAmount}
+                          onChange={(e) => setSettleRefundForm({ ...settleRefundForm, refundAmount: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold">Deposit Refund Payment Method</Label>
+                        <Select
+                          value={settleRefundForm.paymentMethod}
+                          onValueChange={(v) => setSettleRefundForm({ ...settleRefundForm, paymentMethod: v })}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                            <SelectItem value="Cheque">Bank Cheque</SelectItem>
+                            <SelectItem value="Cash">Cash In Hand</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Settlement &amp; Refund Remarks</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="e.g. Unit inspected, damage costs settled, deposit refund processed"
+                        value={settleRefundForm.notes}
+                        onChange={(e) => setSettleRefundForm({ ...settleRefundForm, notes: e.target.value })}
+                      />
+                    </div>
+
+                    {/* GL Double-Entry Preview */}
+                    <div className="rounded-lg border bg-muted/30 p-2.5 space-y-1 text-[11px]">
+                      <span className="font-semibold text-muted-foreground uppercase text-[10px] block">
+                        Automatic Double-Entry Posting on Execution ({mode === "DEDUCT_FROM_DEPOSIT" ? "Deduct from Deposit" : `Customer Pays via ${dmgPayMode}`}):
+                      </span>
+                      {mode === "DEDUCT_FROM_DEPOSIT" ? (
+                        <>
+                          {totalDeductions > 0 && (
+                            <>
+                              <div className="flex justify-between font-mono text-amber-700">
+                                <span>DR 12413 Tenant Receivables (damage recognized)</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-amber-600 opacity-80">
+                                <span>&nbsp;&nbsp;CR 41400/41100 Recovery Income</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-purple-700">
+                                <span>DR 21500 Security Deposit (deduction)</span>
+                                <span>QAR {depositDeduction.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-purple-600 opacity-80">
+                                <span>&nbsp;&nbsp;CR 12413 Tenant Receivables (settled)</span>
+                                <span>QAR {depositDeduction.toLocaleString()}</span>
+                              </div>
+                            </>
+                          )}
+                          {enteredRefund > 0 && (
+                            <>
+                              <div className="flex justify-between font-mono text-emerald-700">
+                                <span>DR 21500 Security Deposit (refund balance)</span>
+                                <span>QAR {enteredRefund.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-blue-700">
+                                <span>&nbsp;&nbsp;CR {bankLabel}</span>
+                                <span>QAR {enteredRefund.toLocaleString()}</span>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {totalDeductions > 0 && (
+                            <>
+                              <div className="flex justify-between font-mono text-amber-700">
+                                <span>DR 12413 Tenant Receivables (damage recognized)</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-amber-600 opacity-80">
+                                <span>&nbsp;&nbsp;CR 41400/41100 Recovery Income</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-blue-700">
+                                <span>DR {dmgDrLabel} (tenant settles damage via {dmgPayMode})</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between font-mono text-blue-600 opacity-80">
+                                <span>&nbsp;&nbsp;CR 12413 Tenant Receivables</span>
+                                <span>QAR {totalDeductions.toLocaleString()}</span>
+                              </div>
+                            </>
+                          )}
+                          <div className="flex justify-between font-mono text-emerald-700">
+                            <span>DR 21500 Security Deposit (full refund)</span>
+                            <span>QAR {grossDeposit.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between font-mono text-blue-700">
+                            <span>&nbsp;&nbsp;CR {bankLabel}</span>
+                            <span>QAR {grossDeposit.toLocaleString()}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer Navigation */}
+                <DialogFooter className="gap-2 border-t pt-2 mt-2">
+                  {settleRefundStep === 1 ? (
+                    <>
+                      <Button variant="outline" onClick={() => setSettleRefundOpen(false)}>Cancel</Button>
+                      <Button 
+                        className="bg-purple-600 hover:bg-purple-700 text-white" 
+                        onClick={() => setSettleRefundStep(2)}
+                      >
+                        Next: Payment &amp; GL Review →
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" onClick={() => setSettleRefundStep(1)}>
+                        ← Back to Deductions
+                      </Button>
+                      <Button 
+                        className="bg-purple-600 hover:bg-purple-700 text-white" 
+                        onClick={executeSettleAndRefund}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Settlement &amp; Issue Receipt
+                      </Button>
+                    </>
                   )}
-                </div>
+                </DialogFooter>
               </div>
             );
           })()}
-
-          <DialogFooter className="gap-2 border-t pt-2">
-            <Button variant="outline" onClick={() => setSettleRefundOpen(false)}>Cancel</Button>
-            <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={executeSettleAndRefund}>
-              <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Settlement &amp; Issue Receipt
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -5143,9 +6274,15 @@ function LeasingPage() {
                           depositMode: "Cash",
                           depositChequeNo: "",
                           depositChequeBank: "",
+                          utilityDeposit: "",
+                          qatarCoolDeposit: "",
+                          reservationDeposit: "",
+                          serviceFeeDeposit: "",
+                          guaranteeChequeDeposit: "",
+                          guaranteeChequeNo: "",
+                          guaranteeChequeBank: "QNB",
                           agencyCommission: "",
                           adminCharges: "",
-                          utilityDeposit: "",
                           cashierName: "",
                           notes: "",
                           receiptFile: "",
@@ -5369,7 +6506,7 @@ function LeasingPage() {
                     `Finance ${checkout.financeClearance ? "OK" : "Pending"}, Utility ${checkout.utilityClearance ? "OK" : "Pending"}, Keys ${checkout.keysReturned ? "Returned" : "Pending"}`,
                     checkout.comparisonSummary,
                     <StatusBadge key="status" value={checkout.status} />,
-                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Repair required", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "650", utilityCharges: "220", otherDeductions: "0", photos: "12", checkoutPhotos: "", checkoutReportFile: "", handoverConditionSummary: "", finalConditionSummary: "", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Vacant - Under Maintenance" as any }); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
+                    <Button key="action" size="sm" variant="outline" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Good", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "0", utilityCharges: "0", otherDeductions: "0", photos: "0", checkoutPhotos: "", checkoutReportFile: "", handoverConditionSummary: "", finalConditionSummary: "", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Available" as any }); setCheckoutActiveTab("condition"); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
                   ];
                 })}
               />
@@ -5377,8 +6514,9 @@ function LeasingPage() {
                 columns={["Lease", "Deposit", "Deductions", "Refund", "Approval", "Actions"]}
                 rows={settlements.map((settlement) => {
                   const lease = leases.find((item) => item.id === settlement.leaseId);
-                  const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges + settlement.otherDeductions;
-                  const refund = settlement.depositReceived - deductions;
+                  const deductions = settlement.outstandingRent + settlement.damages + settlement.utilityCharges
+                    + (settlement.cleaningCharges || 0) + (settlement.restorationCharges || 0) + settlement.otherDeductions;
+                  const refund = Math.max(0, settlement.depositReceived - deductions);
                   return [
                     lease ? `${lease.tenantName} / ${lease.unit}` : "-",
                     formatMoney(settlement.depositReceived),
@@ -5537,6 +6675,7 @@ function LeasingPage() {
         open={receiptModalOpen}
         onOpenChange={setReceiptModalOpen}
         data={receiptModalData}
+        secondaryData={receiptModalSecondaryData}
       />
     </div>
   );

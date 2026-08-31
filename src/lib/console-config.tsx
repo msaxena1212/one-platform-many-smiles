@@ -38,6 +38,9 @@ import {
   Award,
   LogOut,
   Megaphone,
+  Inbox,
+  Truck,
+  ShieldAlert,
 } from "lucide-react";
 import type { NavGroup, NavItem, NavModule } from "@/components/app-shell";
 import type { Profile } from "@/lib/supabase";
@@ -226,6 +229,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/prop-mgr/finance", search: { tab: "vendor_list" }, label: "Vendor List", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/finance", search: { tab: "customer_list" }, label: "Customer List", icon: <UserCheck className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/finance", search: { tab: "cost_center" }, label: "Cost Center", icon: <Landmark className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/finance", search: { tab: "budget_head" }, label: "Budget Head & Type", icon: <PieChart className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -343,6 +347,40 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/prop-mgr/procurement", search: { tab: "requests" }, label: "Purchase Requests", icon: <FileText className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/procurement", search: { tab: "orders" }, label: "Purchase Orders", icon: <ClipboardList className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/procurement", search: { tab: "receiving" }, label: "GRN / Receiving", icon: <Receipt className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Vendor & Sourcing",
+            icon: <Users className="h-3.5 w-3.5" />,
+            color: "text-violet-500",
+            bg: "bg-violet-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "vendors" }, label: "Vendor Master", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "rfx" }, label: "RFX / Tenders", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "quotations" }, label: "Quotations", icon: <FileCheck className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Approvals & Invoices",
+            icon: <CreditCard className="h-3.5 w-3.5" />,
+            color: "text-emerald-500",
+            bg: "bg-emerald-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "inbox" }, label: "Approval Inbox", icon: <Inbox className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "invoices" }, label: "Payable Invoices", icon: <CreditCard className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "shipments" }, label: "Shipments", icon: <Truck className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Control Tower",
+            icon: <BarChart3 className="h-3.5 w-3.5" />,
+            color: "text-rose-500",
+            bg: "bg-rose-500/10",
+            items: [
+              { to: "/prop-mgr/procurement", search: { tab: "dashboard" }, label: "Procurement Analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "supplier_perf" }, label: "Supplier Scorecards", icon: <Activity className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "anomalies" }, label: "Anomaly Detection", icon: <ShieldAlert className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/procurement", search: { tab: "action_center" }, label: "Action Center", icon: <Activity className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -477,6 +515,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/admin/finance", search: { tab: "vendor_list" }, label: "Vendor List", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "customer_list" }, label: "Customer List", icon: <UserCheck className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "cost_center" }, label: "Cost Center", icon: <Landmark className="h-3.5 w-3.5" /> },
+              { to: "/admin/finance", search: { tab: "budget_head" }, label: "Budget Head & Type", icon: <PieChart className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -594,6 +633,40 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/admin/procurement", search: { tab: "requests" }, label: "Purchase Requests", icon: <FileText className="h-3.5 w-3.5" /> },
               { to: "/admin/procurement", search: { tab: "orders" }, label: "Purchase Orders", icon: <ClipboardList className="h-3.5 w-3.5" /> },
               { to: "/admin/procurement", search: { tab: "receiving" }, label: "GRN / Receiving", icon: <Receipt className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Vendor & Sourcing",
+            icon: <Users className="h-3.5 w-3.5" />,
+            color: "text-violet-500",
+            bg: "bg-violet-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "vendors" }, label: "Vendor Master", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "rfx" }, label: "RFX / Tenders", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "quotations" }, label: "Quotations", icon: <FileCheck className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Approvals & Invoices",
+            icon: <CreditCard className="h-3.5 w-3.5" />,
+            color: "text-emerald-500",
+            bg: "bg-emerald-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "inbox" }, label: "Approval Inbox", icon: <Inbox className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "invoices" }, label: "Payable Invoices", icon: <CreditCard className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "shipments" }, label: "Shipments", icon: <Truck className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Control Tower",
+            icon: <BarChart3 className="h-3.5 w-3.5" />,
+            color: "text-rose-500",
+            bg: "bg-rose-500/10",
+            items: [
+              { to: "/admin/procurement", search: { tab: "dashboard" }, label: "Procurement Analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "supplier_perf" }, label: "Supplier Scorecards", icon: <Activity className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "anomalies" }, label: "Anomaly Detection", icon: <ShieldAlert className="h-3.5 w-3.5" /> },
+              { to: "/admin/procurement", search: { tab: "action_center" }, label: "Action Center", icon: <Activity className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -899,6 +972,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/finance", search: { tab: "vendor_list" }, label: "Vendor List", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "customer_list" }, label: "Customer List", icon: <UserCheck className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "cost_center" }, label: "Cost Center", icon: <Landmark className="h-3.5 w-3.5" /> },
+              { to: "/finance", search: { tab: "budget_head" }, label: "Budget Head & Type", icon: <PieChart className="h-3.5 w-3.5" /> },
             ],
           },
           {

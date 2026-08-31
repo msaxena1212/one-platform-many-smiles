@@ -1164,12 +1164,27 @@ export async function createERPVoucher(
   voucher: Omit<ERPVoucher, 'id' | 'created_at' | 'journal_entries'>,
   lines: Omit<ERPJournalEntry, 'id' | 'voucher_id' | 'created_at'>[]
 ) {
-  const { data: v, error: ve } = await supabase.from('erp_vouchers').insert(voucher).select().single();
-  if (ve) throw ve;
-  const linePayloads = lines.map(l => ({ ...l, voucher_id: (v as any).id }));
-  const { error: le } = await supabase.from('erp_journal_entries').insert(linePayloads);
-  if (le) throw le;
-  return v as ERPVoucher;
+  // DEPRECATED (Phase 2 — 2026-08-27):
+  // The PMS Finance architecture mandates a single-accounting-engine model
+  // where every accounting event flows through the resolver + posting
+  // engine (fin_accounting_events -> fin_vouchers / fin_voucher_lines).
+  // Direct erp_vouchers / erp_journal_entries writes are no longer supported.
+  //
+  // Callers should use:
+  //   - postVoucher() in src/lib/finance/posting-engine.ts for direct
+  //     voucher creation
+  //   - resolveAccountingAccounts() in src/lib/finance/account-resolver.ts
+  //     for GL/SL resolution
+  //
+  // This shim is preserved only to keep old callers compiling during the
+  // cutover window; it throws so the runtime is forced onto the new path.
+  void voucher; void lines;
+  throw new Error(
+    'createERPVoucher is deprecated. Use postVoucher() in src/lib/finance/posting-engine.ts ' +
+    'and resolveAccountingAccounts() in src/lib/finance/account-resolver.ts instead. ' +
+    'See phase2-account-resolver-hardened.md and the Phase 2 enforcement migration ' +
+    '(20260829110000) for the migration path.'
+  );
 }
 
 export async function fetchERPChartOfAccounts() {

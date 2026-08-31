@@ -1,5 +1,16 @@
 import { supabase } from '../supabase';
 import { createAccountingEvent } from '../finance/accounting-event-engine';
+import { postAccountingEvent } from '../finance/posting-engine';
+import { resolveGlOnlyAccount } from '../finance/account-resolver';
+
+/**
+ * Procurement Purchase Capitalization (Phase 2 — Resolver-driven)
+ *
+ * The debit side recognises the acquired asset. We look up the
+ * asset's account_code from fin_coa_accounts based on the procurement
+ * purchase-line asset_category metadata. The credit side (13400 CWIP)
+ * is resolved through resolveGlOnlyAccount().
+ */
 
 export async function capitalizePurchase(purchaseId: string) {
   const { data: purchase, error } = await supabase.from('proc_purchases').select('*').eq('id', purchaseId).single();
@@ -24,19 +35,36 @@ export async function capitalizePurchase(purchaseId: string) {
     throw new Error(`No active asset COA account is configured for category: ${firstAssetCategory ?? 'unknown'}.`);
   }
 
+  // Resolve the asset (debit) and CWIP (credit) SLs through the resolver.
+  const [debitAcct, cwip] = await Promise.all([
+    resolveGlOnlyAccount(assetAccountCode),
+    resolveGlOnlyAccount('13400'),
+  ]);
+
   const event = await createAccountingEvent({
     event_type: 'ADJUSTMENT',
     source_type: 'PURCHASE_CAPITALIZATION', source_id: purchase.id,
     reference_number: purchase.doc_number, description: 'Procurement purchase capitalization',
     idempotency_key: `PROC:CAP:${purchase.id}`,
     lines: [
-      { account_code: assetAccountCode, debit: amount, credit: 0, description: 'Recognize acquired asset' },
-      { account_code: '13400', debit: 0, credit: amount, description: 'Clear CWIP on capitalization' },
+      {
+        account_code: debitAcct.slCode,
+        account_name: `${debitAcct.groupName} / ${debitAcct.className} / ${debitAcct.glName} / ${debitAcct.slName}`,
+        debit: amount,
+        credit: 0,
+        description: 'Recognize acquired asset',
+      },
+      {
+        account_code: cwip.slCode,
+        account_name: `${cwip.groupName} / ${cwip.className} / ${cwip.glName} / ${cwip.slName}`,
+        debit: 0,
+        credit: amount,
+        description: 'Clear CWIP on capitalization',
+      },
     ],
   });
 
-  const { error: postingError } = await supabase.rpc('post_accounting_event_atomic', { p_event_id: event.id });
-  if (postingError) throw postingError;
+  await postAccountingEvent(event.id);
 
   // Asset creation itself remains owned by the existing Assets module; this phase posts the capitalization event.
   const { data: updated, error: updateError } = await supabase.from('proc_purchases').update({
