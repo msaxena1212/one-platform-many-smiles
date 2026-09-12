@@ -69,9 +69,11 @@ export default defineConfig({
       },
     },
   },
+  // Enable Nitro for production deployments so the build emits a runnable
+  // server output instead of only client/server asset chunks.
+  nitro: true,
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
 });
