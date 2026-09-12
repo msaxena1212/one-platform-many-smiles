@@ -51,8 +51,8 @@ export type PaymentReceipt = {
   created_at: string;
 };
 
-const INVOICE_STORAGE_KEY = 'proc_ap_invoices_cache_v1';
-const RECEIPT_STORAGE_KEY = 'proc_payment_receipts_v1';
+const INVOICE_STORAGE_KEY = 'proc_ap_invoices_cache_v2';
+const RECEIPT_STORAGE_KEY = 'proc_payment_receipts_v2';
 
 function getLocalInvoices(): ProcApInvoice[] {
   try {

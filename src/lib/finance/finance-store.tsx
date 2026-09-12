@@ -320,7 +320,7 @@ const FinanceContext = createContext<FinanceStoreContextType | null>(null);
 const STORE_KEY = "zyno-finance-store-v1";
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
-  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v3";
+  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v5";
 
   // ── States ────────────────────────────────────────────────────────────────
   const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => {

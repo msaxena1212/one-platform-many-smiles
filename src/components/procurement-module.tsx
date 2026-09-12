@@ -153,16 +153,7 @@ type CatalogItem = {
   active: boolean;
 };
 
-const defaultCatalogItems: CatalogItem[] = [
-  { id: "cat-1", item_code: "AST-HVAC-001", name: "Split AC 2 Ton (Daikin)", category: "HVAC", item_type: "asset", budget_type: "CAPEX", budget_head: "Property Assets", unit_price: 3200, unit_of_measure: "Nos", reorder_level: 0, active: true },
-  { id: "cat-2", item_code: "MNT-FLT-001", name: "AC Air Filter 24x24", category: "HVAC Spare", item_type: "maintenance_spare", budget_type: "OPEX", budget_head: "Maintenance Items", unit_price: 65, unit_of_measure: "Nos", reorder_level: 20, active: true },
-  { id: "cat-3", item_code: "MNT-LED-001", name: "LED Ceiling Panel 40W", category: "Electrical", item_type: "consumable", budget_type: "OPEX", budget_head: "Maintenance Items", unit_price: 45, unit_of_measure: "Nos", reorder_level: 50, active: true },
-  { id: "cat-4", item_code: "MNT-PLB-001", name: "Flexible Water Hose SS 1/2", category: "Plumbing", item_type: "maintenance_spare", budget_type: "OPEX", budget_head: "Maintenance Items", unit_price: 35, unit_of_measure: "Nos", reorder_level: 15, active: true },
-  { id: "cat-5", item_code: "SRV-ELEV-001", name: "Elevator Preventive Maintenance", category: "Elevator", item_type: "service", budget_type: "OPEX", budget_head: "Other", unit_price: 1500, unit_of_measure: "Service", reorder_level: 0, active: true },
-  { id: "cat-6", item_code: "AST-PUMP-001", name: "Water Booster Pump 5HP", category: "Plumbing", item_type: "asset", budget_type: "CAPEX", budget_head: "Property Assets", unit_price: 4800, unit_of_measure: "Nos", reorder_level: 0, active: true },
-  { id: "cat-7", item_code: "AST-FUR-001", name: "Living Room Sofa Set (3+2)", category: "Furnishing", item_type: "asset", budget_type: "CAPEX", budget_head: "Unit Assets", unit_price: 2600, unit_of_measure: "Set", reorder_level: 0, active: true },
-  { id: "cat-8", item_code: "PAY-SEC-001", name: "On-site Security Staff Monthly", category: "Staff", item_type: "service", budget_type: "OPEX", budget_head: "Salary", unit_price: 3500, unit_of_measure: "Month", reorder_level: 0, active: true },
-];
+const defaultCatalogItems: CatalogItem[] = [];
 
 const typeLabel: Record<ItemType, string> = { asset: "Fixed Asset", maintenance_spare: "Maintenance Spare", consumable: "Consumable", service: "Service" };
 
@@ -664,7 +655,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       setQuoteList(vqRes.data || []);
       setShipments(normalizedShipments);
       setInventoryParts(invRes.data || []);
-      setApInvoices(apInvRes || []);
+      setApInvoices([]);
     } catch (e: any) {
       console.error("Error loading procurement data:", e);
     } finally {
@@ -2357,6 +2348,9 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
 
         {/* ── TAB 10: PROCUREMENT ANALYTICS DASHBOARD ────────────────────────── */}
         {activeTab === "dashboard" && (
+          <EmptyState text="No procurement analytics data available." />
+        )}
+        {false && activeTab === "dashboard" && (
           <div className="space-y-6">
             {/* Top Analytics Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

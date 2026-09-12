@@ -203,8 +203,8 @@ export interface PmsAppData {
   auditEvents: PmsAuditEvent[];
 }
 
-const STORAGE_KEY = "zyno-pms-app-data";
-const STORAGE_VERSION = 7;
+const STORAGE_KEY = "zyno-pms-app-data-fresh-v9";
+const STORAGE_VERSION = 9;
 
 const SEED_DATA: PmsAppData = {
   units: [],

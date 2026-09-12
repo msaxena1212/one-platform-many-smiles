@@ -273,69 +273,69 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   // ── Persistent Sub-module Records (LocalStorage fallback) ──
   const [revaluations, setRevaluations] = useState<AssetRevaluationRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_revaluation_records");
+      const saved = localStorage.getItem("asset_revaluation_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   const [sells, setSells] = useState<AssetSaleRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_sale_records");
+      const saved = localStorage.getItem("asset_sale_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   const [writeoffs, setWriteoffs] = useState<AssetWriteoffRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_writeoff_records");
+      const saved = localStorage.getItem("asset_writeoff_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   const [allocations, setAllocations] = useState<AssetAllocationRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_allocation_records");
+      const saved = localStorage.getItem("asset_allocation_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   const [maintenances, setMaintenances] = useState<AssetMaintenanceRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_maintenance_records");
+      const saved = localStorage.getItem("asset_maintenance_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   const [warranties, setWarranties] = useState<AssetWarrantyRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("asset_warranty_records");
+      const saved = localStorage.getItem("asset_warranty_records_v2");
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
 
   // Sync state changes to localStorage
   useEffect(() => {
-    try { localStorage.setItem("asset_revaluation_records", JSON.stringify(revaluations)); } catch {}
+    try { localStorage.setItem("asset_revaluation_records_v2", JSON.stringify(revaluations)); } catch {}
   }, [revaluations]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_sale_records", JSON.stringify(sells)); } catch {}
+    try { localStorage.setItem("asset_sale_records_v2", JSON.stringify(sells)); } catch {}
   }, [sells]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_writeoff_records", JSON.stringify(writeoffs)); } catch {}
+    try { localStorage.setItem("asset_writeoff_records_v2", JSON.stringify(writeoffs)); } catch {}
   }, [writeoffs]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_allocation_records", JSON.stringify(allocations)); } catch {}
+    try { localStorage.setItem("asset_allocation_records_v2", JSON.stringify(allocations)); } catch {}
   }, [allocations]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_maintenance_records", JSON.stringify(maintenances)); } catch {}
+    try { localStorage.setItem("asset_maintenance_records_v2", JSON.stringify(maintenances)); } catch {}
   }, [maintenances]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_warranty_records", JSON.stringify(warranties)); } catch {}
+    try { localStorage.setItem("asset_warranty_records_v2", JSON.stringify(warranties)); } catch {}
   }, [warranties]);
 
   // ── Dialog States ──

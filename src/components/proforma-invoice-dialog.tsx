@@ -255,7 +255,7 @@ export function ProformaInvoiceDialog({
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {lineItems.map((item, idx) => (
+                    {lineItems.map((item: any, idx: number) => (
                       <tr key={idx} className="hover:bg-muted/20">
                         <td className="p-3 font-mono text-muted-foreground">{idx + 1}</td>
                         <td className="p-3">

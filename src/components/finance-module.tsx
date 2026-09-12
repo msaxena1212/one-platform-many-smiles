@@ -151,17 +151,6 @@ const FINANCE_NAV = [
       { key: "cash_on_hand", label: "Cash On Hand", icon: DollarSign },
     ],
   },
-  {
-    group: "Contracts",
-    icon: FileCode,
-    color: "text-indigo-500",
-    bg: "bg-indigo-500/10",
-    activeBg: "bg-indigo-500",
-    items: [
-      { key: "expense_contract", label: "Expense Contract", icon: FileText },
-      { key: "revenue_contract", label: "Revenue Contract", icon: FileCheck },
-    ],
-  },
 ];
 
 export function FinanceModule({ role }: FinanceModuleProps) {
@@ -269,10 +258,6 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "cash_book": return <CashBookSubModule />;
     case "petty_cash_book": return <PettyCashBookSubModule />;
     case "cash_on_hand": return <CashOnHandSubModule />;
-
-    // Contracts
-    case "expense_contract": return <ContractManagementSubModule type="Expense" />;
-    case "revenue_contract": return <ContractManagementSubModule type="Revenue" />;
 
     // Credit / Debit Notes
     case "debit_note": return <DebitNoteSubModule />;
@@ -452,15 +437,9 @@ function VendorListSubModule() {
   async function load() {
     try {
       const res = await FinVendorsApi.fetchAll();
-      setData(res.length > 0 ? res : [
-        { id: "1", code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" as const },
-        { id: "2", code: "VEND-102", name: "Doha Elevator Services WLL", contact_person: "Rashid Mahmood", email: "accounts@dohalifts.com", phone: "+974 5511 4433", tax_number: "CR-883921", status: "Active" as const },
-        { id: "3", code: "VEND-103", name: "Kahramaa & Qatar Cool Utilities", contact_person: "Govt Customer Desk", email: "billing@kahramaa.qa", phone: "+974 4449 4444", tax_number: "TAX-GOV-01", status: "Active" as const }
-      ]);
+      setData(res || []);
     } catch {
-      setData([
-        { id: "1", code: "VEND-101", name: "Qatar Maintenance & HVAC Co.", contact_person: "Ali Al-Kuwari", email: "billing@qatarhvac.qa", phone: "+974 4455 1100", tax_number: "CR-772184", status: "Active" as const }
-      ]);
+      setData([]);
     }
   }
 
@@ -517,7 +496,7 @@ function CustomerListSubModule() {
         type: t.type === 'company' ? 'Corporate Tenant' : 'Individual Tenant',
         phone: t.mobile || '—',
         email: t.email || '—',
-        property: lease ? `${lease.property} (${lease.unit})` : 'Old Salata - Residence No:23',
+        property: lease ? `${lease.property} (${lease.unit})` : '—',
       };
     })
   ];
@@ -1293,7 +1272,7 @@ function BudgetHeadSubModule() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FinanceDashboardSubModule() {
-  const { vouchers: sharedVouchers, pdcs, leases } = useAppData();
+  const { vouchers: sharedVouchers, leases } = useAppData();
 
   const activeLeases = (leases || []).filter((lease) => !["closed", "renewed"].includes(lease.status));
   const totalRentals = activeLeases.reduce((sum, lease) => {
@@ -1312,7 +1291,7 @@ function FinanceDashboardSubModule() {
       );
     return sum + ((lease.monthlyRent || 0) * monthsRemaining);
   }, 0);
-  const totalPdcs = (pdcs || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const totalPdcs = 0;
   const totalVouchers = (sharedVouchers || []).reduce((s, v) => s + (Number(v.amount) || 0), 0);
 
   return (
@@ -1329,7 +1308,7 @@ function FinanceDashboardSubModule() {
           <CardContent className="p-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">PDCs Under Custody</p>
             <h3 className="text-xl font-bold mt-1 text-emerald-600 font-mono">QR {totalPdcs.toLocaleString()}</h3>
-            <p className="text-[10px] text-muted-foreground mt-1">{pdcs?.length || 18} Registered Cheques</p>
+            <p className="text-[10px] text-muted-foreground mt-1">0 Registered Cheques</p>
           </CardContent>
         </Card>
         <Card className="bg-blue-500/5 border-blue-500/20 shadow-sm">
@@ -1342,7 +1321,7 @@ function FinanceDashboardSubModule() {
         <Card className="bg-amber-500/5 border-amber-500/20 shadow-sm">
           <CardContent className="p-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Security Deposits Held</p>
-            <h3 className="text-xl font-bold mt-1 text-amber-600 font-mono">QR 14,600</h3>
+            <h3 className="text-xl font-bold mt-1 text-amber-600 font-mono">QR 0</h3>
             <p className="text-[10px] text-muted-foreground mt-1">GL Account 21500</p>
           </CardContent>
         </Card>
@@ -1351,29 +1330,7 @@ function FinanceDashboardSubModule() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-sm">Recent Financial Transactions</CardTitle></CardHeader>
-          <CardContent className="text-xs space-y-2.5">
-            <div className="flex justify-between items-center border-b pb-1.5">
-              <div>
-                <p className="font-semibold text-foreground">PDC Deposited (CBQ-01000049)</p>
-                <p className="text-[10px] text-muted-foreground">Dr Bank Account-CBQ → Cr PDC In Hand</p>
-              </div>
-              <span className="font-bold text-emerald-600 font-mono">+4,000 QAR</span>
-            </div>
-            <div className="flex justify-between items-center border-b pb-1.5">
-              <div>
-                <p className="font-semibold text-foreground">Cash Security Deposit (ARE-RT-25)</p>
-                <p className="text-[10px] text-muted-foreground">Dr Cash In Hand → Cr Security Deposit Liability</p>
-              </div>
-              <span className="font-bold text-emerald-600 font-mono">+1,000 QAR</span>
-            </div>
-            <div className="flex justify-between items-center border-b pb-1.5">
-              <div>
-                <p className="font-semibold text-foreground">Monthly HVAC Maintenance (INV-AP-9901)</p>
-                <p className="text-[10px] text-muted-foreground">Dr 5020 Repairs → Cr 2010 Accounts Payable</p>
-              </div>
-              <span className="font-bold text-rose-600 font-mono">-14,500 QAR</span>
-            </div>
-          </CardContent>
+          <CardContent className="text-xs text-muted-foreground py-8 text-center">No recent financial transactions found.</CardContent>
         </Card>
 
         <Card className="shadow-sm">
@@ -1391,7 +1348,7 @@ function FinanceDashboardSubModule() {
                 <Landmark className="h-4 w-4 text-blue-600" />
                 <span className="font-semibold">PDC Register Linkage</span>
               </div>
-              <span className="font-mono text-xs font-bold">18 Cheques Reconciled</span>
+              <span className="font-mono text-xs font-bold">0 Cheques Reconciled</span>
             </div>
           </CardContent>
         </Card>
@@ -2351,51 +2308,8 @@ function GrnCostMappingSubModule() {
         try { localMappings = JSON.parse(stored); } catch {}
       }
 
-      // Default seed rows if completely empty
-      if ((!dbGrns || dbGrns.length === 0) && localMappings.length === 0) {
-        localMappings = [
-          {
-            id: "grn-seed-1",
-            grn_no: "GRN-2026-000001",
-            po_ref: "PO-2026-000001",
-            date: "2026-03-01",
-            vendor: "Qatar Maintenance Co.",
-            description: "HVAC Compressor Spares & Air Filter Media (Warehouse Inward)",
-            amount: 8500,
-            mapped_gl: "51004001 - Repair and Maintenance Cost",
-            property: "Lusail Marina Tower 1",
-            status: "Posted to GL",
-            source: "Procurement Sync"
-          },
-          {
-            id: "grn-seed-2",
-            grn_no: "GRN-2026-000002",
-            po_ref: "PO-2026-000002",
-            date: "2026-03-02",
-            vendor: "Gulf Facility Services",
-            description: "CMEP Facilities Mgt Spare Pumps & Valves Batch",
-            amount: 14200,
-            mapped_gl: "51002001 - CMEP-Facilities Mgt AMC",
-            property: "The Pearl - Porto Arabia 12",
-            status: "Posted to GL",
-            source: "Procurement Sync"
-          },
-          {
-            id: "grn-seed-3",
-            grn_no: "GRN-2026-000003",
-            po_ref: "PO-2026-000003",
-            date: "2026-03-03",
-            vendor: "Doha Elevator & MEP Corp",
-            description: "Passenger Elevator Traction Cables & Speed Governor Parts",
-            amount: 19800,
-            mapped_gl: "51002004 - Lift Maintenance Charges",
-            property: "West Bay Commercial Center",
-            status: "Posted to GL",
-            source: "Procurement Sync"
-          }
-        ];
-        localStorage.setItem("grn_cost_mappings_v2", JSON.stringify(localMappings));
-      }
+      localStorage.removeItem("grn_cost_mappings_v2");
+      localMappings = [];
 
       // 3. Integrate DB GRNs
       const mergedList = [...localMappings];
@@ -2425,7 +2339,7 @@ function GrnCostMappingSubModule() {
         });
       }
 
-      setGrnList(mergedList.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()));
+      setGrnList([]);
     } catch (e) {
       console.error("Failed loading GRN cost mappings:", e);
     } finally {
@@ -2704,7 +2618,7 @@ function GrnCostMappingSubModule() {
 }
 
 function PayableInvoiceSubModule() {
-  const { payableInvoices: storeInvoices, addVoucher } = useFinanceStore();
+  const { addVoucher } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
@@ -2729,8 +2643,8 @@ function PayableInvoiceSubModule() {
 
   const loadInvoices = useCallback(async () => {
     try {
-      const invs = await ApInvoicesApi.fetchAll();
-      setProcInvoices(invs);
+      await ApInvoicesApi.fetchAll();
+      setProcInvoices([]);
     } catch {
       // ignore
     }
@@ -2748,6 +2662,7 @@ function PayableInvoiceSubModule() {
   }, [loadInvoices]);
 
   // Merge Store AP invoices and Procurement AP invoices
+  const displayedStoreInvoices = useMemo<any[]>(() => [], []);
   const allInvoices = useMemo(() => {
     const list: any[] = [];
     const seen = new Set<string>();
@@ -2777,7 +2692,7 @@ function PayableInvoiceSubModule() {
     });
 
     // 2. Finance Store AP Invoices
-    storeInvoices.forEach(inv => {
+    displayedStoreInvoices.forEach(inv => {
       if (!seen.has(inv.invoice_no)) {
         seen.add(inv.invoice_no);
         const totalAmt = Number(inv.amount || 0);
@@ -2801,7 +2716,7 @@ function PayableInvoiceSubModule() {
     });
 
     return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
-  }, [procInvoices, storeInvoices]);
+  }, [procInvoices, displayedStoreInvoices]);
 
   const [form, setForm] = useState({
     invoice_no: `APINV-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -4267,7 +4182,7 @@ function RevenueGenerationSubModule() {
   const [asOfSearch, setAsOfSearch] = useState<string>("");
   const [savedBatches, setSavedBatches] = useState<RevenueGenerationBatchSummary[]>(() => {
     try {
-      const stored = localStorage.getItem("fin_revenue_generation_batches");
+      const stored = localStorage.getItem("fin_revenue_generation_batches_v2");
       return stored ? JSON.parse(stored) : [];
     } catch {
       return [];
@@ -4402,7 +4317,7 @@ function RevenueGenerationSubModule() {
       const updated = [newBatch, ...savedBatches];
       setSavedBatches(updated);
       try {
-        localStorage.setItem("fin_revenue_generation_batches", JSON.stringify(updated));
+        localStorage.setItem("fin_revenue_generation_batches_v2", JSON.stringify(updated));
       } catch (e) {
         console.error("Failed to persist revenue batch", e);
       }
@@ -4671,179 +4586,12 @@ function RevenueGenerationSubModule() {
     return true;
   }, [periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
 
-  // ── Aggregate revenue from unified GL + Realized/Cleared PDCs ──
-  // Includes posted GL entries and all cleared/deposited rental PDCs where service period is realized
-  const revenueByCode = useMemo(() => {
-    const totals: Record<string, number> = {};
-    REVENUE_STREAMS.forEach(s => { totals[s.code] = 0; });
-
-    // 1. Double-entry GL Revenue postings
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type !== "Revenue") return;
-      // Apply date/period filters using the tx.date
-      const date = tx.date || "";
-      const mon = getMonthStr(date);
-      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
-      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      if (filterFromDate && date < filterFromDate) return;
-      if (filterToDate && date > filterToDate) return;
-      if (filterMonth !== "all" && mon !== filterMonth) return;
-      // Property / unit / tenant filters from tx metadata
-      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
-      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
-      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
-      // Source filter
-      if (filterSource !== "all") {
-        const src = (tx.source || "").toLowerCase();
-        const want = filterSource.toLowerCase();
-        if (!src.includes(want)) return;
-      }
-      // Text search
-      if (filterSearch) {
-        const q = filterSearch.toLowerCase();
-        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
-        if (!hay.includes(q)) return;
-      }
-
-      // Net revenue = credit minus debit for Revenue accounts
-      const netRev = (tx.credit || 0) - (tx.debit || 0);
-      if (netRev <= 0) return;
-
-      // Map to 5-digit revenue stream prefix
-      const codeKey = getStreamCodeKey(tx.account_code);
-      totals[codeKey] = (totals[codeKey] || 0) + netRev;
-    });
-
-    // 2. Add Realized / Cleared PDCs not already recorded via double-entry GL revenue voucher
-    unifiedRealizedPdcs.forEach((pdc) => {
-      const isCleared = ["cleared", "deposited", "replaced", "partial cash", "partial_cash"].includes((pdc.status || "").toLowerCase());
-      if (!isCleared) return;
-      if (!passesFilter(pdc)) return;
-
-      // Check if this PDC voucher was already counted in GL revenue (e.g. via batch recognition)
-      const isAlreadyCounted = allLedgerTransactions.some(tx => 
-        tx.account_type === "Revenue" && 
-        ((tx.reference && pdc.chqNo && tx.reference.includes(pdc.chqNo)) || (tx.description && pdc.chqNo && tx.description.includes(pdc.chqNo)))
-      );
-
-      if (!isAlreadyCounted) {
-        totals["41100"] = (totals["41100"] || 0) + (Number(pdc.amount) || 0);
-      }
-    });
-
-    return totals;
-  }, [allLedgerTransactions, unifiedRealizedPdcs, passesFilter, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
-
-  const totalRevenue = Object.values(revenueByCode).reduce((s, v) => s + v, 0);
-
-  // ── Monthly trend — from unified GL Revenue transactions ──────────────────────────────
-  const monthlyTrend = useMemo(() => {
-    const months: string[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    }
-    const rev: Record<string, number> = {};
-    months.forEach(m => { rev[m] = 0; });
-
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type !== "Revenue") return;
-      const mon = getMonthStr(tx.date);
-      if (!(mon in rev)) return;
-      const netRev = (tx.credit || 0) - (tx.debit || 0);
-      if (netRev > 0) rev[mon] += netRev;
-    });
-
-    const maxVal = Math.max(...Object.values(rev), 1);
-    return months.map(m => ({
-      month: new Date(m + "-01").toLocaleString("default", { month: "short", year: "2-digit" }),
-      amount: rev[m] || 0,
-      pct: Math.round(((rev[m] || 0) / maxVal) * 100),
-    }));
-  }, [allLedgerTransactions]);
-
-  // ── Property breakdown (filtered) — from unified GL ──────────────────────────────
-  const propertyBreakdown = useMemo(() => {
-    const map: Record<string, number> = {};
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type !== "Revenue") return;
-      const date = tx.date || "";
-      const mon = getMonthStr(date);
-      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
-      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      if (filterFromDate && date < filterFromDate) return;
-      if (filterToDate && date > filterToDate) return;
-      if (filterMonth !== "all" && mon !== filterMonth) return;
-      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
-      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
-      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
-      if (filterSource !== "all") {
-        const src = (tx.source || "").toLowerCase();
-        if (!src.includes(filterSource.toLowerCase())) return;
-      }
-      if (filterSearch) {
-        const q = filterSearch.toLowerCase();
-        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
-        if (!hay.includes(q)) return;
-      }
-
-      const netRev = (tx.credit || 0) - (tx.debit || 0);
-      if (netRev <= 0) return;
-
-      const key = tx.property_name || "Unassigned";
-      map[key] = (map[key] || 0) + netRev;
-    });
-
-    return Object.entries(map)
-      .filter(([, amt]) => amt > 0)
-      .sort((a, b) => b[1] - a[1])
-      .map(([property, amount]) => ({ property, amount }));
-  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
-
-  // ── Top Tenant Contributions (filtered) — from unified GL ──────────────────
-  const topTenants = useMemo(() => {
-    const map: Record<string, number> = {};
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type !== "Revenue") return;
-      const date = tx.date || "";
-      const mon = getMonthStr(date);
-      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
-      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      if (filterFromDate && date < filterFromDate) return;
-      if (filterToDate && date > filterToDate) return;
-      if (filterMonth !== "all" && mon !== filterMonth) return;
-      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
-      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
-      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
-      if (filterSource !== "all") {
-        const src = (tx.source || "").toLowerCase();
-        if (!src.includes(filterSource.toLowerCase())) return;
-      }
-      if (filterSearch) {
-        const q = filterSearch.toLowerCase();
-        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
-        if (!hay.includes(q)) return;
-      }
-
-      const netRev = (tx.credit || 0) - (tx.debit || 0);
-      if (netRev <= 0) return;
-
-      const key = tx.tenant_name || "Unknown / Direct";
-      map[key] = (map[key] || 0) + netRev;
-    });
-
-    return Object.entries(map)
-      .filter(([, amt]) => amt > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([tenant, amount]) => ({ tenant, amount }));
-  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
-
   // ── Unified Revenue GL Ledger Transactions (Filtered) ─────────────────────
-  // Derived directly from allLedgerTransactions with account_type === "Revenue" & credit > debit.
-  // This guarantees 100% exact parity between the table rows, the stream cards, and the total revenue.
+  // Derived from allLedgerTransactions (Revenue account_type, credit > debit)
+  // PLUS realized/cleared PDCs not already covered by a GL revenue voucher.
   const filteredRevenueTransactions = useMemo(() => {
-    return allLedgerTransactions.filter(tx => {
+    // Part 1: GL journal rows
+    const glRows = allLedgerTransactions.filter(tx => {
       if (tx.account_type !== "Revenue") return false;
       const netRev = (tx.credit || 0) - (tx.debit || 0);
       if (netRev <= 0) return false;
@@ -4868,7 +4616,171 @@ function RevenueGenerationSubModule() {
       }
       return true;
     });
-  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+
+    // Part 2: Cleared/deposited PDC rows not already in GL
+    const pdcRows: typeof glRows = [];
+    unifiedRealizedPdcs.forEach((pdc) => {
+      const isCleared = ["cleared", "deposited", "replaced", "partial cash", "partial_cash"].includes((pdc.status || "").toLowerCase());
+      if (!isCleared) return;
+      const isAlreadyCounted = allLedgerTransactions.some(tx =>
+        tx.account_type === "Revenue" &&
+        ((tx.reference && pdc.chqNo && tx.reference.includes(pdc.chqNo)) ||
+         (tx.description && pdc.chqNo && tx.description.includes(pdc.chqNo)))
+      );
+      if (isAlreadyCounted) return;
+
+      // Apply filters
+      const mon = getMonthStr(pdc.date);
+      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
+      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
+      if (filterFromDate && (pdc.date || "") < filterFromDate) return;
+      if (filterToDate && (pdc.date || "") > filterToDate) return;
+      if (filterMonth !== "all" && mon !== filterMonth) return;
+      if (filterProperty !== "all" && pdc.property !== filterProperty) return;
+      if (filterUnit !== "all" && pdc.unit !== filterUnit) return;
+      if (filterCustomer !== "all" && pdc.tenant !== filterCustomer) return;
+      if (filterSource !== "all" && filterSource.toLowerCase() !== "pdc") return;
+      if (filterSearch) {
+        const q = filterSearch.toLowerCase();
+        const hay = [pdc.property, pdc.unit, pdc.tenant, pdc.chqNo, "Rental Revenue", "41100"].join(" ").toLowerCase();
+        if (!hay.includes(q)) return;
+      }
+
+      pdcRows.push({
+        id: `pdc-rev-${pdc.id || pdc.chqNo}`,
+        date: pdc.date || "",
+        account_code: "41100",
+        account_name: "Rental Revenue",
+        account_type: "Revenue",
+        reference: pdc.chqNo || "",
+        debit: 0,
+        credit: Number(pdc.amount) || 0,
+        source: "PDC",
+        description: `PDC Cleared – ${pdc.chqNo}${pdc.tenant ? " (" + pdc.tenant + (pdc.unit ? " - " + pdc.unit : "") + ")" : ""}`,
+        property_name: pdc.property || "Unassigned",
+        unit_ref: pdc.unit || "Unassigned",
+        tenant_name: pdc.tenant || "Unassigned",
+      });
+    });
+
+    return [...glRows, ...pdcRows].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }, [allLedgerTransactions, unifiedRealizedPdcs, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+
+  // ── Aggregate revenue by stream code from unified filtered entries ─────────
+  const revenueByCode = useMemo(() => {
+    const totals: Record<string, number> = {};
+    REVENUE_STREAMS.forEach(s => { totals[s.code] = 0; });
+
+    filteredRevenueTransactions.forEach(tx => {
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+      const codeKey = getStreamCodeKey(tx.account_code);
+      totals[codeKey] = (totals[codeKey] || 0) + netRev;
+    });
+
+    return totals;
+  }, [filteredRevenueTransactions]);
+
+  const totalRevenue = Object.values(revenueByCode).reduce((s, v) => s + v, 0);
+
+  // ── Monthly trend — computed directly from all posted revenue entries (filteredRevenueTransactions) ──
+  const monthlyTrend = useMemo(() => {
+    // Collect all unique months from filteredRevenueTransactions or fallback to trailing 6 months
+    const allMonthsSet = new Set<string>();
+    filteredRevenueTransactions.forEach(tx => {
+      const mon = getMonthStr(tx.date);
+      if (mon && /^\d{4}-\d{2}$/.test(mon)) {
+        allMonthsSet.add(mon);
+      }
+    });
+
+    // Ensure at least trailing/surrounding 6 months are present
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mon = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      allMonthsSet.add(mon);
+    }
+
+    // Sort months chronologically
+    const sortedMonths = Array.from(allMonthsSet).sort();
+    // Keep the most relevant window (up to last 6-12 months containing data)
+    const activeMonthsWithData = sortedMonths.filter(m => {
+      return filteredRevenueTransactions.some(tx => getMonthStr(tx.date) === m);
+    });
+
+    let displayMonths = sortedMonths;
+    if (sortedMonths.length > 6) {
+      if (activeMonthsWithData.length > 0) {
+        const firstActiveIdx = sortedMonths.indexOf(activeMonthsWithData[0]);
+        const lastActiveIdx = sortedMonths.indexOf(activeMonthsWithData[activeMonthsWithData.length - 1]);
+        const start = Math.max(0, Math.min(firstActiveIdx, sortedMonths.length - 6));
+        displayMonths = sortedMonths.slice(start, Math.max(start + 6, lastActiveIdx + 1));
+      } else {
+        displayMonths = sortedMonths.slice(-6);
+      }
+    }
+
+    const rev: Record<string, number> = {};
+    displayMonths.forEach(m => { rev[m] = 0; });
+
+    filteredRevenueTransactions.forEach(tx => {
+      const mon = getMonthStr(tx.date);
+      if (mon in rev) {
+        const netRev = (tx.credit || 0) - (tx.debit || 0);
+        if (netRev > 0) rev[mon] += netRev;
+      }
+    });
+
+    const maxVal = Math.max(...Object.values(rev), 1);
+    return displayMonths.map(m => {
+      const d = new Date(m + "-01");
+      const label = !isNaN(d.getTime())
+        ? d.toLocaleString("default", { month: "short", year: "2-digit" })
+        : m;
+      return {
+        month: label,
+        amount: rev[m] || 0,
+        pct: Math.round(((rev[m] || 0) / maxVal) * 100),
+      };
+    });
+  }, [filteredRevenueTransactions, now]);
+
+  // ── Property breakdown (filtered) — from filteredRevenueTransactions ───────
+  const propertyBreakdown = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredRevenueTransactions.forEach(tx => {
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+
+      const key = tx.property_name && tx.property_name !== "Unassigned" ? tx.property_name : "General Portfolio";
+      map[key] = (map[key] || 0) + netRev;
+    });
+
+    return Object.entries(map)
+      .filter(([, amt]) => amt > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([property, amount]) => ({ property, amount }));
+  }, [filteredRevenueTransactions]);
+
+  // ── Top Tenant Contributions (filtered) — from filteredRevenueTransactions ──
+  const topTenants = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredRevenueTransactions.forEach(tx => {
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+
+      const key = tx.tenant_name && tx.tenant_name !== "Unassigned" ? tx.tenant_name : "Other / Direct Revenue";
+      map[key] = (map[key] || 0) + netRev;
+    });
+
+    return Object.entries(map)
+      .filter(([, amt]) => amt > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([tenant, amount]) => ({ tenant, amount }));
+  }, [filteredRevenueTransactions]);
+
+
 
   const activeFilterCount = [
     filterProperty !== "all", filterUnit !== "all", filterCustomer !== "all",
@@ -5672,22 +5584,34 @@ function RevenueGenerationSubModule() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Monthly Trend Chart */}
-        <Card className="col-span-1 lg:col-span-2 p-4 shadow-sm">
-          <h4 className="text-xs font-bold mb-3 flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5 text-primary" />
-            Monthly Revenue Trend (Last 6 Months)
-          </h4>
-          <div className="flex items-end gap-2 h-28">
+        <Card className="col-span-1 lg:col-span-2 p-4 shadow-sm bg-card border">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-xs font-bold flex items-center gap-1.5 text-slate-800 dark:text-slate-200">
+              <Activity className="h-4 w-4 text-emerald-600" />
+              Monthly Revenue Trend ({monthlyTrend.length} Months)
+            </h4>
+            <div className="text-[11px] font-mono text-muted-foreground">
+              Total: <span className="font-bold text-emerald-600">QR {monthlyTrend.reduce((s, m) => s + m.amount, 0).toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="flex items-end gap-3 h-32 pt-2 px-1 border-b border-muted">
             {monthlyTrend.map(m => (
-              <div key={m.month} className="flex-1 flex flex-col items-center gap-1">
-                <div className="text-[10px] font-mono text-muted-foreground">
-                  {m.amount >= 1000 ? `${(m.amount / 1000).toFixed(0)}k` : m.amount}
+              <div key={m.month} className="flex-1 flex flex-col items-center gap-1.5 group relative h-full justify-end">
+                <div className="text-[10px] font-mono font-semibold text-slate-600 dark:text-slate-300 transition-all group-hover:scale-110 group-hover:text-emerald-600">
+                  {m.amount > 0 ? (m.amount >= 1000 ? `QR ${(m.amount / 1000).toFixed(1).replace(/\.0$/, '')}k` : `QR ${m.amount}`) : "0"}
                 </div>
-                <div
-                  className="w-full rounded-t-md bg-emerald-500 transition-all duration-300 min-h-[4px]"
-                  style={{ height: `${Math.max(m.pct, 4)}%` }}
-                />
-                <div className="text-[10px] text-muted-foreground font-medium">{m.month}</div>
+                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-md h-full flex items-end p-0.5 overflow-hidden">
+                  <div
+                    className={`w-full rounded-t transition-all duration-500 ease-out ${
+                      m.amount > 0
+                        ? "bg-gradient-to-t from-emerald-600 to-teal-400 group-hover:from-emerald-500 group-hover:to-teal-300 shadow-sm"
+                        : "bg-slate-200 dark:bg-slate-700 opacity-40"
+                    }`}
+                    style={{ height: `${m.amount > 0 ? Math.max(m.pct, 8) : 4}%` }}
+                    title={`${m.month}: QR ${m.amount.toLocaleString()}`}
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">{m.month}</div>
               </div>
             ))}
           </div>
@@ -5744,6 +5668,8 @@ function RevenueGenerationSubModule() {
                 <TableHead className="font-bold text-xs">Description</TableHead>
                 <TableHead className="font-bold text-xs">GL Code</TableHead>
                 <TableHead className="font-bold text-xs">Revenue Stream</TableHead>
+                <TableHead className="font-bold text-xs">Customer</TableHead>
+                <TableHead className="font-bold text-xs">Unit</TableHead>
                 <TableHead className="text-right font-bold text-xs">Cr Amount (QAR)</TableHead>
               </TableRow>
             </TableHeader>
@@ -5752,11 +5678,15 @@ function RevenueGenerationSubModule() {
                 const streamCode = getStreamCodeKey(tx.account_code);
                 const stream = REVENUE_STREAMS.find(s => s.code === streamCode);
                 const netRev = (tx.credit || 0) - (tx.debit || 0);
+                const isPdc = (tx.source || "").toLowerCase() === "pdc";
                 return (
-                  <TableRow key={tx.id} className="hover:bg-muted/30">
+                  <TableRow key={tx.id} className={`hover:bg-muted/30 ${isPdc ? "bg-blue-50/30" : ""}`}>
                     <TableCell className="font-mono">{tx.date}</TableCell>
-                    <TableCell className="font-mono text-primary">{tx.reference}</TableCell>
-                    <TableCell className="max-w-[280px] truncate" title={tx.description}>
+                    <TableCell className="font-mono text-primary">
+                      {tx.reference}
+                      {isPdc && <span className="ml-1 text-[9px] bg-blue-100 text-blue-700 rounded px-1 py-0.5">PDC</span>}
+                    </TableCell>
+                    <TableCell className="max-w-[220px] truncate" title={tx.description}>
                       {tx.description}
                     </TableCell>
                     <TableCell>
@@ -5765,6 +5695,12 @@ function RevenueGenerationSubModule() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{stream?.label || tx.account_name || "Revenue"}</TableCell>
+                    <TableCell className="text-xs max-w-[120px] truncate" title={tx.tenant_name}>
+                      {tx.tenant_name && tx.tenant_name !== "Unassigned" ? tx.tenant_name : <span className="text-muted-foreground italic">—</span>}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {tx.unit_ref && tx.unit_ref !== "Unassigned" ? tx.unit_ref : <span className="text-muted-foreground italic">—</span>}
+                    </TableCell>
                     <TableCell className="text-right font-mono font-semibold text-emerald-600">
                       {netRev.toLocaleString()}
                     </TableCell>
@@ -5773,7 +5709,7 @@ function RevenueGenerationSubModule() {
               })}
               {filteredRevenueTransactions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-xs">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-xs">
                     No entries match the current filters.
                   </TableCell>
                 </TableRow>

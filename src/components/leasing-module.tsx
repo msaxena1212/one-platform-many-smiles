@@ -39,6 +39,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Percent,
   Printer,
   Receipt,
   RefreshCw,
@@ -474,7 +475,7 @@ function LeasingPage() {
   const [renewals, setRenewals] = useState<RenewalCase[]>([]);
   const [checkouts, setCheckouts] = useState<CheckoutCase[]>(() => {
     try {
-      const saved = localStorage.getItem("pms_checkout_cases");
+      const saved = localStorage.getItem("pms_checkout_cases_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -484,7 +485,7 @@ function LeasingPage() {
   });
   const [settlements, setSettlements] = useState<Settlement[]>(() => {
     try {
-      const saved = localStorage.getItem("pms_settlement_cases");
+      const saved = localStorage.getItem("pms_settlement_cases_v2");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -538,7 +539,7 @@ function LeasingPage() {
         }
       });
       if (changed) {
-        try { localStorage.setItem("pms_checkout_cases", JSON.stringify(updated)); } catch {}
+        try { localStorage.setItem("pms_checkout_cases_v2", JSON.stringify(updated)); } catch {}
       }
       return updated;
     });
@@ -570,7 +571,7 @@ function LeasingPage() {
         }
       });
       if (changed) {
-        try { localStorage.setItem("pms_settlement_cases", JSON.stringify(updated)); } catch {}
+        try { localStorage.setItem("pms_settlement_cases_v2", JSON.stringify(updated)); } catch {}
       }
       return updated;
     });
@@ -857,7 +858,6 @@ function LeasingPage() {
     startDate: today.toISOString().split("T")[0],
     endDate: addDays(today, 365),
     firstChequeDate: today.toISOString().split("T")[0],
-    chequeIntervalDays: 30,
     regularChequeAmount: "",
     customCheques: [] as Array<{ chequeNo: string; bank: string; date: string; amount: number; period: string; tenureStart: string; tenureEnd: string; file: string }>,
   });
@@ -1565,23 +1565,36 @@ function LeasingPage() {
       const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
       const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
       const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
-      const firstDate = new Date(collectForm.firstChequeDate || collectForm.startDate || lease.startDate);
-      const interval = Number(collectForm.chequeIntervalDays) || 30;
+      const firstChequeStr = collectForm.firstChequeDate || collectForm.startDate || lease.startDate;
+      const leaseStartStr = lease.startDate || firstChequeStr;
 
       nextPdcs = Array.from({ length: count }, (_, index) => {
         let amount = regularAmt;
         if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
           amount = totalRent - regularAmt * (count - 1);
         }
+        // Month-increment maturity date (same day, next month)
+        const bd = new Date(firstChequeStr);
+        const day = bd.getDate();
+        const rawMonth = bd.getMonth() + index;
+        const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
+        const mo = ((rawMonth % 12) + 12) % 12;
+        const lastDay = new Date(yr, mo + 1, 0).getDate();
+        const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+        // Tenure anchored to lease start date
+        const tsDate = new Date(leaseStartStr); tsDate.setMonth(tsDate.getMonth() + index);
+        const teDate = new Date(leaseStartStr); teDate.setMonth(teDate.getMonth() + index + 1); teDate.setDate(teDate.getDate() - 1);
         return {
           id: `p${pdcs.length + index + 1}`,
           leaseId: lease.id,
           chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
           bank: collectForm.chequeBank || "Tenant Bank",
-          date: addDays(firstDate, index * interval),
+          date: maturityStr,
           amount: Math.max(0, amount),
           payerName: collectForm.payerName || lease.tenantName,
           period: `Cheque ${index + 1} of ${count}`,
+          tenureStart: tsDate.toISOString().split("T")[0],
+          tenureEnd: teDate.toISOString().split("T")[0],
           status: "received" as PdcStatus,
         };
       });
@@ -2997,223 +3010,297 @@ function LeasingPage() {
       {/* ── CREATE LEASE DIALOG ───────────────────────────────────── */}
 
       <Dialog open={createReservationOpen} onOpenChange={setCreateReservationOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Create Reservation</DialogTitle>
-            <DialogDescription>Select a property, then a unit to reserve.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Field label="Property">
-              <SearchableSelect
-                value={reservationForm.property}
-                onValueChange={(property) => setReservationForm((form) => ({ ...form, property, unit: "" }))}
-                placeholder="Select Property"
-                emptyText="No property found."
-                options={Array.from(new Set((realUnits.length > 0 ? realUnits : units).map(u => u.property))).map(prop => ({ label: prop, value: prop }))}
-              />
-            </Field>
-            <Field label="Unit">
-              <SearchableSelect
-                value={reservationForm.unit}
-                onValueChange={(unit) => setReservationForm((form) => ({ ...form, unit }))}
-                disabled={!reservationForm.property}
-                placeholder="Select Unit"
-                emptyText="No available unit found for this property."
-                options={(realUnits.length > 0 ? realUnits : units)
-                  .filter(u => {
-                    if (u.property !== reservationForm.property) return false;
-                    // Check if unit is occupied/leased in unit status
-                    if (u.status && u.status.toLowerCase() !== "available") return false;
-                    // Check if unit is currently reserved (active reservation)
-                    const isReserved = reservations.some(
-                      r => r.property === u.property && r.unit === u.unit && (r.status === "reserved" || r.status === "converted")
-                    );
-                    if (isReserved) return false;
-                    // Check if unit has an active lease
-                    const isLeased = leases.some(
-                      l => l.property === u.property && l.unit === u.unit && (l.status === "active" || l.status === "fully_signed" || l.status === "collection_completed")
-                    );
-                    if (isLeased) return false;
-                    return true;
-                  })
-                  .map((unit) => ({ label: `${unit.unit} - Available`, value: unit.unit }))}
-              />
-            </Field>
-            <Field label="Prospective tenant">
+        <DialogContent className="sm:max-w-[480px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 shadow-sm">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold">Reserve Property Unit</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Locks unit from Available to Reserved until lease conversion or validity expiration.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Target Property *">
+                <SearchableSelect
+                  value={reservationForm.property}
+                  onValueChange={(property) => setReservationForm((form) => ({ ...form, property, unit: "" }))}
+                  placeholder="Select Property"
+                  emptyText="No property found."
+                  options={Array.from(new Set((realUnits.length > 0 ? realUnits : units).map(u => u.property))).map(prop => ({ label: prop, value: prop }))}
+                />
+              </Field>
+              <Field label="Available Unit *">
+                <SearchableSelect
+                  value={reservationForm.unit}
+                  onValueChange={(unit) => setReservationForm((form) => ({ ...form, unit }))}
+                  disabled={!reservationForm.property}
+                  placeholder="Select Unit"
+                  emptyText="No available unit found for this property."
+                  options={(realUnits.length > 0 ? realUnits : units)
+                    .filter(u => {
+                      if (u.property !== reservationForm.property) return false;
+                      if (u.status && u.status.toLowerCase() !== "available") return false;
+                      const isReserved = reservations.some(
+                        r => r.property === u.property && r.unit === u.unit && (r.status === "reserved" || r.status === "converted")
+                      );
+                      if (isReserved) return false;
+                      const isLeased = leases.some(
+                        l => l.property === u.property && l.unit === u.unit && (l.status === "active" || l.status === "fully_signed" || l.status === "collection_completed")
+                      );
+                      if (isLeased) return false;
+                      return true;
+                    })
+                    .map((unit) => ({ label: `${unit.unit} - Available`, value: unit.unit }))}
+                />
+              </Field>
+            </div>
+            
+            <Field label="Prospective Tenant Customer *">
               <SearchableSelect
                 value={reservationForm.tenantName}
                 onValueChange={(tenantName) => setReservationForm((form) => ({ ...form, tenantName }))}
-                placeholder="Select Customer"
+                placeholder="Select Customer Profile"
                 emptyText="No customer found."
-                options={customers.map((c) => ({ label: c.name, value: c.name }))}
+                options={customers.map((c) => ({ label: `${c.name} (${c.type})`, value: c.name }))}
               />
             </Field>
-            <Field label="Expected Lease start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Validity days"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} /></Field>
-              <Field label="Rent"><Input type="number" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} /></Field>
+
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <CalendarClock className="h-3.5 w-3.5 text-primary" /> Reservation Timing & Terms
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Expected Lease Start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} className="bg-background" /></Field>
+                <Field label="Validity Hold (Days)"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} className="bg-background" /></Field>
+              </div>
+              <Field label="Proposed Monthly Rent (QR)"><Input type="number" placeholder="0.00" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} className="bg-background" /></Field>
             </div>
-            <Field label="Remarks"><Textarea value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} /></Field>
+
+            <Field label="Internal Remarks / Notes"><Textarea rows={2} placeholder="Optional notes regarding reservation deposit or booking terms..." value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} className="text-xs" /></Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
-            <Button onClick={async () => {
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
+            <Button size="sm" className="shadow-sm" onClick={async () => {
               await withBusy("reserve", createReservation);
               setCreateReservationOpen(false);
             }}>
               {busyAction === "reserve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
-              Reserve Unit
+              Confirm Unit Reservation
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={createCustomerOpen} onOpenChange={setCreateCustomerOpen}>
-        <DialogContent className="sm:max-w-[425px] max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add Customer</DialogTitle>
-            <DialogDescription>Create a new customer profile.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-            <Field label="Name"><Input value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} /></Field>
-            <Field label="Type">
-              <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
-              </Select>
-            </Field>
-            {customerForm.type === "individual" ? (
-              <>
-                <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
-                <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
-                <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
-                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-              </>
-            ) : (
-              <>
-                <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
-                <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
-                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                <Field label="Company / Operational Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-              </>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
-              <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+        <DialogContent className="sm:max-w-[560px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <UserPlus className="h-5 w-5" />
             </div>
-            <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
-            <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
+            <div>
+              <DialogTitle className="text-lg font-bold">New Customer Profile</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Register individual or corporate tenant details with KYC identity validation.</DialogDescription>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateCustomerOpen(false)}>Cancel</Button>
-            <Button onClick={async () => {
+          
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Full Name / Entity Name *">
+                <Input placeholder="e.g. John Doe / Gulf Trading W.L.L." value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} className="bg-background/80" />
+              </Field>
+              <Field label="Customer Type">
+                <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
+                  <SelectTrigger className="bg-background/80"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Corporate / Company</SelectItem></SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <BadgeCheck className="h-3.5 w-3.5 text-primary" /> Identity & Verification Details
+              </span>
+              {customerForm.type === "individual" ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Qatar ID (QID)"><Input placeholder="28463400000" value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Passport Number"><Input placeholder="A0000000" value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Nationality"><Input placeholder="e.g. Qatari, British" value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Emergency Contact"><Input placeholder="+974 5555 1234" value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <Field label="Employer / Profession"><Input placeholder="Company / Position" value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Commercial Registration (CR)"><Input placeholder="12345/00" value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Authorized Signatory"><Input placeholder="Managing Director / POA" value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Emergency Contact"><Input placeholder="+974 4400 0000" value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Company / Ops Contact"><Input placeholder="Operations Manager" value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <FileSignature className="h-3.5 w-3.5 text-primary" /> Contact & Address Records
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Mobile Number *"><Input placeholder="+974 3300 0000" value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} className="bg-background" /></Field>
+                <Field label="Email Address *"><Input placeholder="tenant@domain.qa" value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} className="bg-background" /></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Permanent Address"><Textarea rows={2} placeholder="Home country / headquarters address..." value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} className="bg-background text-xs" /></Field>
+                <Field label="Local Qatar Address"><Textarea rows={2} placeholder="Building, Street, Zone / PO Box..." value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} className="bg-background text-xs" /></Field>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setCreateCustomerOpen(false)}>Cancel</Button>
+            <Button size="sm" className="shadow-sm" onClick={async () => {
               await withBusy("customer", createCustomer);
               setCreateCustomerOpen(false);
             }}>
               {busyAction === "customer" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
               Save Customer
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── VIEW CUSTOMER DIALOG ──────────────────────────────────── */}
       <Dialog open={viewCustomerOpen} onOpenChange={setViewCustomerOpen}>
-        <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" /> Customer Profile
-            </DialogTitle>
-            <DialogDescription>Full registered details for {viewCustomerData?.name}</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold flex items-center gap-2">{viewCustomerData?.name}</DialogTitle>
+                <DialogDescription className="text-xs">Customer Profile ID &amp; KYC Overview</DialogDescription>
+              </div>
+            </div>
+            {viewCustomerData && <StatusBadge value={viewCustomerData.status} />}
+          </div>
           {viewCustomerData && (
-            <div className="space-y-4 py-3 text-sm">
-              <div className="grid grid-cols-2 gap-3 bg-muted/20 p-3 rounded-lg border">
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-sm">
+              <div className="grid grid-cols-3 gap-3 bg-muted/30 p-3.5 rounded-xl border">
                 <div>
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">Name</div>
-                  <div className="font-bold text-foreground">{viewCustomerData.name}</div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Type</div>
+                  <div className="font-semibold capitalize text-foreground mt-0.5">{viewCustomerData.type}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">Type</div>
-                  <div className="font-medium capitalize">{viewCustomerData.type}</div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Primary ID</div>
+                  <div className="font-mono font-bold text-foreground mt-0.5">{viewCustomerData.qatarId || viewCustomerData.passport || viewCustomerData.crNumber || "—"}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">Primary ID</div>
-                  <div className="font-mono font-medium">{viewCustomerData.qatarId || viewCustomerData.passport || viewCustomerData.crNumber || "—"}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">Status</div>
-                  <div><StatusBadge value={viewCustomerData.status} /></div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Nationality</div>
+                  <div className="font-semibold text-foreground mt-0.5">{viewCustomerData.nationality || "—"}</div>
                 </div>
               </div>
-              <div className="space-y-2 border rounded-lg p-3">
-                <div className="text-xs font-semibold text-muted-foreground uppercase">Contact Information</div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><strong>Mobile:</strong> {viewCustomerData.mobile || "—"}</div>
-                  <div><strong>Email:</strong> {viewCustomerData.email || "—"}</div>
-                  <div><strong>Nationality:</strong> {viewCustomerData.nationality || "—"}</div>
-                  <div><strong>Emergency:</strong> {viewCustomerData.emergencyContact || "—"}</div>
+              
+              <div className="space-y-2.5 border rounded-xl p-4 bg-muted/10">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Verified Contact Information
                 </div>
-                {viewCustomerData.employerInfo && (
-                  <div className="text-xs pt-1"><strong>Employer / Info:</strong> {viewCustomerData.employerInfo}</div>
-                )}
+                <div className="grid grid-cols-2 gap-3 text-xs pt-1">
+                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Mobile</span><strong className="text-foreground">{viewCustomerData.mobile || "—"}</strong></div>
+                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Email</span><strong className="text-foreground truncate block">{viewCustomerData.email || "—"}</strong></div>
+                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Emergency</span><strong className="text-foreground">{viewCustomerData.emergencyContact || "—"}</strong></div>
+                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Employer / Signatory</span><strong className="text-foreground truncate block">{viewCustomerData.employerInfo || viewCustomerData.authorizedSignatory || "—"}</strong></div>
+                </div>
                 {viewCustomerData.permanentAddress && (
-                  <div className="text-xs pt-1"><strong>Permanent Address:</strong> {viewCustomerData.permanentAddress}</div>
+                  <div className="p-2.5 rounded-lg bg-background border text-xs"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Permanent Address</span>{viewCustomerData.permanentAddress}</div>
                 )}
                 {viewCustomerData.localAddress && (
-                  <div className="text-xs pt-1"><strong>Local Address:</strong> {viewCustomerData.localAddress}</div>
+                  <div className="p-2.5 rounded-lg bg-background border text-xs"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Local Address</span>{viewCustomerData.localAddress}</div>
                 )}
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewCustomerOpen(false)}>Close</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewCustomerOpen(false)}>Close</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── EDIT CUSTOMER DIALOG ──────────────────────────────────── */}
       <Dialog open={editCustomerOpen} onOpenChange={setEditCustomerOpen}>
-        <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Customer</DialogTitle>
-            <DialogDescription>Update customer profile details for {editCustomerData?.name}.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-            <Field label="Name"><Input value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} /></Field>
-            <Field label="Type">
-              <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
-              </Select>
-            </Field>
-            {customerForm.type === "individual" ? (
-              <>
-                <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} /></Field>
-                <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} /></Field>
-                <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} /></Field>
-                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-              </>
-            ) : (
-              <>
-                <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} /></Field>
-                <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} /></Field>
-                <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} /></Field>
-                <Field label="Company / Operational Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} /></Field>
-              </>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} /></Field>
-              <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} /></Field>
+        <DialogContent className="sm:max-w-[560px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Users className="h-5 w-5" />
             </div>
-            <Field label="Permanent Address"><Textarea value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} /></Field>
-            <Field label="Local Address"><Textarea value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} /></Field>
+            <div>
+              <DialogTitle className="text-lg font-bold">Edit Customer Profile</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Update profile details for {editCustomerData?.name}.</DialogDescription>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditCustomerOpen(false)}>Cancel</Button>
-            <Button onClick={() => {
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Full Name / Entity Name *"><Input value={customerForm.name} onChange={(event) => setCustomerForm((form) => ({ ...form, name: event.target.value }))} className="bg-background/80" /></Field>
+              <Field label="Type">
+                <Select value={customerForm.type} onValueChange={(type: Customer["type"]) => setCustomerForm((form) => ({ ...form, type }))}>
+                  <SelectTrigger className="bg-background/80"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="individual">Individual</SelectItem><SelectItem value="company">Company</SelectItem></SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <BadgeCheck className="h-3.5 w-3.5 text-primary" /> Identity Credentials
+              </span>
+              {customerForm.type === "individual" ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Company / Ops Contact"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <FileSignature className="h-3.5 w-3.5 text-primary" /> Contact & Address
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Mobile"><Input value={customerForm.mobile} onChange={(event) => setCustomerForm((form) => ({ ...form, mobile: event.target.value }))} className="bg-background" /></Field>
+                <Field label="Email"><Input value={customerForm.email} onChange={(event) => setCustomerForm((form) => ({ ...form, email: event.target.value }))} className="bg-background" /></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Permanent Address"><Textarea rows={2} value={customerForm.permanentAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, permanentAddress: event.target.value }))} className="bg-background text-xs" /></Field>
+                <Field label="Local Address"><Textarea rows={2} value={customerForm.localAddress} onChange={(event) => setCustomerForm((form) => ({ ...form, localAddress: event.target.value }))} className="bg-background text-xs" /></Field>
+              </div>
+            </div>
+          </div>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setEditCustomerOpen(false)}>Cancel</Button>
+            <Button size="sm" className="shadow-sm" onClick={() => {
               if (editCustomerData) {
                 setCustomers(prev => prev.map(c => c.id === editCustomerData.id ? { ...c, ...customerForm } : c));
                 toast.success("Customer profile updated successfully.");
@@ -3222,49 +3309,54 @@ function LeasingPage() {
             }}>
               Save Changes
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={createLeaseOpen} onOpenChange={setCreateLeaseOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSignature className="h-5 w-5 text-primary" /> Create Lease Agreement
-            </DialogTitle>
-            <DialogDescription>
-              {selectedReservationForLease && (
-                <span>Reservation: <strong>{selectedReservationForLease.unit}</strong> · Tenant: <strong>{selectedReservationForLease.tenantName}</strong></span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <FileSignature className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold">Create Lease Agreement</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {selectedReservationForLease ? (
+                  <span>Convert reservation · Unit: <strong className="text-foreground">{selectedReservationForLease.unit}</strong> · Tenant: <strong className="text-foreground">{selectedReservationForLease.tenantName}</strong></span>
+                ) : "Generate lease contract terms and schedule."}
+              </DialogDescription>
+            </div>
+          </div>
 
-          <div className="space-y-5 py-2">
-            {/* Lease Period */}
-            <section>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 border-b pb-1">Lease Period</p>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <CalendarClock className="h-3.5 w-3.5 text-primary" /> Lease Period & Duration
+              </span>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Lease Start Date *">
-                  <Input type="date" value={createLeaseForm.startDate} onChange={e => setCreateLeaseForm(f => ({ ...f, startDate: e.target.value }))} />
+                  <Input type="date" value={createLeaseForm.startDate} onChange={e => setCreateLeaseForm(f => ({ ...f, startDate: e.target.value }))} className="bg-background" />
                 </Field>
                 <Field label="Lease End Date *">
-                  <Input type="date" value={createLeaseForm.endDate} onChange={e => setCreateLeaseForm(f => ({ ...f, endDate: e.target.value }))} />
+                  <Input type="date" value={createLeaseForm.endDate} onChange={e => setCreateLeaseForm(f => ({ ...f, endDate: e.target.value }))} className="bg-background" />
                 </Field>
               </div>
-            </section>
+            </div>
 
-            {/* Financial Terms */}
-            <section>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 border-b pb-1">Financial Terms</p>
-              <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Banknote className="h-3.5 w-3.5 text-primary" /> Financial & PDC Terms
+              </span>
+              <div className="grid grid-cols-3 gap-3">
                 <Field label="Monthly Rent (QR) *">
-                  <Input type="number" value={createLeaseForm.monthlyRent} onChange={e => setCreateLeaseForm(f => ({ ...f, monthlyRent: e.target.value }))} />
+                  <Input type="number" value={createLeaseForm.monthlyRent} onChange={e => setCreateLeaseForm(f => ({ ...f, monthlyRent: e.target.value }))} className="bg-background" />
                 </Field>
                 <Field label="Security Deposit (QR) *">
-                  <Input type="number" value={createLeaseForm.securityDeposit} onChange={e => setCreateLeaseForm(f => ({ ...f, securityDeposit: e.target.value }))} />
+                  <Input type="number" value={createLeaseForm.securityDeposit} onChange={e => setCreateLeaseForm(f => ({ ...f, securityDeposit: e.target.value }))} className="bg-background" />
                 </Field>
                 <Field label="Payment Frequency">
                   <Select value={createLeaseForm.paymentFrequency} onValueChange={v => setCreateLeaseForm(f => ({ ...f, paymentFrequency: v as Lease["paymentFrequency"] }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="monthly">Monthly</SelectItem>
                       <SelectItem value="quarterly">Quarterly</SelectItem>
@@ -3273,28 +3365,28 @@ function LeasingPage() {
                     </SelectContent>
                   </Select>
                 </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
                 <Field label="No. of PDC Cheques">
-                  <Input type="number" min={1} max={36} value={createLeaseForm.pdcCount} onChange={e => setCreateLeaseForm(f => ({ ...f, pdcCount: e.target.value }))} />
+                  <Input type="number" min={1} max={36} value={createLeaseForm.pdcCount} onChange={e => setCreateLeaseForm(f => ({ ...f, pdcCount: e.target.value }))} className="bg-background" />
                 </Field>
                 <Field label="Grace Period (days)">
-                  <Input type="number" value={createLeaseForm.gracePeriodDays} onChange={e => setCreateLeaseForm(f => ({ ...f, gracePeriodDays: e.target.value }))} />
+                  <Input type="number" value={createLeaseForm.gracePeriodDays} onChange={e => setCreateLeaseForm(f => ({ ...f, gracePeriodDays: e.target.value }))} className="bg-background" />
                 </Field>
                 <Field label="Notice Period (days)">
-                  <Input type="number" value={createLeaseForm.noticePeriodDays} onChange={e => setCreateLeaseForm(f => ({ ...f, noticePeriodDays: e.target.value }))} />
+                  <Input type="number" value={createLeaseForm.noticePeriodDays} onChange={e => setCreateLeaseForm(f => ({ ...f, noticePeriodDays: e.target.value }))} className="bg-background" />
                 </Field>
               </div>
-            </section>
+            </div>
 
-            {/* Responsibilities */}
-            <section>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 border-b pb-1">Responsibilities & Clauses</p>
-              <div className="space-y-3">
-                <Field label="Penalties">
-                  <Input value={createLeaseForm.penalties} onChange={e => setCreateLeaseForm(f => ({ ...f, penalties: e.target.value }))} />
-                </Field>
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <ClipboardCheck className="h-3.5 w-3.5 text-primary" /> Responsibilities & Special Clauses
+              </span>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Maintenance Responsibility">
                   <Select value={createLeaseForm.maintenanceResponsibility} onValueChange={v => setCreateLeaseForm(f => ({ ...f, maintenanceResponsibility: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Owner/Property Manager for major repairs; tenant for misuse">Owner/PM – Major; Tenant – Misuse</SelectItem>
                       <SelectItem value="Tenant">Tenant (Full)</SelectItem>
@@ -3305,7 +3397,7 @@ function LeasingPage() {
                 </Field>
                 <Field label="Utility Responsibility">
                   <Select value={createLeaseForm.utilityResponsibility} onValueChange={v => setCreateLeaseForm(f => ({ ...f, utilityResponsibility: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Tenant">Tenant</SelectItem>
                       <SelectItem value="Owner">Owner</SelectItem>
@@ -3313,19 +3405,26 @@ function LeasingPage() {
                     </SelectContent>
                   </Select>
                 </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Parking / Facility Details">
-                  <Input value={createLeaseForm.parkingDetails} onChange={e => setCreateLeaseForm(f => ({ ...f, parkingDetails: e.target.value }))} />
+                  <Input value={createLeaseForm.parkingDetails} onChange={e => setCreateLeaseForm(f => ({ ...f, parkingDetails: e.target.value }))} className="bg-background" placeholder="e.g. 1 bay / remote #44" />
                 </Field>
-                <Field label="Special Conditions">
-                  <Textarea rows={3} value={createLeaseForm.specialConditions} onChange={e => setCreateLeaseForm(f => ({ ...f, specialConditions: e.target.value }))} placeholder="Any special conditions or remarks..." />
+                <Field label="Penalties Description">
+                  <Input value={createLeaseForm.penalties} onChange={e => setCreateLeaseForm(f => ({ ...f, penalties: e.target.value }))} className="bg-background" placeholder="QR 100/day after grace period" />
                 </Field>
               </div>
-            </section>
+              <Field label="Special Contract Conditions">
+                <Textarea rows={2} value={createLeaseForm.specialConditions} onChange={e => setCreateLeaseForm(f => ({ ...f, specialConditions: e.target.value }))} placeholder="Any specific covenants, permissions or rules..." className="bg-background text-xs" />
+              </Field>
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateLeaseOpen(false)}>Cancel</Button>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setCreateLeaseOpen(false)}>Cancel</Button>
             <Button
+              size="sm"
+              className="shadow-sm"
               onClick={() => {
                 if (!createLeaseForm.startDate || !createLeaseForm.endDate || !createLeaseForm.monthlyRent) {
                   alert("Start Date, End Date and Monthly Rent are required.");
@@ -3336,288 +3435,336 @@ function LeasingPage() {
             >
               <FileSignature className="mr-2 h-4 w-4" /> Create Lease
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── UPLOAD DOC DIALOG ─────────────────────────────────────── */}
       <Dialog open={uploadDocOpen} onOpenChange={setUploadDocOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-primary" /> Upload Document</DialogTitle>
-            <DialogDescription>Upload the requested document for verification.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Document File *">
-              <Input type="file" onChange={e => {
-                const name = e.target.files?.[0]?.name || "";
-                setUploadDocForm(f => ({ ...f, file: name, fileName: f.fileName || name }));
-              }} />
-              {uploadDocForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {uploadDocForm.file}</p>}
-            </Field>
-            <Field label="File Name (Optional)">
-              <Input value={uploadDocForm.fileName} onChange={e => setUploadDocForm(f => ({ ...f, fileName: e.target.value }))} placeholder="Custom name for the file" />
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 shadow-sm">
+              <Upload className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Upload Tenant Document</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Upload identification, commercial or contract attachments.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
+              <Upload className="mx-auto h-8 w-8 text-primary/60 mb-2" />
+              <Field label="Select File *">
+                <Input type="file" className="cursor-pointer bg-background" onChange={e => {
+                  const name = e.target.files?.[0]?.name || "";
+                  setUploadDocForm(f => ({ ...f, file: name, fileName: f.fileName || name }));
+                }} />
+              </Field>
+              {uploadDocForm.file && <p className="text-xs text-primary font-medium mt-2">Selected: {uploadDocForm.file}</p>}
+            </div>
+            <Field label="Custom Document Name (Optional)">
+              <Input value={uploadDocForm.fileName} onChange={e => setUploadDocForm(f => ({ ...f, fileName: e.target.value }))} placeholder="e.g. Qatar ID - Front and Back" />
             </Field>
             <Field label="Remarks (Optional)">
-              <Textarea rows={2} value={uploadDocForm.remarks} onChange={e => setUploadDocForm(f => ({ ...f, remarks: e.target.value }))} />
+              <Textarea rows={2} value={uploadDocForm.remarks} onChange={e => setUploadDocForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes for verifier..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadDocOpen(false)}>Cancel</Button>
-            <Button onClick={submitUploadDoc}><ClipboardCheck className="mr-2 h-4 w-4" /> Upload Document</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setUploadDocOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitUploadDoc}><ClipboardCheck className="mr-2 h-4 w-4" /> Upload Document</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── RELEASE RESERVATION DIALOG ────────────────────────────── */}
       <Dialog open={releaseOpen} onOpenChange={setReleaseOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-red-500" /> Release Reservation
-            </DialogTitle>
-            <DialogDescription>
-              {selectedReservationForRelease && (
-                <span>Unit: <strong>{selectedReservationForRelease.unit}</strong> · Tenant: <strong>{selectedReservationForRelease.tenantName}</strong></span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Release Type">
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-red-500/10 via-rose-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 shadow-sm">
+              <XCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Release Unit Reservation</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {selectedReservationForRelease && (
+                  <span>Unit: <strong className="text-foreground">{selectedReservationForRelease.unit}</strong> · Tenant: <strong className="text-foreground">{selectedReservationForRelease.tenantName}</strong></span>
+                )}
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <Field label="Release Reason Type">
               <Select value={releaseType} onValueChange={v => setReleaseType(v as typeof releaseType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="released">Released (Manual / Tenant withdrew)</SelectItem>
-                  <SelectItem value="expired">Expired (Validity period lapsed)</SelectItem>
+                  <SelectItem value="released">Manual Release / Tenant Withdrew</SelectItem>
+                  <SelectItem value="expired">Expired Hold (Validity Lapsed)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Reason / Remarks">
+            <Field label="Reason & Audit Remarks">
               <Textarea
                 rows={3}
                 value={releaseReason}
                 onChange={e => setReleaseReason(e.target.value)}
-                placeholder="State the reason for releasing this reservation..."
+                placeholder="State why this reservation is being cancelled or released..."
+                className="text-xs"
               />
             </Field>
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              ⚠ Releasing this reservation will change the unit status back to <strong>Available</strong> and the reservation will be marked as <strong>{releaseType}</strong>.
+            <div className="rounded-xl border border-amber-300 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>Releasing unlocks this unit immediately back to <strong>Available</strong> status for new lease bookings.</span>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReleaseOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmRelease}>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setReleaseOpen(false)}>Cancel</Button>
+            <Button size="sm" variant="destructive" onClick={confirmRelease}>
               <XCircle className="mr-2 h-4 w-4" /> Confirm Release
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── GENERATE RENEWAL NOTICE DIALOG ────────────────────────── */}
       <Dialog open={renewalNoticeOpen} onOpenChange={setRenewalNoticeOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CalendarClock className="h-5 w-5 text-primary" /> Generate Renewal Notices
-            </DialogTitle>
-            <DialogDescription>
-              Notices will be generated for all leases expiring within 60 days that don't already have an active renewal case.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-              <strong>{upcomingRenewals.length}</strong> lease(s) expiring within 60 days detected.
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Generate Lease Renewal Notices</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">Automated notice dispatch for contracts expiring within 60 days.</DialogDescription>
+              </div>
             </div>
-
-            <Field label="Select Lease / Unit to Renew">
+            <span className="text-xs font-semibold px-2.5 py-1 bg-primary/10 text-primary rounded-full border border-primary/20">
+              {upcomingRenewals.length} Expiring
+            </span>
+          </div>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <Field label="Select Target Lease / Unit">
               <Select value={renewalNoticeForm.selectedLeaseId} onValueChange={v => setRenewalNoticeForm(f => ({ ...f, selectedLeaseId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select a lease..." /></SelectTrigger>
+                <SelectTrigger className="bg-background"><SelectValue placeholder="Select a lease..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Leases (Batch Generate)</SelectItem>
+                  <SelectItem value="all">⚡ All Eligible Leases (Batch Process)</SelectItem>
                   {upcomingRenewals.map(l => (
                     <SelectItem key={l.id} value={l.id}>
-                      {l.tenantName} - {l.unit}
+                      {l.tenantName} — {l.unit} ({l.property})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
-            <Separator />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Rent Increase %">
-                <Input type="number" min={0} max={30} value={renewalNoticeForm.rentIncreasePercent} onChange={e => setRenewalNoticeForm(f => ({ ...f, rentIncreasePercent: e.target.value }))} />
-              </Field>
-              <Field label="Last Confirmation (days before expiry)">
-                <Input type="number" min={7} max={90} value={renewalNoticeForm.lastConfirmationDays} onChange={e => setRenewalNoticeForm(f => ({ ...f, lastConfirmationDays: e.target.value }))} />
+            
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Percent className="h-3.5 w-3.5 text-primary" /> Renewal Parameters
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Proposed Rent Increase %">
+                  <Input type="number" min={0} max={30} value={renewalNoticeForm.rentIncreasePercent} onChange={e => setRenewalNoticeForm(f => ({ ...f, rentIncreasePercent: e.target.value }))} className="bg-background" />
+                </Field>
+                <Field label="Cutoff (days before expiry)">
+                  <Input type="number" min={7} max={90} value={renewalNoticeForm.lastConfirmationDays} onChange={e => setRenewalNoticeForm(f => ({ ...f, lastConfirmationDays: e.target.value }))} className="bg-background" />
+                </Field>
+              </div>
+              <Field label="Revised Contract Terms">
+                <Input value={renewalNoticeForm.revisedTerms} onChange={e => setRenewalNoticeForm(f => ({ ...f, revisedTerms: e.target.value }))} className="bg-background" placeholder="Standard 12-month extension with current terms" />
               </Field>
             </div>
-            <Field label="Revised Terms Description">
-              <Input value={renewalNoticeForm.revisedTerms} onChange={e => setRenewalNoticeForm(f => ({ ...f, revisedTerms: e.target.value }))} />
+
+            <Field label="Additional Notification Recipients">
+              <Input value={renewalNoticeForm.additionalRecipients} onChange={e => setRenewalNoticeForm(f => ({ ...f, additionalRecipients: e.target.value }))} placeholder="legal@domain.qa, accounts@domain.qa" />
             </Field>
-            <Field label="Additional Recipients (comma-separated)">
-              <Input value={renewalNoticeForm.additionalRecipients} onChange={e => setRenewalNoticeForm(f => ({ ...f, additionalRecipients: e.target.value }))} placeholder="e.g. Legal Dept, Owner Rep" />
-            </Field>
-            <Field label="Internal Notes">
-              <Textarea rows={2} value={renewalNoticeForm.notes} onChange={e => setRenewalNoticeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional internal notes for this batch..." />
+            <Field label="Internal Workflow Notes">
+              <Textarea rows={2} value={renewalNoticeForm.notes} onChange={e => setRenewalNoticeForm(f => ({ ...f, notes: e.target.value }))} placeholder="Internal follow-up instructions..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenewalNoticeOpen(false)}>Cancel</Button>
-            <Button onClick={() => generateRenewalNotices(renewalNoticeForm)}>
-              <CalendarClock className="mr-2 h-4 w-4" /> Generate Notices
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setRenewalNoticeOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => generateRenewalNotices(renewalNoticeForm)}>
+              <CalendarClock className="mr-2 h-4 w-4" /> Send Renewal Notices
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── DOCUMENT VERIFICATION DIALOG ───────────────────────────── */}
       <Dialog open={verifyDocOpen} onOpenChange={setVerifyDocOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileCheck2 className="h-5 w-5 text-primary" /> Document Verification
-            </DialogTitle>
-            <DialogDescription>Review and verify the uploaded tenant document.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Action">
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <FileCheck2 className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Document Verification</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Compliance review and verification status assignment.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <Field label="Verification Decision">
               <Select value={verifyDocForm.status} onValueChange={v => setVerifyDocForm(f => ({ ...f, status: v as VerificationStatus }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="verified">Verified & Accepted</SelectItem>
-                  <SelectItem value="info_required">Need More Info</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="verified">✅ Verified & Approved</SelectItem>
+                  <SelectItem value="info_required">⚠️ Clarification / Re-upload Required</SelectItem>
+                  <SelectItem value="rejected">❌ Rejected (Invalid / Mismatched)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             {verifyDocForm.status === "verified" && (
-              <Field label="Expiry Date (if applicable)">
+              <Field label="Document Expiry Date (if applicable)">
                 <Input type="date" value={verifyDocForm.expiryDate} onChange={e => setVerifyDocForm(f => ({ ...f, expiryDate: e.target.value }))} />
               </Field>
             )}
-            <Field label="Remarks / Reason">
+            <Field label="Reviewer Notes / Justification">
               <Textarea
                 rows={3}
                 value={verifyDocForm.remarks}
                 onChange={e => setVerifyDocForm(f => ({ ...f, remarks: e.target.value }))}
-                placeholder={verifyDocForm.status === "verified" ? "Looks good." : "Specify what needs to be corrected..."}
+                placeholder={verifyDocForm.status === "verified" ? "All details verified and match official record." : "Specify exactly what needs correction..."}
+                className="text-xs"
               />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setVerifyDocOpen(false)}>Cancel</Button>
-            <Button onClick={submitDocumentVerification}>Submit Review</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setVerifyDocOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitDocumentVerification}>Submit Review</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── AGREEMENT TERMS DIALOG ───────────────────────────── */}
       <Dialog open={editTermsOpen} onOpenChange={setEditTermsOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSignature className="h-5 w-5 text-primary" /> Edit Agreement Terms
-            </DialogTitle>
-            <DialogDescription>Update payment frequencies, responsibilities, and special clauses.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-2">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Payment Frequency">
-                <Select value={agreementTermsForm.paymentFrequency} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, paymentFrequency: v as any }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="half_yearly">Half Yearly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="No. of PDCs">
-                <Input type="number" value={agreementTermsForm.pdcCount} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, pdcCount: Number(e.target.value) }))} />
-              </Field>
-              <Field label="Grace Period (Days)">
-                <Input type="number" value={agreementTermsForm.gracePeriodDays} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, gracePeriodDays: Number(e.target.value) }))} />
-              </Field>
-              <Field label="Notice Period (Days)">
-                <Input type="number" value={agreementTermsForm.noticePeriodDays} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, noticePeriodDays: Number(e.target.value) }))} />
-              </Field>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <FileSignature className="h-5 w-5" />
             </div>
-
-            <Field label="Penalties">
-              <Textarea rows={2} value={agreementTermsForm.penalties} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, penalties: e.target.value }))} placeholder="Late payment penalty after grace period..." />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Maintenance Responsibility">
-                <Select value={agreementTermsForm.maintenanceResponsibility} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, maintenanceResponsibility: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select responsibility" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Property Manager for major repairs, tenant for misuse damages">Property Manager / Shared</SelectItem>
-                    <SelectItem value="Owner">Owner</SelectItem>
-                    <SelectItem value="Tenant">Tenant</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Utility Responsibility">
-                <Select value={agreementTermsForm.utilityResponsibility} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, utilityResponsibility: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select responsibility" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Tenant">Tenant</SelectItem>
-                    <SelectItem value="Owner">Owner</SelectItem>
-                    <SelectItem value="Shared">Shared</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
+            <div>
+              <DialogTitle className="text-base font-bold">Edit Agreement Terms</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Adjust payment schedules, penalties, and governance rules.</DialogDescription>
             </div>
-
-            <Field label="Parking Details">
-              <Input value={agreementTermsForm.parkingDetails} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, parkingDetails: e.target.value }))} placeholder="e.g. 1 covered parking, remote..." />
-            </Field>
-            <Field label="Special Conditions / Clauses">
-              <Textarea rows={2} value={agreementTermsForm.specialConditions} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, specialConditions: e.target.value }))} placeholder="Any other specific clauses..." />
-            </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTermsOpen(false)}>Cancel</Button>
-            <Button onClick={submitAgreementTerms}>Save Terms</Button>
-          </DialogFooter>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <CreditCard className="h-3.5 w-3.5 text-primary" /> Payment Frequency & PDCs
+              </span>
+              <div className="grid grid-cols-4 gap-3">
+                <Field label="Frequency">
+                  <Select value={agreementTermsForm.paymentFrequency} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, paymentFrequency: v as any }))}>
+                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="half_yearly">Half Yearly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="No. of PDCs">
+                  <Input type="number" value={agreementTermsForm.pdcCount} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, pdcCount: Number(e.target.value) }))} className="bg-background" />
+                </Field>
+                <Field label="Grace (Days)">
+                  <Input type="number" value={agreementTermsForm.gracePeriodDays} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, gracePeriodDays: Number(e.target.value) }))} className="bg-background" />
+                </Field>
+                <Field label="Notice (Days)">
+                  <Input type="number" value={agreementTermsForm.noticePeriodDays} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, noticePeriodDays: Number(e.target.value) }))} className="bg-background" />
+                </Field>
+              </div>
+              <Field label="Penalties Rule">
+                <Textarea rows={2} value={agreementTermsForm.penalties} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, penalties: e.target.value }))} placeholder="Late payment penalty after grace period..." className="bg-background text-xs" />
+              </Field>
+            </div>
+
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Maintenance, Utilities & Facilities
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Maintenance Responsibility">
+                  <Select value={agreementTermsForm.maintenanceResponsibility} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, maintenanceResponsibility: v }))}>
+                    <SelectTrigger className="bg-background"><SelectValue placeholder="Select responsibility" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Property Manager for major repairs, tenant for misuse damages">PM for Major / Tenant for Misuse</SelectItem>
+                      <SelectItem value="Owner">Owner (Full)</SelectItem>
+                      <SelectItem value="Tenant">Tenant (Full)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Utility Responsibility">
+                  <Select value={agreementTermsForm.utilityResponsibility} onValueChange={(v) => setAgreementTermsForm((f) => ({ ...f, utilityResponsibility: v }))}>
+                    <SelectTrigger className="bg-background"><SelectValue placeholder="Select responsibility" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Tenant">Tenant</SelectItem>
+                      <SelectItem value="Owner">Owner</SelectItem>
+                      <SelectItem value="Shared">Shared</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <Field label="Parking & Facilities">
+                <Input value={agreementTermsForm.parkingDetails} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, parkingDetails: e.target.value }))} placeholder="e.g. 1 covered bay, gate remote #12" className="bg-background" />
+              </Field>
+              <Field label="Special Clauses & Covenants">
+                <Textarea rows={2} value={agreementTermsForm.specialConditions} onChange={(e) => setAgreementTermsForm((f) => ({ ...f, specialConditions: e.target.value }))} placeholder="Any specific covenants or permissions..." className="bg-background text-xs" />
+              </Field>
+            </div>
+          </div>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setEditTermsOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitAgreementTerms}>Save Agreement Terms</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── TENANT SIGN DIALOG ───────────────────────────────── */}
       <Dialog open={tenantSignOpen} onOpenChange={setTenantSignOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><FileSignature className="h-5 w-5 text-primary" /> Tenant Signature</DialogTitle>
-            <DialogDescription>Record tenant signature details for {signatureWorkflowLease?.tenantName} / {signatureWorkflowLease?.unit}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Date of Signing">
-              <Input type="date" value={tenantSignForm.signedAt} onChange={e => setTenantSignForm(f => ({ ...f, signedAt: e.target.value }))} />
-            </Field>
-            <Field label="Upload Signed Document">
-              <Input type="file" onChange={e => setTenantSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
-              {tenantSignForm.signedDocument && <p className="text-xs text-muted-foreground mt-1">Selected: {tenantSignForm.signedDocument}</p>}
-            </Field>
-            <Field label="Received By">
-              <Select value={tenantSignForm.receivedBy} onValueChange={v => setTenantSignForm(f => ({ ...f, receivedBy: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Leasing Department">Leasing Department</SelectItem>
-                  <SelectItem value="Property Manager">Property Manager</SelectItem>
-                  <SelectItem value="Admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Remarks">
-              <Textarea rows={2} value={tenantSignForm.remarks} onChange={e => setTenantSignForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional remarks..." />
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <FileSignature className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Tenant Lease Signature</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Record tenant agreement signing for {signatureWorkflowLease?.tenantName} ({signatureWorkflowLease?.unit}).
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date of Signing">
+                <Input type="date" value={tenantSignForm.signedAt} onChange={e => setTenantSignForm(f => ({ ...f, signedAt: e.target.value }))} />
+              </Field>
+              <Field label="Received By">
+                <Select value={tenantSignForm.receivedBy} onValueChange={v => setTenantSignForm(f => ({ ...f, receivedBy: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Leasing Department">Leasing Dept</SelectItem>
+                    <SelectItem value="Property Manager">Property Manager</SelectItem>
+                    <SelectItem value="Admin">Admin Officer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
+              <Upload className="mx-auto h-7 w-7 text-primary/60 mb-2" />
+              <Field label="Upload Signed Document">
+                <Input type="file" className="cursor-pointer bg-background" onChange={e => setTenantSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
+              </Field>
+              {tenantSignForm.signedDocument && <p className="text-xs text-primary font-medium mt-1">Selected: {tenantSignForm.signedDocument}</p>}
+            </div>
+            <Field label="Signing Remarks">
+              <Textarea rows={2} value={tenantSignForm.remarks} onChange={e => setTenantSignForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes regarding signing..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTenantSignOpen(false)}>Cancel</Button>
-            <Button onClick={submitTenantSign}><FileSignature className="mr-2 h-4 w-4" /> Confirm Tenant Sign</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setTenantSignOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitTenantSign}><FileSignature className="mr-2 h-4 w-4" /> Confirm Tenant Sign</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3675,43 +3822,75 @@ function LeasingPage() {
               const regAmount = Number(collectForm.regularChequeAmount) || signatureWorkflowLease.monthlyRent;
               const finalAmount = count > 1 ? totalContractRent - regAmount * (count - 1) : totalContractRent;
 
-              const regenerateCheques = (newCount = count, newRegAmt = regAmount, newFirstDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate, newInterval = collectForm.chequeIntervalDays) => {
-                const firstDateObj = new Date(newFirstDate);
-                const intervalNum = Number(newInterval) || 30;
+              // Helper: increment month from a base date string keeping day-of-month
+              function addMonthOffset(baseDateStr: string, monthOffset: number): string {
+                const d = new Date(baseDateStr);
+                const day = d.getDate();
+                const targetMonthRaw = d.getMonth() + monthOffset;
+                const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
+                const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                const finalDay = Math.min(day, lastDay);
+                return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
+              }
+
+              const regenerateCheques = (newCount = count, newRegAmt = regAmount, newFirstDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate) => {
+                const leaseStartStr = signatureWorkflowLease.startDate || collectForm.startDate || newFirstDate;
                 const generated = Array.from({ length: newCount }, (_, i) => {
                   let amount = newRegAmt;
                   if (i === newCount - 1 && newCount > 1) {
                     amount = Math.max(0, totalContractRent - newRegAmt * (newCount - 1));
                   }
-                  const startDt = addDays(firstDateObj, i * intervalNum);
-                  const endDt = addDays(new Date(startDt), intervalNum - 1);
+                  // Tenure: anchored to lease.startDate, incrementing month by month
+                  const tsDate = new Date(leaseStartStr);
+                  tsDate.setMonth(tsDate.getMonth() + i);
+                  const tenureStartStr = tsDate.toISOString().split("T")[0];
+                  const teDate = new Date(leaseStartStr);
+                  teDate.setMonth(teDate.getMonth() + i + 1);
+                  teDate.setDate(teDate.getDate() - 1);
+                  const tenureEndStr = teDate.toISOString().split("T")[0];
+                  // Maturity: keep day from firstChequeDate, increment month only
+                  const maturityStr = addMonthOffset(newFirstDate, i);
                   return {
                     chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
                     bank: collectForm.chequeBank || "QNB",
-                    date: startDt,
+                    date: maturityStr,
                     amount,
                     period: `Cheque ${i + 1} of ${newCount}`,
-                    tenureStart: startDt,
-                    tenureEnd: endDt,
+                    tenureStart: tenureStartStr,
+                    tenureEnd: tenureEndStr,
                     file: "",
                   };
                 });
                 setCollectForm((f) => ({ ...f, pdcCount: newCount, customCheques: generated }));
               };
 
-              // Ensure we display up to 12 rows or customCheques length
+              // Ensure we display up to count rows or customCheques length
               const displayedRows = collectForm.customCheques && collectForm.customCheques.length > 0
                 ? collectForm.customCheques
-                : Array.from({ length: 12 }, (_, i) => ({
-                    chequeNo: `PDC-${i + 1}`,
-                    bank: collectForm.chequeBank || "QNB",
-                    date: addDays(new Date(collectForm.firstChequeDate || today), i * 30),
-                    amount: regAmount,
-                    period: `Cheque ${i + 1}`,
-                    tenureStart: addDays(new Date(collectForm.firstChequeDate || today), i * 30),
-                    tenureEnd: addDays(new Date(collectForm.firstChequeDate || today), i * 30 + 29),
-                    file: "",
-                  }));
+                : Array.from({ length: count }, (_, i) => {
+                    const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
+                    const bd = new Date(baseDate);
+                    const day = bd.getDate();
+                    const targetMonthRaw = bd.getMonth() + i;
+                    const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
+                    const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                    const maturityStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+                    const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
+                    const tsDate = new Date(leaseStart); tsDate.setMonth(tsDate.getMonth() + i);
+                    const teDate = new Date(leaseStart); teDate.setMonth(teDate.getMonth() + i + 1); teDate.setDate(teDate.getDate() - 1);
+                    return {
+                      chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                      bank: collectForm.chequeBank || "QNB",
+                      date: maturityStr,
+                      amount: regAmount,
+                      period: `Cheque ${i + 1}`,
+                      tenureStart: tsDate.toISOString().split("T")[0],
+                      tenureEnd: teDate.toISOString().split("T")[0],
+                      file: "",
+                    };
+                  });
 
               return (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-3">
@@ -3725,26 +3904,19 @@ function LeasingPage() {
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="First Maturity Date">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="First PDC Maturity Date">
                       <Input type="date" value={collectForm.firstChequeDate} onChange={(e) => {
                         const val = e.target.value;
                         setCollectForm((f) => ({ ...f, firstChequeDate: val }));
-                        regenerateCheques(count, regAmount, val, collectForm.chequeIntervalDays);
-                      }} />
-                    </Field>
-                    <Field label="Interval (Days)">
-                      <Input type="number" min={1} value={collectForm.chequeIntervalDays} onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setCollectForm((f) => ({ ...f, chequeIntervalDays: val }));
-                        regenerateCheques(count, regAmount, collectForm.firstChequeDate, val);
+                        regenerateCheques(count, regAmount, val);
                       }} />
                     </Field>
                     <Field label="Regular Cheque Amount (QR)">
                       <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => {
                         const val = Number(e.target.value) || 0;
                         setCollectForm((f) => ({ ...f, regularChequeAmount: String(val) }));
-                        regenerateCheques(count, val, collectForm.firstChequeDate, collectForm.chequeIntervalDays);
+                        regenerateCheques(count, val, collectForm.firstChequeDate);
                       }} placeholder={`${signatureWorkflowLease.monthlyRent}`} />
                     </Field>
                   </div>
@@ -3762,22 +3934,38 @@ function LeasingPage() {
                       <span className="font-semibold text-muted-foreground">Cheque Schedule Lines ({displayedRows.length})</span>
                       <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => {
                         const existing = collectForm.customCheques && collectForm.customCheques.length > 0 ? collectForm.customCheques : displayedRows;
-                        const lastCheque = existing[existing.length - 1];
-                        const nextDate = lastCheque ? addDays(new Date(lastCheque.date), Number(collectForm.chequeIntervalDays) || 30) : today.toISOString().split("T")[0];
                         const nextIdx = existing.length + 1;
+                        // Maturity: month-increment from firstChequeDate
+                        const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
+                        const bd = new Date(baseDate);
+                        const day = bd.getDate();
+                        const targetMonthRaw = bd.getMonth() + existing.length;
+                        const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
+                        const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                        const nextMaturity = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+                        // Tenure: lease-start anchored
+                        const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
+                        const tsDate = new Date(leaseStart);
+                        tsDate.setMonth(tsDate.getMonth() + existing.length);
+                        const tenureStartStr = tsDate.toISOString().split("T")[0];
+                        const teDate = new Date(leaseStart);
+                        teDate.setMonth(teDate.getMonth() + existing.length + 1);
+                        teDate.setDate(teDate.getDate() - 1);
+                        const tenureEndStr = teDate.toISOString().split("T")[0];
                         setCollectForm(f => ({
                           ...f,
                           pdcCount: nextIdx,
                           customCheques: [
                             ...existing,
                             {
-                              chequeNo: `PDC-${nextIdx}`,
+                              chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(nextIdx).padStart(3, "0")}`,
                               bank: collectForm.chequeBank || "Bank",
-                              date: nextDate,
+                              date: nextMaturity,
                               amount: regAmount,
                               period: `Cheque ${nextIdx}`,
-                              tenureStart: nextDate,
-                              tenureEnd: addDays(new Date(nextDate), 29),
+                              tenureStart: tenureStartStr,
+                              tenureEnd: tenureEndStr,
                               file: "",
                             }
                           ]
@@ -4089,124 +4277,160 @@ function LeasingPage() {
 
       {/* ── SUBMIT TO LANDLORD DIALOG ───────────────────────── */}
       <Dialog open={submitLandlordOpen} onOpenChange={setSubmitLandlordOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-primary" /> Submit Package to Landlord</DialogTitle>
-            <DialogDescription>Send collected lease documents and PDCs to landlord for signature.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Submitted To (Landlord / Owner Rep)">
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <ClipboardCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Submit Package to Landlord</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Send lease contract bundle and collected PDCs for owner counter-signature.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <Field label="Submitted To (Landlord / Owner Representative)">
               <Input value={submitLandlordForm.submittedTo} onChange={e => setSubmitLandlordForm(f => ({ ...f, submittedTo: e.target.value }))} placeholder="e.g. Sheikh Hassan Al-Thani" />
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Submission Date">
                 <Input type="date" value={submitLandlordForm.submittedAt} onChange={e => setSubmitLandlordForm(f => ({ ...f, submittedAt: e.target.value }))} />
               </Field>
-              <Field label="Delivery Method">
+              <Field label="Delivery Channel">
                 <Select value={submitLandlordForm.docsSent} onValueChange={v => setSubmitLandlordForm(f => ({ ...f, docsSent: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Email">Email</SelectItem>
-                    <SelectItem value="Physical">Physical Copy</SelectItem>
-                    <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                    <SelectItem value="Courier">Courier</SelectItem>
+                    <SelectItem value="Email">📧 Email Dispatch</SelectItem>
+                    <SelectItem value="Physical">📁 Physical Courier / Hand Delivery</SelectItem>
+                    <SelectItem value="WhatsApp">💬 WhatsApp Verified</SelectItem>
+                    <SelectItem value="Courier">🚚 Registered Courier</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
             </div>
-            <Field label="Upload Proof of Submission (Optional)">
-              <Input type="file" onChange={e => setSubmitLandlordForm(f => ({ ...f, proofFile: e.target.files?.[0]?.name || "" }))} />
-              {submitLandlordForm.proofFile && <p className="text-xs text-muted-foreground mt-1">Selected: {submitLandlordForm.proofFile}</p>}
-            </Field>
-            <Field label="Notes">
-              <Textarea rows={2} value={submitLandlordForm.notes} onChange={e => setSubmitLandlordForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." />
+            <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
+              <Upload className="mx-auto h-7 w-7 text-primary/60 mb-2" />
+              <Field label="Upload Submission Proof (Optional)">
+                <Input type="file" className="cursor-pointer bg-background" onChange={e => setSubmitLandlordForm(f => ({ ...f, proofFile: e.target.files?.[0]?.name || "" }))} />
+              </Field>
+              {submitLandlordForm.proofFile && <p className="text-xs text-primary font-medium mt-1">Selected: {submitLandlordForm.proofFile}</p>}
+            </div>
+            <Field label="Submission Notes">
+              <Textarea rows={2} value={submitLandlordForm.notes} onChange={e => setSubmitLandlordForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional delivery tracking or submission notes..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSubmitLandlordOpen(false)}>Cancel</Button>
-            <Button onClick={submitToLandlord}><ClipboardCheck className="mr-2 h-4 w-4" /> Confirm Submission</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setSubmitLandlordOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitToLandlord}><ClipboardCheck className="mr-2 h-4 w-4" /> Confirm Submission</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── UPLOAD AGREEMENT DIALOG ───────────────────────────── */}
       <Dialog open={uploadAgreementOpen} onOpenChange={setUploadAgreementOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Upload className="h-5 w-5 text-primary" /> Upload Agreement</DialogTitle>
-            <DialogDescription>Upload the signed lease agreement document and mark the lease as fully signed.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Upload Agreement File">
-              <Input type="file" onChange={e => setUploadAgreementForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
-              {uploadAgreementForm.file && <p className="text-xs text-muted-foreground mt-1">Selected: {uploadAgreementForm.file}</p>}
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Upload className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Upload Signed Agreement</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Upload executed lease agreement document to finalize and mark fully signed.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
+              <Upload className="mx-auto h-7 w-7 text-primary/60 mb-2" />
+              <Field label="Upload Agreement PDF / Document *">
+                <Input type="file" className="cursor-pointer bg-background" onChange={e => setUploadAgreementForm(f => ({ ...f, file: e.target.files?.[0]?.name || "" }))} />
+              </Field>
+              {uploadAgreementForm.file && <p className="text-xs text-primary font-medium mt-1">Selected: {uploadAgreementForm.file}</p>}
+            </div>
+            <Field label="Saved Document Name (Optional)">
+              <Input value={uploadAgreementForm.fileName} onChange={e => setUploadAgreementForm(f => ({ ...f, fileName: e.target.value }))} placeholder="e.g. Fully_Signed_Lease_Agreement_2026.pdf" />
             </Field>
-            <Field label="Saved File Name (Optional)">
-              <Input value={uploadAgreementForm.fileName} onChange={e => setUploadAgreementForm(f => ({ ...f, fileName: e.target.value }))} placeholder="Custom name for uploaded agreement" />
-            </Field>
-            <Field label="Remarks">
-              <Textarea rows={2} value={uploadAgreementForm.remarks} onChange={e => setUploadAgreementForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes..." />
+            <Field label="Remarks & Audit Log">
+              <Textarea rows={2} value={uploadAgreementForm.remarks} onChange={e => setUploadAgreementForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes regarding final signed copy..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadAgreementOpen(false)}>Cancel</Button>
-            <Button onClick={submitUploadAgreement}><Upload className="mr-2 h-4 w-4" /> Confirm Upload</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setUploadAgreementOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitUploadAgreement}><Upload className="mr-2 h-4 w-4" /> Confirm Upload</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── LANDLORD SIGN DIALOG ───────────────────────────── */}
       <Dialog open={landlordSignOpen} onOpenChange={setLandlordSignOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><BadgeCheck className="h-5 w-5 text-primary" /> Landlord Signature</DialogTitle>
-            <DialogDescription>Record landlord / owner signature for {signatureWorkflowLease?.tenantName} — {signatureWorkflowLease?.unit}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Date of Signing">
-              <Input type="date" value={landlordSignForm.signedAt} onChange={e => setLandlordSignForm(f => ({ ...f, signedAt: e.target.value }))} />
-            </Field>
-            <Field label="Signed By">
-              <Input value={landlordSignForm.signedBy} onChange={e => setLandlordSignForm(f => ({ ...f, signedBy: e.target.value }))} placeholder="e.g. Sheikh Hassan Al-Thani" />
-            </Field>
-            <Field label="Upload Signed Document">
-              <Input type="file" onChange={e => setLandlordSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
-              {landlordSignForm.signedDocument && <p className="text-xs text-muted-foreground mt-1">Selected: {landlordSignForm.signedDocument}</p>}
-            </Field>
-            <div className="flex items-center gap-3 rounded-md border p-3">
-              <input type="checkbox" id="shared" checked={landlordSignForm.sharedWithTenant} onChange={e => setLandlordSignForm(f => ({ ...f, sharedWithTenant: e.target.checked }))} className="h-4 w-4" />
-              <Label htmlFor="shared">Share signed copy with tenant</Label>
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <BadgeCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Landlord / Owner Signature</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Record landlord signature for {signatureWorkflowLease?.tenantName} — {signatureWorkflowLease?.unit}.
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Date of Signing">
+                <Input type="date" value={landlordSignForm.signedAt} onChange={e => setLandlordSignForm(f => ({ ...f, signedAt: e.target.value }))} />
+              </Field>
+              <Field label="Signed By">
+                <Input value={landlordSignForm.signedBy} onChange={e => setLandlordSignForm(f => ({ ...f, signedBy: e.target.value }))} placeholder="Sheikh Hassan Al-Thani" />
+              </Field>
+            </div>
+            <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
+              <Upload className="mx-auto h-7 w-7 text-primary/60 mb-2" />
+              <Field label="Upload Counter-Signed Document">
+                <Input type="file" className="cursor-pointer bg-background" onChange={e => setLandlordSignForm(f => ({ ...f, signedDocument: e.target.files?.[0]?.name || "" }))} />
+              </Field>
+              {landlordSignForm.signedDocument && <p className="text-xs text-primary font-medium mt-1">Selected: {landlordSignForm.signedDocument}</p>}
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3">
+              <input type="checkbox" id="shared" checked={landlordSignForm.sharedWithTenant} onChange={e => setLandlordSignForm(f => ({ ...f, sharedWithTenant: e.target.checked }))} className="h-4 w-4 rounded accent-primary" />
+              <Label htmlFor="shared" className="text-xs font-semibold cursor-pointer">Automatically share executed copy with tenant</Label>
             </div>
             <Field label="Remarks">
-              <Textarea rows={2} value={landlordSignForm.remarks} onChange={e => setLandlordSignForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional remarks..." />
+              <Textarea rows={2} value={landlordSignForm.remarks} onChange={e => setLandlordSignForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional remarks..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLandlordSignOpen(false)}>Cancel</Button>
-            <Button onClick={submitLandlordSign}><BadgeCheck className="mr-2 h-4 w-4" /> Confirm Landlord Sign</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setLandlordSignOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submitLandlordSign}><BadgeCheck className="mr-2 h-4 w-4" /> Confirm Landlord Sign</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
-
       {/* ── KEY NOTIFY DIALOG ─────────────────────────────────── */}
       <Dialog open={keyNotifyOpen} onOpenChange={setKeyNotifyOpen}>
-        <DialogContent className="sm:max-w-[500px] w-[95vw] max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Bell className="h-5 w-5 text-primary" /> Key Issue Notification</DialogTitle>
-            <DialogDescription>Send handover notification to tenant and all responsible parties for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Planned Handover Date">
-              <Input type="date" value={keyNotifyForm.handoverAt} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverAt: e.target.value }))} />
-            </Field>
-            <Field label="Planned Handover Time">
-              <Input type="time" value={keyNotifyForm.handoverTime} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverTime: e.target.value }))} />
-            </Field>
-            <Field label="Recipients">
+        <DialogContent className="sm:max-w-[520px] w-[95vw] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Key Issue & Handover Notification</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Dispatch official handover schedule notice for {keysWorkflowLease?.tenantName} — {keysWorkflowLease?.unit}.
+              </DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Planned Handover Date">
+                <Input type="date" value={keyNotifyForm.handoverAt} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverAt: e.target.value }))} className="bg-background" />
+              </Field>
+              <Field label="Planned Handover Time">
+                <Input type="time" value={keyNotifyForm.handoverTime} onChange={e => setKeyNotifyForm(f => ({ ...f, handoverTime: e.target.value }))} className="bg-background" />
+              </Field>
+            </div>
+            <Field label="Stakeholder Recipients">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-full justify-start text-left font-normal h-auto min-h-10 py-2 whitespace-normal break-words">
+                  <Button variant="outline" className="w-full justify-start text-left font-normal h-auto min-h-10 py-2 whitespace-normal break-words bg-background">
                     {keyNotifyForm.recipients.length > 0 ? keyNotifyForm.recipients.join(", ") : "Select recipients..."}
                   </Button>
                 </DropdownMenuTrigger>
@@ -4230,65 +4454,85 @@ function LeasingPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </Field>
-            <Field label="Authorized Person Collecting Keys">
-              <Input value={keyNotifyForm.authorizedCollector} onChange={e => setKeyNotifyForm(f => ({ ...f, authorizedCollector: e.target.value }))} placeholder="Tenant or approved representative" />
-            </Field>
-            <Field label="Keys / Access Items Summary">
-              <Input value={keyNotifyForm.keysSummary} onChange={e => setKeyNotifyForm(f => ({ ...f, keysSummary: e.target.value }))} placeholder="2 keys, 2 cards, 1 parking remote" />
-            </Field>
-            <Field label="Outstanding Requirements">
-              <Input value={keyNotifyForm.outstandingRequirements} onChange={e => setKeyNotifyForm(f => ({ ...f, outstandingRequirements: e.target.value }))} placeholder="None" />
-            </Field>
-            <Field label="Property Manager / Staff Contact">
-              <Input value={keyNotifyForm.staffContact} onChange={e => setKeyNotifyForm(f => ({ ...f, staffContact: e.target.value }))} placeholder="Name and contact details" />
-            </Field>
-            <Field label="Special Instructions / Note">
-              <Textarea rows={2} value={keyNotifyForm.note} onChange={e => setKeyNotifyForm(f => ({ ...f, note: e.target.value }))} placeholder="Any special access or coordination instructions..." />
+
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Key className="h-3.5 w-3.5 text-primary" /> Key Handover Particulars
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Authorized Collector">
+                  <Input value={keyNotifyForm.authorizedCollector} onChange={e => setKeyNotifyForm(f => ({ ...f, authorizedCollector: e.target.value }))} placeholder="Tenant or representative" className="bg-background" />
+                </Field>
+                <Field label="Keys & Access Summary">
+                  <Input value={keyNotifyForm.keysSummary} onChange={e => setKeyNotifyForm(f => ({ ...f, keysSummary: e.target.value }))} placeholder="2 keys, 2 cards, 1 remote" className="bg-background" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Outstanding Clearances">
+                  <Input value={keyNotifyForm.outstandingRequirements} onChange={e => setKeyNotifyForm(f => ({ ...f, outstandingRequirements: e.target.value }))} placeholder="None" className="bg-background" />
+                </Field>
+                <Field label="Manager / Staff Contact">
+                  <Input value={keyNotifyForm.staffContact} onChange={e => setKeyNotifyForm(f => ({ ...f, staffContact: e.target.value }))} placeholder="Name & Mobile #" className="bg-background" />
+                </Field>
+              </div>
+            </div>
+
+            <Field label="Special Access Instructions">
+              <Textarea rows={2} value={keyNotifyForm.note} onChange={e => setKeyNotifyForm(f => ({ ...f, note: e.target.value }))} placeholder="Any gate pass, security clearance or parking instructions..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setKeyNotifyOpen(false)}>Cancel</Button>
-            <Button onClick={() => keysWorkflowLease && issueDetailedKeyNotice(keysWorkflowLease)}><Bell className="mr-2 h-4 w-4" /> Send Notification</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setKeyNotifyOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => keysWorkflowLease && issueDetailedKeyNotice(keysWorkflowLease)}><Bell className="mr-2 h-4 w-4" /> Send Notification</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── KEY HANDOVER DIALOG ───────────────────────────────── */}
       <Dialog open={handoverOpen} onOpenChange={setHandoverOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              <span className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2"><Key className="h-5 w-5 text-primary" /></span>
-              Handover & Check-In Workflow
-            </DialogTitle>
-            <DialogDescription className="text-sm">
-              <span className="font-medium text-foreground">{keysWorkflowLease?.tenantName}</span> · {keysWorkflowLease?.unit} · {keysWorkflowLease?.property}
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Tab navigation inside dialog */}
-          <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
-            {handoverTabOrder.map((tab) => (
-              <button
-                key={tab}
-                className={`flex-1 rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  handoverActiveTab === tab
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setHandoverActiveTab(tab)}
-                type="button"
-              >
-                {tab === "details" && "🔑 Handover Details"}
-                {tab === "condition" && "🏠 Condition"}
-                {tab === "assets" && "📦 Assets"}
-                {tab === "checklist" && "✅ Checklist"}
-                {tab === "acknowledgement" && "📝 Acknowledgement"}
-              </button>
-            ))}
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                <Key className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Key Handover &amp; Check-In Workflow</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">{keysWorkflowLease?.tenantName}</span> · {keysWorkflowLease?.unit} · {keysWorkflowLease?.property}
+                </DialogDescription>
+              </div>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
+              Check-In Ready
+            </span>
           </div>
 
-          <div className="space-y-4 py-2">
+          {/* Tab navigation inside dialog */}
+          <div className="px-6 pt-4">
+            <div className="flex gap-1 rounded-xl bg-muted/60 p-1 text-xs font-medium border">
+              {handoverTabOrder.map((tab) => (
+                <button
+                  key={tab}
+                  className={`flex-1 rounded-lg px-2.5 py-1.5 transition-all ${
+                    handoverActiveTab === tab
+                      ? "bg-background text-foreground shadow-sm font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setHandoverActiveTab(tab)}
+                  type="button"
+                >
+                  {tab === "details" && "🔑 Details"}
+                  {tab === "condition" && "🏠 Condition"}
+                  {tab === "assets" && "📦 Assets"}
+                  {tab === "checklist" && "✅ Checklist"}
+                  {tab === "acknowledgement" && "📝 Sign-off"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
             {/* TAB: DETAILS */}
             {handoverActiveTab === "details" && (
               <div className="space-y-4">
@@ -4570,173 +4814,185 @@ function LeasingPage() {
 
       {/* ── VIEW HANDOVER DETAIL DIALOG ──────────────────────────── */}
       <Dialog open={handoverViewOpen} onOpenChange={setHandoverViewOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center rounded-full bg-green-100 p-2"><Key className="h-5 w-5 text-green-600" /></span>
-              Handover Certificate
-            </DialogTitle>
-            <DialogDescription>Official key handover record</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[540px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 shadow-sm">
+                <Key className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Key Handover Certificate</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">Official executed key release and check-in audit certificate.</DialogDescription>
+              </div>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
+              Verified & Handed Over
+            </span>
+          </div>
           {selectedHandover && (() => {
             const lease = leases.find(l => l.id === selectedHandover.leaseId);
             return (
-              <div className="space-y-3">
-                <div className="rounded-lg bg-green-50 border border-green-200 p-3 flex items-center gap-2 text-green-800 text-sm font-medium">
-                  <CheckCircle2 className="h-4 w-4" /> Keys successfully handed over
+              <div className="p-6 overflow-y-auto space-y-4 flex-1 text-sm">
+                <div className="rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 p-3.5 flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>Keys and access items released to authorized tenant representative.</span>
                 </div>
-                <div className="rounded-lg border p-4 space-y-1 text-sm">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                    <span className="text-muted-foreground">Tenant</span><span className="font-medium">{lease?.tenantName}</span>
-                    <span className="text-muted-foreground">Unit</span><span className="font-medium">{lease?.unit}</span>
-                    <span className="text-muted-foreground">Date / Time</span><span className="font-medium">{selectedHandover.handoverAt}</span>
-                    <span className="text-muted-foreground">Keys</span><span className="font-medium">{selectedHandover.keys}× {selectedHandover.keyType || "keys"}</span>
-                    <span className="text-muted-foreground">Access Cards</span><span className="font-medium">{selectedHandover.accessCards}</span>
-                    <span className="text-muted-foreground">Parking Remotes</span><span className="font-medium">{selectedHandover.parkingRemotes}</span>
-                    {selectedHandover.parkingDeviceDetails && (
-                      <><span className="text-muted-foreground">Parking Device</span><span className="font-medium">{selectedHandover.parkingDeviceDetails}</span></>
-                    )}
-                    <span className="text-muted-foreground">Elec. Meter</span><span className="font-medium">{selectedHandover.electricityMeterReading || "—"}</span>
-                    <span className="text-muted-foreground">Water Meter</span><span className="font-medium">{selectedHandover.waterMeterReading || "—"}</span>
-                    <span className="text-muted-foreground">Unit Condition</span><span className="font-medium">{selectedHandover.unitCondition || "—"}</span>
-                    <span className="text-muted-foreground">Cleanliness</span><span className="font-medium">{selectedHandover.cleanliness || "—"}</span>
-                    <span className="text-muted-foreground">Collector</span><span className="font-medium">{selectedHandover.collectorName}</span>
-                    {selectedHandover.collectorIdNumber && (
-                      <><span className="text-muted-foreground">Collector ID</span><span className="font-medium">{selectedHandover.collectorIdNumber}</span></>
-                    )}
-                    <span className="text-muted-foreground">ID Verified</span>
-                    <span className={`font-medium ${selectedHandover.idVerified ? "text-green-600" : "text-red-500"}`}>{selectedHandover.idVerified ? "Yes ✓" : "No ✗"}</span>
-                    <span className="text-muted-foreground">Issued By</span><span className="font-medium">{selectedHandover.issuedBy}</span>
-                    <span className="text-muted-foreground">Photos</span><span className="font-medium">{selectedHandover.photosTaken ?? "—"}</span>
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-2 text-xs">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Tenant</span><span className="font-semibold text-foreground">{lease?.tenantName}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit & Property</span><span className="font-semibold text-foreground">{lease?.unit} ({lease?.property})</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Handover Date</span><span className="font-semibold text-foreground">{selectedHandover.handoverAt}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Keys Count</span><span className="font-semibold text-foreground">{selectedHandover.keys}× {selectedHandover.keyType || "keys"}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Access Cards</span><span className="font-semibold text-foreground">{selectedHandover.accessCards} cards</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Parking Remotes</span><span className="font-semibold text-foreground">{selectedHandover.parkingRemotes} remote(s)</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Electricity Meter</span><span className="font-semibold text-foreground">{selectedHandover.electricityMeterReading || "—"}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Water Meter</span><span className="font-semibold text-foreground">{selectedHandover.waterMeterReading || "—"}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit Condition</span><span className="font-semibold text-foreground">{selectedHandover.unitCondition || "—"}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Cleanliness</span><span className="font-semibold text-foreground">{selectedHandover.cleanliness || "—"}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Collector</span><span className="font-semibold text-foreground">{selectedHandover.collectorName}</span></div>
+                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">ID Sighted</span><span className={`font-semibold ${selectedHandover.idVerified ? "text-emerald-600" : "text-rose-500"}`}>{selectedHandover.idVerified ? "Yes (Verified ✓)" : "Pending ✗"}</span></div>
                   </div>
                 </div>
-                {selectedHandover.note && (
-                  <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                    <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Notes</p>
-                    <p>{selectedHandover.note}</p>
+                {selectedHandover.tenantAcknowledgement && (
+                  <div className="rounded-xl border bg-muted/20 p-3.5 text-xs">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Tenant Digital Acknowledgement</p>
+                    <p className="italic text-foreground">{selectedHandover.tenantAcknowledgement}</p>
                   </div>
                 )}
-                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Tenant Acknowledgement</p>
-                  <p className="italic">{selectedHandover.tenantAcknowledgement}</p>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-xs">
-                  <div className={`rounded border p-2 text-center ${selectedHandover.acWorking ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🌀 A/C<br />{selectedHandover.acWorking ? "OK" : "Issue"}</div>
-                  <div className={`rounded border p-2 text-center ${selectedHandover.plumbingOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🚿 Plumb.<br />{selectedHandover.plumbingOk ? "OK" : "Issue"}</div>
-                  <div className={`rounded border p-2 text-center ${selectedHandover.electricalOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>💡 Elec.<br />{selectedHandover.electricalOk ? "OK" : "Issue"}</div>
-                  <div className={`rounded border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>🚪 Doors<br />{selectedHandover.doorsWindowsOk ? "OK" : "Issue"}</div>
+                <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
+                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.acWorking ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🌀 A/C {selectedHandover.acWorking ? "✓" : "✗"}</div>
+                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.plumbingOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚿 Plumb. {selectedHandover.plumbingOk ? "✓" : "✗"}</div>
+                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.electricalOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>💡 Elec. {selectedHandover.electricalOk ? "✓" : "✗"}</div>
+                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚪 Doors {selectedHandover.doorsWindowsOk ? "✓" : "✗"}</div>
                 </div>
               </div>
             );
           })()}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHandoverViewOpen(false)}>Close</Button>
-            <Button variant="outline" onClick={() => { window.print(); }} className="gap-2"><Key className="h-4 w-4" /> Print Certificate</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setHandoverViewOpen(false)}>Close</Button>
+            <Button variant="outline" size="sm" onClick={() => { window.print(); }} className="gap-2"><Key className="h-4 w-4" /> Print Certificate</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── RENEWAL RESPONSE DIALOG ───────────────────────────── */}
       <Dialog open={renewalResponseOpen} onOpenChange={setRenewalResponseOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Tenant Renewal Response</DialogTitle>
-            <DialogDescription>Record tenant's decision regarding lease renewal for {leases.find(l => l.id === selectedRenewal?.leaseId)?.tenantName} — {leases.find(l => l.id === selectedRenewal?.leaseId)?.unit}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Tenant Response">
+        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <RefreshCw className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Tenant Renewal Decision</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Record decision for {leases.find(l => l.id === selectedRenewal?.leaseId)?.tenantName} — {leases.find(l => l.id === selectedRenewal?.leaseId)?.unit}.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <Field label="Tenant Formal Response">
               <Select value={renewalResponseForm.response} onValueChange={v => setRenewalResponseForm(f => ({ ...f, response: v as any }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="confirm">Confirmed Renewal</SelectItem>
-                  <SelectItem value="non_renewal">Non-Renewal / Vacating</SelectItem>
+                  <SelectItem value="confirm">✅ Confirmed Renewal (Accepts extension)</SelectItem>
+                  <SelectItem value="non_renewal">❌ Non-Renewal (Will vacate upon expiry)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             {renewalResponseForm.response === "confirm" && (
-              <Field label="Confirmed Monthly Rent (QR)">
+              <Field label="Agreed Monthly Rent (QR)">
                 <Input type="number" value={renewalResponseForm.confirmedRent} onChange={e => setRenewalResponseForm(f => ({ ...f, confirmedRent: e.target.value }))} placeholder={`Proposed: QR ${selectedRenewal?.proposedRent}`} />
               </Field>
             )}
-            <Field label="Notes">
-              <Textarea rows={2} value={renewalResponseForm.notes} onChange={e => setRenewalResponseForm(f => ({ ...f, notes: e.target.value }))} placeholder="Negotiation notes, special terms..." />
+            <Field label="Negotiation & Confirmation Notes">
+              <Textarea rows={2} value={renewalResponseForm.notes} onChange={e => setRenewalResponseForm(f => ({ ...f, notes: e.target.value }))} placeholder="Special agreed terms, discount notes, or move-out confirmation..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenewalResponseOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (selectedRenewal) renewLease(selectedRenewal); setRenewalResponseOpen(false); }}><RefreshCw className="mr-2 h-4 w-4" /> Confirm Response</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setRenewalResponseOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => { if (selectedRenewal) renewLease(selectedRenewal); setRenewalResponseOpen(false); }}><RefreshCw className="mr-2 h-4 w-4" /> Confirm Decision</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── DISCUSS RENEWAL DIALOG ────────────────────────────── */}
       <Dialog open={discussRenewalOpen} onOpenChange={setDiscussRenewalOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Bell className="h-5 w-5 text-primary" /> Renewal Discussion</DialogTitle>
-            <DialogDescription>Record discussion notes and update proposed terms for {leases.find(l => l.id === selectedDiscussRenewal?.leaseId)?.tenantName} — {leases.find(l => l.id === selectedDiscussRenewal?.leaseId)?.unit}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-1">
-              <p><span className="text-muted-foreground">Current Proposed Rent:</span> <span className="font-semibold">QR {selectedDiscussRenewal?.proposedRent?.toLocaleString()}</span></p>
-              <p><span className="text-muted-foreground">Proposed Period:</span> <span className="font-semibold">{selectedDiscussRenewal?.proposedPeriod}</span></p>
-              <p><span className="text-muted-foreground">Expiry:</span> <span className="font-semibold">{selectedDiscussRenewal?.expiryDate}</span></p>
+        <DialogContent className="sm:max-w-[500px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Bell className="h-5 w-5" />
             </div>
-            <Field label="Tenant Response">
+            <div>
+              <DialogTitle className="text-base font-bold">Renewal Discussion & Follow-Up</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Document negotiation points for {leases.find(l => l.id === selectedDiscussRenewal?.leaseId)?.tenantName} ({leases.find(l => l.id === selectedDiscussRenewal?.leaseId)?.unit}).</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="rounded-xl border bg-muted/20 p-3.5 text-xs grid grid-cols-3 gap-2">
+              <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Proposed Rent</span><strong className="text-foreground">QR {selectedDiscussRenewal?.proposedRent?.toLocaleString()}</strong></div>
+              <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Proposed Period</span><strong className="text-foreground">{selectedDiscussRenewal?.proposedPeriod}</strong></div>
+              <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Expiry Date</span><strong className="text-foreground">{selectedDiscussRenewal?.expiryDate}</strong></div>
+            </div>
+            <Field label="Tenant Sentiment">
               <Select value={discussRenewalForm.tenantResponse} onValueChange={v => setDiscussRenewalForm(f => ({ ...f, tenantResponse: v as any }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="positive">Positive — Likely to renew</SelectItem>
-                  <SelectItem value="pending">Pending — Awaiting decision</SelectItem>
-                  <SelectItem value="negative">Negative — Likely to vacate</SelectItem>
+                  <SelectItem value="positive">🟢 Positive — High likelihood to renew</SelectItem>
+                  <SelectItem value="pending">🟡 Pending — Reviewing proposed offer</SelectItem>
+                  <SelectItem value="negative">🔴 Negative — Requesting lower rent or vacating</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Discussed Rent (QR) — leave blank to keep proposed">
-              <Input type="number" value={discussRenewalForm.discussedRent} onChange={e => setDiscussRenewalForm(f => ({ ...f, discussedRent: e.target.value }))} placeholder={`e.g. ${selectedDiscussRenewal?.proposedRent}`} />
-            </Field>
-            <Field label="Updated Renewal Period — leave blank to keep proposed">
-              <Input value={discussRenewalForm.proposedPeriod} onChange={e => setDiscussRenewalForm(f => ({ ...f, proposedPeriod: e.target.value }))} placeholder="e.g. 12 months" />
-            </Field>
-            <Field label="Next Follow-Up / Confirmation Date">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Discussed Rent (QR)">
+                <Input type="number" value={discussRenewalForm.discussedRent} onChange={e => setDiscussRenewalForm(f => ({ ...f, discussedRent: e.target.value }))} placeholder={`QR ${selectedDiscussRenewal?.proposedRent}`} />
+              </Field>
+              <Field label="Agreed Period">
+                <Input value={discussRenewalForm.proposedPeriod} onChange={e => setDiscussRenewalForm(f => ({ ...f, proposedPeriod: e.target.value }))} placeholder="12 months" />
+              </Field>
+            </div>
+            <Field label="Next Follow-Up / Decision Deadline">
               <Input type="date" value={discussRenewalForm.nextFollowUpDate} onChange={e => setDiscussRenewalForm(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
             </Field>
-            <Field label="Discussion Notes">
-              <Textarea rows={3} value={discussRenewalForm.notes} onChange={e => setDiscussRenewalForm(f => ({ ...f, notes: e.target.value }))} placeholder="Key discussion points, tenant concerns, agreed items..." />
+            <Field label="Discussion Notes & Actions">
+              <Textarea rows={2} value={discussRenewalForm.notes} onChange={e => setDiscussRenewalForm(f => ({ ...f, notes: e.target.value }))} placeholder="Key points discussed, maintenance promises, counter-offers..." className="text-xs" />
             </Field>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDiscussRenewalOpen(false)}>Cancel</Button>
-            <Button onClick={discussRenewal}><Bell className="mr-2 h-4 w-4" /> Save Discussion</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setDiscussRenewalOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={discussRenewal}><Bell className="mr-2 h-4 w-4" /> Save Discussion</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* ── ADD VOUCHER DIALOG ────────────────────────────────── */}
       <Dialog open={addVoucherOpen} onOpenChange={setAddVoucherOpen}>
-        <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Banknote className="h-5 w-5 text-primary" /> Add Voucher</DialogTitle>
-            <DialogDescription>Create a financial voucher entry. If PDC, a corresponding PDC record will also be created.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Lease">
+        <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Banknote className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Add Finance Voucher Entry</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Post double-entry voucher transaction and optionally register corresponding PDC cheque.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <Field label="Target Lease Contract *">
               <Select value={addVoucherForm.leaseId} onValueChange={v => {
                 const lease = leases.find(l => l.id === v);
                 const accounts = getVoucherAccounts(addVoucherForm.name, lease?.unit || "", addVoucherForm.method);
                 setAddVoucherForm(f => ({ ...f, leaseId: v, debit: accounts.debit, credit: accounts.credit }));
               }}>
-                <SelectTrigger><SelectValue placeholder="Select lease" /></SelectTrigger>
-                <SelectContent>{leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="bg-background"><SelectValue placeholder="Select lease" /></SelectTrigger>
+                <SelectContent>{leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} — {l.unit} ({l.property})</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Voucher Type / Name">
+            <Field label="Voucher Transaction Type *">
               <Select value={addVoucherForm.name} onValueChange={v => {
                 const lease = leases.find(l => l.id === addVoucherForm.leaseId);
                 const accounts = getVoucherAccounts(v, lease?.unit || "", addVoucherForm.method);
                 setAddVoucherForm(f => ({ ...f, name: v, debit: accounts.debit, credit: accounts.credit }));
               }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Receipts Voucher - Rent">Receipts Voucher — Rent</SelectItem>
                   <SelectItem value="Receipts Voucher - Deposit">Receipts Voucher — Deposit</SelectItem>
@@ -4750,7 +5006,7 @@ function LeasingPage() {
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Receipt / Voucher No.">
-                <Input value={addVoucherForm.receiptNo} onChange={e => setAddVoucherForm(f => ({ ...f, receiptNo: e.target.value }))} placeholder="Auto-generated if blank" />
+                <Input value={addVoucherForm.receiptNo} onChange={e => setAddVoucherForm(f => ({ ...f, receiptNo: e.target.value }))} placeholder="Auto-generated if blank" className="bg-background" />
               </Field>
               <Field label="Payment Method">
                 <Select value={addVoucherForm.method} onValueChange={v => {
@@ -4758,89 +5014,97 @@ function LeasingPage() {
                   const accounts = getVoucherAccounts(addVoucherForm.name, lease?.unit || "", v);
                   setAddVoucherForm(f => ({ ...f, method: v, debit: accounts.debit, credit: accounts.credit }));
                 }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PDC">PDC</SelectItem>
+                    <SelectItem value="PDC">PDC Cheque</SelectItem>
                     <SelectItem value="Cash">Cash</SelectItem>
                     <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
                     <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
-                    <SelectItem value="Batch">Batch</SelectItem>
+                    <SelectItem value="Batch">Batch Post</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
             </div>
-            <Field label="Remarks">
-              <Input value={addVoucherForm.period} onChange={e => setAddVoucherForm(f => ({ ...f, period: e.target.value }))} placeholder="Optional voucher notes or remarks..." />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Debit Account">
-                <Select value={addVoucherForm.debit} onValueChange={v => setAddVoucherForm(f => ({ ...f, debit: v }))}>
-                  <SelectTrigger className="text-xs font-mono"><SelectValue placeholder="Select Debit Account" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PDC In Hand">PDC In Hand (12900)</SelectItem>
-                    <SelectItem value="Cash In Hand">Cash In Hand (12100)</SelectItem>
-                    <SelectItem value="Bank Account">Bank Account (12000)</SelectItem>
-                    <SelectItem value={`Customer(PDC)-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Customer(PDC)-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21400)</SelectItem>
-                    <SelectItem value={`Receivable-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Receivable-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (12413)</SelectItem>
-                    <SelectItem value="Payable Account">Payable Account (20100)</SelectItem>
-                    <SelectItem value="Deposit-PDC In Hand">Deposit-PDC In Hand (12900002)</SelectItem>
-                    <SelectItem value={`Security Deposit Liability-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Security Deposit Liability (21500)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Credit Account">
-                <Select value={addVoucherForm.credit} onValueChange={v => setAddVoucherForm(f => ({ ...f, credit: v }))}>
-                  <SelectTrigger className="text-xs font-mono"><SelectValue placeholder="Select Credit Account" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PDC In Hand">PDC In Hand (12900)</SelectItem>
-                    <SelectItem value="Cash In Hand">Cash In Hand (12100)</SelectItem>
-                    <SelectItem value="Bank Account">Bank Account (12000)</SelectItem>
-                    <SelectItem value={`Customer(PDC)-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Customer(PDC)-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21400)</SelectItem>
-                    <SelectItem value={`Receivable-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Receivable-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (12413)</SelectItem>
-                    <SelectItem value="Rental Income">Rental Income (41100)</SelectItem>
-                    <SelectItem value={`Deposit-Customer-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Deposit-Customer-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21500)</SelectItem>
-                    <SelectItem value={`Security Deposit Liability-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Security Deposit Liability (21500)</SelectItem>
-                    <SelectItem value="Payable Account">Payable Account (20100)</SelectItem>
-                    <SelectItem value="Guarantee Cheque Received">Guarantee Cheque Received (21200)</SelectItem>
-                  </SelectContent>
-                </Select>
+            
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" /> General Ledger Accounts
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Debit (DR) Account">
+                  <Select value={addVoucherForm.debit} onValueChange={v => setAddVoucherForm(f => ({ ...f, debit: v }))}>
+                    <SelectTrigger className="text-xs font-mono bg-background"><SelectValue placeholder="Select Debit Account" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PDC In Hand">PDC In Hand (12900)</SelectItem>
+                      <SelectItem value="Cash In Hand">Cash In Hand (12100)</SelectItem>
+                      <SelectItem value="Bank Account">Bank Account (12000)</SelectItem>
+                      <SelectItem value={`Customer(PDC)-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Customer(PDC)-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21400)</SelectItem>
+                      <SelectItem value={`Receivable-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Receivable-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (12413)</SelectItem>
+                      <SelectItem value="Payable Account">Payable Account (20100)</SelectItem>
+                      <SelectItem value="Deposit-PDC In Hand">Deposit-PDC In Hand (12900002)</SelectItem>
+                      <SelectItem value={`Security Deposit Liability-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Security Deposit Liability (21500)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Credit (CR) Account">
+                  <Select value={addVoucherForm.credit} onValueChange={v => setAddVoucherForm(f => ({ ...f, credit: v }))}>
+                    <SelectTrigger className="text-xs font-mono bg-background"><SelectValue placeholder="Select Credit Account" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PDC In Hand">PDC In Hand (12900)</SelectItem>
+                      <SelectItem value="Cash In Hand">Cash In Hand (12100)</SelectItem>
+                      <SelectItem value="Bank Account">Bank Account (12000)</SelectItem>
+                      <SelectItem value={`Customer(PDC)-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Customer(PDC)-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21400)</SelectItem>
+                      <SelectItem value={`Receivable-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Receivable-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (12413)</SelectItem>
+                      <SelectItem value="Rental Income">Rental Income (41100)</SelectItem>
+                      <SelectItem value={`Deposit-Customer-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Deposit-Customer-{leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"} (21500)</SelectItem>
+                      <SelectItem value={`Security Deposit Liability-${leases.find(l => l.id === addVoucherForm.leaseId)?.unit || "Unit"}`}>Security Deposit Liability (21500)</SelectItem>
+                      <SelectItem value="Payable Account">Payable Account (20100)</SelectItem>
+                      <SelectItem value="Guarantee Cheque Received">Guarantee Cheque Received (21200)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              <Field label="Voucher Amount (QR) *">
+                <Input type="number" value={addVoucherForm.amount} onChange={e => setAddVoucherForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" className="bg-background font-mono font-bold" />
               </Field>
             </div>
-            <Field label="Amount (QR)">
-              <Input type="number" value={addVoucherForm.amount} onChange={e => setAddVoucherForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+
+            <Field label="Voucher Remarks / Particulars">
+              <Input value={addVoucherForm.period} onChange={e => setAddVoucherForm(f => ({ ...f, period: e.target.value }))} placeholder="Optional voucher narrative or notes..." className="bg-background" />
             </Field>
+
             {(addVoucherForm.method === "PDC" || addVoucherForm.method === "Guarantee Cheque") && (
-              <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-semibold">Also Register PDC Entry</p>
-                    <p className="text-[11px] text-muted-foreground">Automatically creates an active cheque record in PDC Management / Treasury register.</p>
+                    <p className="text-xs font-bold text-primary">Automated PDC Register Entry</p>
+                    <p className="text-[11px] text-muted-foreground">Automatically creates an active cheque record in PDC Management ledger.</p>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={addVoucherForm.createPdc} onChange={e => setAddVoucherForm(f => ({ ...f, createPdc: e.target.checked }))} className="h-4 w-4" />
-                    <span className="text-sm font-medium">Create PDC record</span>
+                    <input type="checkbox" checked={addVoucherForm.createPdc} onChange={e => setAddVoucherForm(f => ({ ...f, createPdc: e.target.checked }))} className="h-4 w-4 rounded accent-primary" />
+                    <span className="text-xs font-semibold">Create PDC</span>
                   </label>
                 </div>
                 {addVoucherForm.createPdc && (
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2 pt-1">
                     <Field label="Cheque No.">
-                      <Input value={addVoucherForm.pdcChequeNo} onChange={e => setAddVoucherForm(f => ({ ...f, pdcChequeNo: e.target.value }))} placeholder="CHQ-001" />
+                      <Input value={addVoucherForm.pdcChequeNo} onChange={e => setAddVoucherForm(f => ({ ...f, pdcChequeNo: e.target.value }))} placeholder="CHQ-001" className="bg-background text-xs" />
                     </Field>
                     <Field label="Bank">
-                      <Input value={addVoucherForm.pdcBank} onChange={e => setAddVoucherForm(f => ({ ...f, pdcBank: e.target.value }))} placeholder="QNB" />
+                      <Input value={addVoucherForm.pdcBank} onChange={e => setAddVoucherForm(f => ({ ...f, pdcBank: e.target.value }))} placeholder="QNB" className="bg-background text-xs" />
                     </Field>
-                    <Field label="Date">
-                      <Input type="date" value={addVoucherForm.pdcDate} onChange={e => setAddVoucherForm(f => ({ ...f, pdcDate: e.target.value }))} />
+                    <Field label="Maturity Date">
+                      <Input type="date" value={addVoucherForm.pdcDate} onChange={e => setAddVoucherForm(f => ({ ...f, pdcDate: e.target.value }))} className="bg-background text-xs" />
                     </Field>
                   </div>
                 )}
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddVoucherOpen(false)}>Cancel</Button>
-            <Button onClick={addVoucher}><Banknote className="mr-2 h-4 w-4" /> Add Voucher</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setAddVoucherOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={addVoucher}><Banknote className="mr-2 h-4 w-4" /> Add Voucher</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -6267,53 +6531,67 @@ function LeasingPage() {
 
       {/* ── ADD PDC DIALOG ────────────────────────────────────── */}
       <Dialog open={addPdcOpen} onOpenChange={setAddPdcOpen}>
-        <DialogContent className="sm:max-w-[1000px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-primary" /> Add PDC / Cheque</DialogTitle>
-            <DialogDescription>Manually record a post-dated cheque for a lease.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Lease">
+        <DialogContent className="sm:max-w-[1000px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Receipt className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-bold">Manual Bulk PDC / Cheque Entry</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Register up to 12 post-dated cheques with maturity, tenure periods, and scan attachments.</DialogDescription>
+            </div>
+          </div>
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            <Field label="Select Lease Contract *">
               <Select value={pdcLeaseId} onValueChange={setPdcLeaseId}>
-                <SelectTrigger><SelectValue placeholder="Select lease" /></SelectTrigger>
+                <SelectTrigger className="bg-background"><SelectValue placeholder="Select lease" /></SelectTrigger>
                 <SelectContent>
-                  {leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} / {l.unit}</SelectItem>)}
+                  {leases.map(l => <SelectItem key={l.id} value={l.id}>{l.tenantName} — {l.unit} ({l.property})</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
-            <div className="rounded-lg border bg-muted/30 p-3">
-              <p className="mb-2 text-sm font-semibold">Enter up to 12 PDC rows</p>
-              <div className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 text-xs font-semibold text-muted-foreground mb-2">
+            <div className="rounded-xl border bg-muted/20 p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <CreditCard className="h-3.5 w-3.5 text-primary" /> Cheque Schedule Rows
+                </span>
+                <span className="text-xs text-muted-foreground">Leave empty rows to skip</span>
+              </div>
+              <div className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-1">
                 <span>Cheque No.</span>
                 <span>Bank</span>
-                <span>Maturity</span>
-                <span>Amount</span>
+                <span>Maturity Date</span>
+                <span>Amount (QR)</span>
                 <span>Tenure (Start & End)</span>
-                <span>Document</span>
+                <span>Cheque Scan</span>
               </div>
-              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
                 {pdcRows.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 items-center text-sm">
+                  <div key={idx} className="grid grid-cols-[2fr_2fr_2fr_2fr_3fr_2fr] gap-2 items-center text-sm p-1.5 rounded-lg bg-background border hover:border-primary/40 transition-colors">
                     <Input
                       value={row.chequeNo}
                       onChange={e => handlePdcRowChange(idx, "chequeNo", e.target.value)}
                       placeholder={`PDC-${idx + 1}`}
+                      className="h-8 text-xs"
                     />
                     <Input
                       value={row.bank}
                       onChange={e => handlePdcRowChange(idx, "bank", e.target.value)}
                       placeholder="Bank"
+                      className="h-8 text-xs"
                     />
                     <Input
                       type="date"
                       value={row.maturityDate}
                       onChange={e => handlePdcRowChange(idx, "maturityDate", e.target.value)}
+                      className="h-8 text-xs"
                     />
                     <Input
                       type="number"
                       value={row.amount}
                       onChange={e => handlePdcRowChange(idx, "amount", e.target.value)}
                       placeholder="Amount"
+                      className="h-8 text-xs font-mono font-bold"
                     />
                     <div className="flex gap-1">
                       <Input
@@ -6321,28 +6599,30 @@ function LeasingPage() {
                         value={row.tenureStart}
                         onChange={e => handlePdcRowChange(idx, "tenureStart", e.target.value)}
                         title="Start Date"
+                        className="h-8 text-[11px] px-1"
                       />
                       <Input
                         type="date"
                         value={row.tenureEnd}
                         onChange={e => handlePdcRowChange(idx, "tenureEnd", e.target.value)}
                         title="End Date"
+                        className="h-8 text-[11px] px-1"
                       />
                     </div>
                     <Input
                       type="file"
                       onChange={e => handlePdcRowChange(idx, "file", e.target.files?.[0]?.name || "")}
+                      className="h-8 text-[11px] cursor-pointer"
                     />
                   </div>
                 ))}
               </div>
             </div>
-            <div className="text-sm text-muted-foreground">Leave rows blank to skip them. Only fully completed rows will be saved.</div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddPdcOpen(false)}>Cancel</Button>
-            <Button onClick={addManualPdc}><Receipt className="mr-2 h-4 w-4" /> Add PDC</Button>
-          </DialogFooter>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setAddPdcOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={addManualPdc}><Receipt className="mr-2 h-4 w-4" /> Save PDC Records</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -6744,22 +7024,42 @@ function LeasingPage() {
                         const count = lease.pdcCount || 12;
                         const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
                         const regAmt = lease.monthlyRent || 0;
-                        const firstDate = new Date(lease.startDate || today);
+                        // Helper: increment month from firstChequeDate while keeping day
+                        function addMonthToDate(baseDateStr: string, monthOffset: number): string {
+                          const d = new Date(baseDateStr);
+                          const day = d.getDate();
+                          const targetMonthRaw = d.getMonth() + monthOffset;
+                          const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
+                          const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                          const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                          const finalDay = Math.min(day, lastDay);
+                          return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
+                        }
+                        const leaseStartStr = lease.startDate || today.toISOString().split("T")[0];
+                        const firstChequeStr = leaseStartStr;
                         const generated = Array.from({ length: count }, (_, i) => {
                           let amount = regAmt;
                           if (i === count - 1 && count > 1) {
                             amount = Math.max(0, totalRent - regAmt * (count - 1));
                           }
-                          const chequeStartDate = addDays(firstDate, i * 30);
-                          const chequeEndDate = addDays(new Date(chequeStartDate), 29);
+                          // Tenure: always anchored to lease start date + monthly period
+                          const tsDate = new Date(leaseStartStr);
+                          tsDate.setMonth(tsDate.getMonth() + i);
+                          const tenureStartStr = tsDate.toISOString().split("T")[0];
+                          const teDate = new Date(leaseStartStr);
+                          teDate.setMonth(teDate.getMonth() + i + 1);
+                          teDate.setDate(teDate.getDate() - 1);
+                          const tenureEndStr = teDate.toISOString().split("T")[0];
+                          // Maturity date: keep same day as firstChequeDate, increment month only
+                          const maturityStr = addMonthToDate(firstChequeStr, i);
                           return {
                             chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
                             bank: "QNB",
-                            date: chequeStartDate,
+                            date: maturityStr,
                             amount,
                             period: `Cheque ${i + 1} of ${count}`,
-                            tenureStart: chequeStartDate,
-                            tenureEnd: chequeEndDate,
+                            tenureStart: tenureStartStr,
+                            tenureEnd: tenureEndStr,
                             file: "",
                           };
                         });
@@ -6787,7 +7087,6 @@ function LeasingPage() {
                           startDate: lease.startDate,
                           endDate: lease.endDate,
                           firstChequeDate: lease.startDate,
-                          chequeIntervalDays: 30,
                           regularChequeAmount: String(lease.monthlyRent),
                           customCheques: generated,
                         });

@@ -237,7 +237,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
       setContacts(cRes || []);
       setBankDetails(bRes || []);
       setQualifications(qRes || []);
-      setApInvoices(iRes || []);
+      setApInvoices([]);
     } catch (e: any) { toast.error("Load failed: " + e.message); }
     finally { setLoading(false); }
   }, []);

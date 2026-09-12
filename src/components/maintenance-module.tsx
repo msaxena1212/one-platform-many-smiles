@@ -376,159 +376,17 @@ export interface MaintenanceVendorInvoice {
   receiptFileName?: string;
 }
 
-// ── Initial Mock Data ───────────────────────────────────────────────────────
+// ── Initial Mock Data (Empty for Fresh System) ───────────────────────────
 
-export const initialTickets: MaintenanceTicket[] = [
-  { id: "f1", property_id: null, unit_ref: "Office 402", title: "AC Chiller Actuator Valve Fault", description: "FCU blowing ambient air only. Chilled water valve stuck closed.", category: "Electrician", priority: "high", status: "in_progress", assignee: "Faisal Tariq", host_id: null, reported_by: "Ahmed Al-Kuwari (Personal (Only Me))", resolved_at: null, created_at: "2026-09-04", updated_at: "" },
-  { id: "f2", property_id: null, unit_ref: "B2 Pump Room", title: "Water Booster Pump Pressure Switch Malfunction", description: "Secondary booster pump tripping intermittently on high pressure.", category: "Plumber", priority: "urgent", status: "assigned", assignee: "Qatar Facilities Management (QFM)", host_id: null, reported_by: "Security Office (Community (All))", resolved_at: null, created_at: "2026-09-03", updated_at: "" },
-  { id: "f3", property_id: null, unit_ref: "Common Area", title: "Lobby Corridor LED Lighting Failure", description: "3 units of 60x60 LED ceiling panel lights blinking in corridor.", category: "Electrician", priority: "low", status: "new", assignee: null, host_id: null, reported_by: "Facility Inspector (Community (All))", resolved_at: null, created_at: "2026-09-04", updated_at: "" },
-  { id: "f4", property_id: null, unit_ref: "Apt 1204", title: "Balcony Sliding Glass Door Damaged", description: "Glass cracked during tenant move-in. Mortise lock latch broken.", category: "Door Issue", priority: "medium", status: "resolved", assignee: "Al Mana Engineering & Maintenance", host_id: null, reported_by: "Property Manager (Personal (Only Me))", resolved_at: "2026-09-03", created_at: "2026-09-02", updated_at: "" },
-];
+export const initialTickets: MaintenanceTicket[] = [];
 
-const initialWorkOrders: WorkOrder[] = [
-  {
-    id: "WO-2026-001",
-    ticketId: "T-101",
-    title: "Master Bedroom Chiller Valve & Actuator Replacement",
-    property: "Al Sadd Commercial Tower",
-    unitRef: "Office 402",
-    category: "HVAC",
-    priority: "high",
-    status: "in_progress",
-    assigneeType: "in_house",
-    technicianName: "Faisal Tariq (HVAC Specialist)",
-    scheduledDate: "2026-09-04",
-    labourCost: 150,
-    materialsCost: 320,
-    totalCost: 470,
-    chargebackToTenant: false,
-    scopeOfWork: "Diagnose 2-way modulating valve failure, drain line, fit new Honeywell actuator, refill refrigerant.",
-  },
-  {
-    id: "WO-2026-002",
-    ticketId: "T-102",
-    title: "Water Booster Pump Pressure Switch Re-calibration",
-    property: "West Bay Pearl Residence",
-    unitRef: "Building Pump Room B2",
-    category: "Plumbing",
-    priority: "urgent",
-    status: "scheduled",
-    assigneeType: "vendor",
-    vendorId: "v-qfm",
-    vendorName: "Qatar Facilities Management (QFM)",
-    scheduledDate: "2026-09-05",
-    labourCost: 450,
-    materialsCost: 680,
-    totalCost: 1130,
-    chargebackToTenant: false,
-    scopeOfWork: "Main booster pump trip on high pressure. Replace digital transducer and test backup secondary pump.",
-  },
-  {
-    id: "WO-2026-003",
-    ticketId: "T-103",
-    title: "Broken Balcony Sliding Door Glass & Lock Latch",
-    property: "Lusail Marina Heights",
-    unitRef: "Apt 1204",
-    category: "Civil",
-    priority: "medium",
-    status: "completed",
-    completionDate: "2026-09-03",
-    assigneeType: "vendor",
-    vendorId: "v-almana",
-    vendorName: "Al Mana Engineering & Maintenance",
-    scheduledDate: "2026-09-02",
-    labourCost: 200,
-    materialsCost: 550,
-    totalCost: 750,
-    chargebackToTenant: true,
-    tenantChargeReason: "Tenant accidental damage during furniture move-in",
-    scopeOfWork: "Fabricate tempered double-glazed panel and replace mortise lock assembly.",
-  },
-];
+const initialWorkOrders: WorkOrder[] = [];
 
-const initialPpmSchedules: PpmSchedule[] = [
-  {
-    id: "PPM-001",
-    title: "Quarterly Central Chiller Plant & AHU Servicing",
-    property: "Al Sadd Commercial Tower",
-    category: "HVAC",
-    frequency: "Quarterly",
-    nextDueDate: "2026-09-15",
-    lastDoneDate: "2026-06-12",
-    assignedVendorName: "Carrier Middle East Qatar",
-    estimatedCost: 3500,
-    status: "Upcoming",
-    checklist: ["Check compressor oil levels", "Clean condenser coils", "Test chilled water flow rate", "Calibrate thermostats"],
-  },
-  {
-    id: "PPM-002",
-    title: "Monthly Passenger Elevator Safety & Rope Testing",
-    property: "Lusail Marina Heights",
-    category: "Elevator",
-    frequency: "Monthly",
-    nextDueDate: "2026-09-10",
-    lastDoneDate: "2026-08-08",
-    assignedVendorName: "Otis Elevator Qatar WLL",
-    estimatedCost: 1800,
-    status: "Upcoming",
-    checklist: ["Inspect governor brake cables", "Check shaft door interlocks", "Emergency phone line test", "Cabin levelling test"],
-  },
-  {
-    id: "PPM-003",
-    title: "Bi-Annual Fire Hydrant & Sprinkler Pump Overhaul",
-    property: "West Bay Pearl Residence",
-    category: "Fire Safety",
-    frequency: "Semi-Annual",
-    nextDueDate: "2026-09-08",
-    lastDoneDate: "2026-03-05",
-    assignedVendorName: "Doha Fire Protection Solutions",
-    estimatedCost: 2400,
-    status: "Upcoming",
-    checklist: ["Test diesel generator start-up", "Inspect pressure relief valves", "Test zone flow switches", "Civil Defense logbook stamp"],
-  },
-];
+const initialPpmSchedules: PpmSchedule[] = [];
 
-const initialTechnicians: Technician[] = [
-  { id: "tech-1", name: "Faisal Tariq", specialty: "HVAC & Chiller Plants", phone: "+974 5511 2233", email: "faisal.t@pms.qa", activeWorkload: 2, status: "Available", rating: 4.9, completedJobsCount: 142 },
-  { id: "tech-2", name: "Mahmoud Kamal", specialty: "Plumbing & Drainage", phone: "+974 5522 3344", email: "mahmoud.k@pms.qa", activeWorkload: 3, status: "On-Site", rating: 4.8, completedJobsCount: 118 },
-  { id: "tech-3", name: "Ramesh Sundaram", specialty: "Electrical & BMS Automation", phone: "+974 5533 4455", email: "ramesh.s@pms.qa", activeWorkload: 1, status: "Available", rating: 4.9, completedJobsCount: 164 },
-  { id: "tech-4", name: "Carlos Mendoza", specialty: "Carpentry & Locks", phone: "+974 5544 5566", email: "carlos.m@pms.qa", activeWorkload: 0, status: "On-Leave", rating: 4.7, completedJobsCount: 89 },
-];
+const initialTechnicians: Technician[] = [];
 
-const initialVendorInvoices: MaintenanceVendorInvoice[] = [
-  {
-    id: "VI-901",
-    invoiceNo: "INV-CARRIER-2026-081",
-    ticketId: "T-101",
-    workOrderId: "WO-2026-001",
-    vendorName: "Carrier Middle East Qatar",
-    property: "Al Sadd Commercial Tower",
-    unitRef: "Office 402",
-    invoiceDate: "2026-09-02",
-    amount: 1450,
-    partsDescription: "Heavy-duty 2-Way Actuator valve + R410A Freon Cylinders (2 nos)",
-    labourDescription: "Emergency on-site chiller pipeline brazing & commission",
-    status: "Submitted",
-    glAccount: "52100001 - Building Maintenance Expense",
-    paymentMode: "Bank Transfer (Net 30)",
-  },
-  {
-    id: "VI-902",
-    invoiceNo: "INV-ALMANA-4482",
-    ticketId: "T-103",
-    workOrderId: "WO-2026-003",
-    vendorName: "Al Mana Engineering & Maintenance",
-    property: "Lusail Marina Heights",
-    unitRef: "Apt 1204",
-    invoiceDate: "2026-09-03",
-    amount: 750,
-    partsDescription: "Custom tempered double-glazed sliding panel + Mortise lock",
-    labourDescription: "Glass fitting & weather-proofing gasket installation",
-    status: "Approved",
-    glAccount: "52100001 - Building Maintenance Expense",
-    paymentMode: "Corporate Cheque",
-  },
-];
+const initialVendorInvoices: MaintenanceVendorInvoice[] = [];
 
 export interface StockItem {
   id: string;
@@ -542,14 +400,7 @@ export interface StockItem {
   location: string;
 }
 
-const initialStockCatalog: StockItem[] = [
-  { id: "p1", code: "MNT-FLT-001", name: "AC Air Filter 24x24 (Washable)", category: "HVAC Spare", onHand: 42, minLevel: 15, unitCost: 65, uom: "Nos", location: "Bin A-04 (Main Store)" },
-  { id: "p2", code: "MNT-ACT-002", name: "HVAC Chilled Water Actuator Valve 1/2", category: "HVAC Spare", onHand: 4, minLevel: 10, unitCost: 320, uom: "Nos", location: "Bin A-09 (Main Store)" },
-  { id: "p3", code: "MNT-LED-003", name: "LED Ceiling Panel Light 40W 60x60", category: "Electrical", onHand: 85, minLevel: 30, unitCost: 45, uom: "Nos", location: "Bin E-02 (Elec Room)" },
-  { id: "p4", code: "MNT-PLB-004", name: "Flexible Water Supply Hose SS 1/2", category: "Plumbing", onHand: 28, minLevel: 20, unitCost: 35, uom: "Nos", location: "Bin P-01 (Plumb Shelf)" },
-  { id: "p5", code: "MNT-PMP-005", name: "Digital Pressure Transducer 0-10 Bar", category: "Plumbing", onHand: 2, minLevel: 5, unitCost: 480, uom: "Nos", location: "Bin P-08 (Secure Vault)" },
-  { id: "p6", code: "MNT-LCK-006", name: "Smart Card RFID Mortise Door Lock", category: "Security", onHand: 7, minLevel: 8, unitCost: 290, uom: "Nos", location: "Bin S-03 (Hardware)" },
-];
+const initialStockCatalog: StockItem[] = [];
 
 const COLUMNS: { key: MaintenanceTicket["status"]; label: string }[] = [
   { key: "new", label: "New Request" },
@@ -583,12 +434,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
   });
   const [loading, setLoading] = useState(false);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => {
-    try {
-      const saved = localStorage.getItem("pms_work_orders");
-      return saved ? JSON.parse(saved) : initialWorkOrders;
-    } catch {
-      return initialWorkOrders;
-    }
+    return initialWorkOrders;
   });
   const [ppmSchedules, setPpmSchedules] = useState<PpmSchedule[]>(() => {
     try {
@@ -607,24 +453,20 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
     }
   });
   const [vendorInvoices, setVendorInvoices] = useState<MaintenanceVendorInvoice[]>(() => {
-    try {
-      const saved = localStorage.getItem("pms_vendor_invoices");
-      return saved ? JSON.parse(saved) : initialVendorInvoices;
-    } catch {
-      return initialVendorInvoices;
-    }
+    return initialVendorInvoices;
   });
   const [stockCatalog, setStockCatalog] = useState<StockItem[]>(() => {
-    try {
-      const saved = localStorage.getItem("pms_maintenance_stock");
-      return saved ? JSON.parse(saved) : initialStockCatalog;
-    } catch {
-      return initialStockCatalog;
-    }
+    return initialStockCatalog;
   });
   // Dynamic Properties & Units from Supabase
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+
+  useEffect(() => {
+    localStorage.removeItem("pms_work_orders");
+    localStorage.removeItem("pms_vendor_invoices");
+    localStorage.removeItem("pms_maintenance_stock");
+  }, []);
 
   // Ticket Spare Parts Map state (persisted per ticket)
   const [ticketSparePartsMap, setTicketSparePartsMap] = useState<Record<string, Array<{ id: string; partId: string; quantity: number }>>>(() => {
@@ -1047,10 +889,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
 
   // Form: Quick PR Generation
   const [prForm, setPrForm] = useState({
-    partName: initialStockCatalog[0].name,
-    itemCode: initialStockCatalog[0].code,
+    partName: initialStockCatalog[0]?.name || "",
+    itemCode: initialStockCatalog[0]?.code || "",
     qty: 10,
-    estimatedCost: initialStockCatalog[0].unitCost,
+    estimatedCost: initialStockCatalog[0]?.unitCost || 0,
     property: "Al Sadd Commercial Tower",
     urgency: "HIGH",
     budgetHead: "Maintenance Items",

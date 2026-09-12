@@ -323,16 +323,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/prop-mgr/finance", search: { tab: "cash_on_hand" }, label: "Cash On Hand", icon: <Wallet className="h-3.5 w-3.5" /> },
             ],
           },
-          {
-            group: "Contracts",
-            icon: <FileSignature className="h-3.5 w-3.5" />,
-            color: "text-indigo-500",
-            bg: "bg-indigo-500/10",
-            items: [
-              { to: "/prop-mgr/finance", search: { tab: "expense_contract" }, label: "Expense Contract", icon: <FileText className="h-3.5 w-3.5" /> },
-              { to: "/prop-mgr/finance", search: { tab: "revenue_contract" }, label: "Revenue Contract", icon: <FileCheck className="h-3.5 w-3.5" /> },
-            ],
-          },
         ],
       },
       {
@@ -488,7 +478,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-rose-500/10",
             items: [
               { to: "/prop-mgr/approvals", label: "Approvals", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-              { to: "/prop-mgr/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -649,16 +638,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/admin/finance", search: { tab: "cash_book" }, label: "Cash Book", icon: <BookOpen className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "petty_cash_book" }, label: "Petty Cash Book", icon: <BookOpen className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "cash_on_hand" }, label: "Cash On Hand", icon: <Wallet className="h-3.5 w-3.5" /> },
-            ],
-          },
-          {
-            group: "Contracts",
-            icon: <FileSignature className="h-3.5 w-3.5" />,
-            color: "text-indigo-500",
-            bg: "bg-indigo-500/10",
-            items: [
-              { to: "/admin/finance", search: { tab: "expense_contract" }, label: "Expense Contract", icon: <FileText className="h-3.5 w-3.5" /> },
-              { to: "/admin/finance", search: { tab: "revenue_contract" }, label: "Revenue Contract", icon: <FileCheck className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -901,7 +880,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-rose-500",
             bg: "bg-rose-500/10",
             items: [
-              { to: "/admin/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/admin/audit-logs", label: "Audit Logs", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },
@@ -1111,9 +1089,9 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-emerald-500",
             bg: "bg-emerald-500/10",
             items: [
-              { to: "/finance", search: { tab: "payment_voucher" }, label: "Payment Voucher", icon: <CreditCard className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "payable_invoice" }, label: "Payable Invoices (AP)", icon: <Receipt className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "grn_mapping" }, label: "GRN Cost Mapping", icon: <Layers className="h-3.5 w-3.5" /> },
+              { to: "/finance", search: { tab: "payment_voucher" }, label: "Payment Voucher", icon: <CreditCard className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -1146,16 +1124,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/finance", search: { tab: "cash_book" }, label: "Cash Book", icon: <BookOpen className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "petty_cash_book" }, label: "Petty Cash Book", icon: <BookOpen className="h-3.5 w-3.5" /> },
               { to: "/finance", search: { tab: "cash_on_hand" }, label: "Cash On Hand", icon: <Wallet className="h-3.5 w-3.5" /> },
-            ],
-          },
-          {
-            group: "Contracts",
-            icon: <FileSignature className="h-3.5 w-3.5" />,
-            color: "text-indigo-500",
-            bg: "bg-indigo-500/10",
-            items: [
-              { to: "/finance", search: { tab: "expense_contract" }, label: "Expense Contract", icon: <FileText className="h-3.5 w-3.5" /> },
-              { to: "/finance", search: { tab: "revenue_contract" }, label: "Revenue Contract", icon: <FileCheck className="h-3.5 w-3.5" /> },
             ],
           },
         ],
