@@ -31,9 +31,6 @@ export default defineConfig({
             if (id.includes("node_modules/@supabase") || id.includes("node_modules/supabase")) {
               return "vendor-supabase";
             }
-            if (id.includes("node_modules/@tanstack")) {
-              return "vendor-tanstack";
-            }
             if (
               id.includes("node_modules/react-hook-form") ||
               id.includes("node_modules/zod") ||
