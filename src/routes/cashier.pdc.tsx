@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, type ElementType } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Search, CreditCard, Building2, AlertCircle, CheckCircle2, Clock, Wifi, Loader2, Banknote } from "lucide-react";
 import { useAppData } from "@/lib/app-data-context";
 import { supabase } from "@/lib/supabase";
-import { depositPdc, clearPdc, returnPdc, cashDepositInPlaceOfPdc } from "@/lib/finance/pdcService";
+import { depositPdc, clearPdc, returnPdc, cashDepositInPlaceOfPdc, receivePdc } from "@/lib/finance/pdcService";
+import { collectSecurityDeposit } from "@/lib/finance/depositService";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { PdcManagement } from "@/components/finance/pdc-management";
 
 export const Route = createFileRoute("/cashier/pdc")({
   head: () => ({ meta: [{ title: "PDC Management - ZYNO Property Management" }] }),
@@ -66,25 +70,38 @@ function formatQAR(amount?: number) {
   }).format(amount || 0);
 }
 
-function CashierPDCs() {
-  const { leases } = useAppData();
+function LegacyCashierPDCs() {
+  const { leases, setVouchers } = useAppData();
+  const routeSearch = useSearch({ strict: false }) as { collect?: string };
   const [dbPdcs, setDbPdcs]         = useState<any[]>([]);
   const [loading, setLoading]        = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch]          = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [collectionType, setCollectionType] = useState<"PDC" | "Security Deposit" | "Other Amount">("PDC");
+  const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const [collectionAmount, setCollectionAmount] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [collectionDescription, setCollectionDescription] = useState("");
+  const [savingCollection, setSavingCollection] = useState(false);
 
   useEffect(() => {
     loadDbPdcs();
   }, []);
 
+  useEffect(() => {
+    if (routeSearch.collect === "1") setCollectionOpen(true);
+  }, [routeSearch.collect]);
+
   async function loadDbPdcs() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from("pdcs")
+        .from("fin_pdc_register")
         .select("*")
-        .order("sl_no", { ascending: true });
+        .order("cheque_date", { ascending: true });
       if (!error && data && data.length > 0) {
         setDbPdcs(data);
       }
@@ -92,6 +109,72 @@ function CashierPDCs() {
       // Fallback
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveCollection() {
+    const lease = leases.find((item) => item.id === selectedLeaseId);
+    const amount = Number(collectionAmount);
+    if (!lease || !amount || amount <= 0) {
+      alert("Select a tenant/property/unit and enter a valid amount.");
+      return;
+    }
+    if (collectionType === "PDC" && !chequeNumber.trim()) {
+      alert("Enter the cheque number for a PDC collection.");
+      return;
+    }
+
+    setSavingCollection(true);
+    try {
+      if (collectionType === "PDC") {
+        await receivePdc({
+          cheque_number: chequeNumber.trim(),
+          cheque_date: new Date().toISOString().slice(0, 10),
+          amount,
+          tenant_id: lease.customerId,
+          property_id: (lease as any).propertyId || lease.property,
+          unit_id: (lease as any).unitId || lease.unit,
+          lease_id: lease.id,
+          unitCode: lease.unit,
+          pdcType: "RENT_PDC",
+        });
+      } else {
+        await collectSecurityDeposit({
+          amount,
+          tenant_id: lease.customerId,
+          property_id: (lease as any).propertyId || lease.property,
+          unit_id: (lease as any).unitId || lease.unit,
+          lease_id: lease.id,
+          mode: "Cash",
+          depositType: collectionType === "Security Deposit" ? "SECURITY" : "SERVICE_FEE",
+          ref: collectionDescription.trim() || `${collectionType} collected by Cashier`,
+          unit_name: lease.unit,
+        });
+        setVouchers((items) => [{
+          id: `cashier-${Date.now()}`,
+          leaseId: lease.id,
+          name: `${collectionType} - ${lease.tenantName}`,
+          receiptNo: `CSH-${Date.now().toString().slice(-8)}`,
+          method: "Cashier Collection",
+          period: new Date().toISOString().slice(0, 10),
+          debit: "Cash / Bank Collection",
+          credit: collectionType === "Security Deposit" ? "Security Deposit Liability" : "Tenant Receivable",
+          amount,
+          status: "posted",
+        }, ...items]);
+        window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+      }
+      setCollectionOpen(false);
+      setCollectionAmount("");
+      setChequeNumber("");
+      setBankName("");
+      setCollectionDescription("");
+      await loadDbPdcs();
+      alert(`${collectionType} collected for ${lease.tenantName} · ${lease.property} · ${lease.unit}.`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Collection failed.");
+    } finally {
+      setSavingCollection(false);
     }
   }
 
@@ -172,11 +255,31 @@ function CashierPDCs() {
             Manage post-dated cheques — actions update both the PDC register and the General Ledger.
           </p>
         </div>
-        <Badge variant="outline" className="gap-1 text-green-700 border-green-300 bg-green-50">
-          <Wifi className="h-3 w-3" />
-          Live Sync + GL
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setCollectionOpen(true)} className="gap-2">Collect Tenant Amount</Button>
+          <Badge variant="outline" className="gap-1 text-green-700 border-green-300 bg-green-50">
+            <Wifi className="h-3 w-3" />
+            Live Sync + GL
+          </Badge>
+        </div>
       </div>
+
+      <Dialog open={collectionOpen} onOpenChange={setCollectionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Collect Tenant Amount</DialogTitle>
+            <DialogDescription>Select the tenant, property, and unit before posting the collection.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5"><Label>Collection Type</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={collectionType} onChange={(event) => setCollectionType(event.target.value as typeof collectionType)}><option>PDC</option><option>Security Deposit</option><option>Other Amount</option></select></div>
+            <div className="space-y-1.5"><Label>Tenant / Property / Unit</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedLeaseId} onChange={(event) => setSelectedLeaseId(event.target.value)}><option value="">Select collection target</option>{leases.map((lease) => <option key={lease.id} value={lease.id}>{lease.tenantName} · {lease.property} · {lease.unit}</option>)}</select></div>
+            <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label>Amount (QAR)</Label><Input type="number" min="0" value={collectionAmount} onChange={(event) => setCollectionAmount(event.target.value)} /></div>{collectionType === "PDC" && <div className="space-y-1.5"><Label>Cheque Number</Label><Input value={chequeNumber} onChange={(event) => setChequeNumber(event.target.value)} /></div>}</div>
+            {collectionType === "PDC" && <div className="space-y-1.5"><Label>Bank</Label><Input value={bankName} onChange={(event) => setBankName(event.target.value)} placeholder="Bank name" /></div>}
+            {collectionType === "Other Amount" && <div className="space-y-1.5"><Label>Description</Label><Input value={collectionDescription} onChange={(event) => setCollectionDescription(event.target.value)} placeholder="Reason for collection" /></div>}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCollectionOpen(false)}>Cancel</Button><Button onClick={saveCollection} disabled={savingCollection}>{savingCollection ? "Posting..." : "Post Collection"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -382,4 +485,8 @@ function CashierPDCs() {
       </p>
     </div>
   );
+}
+
+function CashierPDCs() {
+  return <PdcManagement />;
 }

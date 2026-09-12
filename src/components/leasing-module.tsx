@@ -1500,6 +1500,34 @@ function LeasingPage() {
       status: lease.status,
       output: "Lease agreement created with rent schedule terms",
     });
+    recordAudit({
+      stage: "Property Manager Handoff",
+      owner: "Leasing Department",
+      input: `${lease.tenantName}, ${lease.unit}, lease ${lease.id}`,
+      approval: "Property Manager review required",
+      status: "pending_approval",
+      output: "Lease package forwarded to Property Manager for operational review",
+    });
+    if (customer.email) {
+      void supabase.auth.getSession().then(({ data }) => {
+        const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("Your Leasing session has expired. Please sign in again.");
+        return fetch("/api/provision-tenant", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ email: customer.email, fullName: customer.name }),
+        });
+      })
+        .then(async (response) => {
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || "Tenant account provisioning failed.");
+          toast.success(`Tenant login created for ${result.email}. Initial password: Mindz@007`);
+        })
+        .catch((error) => toast.error(error instanceof Error ? error.message : "Tenant account provisioning failed."));
+    }
   }
 
   function openReleaseDialog(reservation: Reservation) {

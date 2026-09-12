@@ -79,7 +79,7 @@ import {
 import { properties as mockProperties, units as mockUnits } from "@/lib/mock-data";
 
 export interface MaintenanceModuleProps {
-  role: "admin" | "prop-mgr" | "owner";
+  role: "admin" | "prop-mgr" | "owner" | "maintenance";
 }
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -1016,6 +1016,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
 
   // Handler: Add Manual Ticket
   function handleCreateTicket() {
+    if (role === "maintenance") {
+      toast.error("In-house maintenance staff can update tickets but cannot create new service tickets.");
+      return;
+    }
     if (!ticketForm.title.trim()) {
       toast.error("Please enter a ticket title");
       return;
@@ -1341,7 +1345,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
       frequency: ppmForm.frequency as any,
       nextDueDate: ppmForm.nextDueDate,
       lastDoneDate: new Date().toISOString().slice(0, 10),
-      assignedVendorName: ppmForm.assignedVendorName,
+      assignedVendorName: role === "maintenance" ? undefined : ppmForm.assignedVendorName,
       estimatedCost: Number(ppmForm.estimatedCost) || 0,
       status: "Upcoming",
       checklist: ppmForm.checklist.split(",").map(c => c.trim()).filter(Boolean),
@@ -1389,6 +1393,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
   // Handler: Dispatch Work Order from PPM Modal
   function handleDispatchWoFromPpm() {
     if (!selectedPpmForWo) return;
+    if (role === "maintenance" && ppmWoForm.assigneeType === "vendor") {
+      toast.error("In-house maintenance staff cannot dispatch third-party vendors.");
+      return;
+    }
     const newWoId = `WO-2026-${(workOrders.length + 1).toString().padStart(3, "0")}`;
     const newWo: WorkOrder = {
       id: newWoId,
@@ -1598,6 +1606,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
 
   // Handler: Add Vendor AP Invoice (from Vendor Jobs Tab CTA)
   function handleCreateVendorInvoiceFromModal() {
+    if (role === "maintenance") {
+      toast.error("In-house maintenance staff cannot create third-party vendor AP invoices.");
+      return;
+    }
     if (!vendorInvModalForm.invoiceNo.trim() || Number(vendorInvModalForm.amount) <= 0) {
       toast.error("Please specify a valid invoice number and amount");
       return;
@@ -1914,7 +1926,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
         return {
           title: "Vendor Jobs & Accounts Payable",
           subtitle: "3rd-party specialist contractor jobs, parts billing, and direct AP invoice processing.",
-          ctaLabel: "+ Record Vendor AP Invoice",
+          ctaLabel: role === "maintenance" ? undefined : "+ Record Vendor AP Invoice",
           ctaIcon: Plus,
           onCtaClick: () => setShowVendorInvoiceModal(true),
           cards: [
@@ -1943,7 +1955,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
         return {
           title: "Maintenance Service Tickets",
           subtitle: "Intake customer requests, triage priority faults, and track resolution SLAs.",
-          ctaLabel: "+ Log Service Ticket",
+          ctaLabel: role === "maintenance" ? undefined : "+ Log Service Ticket",
           ctaIcon: Plus,
           onCtaClick: () => setShowNewTicketModal(true),
           cards: [
@@ -4343,18 +4355,20 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                     <span className="text-[10px] text-muted-foreground leading-tight block">Internal field technician</span>
                   </div>
                 </div>
-                <div
-                  onClick={() => setWoForm(f => ({ ...f, assigneeType: "vendor" }))}
-                  className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-start gap-2 ${
-                    woForm.assigneeType === "vendor" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20" : "border-border hover:bg-muted/40"
-                  }`}
-                >
-                  <Building2 className={`h-4 w-4 mt-0.5 ${woForm.assigneeType === "vendor" ? "text-blue-600" : "text-muted-foreground"}`} />
-                  <div>
-                    <span className="font-semibold text-foreground block text-[11px]">Outsourced Vendor</span>
-                    <span className="text-[10px] text-muted-foreground leading-tight block">Specialist 3rd-party vendor</span>
+                {role !== "maintenance" && (
+                  <div
+                    onClick={() => setWoForm(f => ({ ...f, assigneeType: "vendor" }))}
+                    className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-start gap-2 ${
+                      woForm.assigneeType === "vendor" ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20" : "border-border hover:bg-muted/40"
+                    }`}
+                  >
+                    <Building2 className={`h-4 w-4 mt-0.5 ${woForm.assigneeType === "vendor" ? "text-blue-600" : "text-muted-foreground"}`} />
+                    <div>
+                      <span className="font-semibold text-foreground block text-[11px]">Outsourced Vendor</span>
+                      <span className="text-[10px] text-muted-foreground leading-tight block">Specialist 3rd-party vendor</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -5418,16 +5432,20 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                 </div>
                 <div>
                   <Label>Dispatch Mode *</Label>
-                  <Select
-                    value={ppmWoForm.assigneeType}
-                    onValueChange={(v: "in_house" | "vendor") => setPpmWoForm(f => ({ ...f, assigneeType: v }))}
-                  >
-                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="vendor">Outsourced Specialist Vendor</SelectItem>
-                      <SelectItem value="in_house">In-House Field Technician</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {role === "maintenance" ? (
+                    <div className="h-8 mt-1 flex items-center rounded-md border px-2 text-xs text-muted-foreground">In-House Field Technician</div>
+                  ) : (
+                    <Select
+                      value={ppmWoForm.assigneeType}
+                      onValueChange={(v: "in_house" | "vendor") => setPpmWoForm(f => ({ ...f, assigneeType: v }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="vendor">Outsourced Specialist Vendor</SelectItem>
+                        <SelectItem value="in_house">In-House Field Technician</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,6 +40,7 @@ import {
   cashDepositInPlaceOfPdc,
   receivePdc,
 } from "@/lib/finance/pdcService";
+import { collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
@@ -273,6 +275,7 @@ function saveReceiptHistory(history: Record<string, TenantReceiptDetails[]>) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export function PdcManagement() {
+  const routeSearch = useSearch({ strict: false }) as { collect?: string };
   const { pdcs: sharedPdcs, setPdcs: setSharedPdcs, leases, units, customers } = useAppData();
   const { addCashBookEntry, addVoucher } = useFinanceStore();
   const [pdcs, setPdcs] = useState<any[]>([]);
@@ -314,6 +317,9 @@ export function PdcManagement() {
 
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [addPdcLoading, setAddPdcLoading] = useState(false);
+  const [collectionType, setCollectionType] = useState<"PDC" | "Security Deposit" | "Other Amount">("PDC");
+  const [otherCollectionAmount, setOtherCollectionAmount] = useState("");
+  const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [addPdcRows, setAddPdcRows] = useState<AddPdcRow[]>([
     {
@@ -329,6 +335,10 @@ export function PdcManagement() {
   const [genPrefix, setGenPrefix] = useState("PDC-Flat14-");
   const [genStartNo, setGenStartNo] = useState("1");
   const [genStartDate, setGenStartDate] = useState(new Date().toISOString().split("T")[0]);
+
+  useEffect(() => {
+    if (routeSearch.collect === "1") setAddPdcOpen(true);
+  }, [routeSearch.collect]);
 
 
   // ── Multi-Dimensional Filters ──────────────────────────────────────────────
@@ -1067,6 +1077,59 @@ export function PdcManagement() {
       toast.error("Please select a Lease / Tenant Agreement.");
       return;
     }
+    const lease = leases.find(l => l.id === selectedLeaseId);
+    if (!lease) {
+      toast.error("Selected lease could not be found.");
+      return;
+    }
+
+    if (collectionType !== "PDC") {
+      const amount = parseFloat(otherCollectionAmount);
+      if (!amount || amount <= 0) {
+        toast.error("Enter a valid collection amount.");
+        return;
+      }
+      setAddPdcLoading(true);
+      try {
+        const customerId = (lease as any).customerId || "00000000-0000-0000-0000-000000000003";
+        const propertyId = (lease as any).propertyId || "00000000-0000-0000-0000-000000000001";
+        const unitId = (lease as any).unitId || "00000000-0000-0000-0000-000000000002";
+        await collectSecurityDeposit({
+          amount,
+          tenant_id: customerId,
+          property_id: propertyId,
+          unit_id: unitId,
+          lease_id: lease.id,
+          mode: "Cash",
+          depositType: collectionType === "Security Deposit" ? "SECURITY" : "SERVICE_FEE",
+          ref: otherCollectionDescription.trim() || `${collectionType} collected by Cashier`,
+          unit_name: lease.unit,
+        });
+        addVoucher({
+          voucher_no: `VCH-CASH-${Date.now()}`,
+          voucher_type: "Receipt Voucher",
+          date: new Date().toISOString().split("T")[0],
+          name: `${collectionType} - ${lease.tenantName}`,
+          debit: "Cash / Bank Collection",
+          credit: collectionType === "Security Deposit" ? "Security Deposit Liability" : "Tenant Receivable",
+          amount,
+          method: "Cashier Collection",
+          property_name: lease.property,
+          unit_ref: lease.unit,
+          tenant_name: lease.tenantName,
+        });
+        setAddPdcOpen(false);
+        setOtherCollectionAmount("");
+        setOtherCollectionDescription("");
+        toast.success(`${collectionType} collected for ${lease.tenantName} · ${lease.property} · ${lease.unit}.`);
+      } catch (error: any) {
+        toast.error(error.message || "Collection failed.");
+      } finally {
+        setAddPdcLoading(false);
+      }
+      return;
+    }
+
     if (addPdcRows.length === 0) {
       toast.error("Please add at least one Cheque row.");
       return;
@@ -1079,7 +1142,6 @@ export function PdcManagement() {
       }
     }
 
-    const lease = leases.find(l => l.id === selectedLeaseId);
     const prop = lease?.property || "Old Salata - Residence No:23";
     const unit = lease?.unit || "Unit";
     const tenant = lease?.tenantName || "Valued Tenant";
@@ -1757,14 +1819,26 @@ export function PdcManagement() {
         <DialogContent className="sm:max-w-[840px] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
-              <Plus className="h-5 w-5 text-primary" /> Register Post-Dated Cheques (PDC)
+              <Plus className="h-5 w-5 text-primary" /> {collectionType === "PDC" ? "Register Post-Dated Cheques (PDC)" : `Collect ${collectionType}`}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Add post-dated cheques in full collection format, post double-entry GL (DR 12900 PDC In Hand / CR 21400 Customer PDC Liability), and issue official acknowledgement receipt.
+              {collectionType === "PDC" ? "Add post-dated cheques in full collection format, post double-entry GL, and issue an official acknowledgement receipt." : "Collect the selected tenant amount, post the double-entry finance transaction, and issue an official receipt."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3.5 py-1 text-xs">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <Label className="text-[11px] font-semibold">Collection Type</Label>
+              <Select value={collectionType} onValueChange={(value) => setCollectionType(value as typeof collectionType)}>
+                <SelectTrigger className="mt-1 h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PDC">Post-Dated Cheques (PDC)</SelectItem>
+                  <SelectItem value="Security Deposit">Security Deposit</SelectItem>
+                  <SelectItem value="Other Amount">Other Amount / Service Fee</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Lease Selector */}
             <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
@@ -1848,8 +1922,18 @@ export function PdcManagement() {
               </div>
             </div>
 
+            {collectionType !== "PDC" && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-[11px] font-semibold">Amount (QAR) *</Label><Input type="number" min="0" className="h-8 text-xs" value={otherCollectionAmount} onChange={e => setOtherCollectionAmount(e.target.value)} /></div>
+                  <div className="space-y-1"><Label className="text-[11px] font-semibold">Description</Label><Input className="h-8 text-xs" value={otherCollectionDescription} onChange={e => setOtherCollectionDescription(e.target.value)} placeholder="Collection reason" /></div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">This collection will post to the tenant ledger and generate a receipt for the selected lease.</p>
+              </div>
+            )}
+
             {/* PDC Schedule Table with exact collection columns: #, Cheque No., Bank, Maturity Date, Period, Amount (QAR) */}
-            <div className="space-y-2">
+            <div className={collectionType === "PDC" ? "space-y-2" : "hidden"}>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-muted-foreground">
                   <Receipt className="h-4 w-4 text-primary" />
@@ -2001,9 +2085,9 @@ export function PdcManagement() {
             <Button 
               className="bg-purple-600 hover:bg-purple-700 text-white"
               onClick={handleAddPdc} 
-              disabled={addPdcLoading || !selectedLeaseId || addPdcRows.length === 0}
+              disabled={addPdcLoading || !selectedLeaseId || addPdcRows.length === 0 || (collectionType !== "PDC" && !otherCollectionAmount)}
             >
-              {addPdcLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Saving PDCs &amp; Posting GL…</> : "Save PDCs & Issue Receipt"}
+              {addPdcLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Posting Collection…</> : collectionType === "PDC" ? "Save PDCs & Issue Receipt" : "Post Collection & Issue Receipt"}
             </Button>
           </DialogFooter>
         </DialogContent>

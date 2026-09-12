@@ -1,10 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Receipt as ReceiptIcon, FileText, CheckCircle2, ArrowRightLeft, Wifi } from "lucide-react";
+import { Receipt as ReceiptIcon, FileText, CheckCircle2, ArrowRightLeft, Wifi, Banknote } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/lib/app-data-context";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FinanceModule } from "@/components/finance-module";
 
 export const Route = createFileRoute("/cashier/")({
   component: CashierDashboard,
@@ -12,6 +15,45 @@ export const Route = createFileRoute("/cashier/")({
 
 function CashierDashboard() {
   const { leases, pdcs, vouchers, syncing } = useAppData();
+  const search = useSearch({ strict: false }) as { tab?: string };
+  const selectedTab = search.tab;
+  const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const selectedLease = leases.find((lease) => lease.id === selectedLeaseId) ?? null;
+
+  if (selectedTab) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Collection Target</CardTitle>
+            <p className="text-sm text-muted-foreground">Select the tenant, property, and unit before recording this collection.</p>
+          </CardHeader>
+          <CardContent>
+            <Select value={selectedLeaseId} onValueChange={setSelectedLeaseId}>
+              <SelectTrigger className="max-w-xl">
+                <SelectValue placeholder="Select tenant / property / unit" />
+              </SelectTrigger>
+              <SelectContent>
+                {leases.map((lease) => (
+                  <SelectItem key={lease.id} value={lease.id}>
+                    {lease.tenantName} · {lease.property} · {lease.unit}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+        <FinanceModule
+          role="cashier"
+          collectionContext={selectedLease ? {
+            tenantName: selectedLease.tenantName,
+            property: selectedLease.property,
+            unit: selectedLease.unit,
+          } : null}
+        />
+      </div>
+    );
+  }
 
   const postedVouchers = vouchers.filter((voucher) => voucher.status === "posted");
   const totalCollected = postedVouchers.reduce((sum, voucher) => sum + voucher.amount, 0);
@@ -55,6 +97,12 @@ function CashierDashboard() {
             <Link to="/cashier/receipts">
               <ReceiptIcon className="h-4 w-4" />
               View Financial Receipts
+            </Link>
+          </Button>
+          <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white gap-2">
+            <Link to="/cashier/pdc" search={{ collect: "1" }}>
+              <Banknote className="h-4 w-4" />
+              Collect PDC / Deposit
             </Link>
           </Button>
         </div>

@@ -56,6 +56,11 @@ import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
+  collectionContext?: {
+    tenantName: string;
+    property: string;
+    unit: string;
+  } | null;
 }
 
 const FINANCE_NAV = [
@@ -153,7 +158,7 @@ const FINANCE_NAV = [
   },
 ];
 
-export function FinanceModule({ role }: FinanceModuleProps) {
+export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
   const searchParams = useSearch({ strict: false }) as Record<string, any>;
   const activeKey = searchParams.tab || "finance_dashboard";
 
@@ -195,6 +200,12 @@ export function FinanceModule({ role }: FinanceModuleProps) {
             </Button>
           </div>
         </div>
+
+        {role === "cashier" && collectionContext && (
+          <div className="mx-6 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <span className="font-semibold">Collection target:</span> {collectionContext.tenantName} · {collectionContext.property} · {collectionContext.unit}
+          </div>
+        )}
 
         {/* Content */}
         <ScrollArea className="flex-1">

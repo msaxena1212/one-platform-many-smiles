@@ -48,8 +48,11 @@ export interface Lease {
 export interface Ticket {
   id: string;
   subject: string;
+  description?: string;
   unit: string;
-  category: "Plumbing" | "Electrical" | "HVAC" | "General" | "Cleaning";
+  property?: string;
+  complaintArea?: string;
+  category: "Carpenter" | "CCTV" | "Civil & Structural" | "Door Issue" | "Electrician" | "Elevator / Lift" | "Fire & Safety" | "Groutin" | "Housekeeping" | "HVAC & Chillers" | "Intercom" | "Mason" | "Painter" | "Plumber" | "Security" | "Other" | "Plumbing" | "Electrical" | "HVAC" | "General" | "Cleaning";
   priority: "Low" | "Medium" | "High" | "Urgent";
   status: "new" | "assigned" | "in_progress" | "resolved" | "closed";
   createdAt: string;
