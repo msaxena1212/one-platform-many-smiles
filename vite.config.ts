@@ -69,9 +69,9 @@ export default defineConfig({
       },
     },
   },
-  // Enable Nitro for production deployments so the build emits a runnable
-  // server output instead of only client/server asset chunks.
-  nitro: true,
+  // Use Nitro's Vercel preset so the deployment exposes the SSR handler
+  // instead of generating a Cloudflare worker that Vercel cannot route to.
+  nitro: { preset: "vercel" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     server: { entry: "server" },
