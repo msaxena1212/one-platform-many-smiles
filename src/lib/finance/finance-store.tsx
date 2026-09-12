@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+import { resolveAccountingAccounts } from "./account-resolver";
+import { postVoucher } from "./posting-engine";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -14,6 +17,10 @@ export interface LedgerTransaction {
   credit: number;
   source: string;
   description: string;
+  // Dimensional metadata for filtering
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface JournalLedgerEntry {
@@ -28,6 +35,9 @@ export interface JournalLedgerEntry {
   cr_code: string;
   amount: number;
   status: string;
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface GrnCostMapping {
@@ -58,7 +68,7 @@ export interface PayableInvoice {
 export interface FinanceVoucher {
   id: string;
   voucher_no: string;
-  voucher_type: "Journal Voucher" | "Payment Voucher" | "Receipt Voucher";
+  voucher_type: "Journal Voucher" | "Payment Voucher" | "Receipt Voucher" | "Contra Voucher";
   date: string;
   name: string;
   debit: string;
@@ -68,6 +78,9 @@ export interface FinanceVoucher {
   amount: number;
   method?: string;
   status: "Posted" | "Draft" | "Approved";
+  property_name?: string;
+  unit_ref?: string;
+  tenant_name?: string;
 }
 
 export interface ReceivableInvoice {
@@ -159,72 +172,21 @@ export interface PettyCashEntry {
   amount: number;
 }
 
-// ── Baseline Initial Data ──────────────────────────────────────────────────
+// ── Baseline Initial Data (Clean State for Real Entry) ──────────────────────
 
-const INITIAL_JOURNAL_LEDGER: JournalLedgerEntry[] = [
-  { id: "je-1", je_no: "JE-2026-001", posting_date: "2026-08-01", reference: "REC-PDC-001", narration: "Rent PDC Deposited in QNB Bank Account", dr_account: "Bank Operating Account", dr_code: "12000", cr_account: "PDC In Hand", cr_code: "12900", amount: 5600, status: "Posted" },
-  { id: "je-2", je_no: "JE-2026-002", posting_date: "2026-08-02", reference: "ARE-RT-25-3962", narration: "Security Deposit Acknowledged Cash", dr_account: "Cash In Hand", dr_code: "10100", cr_account: "Security Deposit Liability", cr_code: "21500", amount: 1000, status: "Posted" },
-  { id: "je-3", je_no: "JE-2026-003", posting_date: "2026-08-05", reference: "INV-AP-9901", narration: "HVAC Maintenance & Spare Parts", dr_account: "Repairs & Maintenance", dr_code: "50200", cr_account: "Accounts Payable", cr_code: "20100", amount: 14500, status: "Posted" },
-];
+const INITIAL_JOURNAL_LEDGER: JournalLedgerEntry[] = [];
+const INITIAL_GRN_MAPPINGS: GrnCostMapping[] = [];
+const INITIAL_PAYABLE_INVOICES: PayableInvoice[] = [];
+const INITIAL_VOUCHERS: FinanceVoucher[] = [];
+const INITIAL_RECEIVABLE_INVOICES: ReceivableInvoice[] = [];
+const INITIAL_LEGAL_RECEIVABLES: LegalReceivable[] = [];
+const INITIAL_PAYROLL_SYNCS: PayrollSyncRun[] = [];
+const INITIAL_BANK_CLEARANCES: BankClearanceEntry[] = [];
+const INITIAL_BANK_RECONCILIATIONS: BankReconciliationRecord[] = [];
+const INITIAL_RECON_STATEMENTS: ReconciliationStatementArchive[] = [];
+const INITIAL_CASH_BOOK: CashBookEntry[] = [];
+const INITIAL_PETTY_CASH: PettyCashEntry[] = [];
 
-const INITIAL_GRN_MAPPINGS: GrnCostMapping[] = [
-  { id: "grn-1", grn_no: "GRN-2026-081", po_ref: "PO-2026-014", vendor: "Qatar Maintenance & HVAC Co.", description: "Central AC Compressor Replacement", amount: 14500, mapped_gl: "Repairs & Maintenance", mapped_code: "50200", property: "Old Salata - Residence No:23", status: "Mapped" },
-  { id: "grn-2", grn_no: "GRN-2026-082", po_ref: "PO-2026-018", vendor: "Gulf Facility Services", description: "Deep Cleaning & Disinfection Batch", amount: 8200, mapped_gl: "Cleaning & Sanitation", mapped_code: "50300", property: "Regency Residence Al Sadd 1", status: "Mapped" },
-];
-
-const INITIAL_PAYABLE_INVOICES: PayableInvoice[] = [
-  { id: "ap-1", invoice_no: "INV-AP-9901", vendor: "Qatar Maintenance & HVAC Co.", date: "2026-08-01", due_date: "2026-08-25", account: "Repairs & Maintenance", account_code: "50200", amount: 14500, status: "Unpaid" },
-  { id: "ap-2", invoice_no: "INV-AP-9902", vendor: "Kahramaa Utility Authority", date: "2026-08-05", due_date: "2026-08-20", account: "Electricity & Water", account_code: "50500", amount: 9850, status: "Paid" },
-];
-
-const INITIAL_VOUCHERS: FinanceVoucher[] = [
-  { id: "vch-j1", voucher_no: "VCH-JOU-1001", voucher_type: "Journal Voucher", date: "2026-08-01", name: "Monthly Depreciation & Amortization", debit: "Depreciation Expense", debit_code: "50900", credit: "Accumulated Depreciation", credit_code: "13900", amount: 8500, status: "Posted" },
-  { id: "vch-p1", voucher_no: "VCH-PAY-2001", voucher_type: "Payment Voucher", date: "2026-08-06", name: "Settlement of Kahramaa Utility Bill", debit: "Accounts Payable", debit_code: "20100", credit: "Bank Operating Account", credit_code: "12000", amount: 9850, method: "Bank Transfer", status: "Posted" },
-  { id: "vch-r1", voucher_no: "VCH-REC-3001", voucher_type: "Receipt Voucher", date: "2026-08-08", name: "Direct Rent Collection - Unit Flat16", debit: "Bank Operating Account", debit_code: "12000", credit: "Rental Revenue", credit_code: "41100", amount: 5600, method: "Bank Transfer", status: "Posted" },
-];
-
-const INITIAL_RECEIVABLE_INVOICES: ReceivableInvoice[] = [
-  { id: "ar-1", invoice_no: "INV-AR-8801", tenant: "Mr. Hafeez Shaik", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", date: "2026-08-01", due_date: "2026-08-10", stream: "Monthly Rent", account_code: "41100", amount: 5600, status: "Paid" },
-  { id: "ar-2", invoice_no: "INV-AR-8802", tenant: "M/S. Al Ameen Real Estate", property: "Old Salata - Residence No:23", unit: "AAA - GF1", date: "2026-08-01", due_date: "2026-08-15", stream: "Commercial Rent", account_code: "41100", amount: 5500, status: "Pending" },
-  { id: "ar-3", invoice_no: "INV-AR-8803", tenant: "Vivek Viswakumaran Nair", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", date: "2026-08-01", due_date: "2026-08-05", stream: "Residential Lease", account_code: "41100", amount: 4000, status: "Paid" },
-];
-
-const INITIAL_LEGAL_RECEIVABLES: LegalReceivable[] = [
-  { id: "lgl-1", legal_case_id: "LGL-2026-0038", tenant_name: "Al Ameen Logistics WLL", property_name: "Old Salata - Residence No:23", unit_ref: "AAA - GF1", original_amount: 16500, outstanding_balance: 16500, escalation_date: "2026-08-01", reason: "3 months rent cheques bounced; 7-Day notice expired", status: "Legal Notice Sent" },
-  { id: "lgl-2", legal_case_id: "LGL-2026-0024", tenant_name: "Mohamed Tariq", property_name: "Regency Residence Al Sadd 1", unit_ref: "ARRS01-B00-F00-AG01", original_amount: 8000, outstanding_balance: 4000, escalation_date: "2026-07-15", reason: "Late payment violation & damages dispute", status: "Partially Recovered" },
-];
-
-const INITIAL_PAYROLL_SYNCS: PayrollSyncRun[] = [
-  { id: "pr-1", payroll_run_id: "PR-RUN-2026-08", period: "2026-08", department: "Maintenance & Security", account_code: "50100", basic_salary: 35000, allowances: 8000, overtime: 3500, deductions: 1500, total_amount: 45000, bank_account: "12000 - QNB Operations Account", status: "Posted", error_details: "Successfully mapped & journal posted to GL Account 50100" },
-];
-
-const INITIAL_BANK_CLEARANCES: BankClearanceEntry[] = [
-  { id: "bc-1", ref: "CHQ-01000049", bank: "Commercial Bank (CBQ)", type: "PDC Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" },
-  { id: "bc-2", ref: "CHQ-01000050", bank: "Commercial Bank (CBQ)", type: "PDC Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" },
-  { id: "bc-3", ref: "WIRE-TX-9912", bank: "QNB Main Account", type: "Utility Transfer", amount: 9850, date: "2026-08-08", status: "Cleared" },
-];
-
-const INITIAL_BANK_RECONCILIATIONS: BankReconciliationRecord[] = [
-  { id: "br-1", account_number: "QA55QNBA00000000123456789", statement_date: "2026-08-15", book_balance: 1500000, statement_balance: 1500000, difference: 0, status: "Reconciled" },
-  { id: "br-2", account_number: "QA88CBQA00000000987654321", statement_date: "2026-08-15", book_balance: 450000, statement_balance: 450000, difference: 0, status: "Reconciled" },
-];
-
-const INITIAL_RECON_STATEMENTS: ReconciliationStatementArchive[] = [
-  { id: "rs-1", title: "QNB Main Operating Account - July 2026", period: "2026-07-01 to 2026-07-31", balance: "1,500,000 QAR", auditor: "Internal Treasury Desk" },
-  { id: "rs-2", title: "CBQ Escrow & Deposits Account - July 2026", period: "2026-07-01 to 2026-07-31", balance: "450,000 QAR", auditor: "Internal Treasury Desk" },
-];
-
-const INITIAL_CASH_BOOK: CashBookEntry[] = [
-  { id: "cb-1", date: "2026-08-02", voucher: "CSH-01", description: "Cash Rent Collection (Unit AAA-GF2)", cash_in: 5500, cash_out: 0, balance: 24500 },
-  { id: "cb-2", date: "2026-08-04", voucher: "CSH-02", description: "Security Deposit Received Cash", cash_in: 1000, cash_out: 0, balance: 25500 },
-  { id: "cb-3", date: "2026-08-08", voucher: "CSH-03", description: "Emergency Plumbing Cash Advance", cash_in: 0, cash_out: 1000, balance: 24500 },
-];
-
-const INITIAL_PETTY_CASH: PettyCashEntry[] = [
-  { id: "pc-1", date: "2026-08-03", expense: "Office Supplies & Paper", paid_to: "Doha Stationers", amount: 150 },
-  { id: "pc-2", date: "2026-08-06", expense: "Site Cleaning Consumables", paid_to: "Al Meera Supermarket", amount: 320 },
-  { id: "pc-3", date: "2026-08-11", expense: "Emergency Key Duplication", paid_to: "Quick Keys WLL", amount: 80 },
-];
 
 // ── Finance Context Interface ───────────────────────────────────────────────
 
@@ -248,7 +210,22 @@ export interface FinanceStoreContextType {
 
   legalReceivables: LegalReceivable[];
   addLegalEscalation: (esc: Omit<LegalReceivable, "id">) => void;
-  recoverLegalReceivable: (caseId: string, amount: number, bankRef: string) => void;
+  recoverLegalReceivable: (
+    caseId: string,
+    amount: number,
+    bankRef: string,
+    paymentMethod?: string,
+    propertyName?: string,
+    unitRef?: string,
+    tenantName?: string,
+    details?: {
+      date?: string;
+      transactionNo?: string;
+      chequeNo?: string;
+      chequeBank?: string;
+      maturityDate?: string;
+    }
+  ) => void;
 
   payrollSyncs: PayrollSyncRun[];
   addPayrollSync: (run: Omit<PayrollSyncRun, "id" | "status">) => void;
@@ -333,6 +310,9 @@ export interface FinanceStoreContextType {
     siteDesks: number;
     totalCashOnHand: number;
   };
+
+  isSyncing: boolean;
+  refreshFinanceData: () => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceStoreContextType | null>(null);
@@ -340,19 +320,359 @@ const FinanceContext = createContext<FinanceStoreContextType | null>(null);
 const STORE_KEY = "zyno-finance-store-v1";
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
+  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v5";
+
   // ── States ────────────────────────────────────────────────────────────────
-  const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(INITIAL_JOURNAL_LEDGER);
+  const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => {
+    if (typeof window === "undefined") return INITIAL_JOURNAL_LEDGER;
+    try {
+      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
+      return saved ? JSON.parse(saved) : INITIAL_JOURNAL_LEDGER;
+    } catch { return INITIAL_JOURNAL_LEDGER; }
+  });
   const [grnMappings, setGrnMappings] = useState<GrnCostMapping[]>(INITIAL_GRN_MAPPINGS);
-  const [payableInvoices, setPayableInvoices] = useState<PayableInvoice[]>(INITIAL_PAYABLE_INVOICES);
-  const [vouchers, setVouchers] = useState<FinanceVoucher[]>(INITIAL_VOUCHERS);
-  const [receivableInvoices, setReceivableInvoices] = useState<ReceivableInvoice[]>(INITIAL_RECEIVABLE_INVOICES);
+  const [payableInvoices, setPayableInvoices] = useState<PayableInvoice[]>(() => {
+    if (typeof window === "undefined") return INITIAL_PAYABLE_INVOICES;
+    try {
+      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ap`);
+      return saved ? JSON.parse(saved) : INITIAL_PAYABLE_INVOICES;
+    } catch { return INITIAL_PAYABLE_INVOICES; }
+  });
+  const [vouchers, setVouchers] = useState<FinanceVoucher[]>(() => {
+    if (typeof window === "undefined") return INITIAL_VOUCHERS;
+    try {
+      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
+      if (!saved) return INITIAL_VOUCHERS;
+      const list: FinanceVoucher[] = JSON.parse(saved);
+      return Array.isArray(list) ? list : INITIAL_VOUCHERS;
+    } catch { return INITIAL_VOUCHERS; }
+  });
+  const [receivableInvoices, setReceivableInvoices] = useState<ReceivableInvoice[]>(() => {
+    if (typeof window === "undefined") return INITIAL_RECEIVABLE_INVOICES;
+    try {
+      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`);
+      return saved ? JSON.parse(saved) : INITIAL_RECEIVABLE_INVOICES;
+    } catch { return INITIAL_RECEIVABLE_INVOICES; }
+  });
   const [legalReceivables, setLegalReceivables] = useState<LegalReceivable[]>(INITIAL_LEGAL_RECEIVABLES);
   const [payrollSyncs, setPayrollSyncs] = useState<PayrollSyncRun[]>(INITIAL_PAYROLL_SYNCS);
   const [bankClearances, setBankClearances] = useState<BankClearanceEntry[]>(INITIAL_BANK_CLEARANCES);
   const [bankReconciliations, setBankReconciliations] = useState<BankReconciliationRecord[]>(INITIAL_BANK_RECONCILIATIONS);
   const [reconciliationStatements, setReconciliationStatements] = useState<ReconciliationStatementArchive[]>(INITIAL_RECON_STATEMENTS);
-  const [cashBookEntries, setCashBookEntries] = useState<CashBookEntry[]>(INITIAL_CASH_BOOK);
+  const [cashBookEntries, setCashBookEntries] = useState<CashBookEntry[]>(() => {
+    if (typeof window === "undefined") return INITIAL_CASH_BOOK;
+    try {
+      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-cashbook`);
+      return saved ? JSON.parse(saved) : INITIAL_CASH_BOOK;
+    } catch { return INITIAL_CASH_BOOK; }
+  });
   const [pettyCashEntries, setPettyCashEntries] = useState<PettyCashEntry[]>(INITIAL_PETTY_CASH);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Sync to local storage on changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(vouchers));
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-journals`, JSON.stringify(journalEntries));
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-ar`, JSON.stringify(receivableInvoices));
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-ap`, JSON.stringify(payableInvoices));
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-cashbook`, JSON.stringify(cashBookEntries));
+      } catch { /* ignore */ }
+    }
+  }, [vouchers, journalEntries, receivableInvoices, payableInvoices, cashBookEntries]);
+
+  // Track IDs already merged from Supabase to avoid duplicates
+  const seenVoucherIds = useRef(new Set<string>());
+
+  const fetchSupabaseData = async (showToast = false) => {
+    setIsSyncing(true);
+    try {
+      // 1. Pull existing fin_vouchers from Supabase
+      const { data: vData, error: vError } = await supabase
+        .from("fin_vouchers")
+        .select("*, fin_voucher_lines(account_code, account_name, debit, credit)")
+        .order("voucher_date", { ascending: false });
+
+      if (!vError && vData) {
+        setVouchers(prev => {
+          const existingNos = new Set(prev.map(v => v.voucher_no));
+          const mapped: FinanceVoucher[] = vData
+            .filter(r => !existingNos.has(r.voucher_number))
+            .map(r => {
+              const isPV = r.voucher_type === "PV";
+              const isRV = r.voucher_type === "RV";
+              const lines: Array<{ account_code: string; account_name: string; debit: number; credit: number }> = r.fin_voucher_lines || [];
+              const drLine = lines.find(l => Number(l.debit) > 0);
+              const crLine = lines.find(l => Number(l.credit) > 0);
+
+              const desc = (r.description || "").toLowerCase();
+              let drCode = drLine?.account_code;
+              let crCode = crLine?.account_code;
+              let drName = drLine?.account_name;
+              let crName = crLine?.account_name;
+
+              if (!drCode || !crCode) {
+                if (desc.includes("rent pdc") || desc.includes("rv-l1-01")) {
+                  drCode = "12900"; drName = "PDC In Hand";
+                  crCode = "21400"; crName = "Customer (PDC) Liability";
+                } else if (desc.includes("security deposit") || desc.includes("rv-l1-02")) {
+                  drCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "21500"; crName = "Security Deposit Liability";
+                } else if (desc.includes("kahramaa") || desc.includes("rv-l1-utl") || desc.includes("qatar cool") || desc.includes("rv-l1-qc") || desc.includes("reservation") || desc.includes("rv-l1-res") || desc.includes("service fee") || desc.includes("rv-l1-svc")) {
+                  drCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "21100"; crName = "Refundable Deposit Liability";
+                } else if (desc.includes("guarantee cheque") || desc.includes("rv-l1-gchq")) {
+                  drCode = "12900"; drName = "PDC In Hand (Guarantee)";
+                  crCode = "21200"; crName = "Guarantee Cheque Liability";
+                } else if (desc.includes("pdc deposited to bank") || desc.includes("vch-dep-")) {
+                  drCode = "12000001"; drName = "Bank Operating Account";
+                  crCode = "12900"; crName = "PDC In Hand";
+                } else if (desc.includes("pdc cleared") || desc.includes("vch-clr-")) {
+                  // PDC Cleared → recognize as Rental Revenue (GL 41100)
+                  // Debit: Customer PDC Liability cleared; Credit: Rental Revenue
+                  drCode = "21400"; drName = "Customer (PDC) Liability";
+                  crCode = "41100"; crName = "Rental Revenue";
+                } else if (desc.includes("pdc returned on cash settlement") || desc.includes("vch-csh-ret-")) {
+                  drCode = "21400"; drName = "Customer (PDC) Liability";
+                  crCode = "12900"; crName = "PDC In Hand";
+                } else if (desc.includes("bank deposit of replaced pdc cash till") || desc.includes("vch-csh-dep-")) {
+                  drCode = "12000001"; drName = "Bank Operating Account";
+                  crCode = "12100001"; drName = "Cash In Hand";
+                } else if (desc.includes("cash collected in place of pdc") || desc.includes("vch-csh-pdc-")) {
+                  drCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "41100"; crName = "Rental Revenue";
+                } else if (desc.includes("pdc cheque returned") || desc.includes("vch-ret-pdc-")) {
+                  drCode = "12900"; drName = "PDC In Hand";
+                  crCode = "12000001"; drName = "Bank Operating Account";
+                } else if (desc.includes("tenant dues restored") || desc.includes("vch-ret-ar-")) {
+                  drCode = "12413"; drName = "Tenant Receivables";
+                  crCode = "21400"; crName = "Customer (PDC) Liability";
+                } else if (desc.includes("admin charges") || desc.includes("rv-l1-adm")) {
+                  drCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "41500"; crName = "Admin Fee Income";
+                } else if (desc.includes("agency commission") || desc.includes("rv-l1-agn")) {
+                  drCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "41400"; crName = "Agency Commission Income";
+                } else {
+                  drCode = isPV ? "22100001" : "12000001";
+                  drName = isPV ? "Accounts Payable / Expense" : "Bank Operating Account";
+                  crCode = isPV ? "12000001" : "41100";
+                  crName = isPV ? "Bank Operating Account" : "Rental Revenue";
+                }
+              }
+
+              return {
+                id: r.id,
+                voucher_no: r.voucher_number,
+                voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
+                date: r.voucher_date,
+                name: r.description || r.voucher_number,
+                debit: drName || "Debit Account",
+                debit_code: drCode || "12000001",
+                credit: crName || "Credit Account",
+                credit_code: crCode || "41100",
+                amount: Number(r.total_amount) || 0,
+                status: r.status === "posted" ? "Posted" : "Draft" as FinanceVoucher["status"],
+              };
+            });
+
+          return mapped.length ? [...mapped, ...prev] : prev;
+        });
+        vData.forEach((r: { id: string }) => seenVoucherIds.current.add(r.id));
+      }
+
+      // 2. Pull journal_entries from Supabase
+      const { data: jData, error: jError } = await supabase
+        .from("journal_entries")
+        .select("*, journal_lines(*, gl_accounts(code, name_en))")
+        .order("posting_date", { ascending: false })
+        .limit(50);
+
+      if (!jError && jData?.length) {
+        setJournalEntries(prev => {
+          const existingNos = new Set(prev.map(j => j.je_no));
+          const mapped: JournalLedgerEntry[] = jData
+            .filter(r => !existingNos.has(r.je_no))
+            .map(r => {
+              const drLine = r.journal_lines?.find((l: any) => l.debit > 0);
+              const crLine = r.journal_lines?.find((l: any) => l.credit > 0);
+              return {
+                id: r.id,
+                je_no: r.je_no,
+                posting_date: r.posting_date,
+                reference: r.source_id || r.je_no,
+                narration: r.narration || "",
+                dr_account: drLine?.gl_accounts?.name_en || "General Account",
+                dr_code: drLine?.gl_accounts?.code || "10000",
+                cr_account: crLine?.gl_accounts?.name_en || "General Account",
+                cr_code: crLine?.gl_accounts?.code || "10000",
+                amount: drLine?.debit || 0,
+                status: r.status || "Posted",
+              };
+            });
+          return mapped.length ? [...mapped, ...prev] : prev;
+        });
+      }
+
+      // 3. Reload localStorage caches for AP/AR/Cashbook
+      if (typeof window !== "undefined") {
+        try {
+          const vDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
+          if (vDataSaved) {
+            const parsed = JSON.parse(vDataSaved);
+            if (Array.isArray(parsed) && parsed.length) setVouchers(parsed);
+          }
+          const jDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
+          if (jDataSaved) {
+            const parsed = JSON.parse(jDataSaved);
+            if (Array.isArray(parsed) && parsed.length) setJournalEntries(parsed);
+          }
+          const arDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`);
+          if (arDataSaved) {
+            const parsed = JSON.parse(arDataSaved);
+            if (Array.isArray(parsed) && parsed.length) setReceivableInvoices(parsed);
+          }
+          const apDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ap`);
+          if (apDataSaved) {
+            const parsed = JSON.parse(apDataSaved);
+            if (Array.isArray(parsed) && parsed.length) setPayableInvoices(parsed);
+          }
+          const cbDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-cashbook`);
+          if (cbDataSaved) {
+            const parsed = JSON.parse(cbDataSaved);
+            if (Array.isArray(parsed) && parsed.length) setCashBookEntries(parsed);
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (showToast) {
+        toast.success("Financial records & reports refreshed successfully");
+      }
+    } catch (err: any) {
+      if (showToast) {
+        toast.error("Failed to refresh financial records: " + (err?.message || "Error"));
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const refreshFinanceData = async () => {
+    await fetchSupabaseData(true);
+  };
+
+  // Pull and subscribe to Supabase data on mount
+  useEffect(() => {
+    void fetchSupabaseData(false);
+
+    // Subscribe to fin_vouchers INSERT events for real-time updates.
+    const voucherChannel = supabase
+      .channel("finance-store:fin_vouchers")
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "fin_vouchers" },
+        (payload: any) => {
+          const r = payload.new;
+          if (!r?.id || seenVoucherIds.current.has(r.id)) return;
+          seenVoucherIds.current.add(r.id);
+          const isPV = r.voucher_type === "PV";
+          const isRV = r.voucher_type === "RV";
+          const mapped: FinanceVoucher = {
+            id: r.id,
+            voucher_no: r.voucher_number,
+            voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
+            date: r.voucher_date,
+            name: r.description || r.voucher_number,
+            debit: isPV ? "Accounts Payable / Expense" : isRV ? "Bank Operating Account" : "Journal Debit",
+            debit_code: isPV ? (r.reference_no && /^\d+$/.test(r.reference_no) ? r.reference_no : "22100001") : "12000001",
+            credit: isPV ? "Bank Operating Account" : isRV ? "Rental Revenue" : "Journal Credit",
+            credit_code: isPV ? "12000001" : (r.reference_no && /^\d+$/.test(r.reference_no) ? r.reference_no : "41100"),
+            amount: Number(r.total_amount) || 0,
+            status: "Posted",
+          };
+
+          setVouchers(prev => {
+            if (prev.some(v => v.id === r.id || v.voucher_no === r.voucher_number)) return prev;
+            return [mapped, ...prev];
+          });
+          toast.info(`Voucher ${r.voucher_number} posted to GL via Supabase.`);
+        }
+      )
+      .subscribe();
+
+    // Subscribe to fin_accounting_events for visibility into posting-engine writes.
+    const eventChannel = supabase
+      .channel("finance-store:fin_accounting_events")
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "fin_accounting_events" },
+        (payload: any) => {
+          const r = payload.new;
+          if (!r?.id) return;
+          // Merge into journal entries for GL view.
+          const entry: JournalLedgerEntry = {
+            id: r.id,
+            je_no: r.reference_number || `EVT-${r.id.slice(0, 8).toUpperCase()}`,
+            posting_date: r.posting_date || r.event_date,
+            reference: r.source_id || r.reference_number || r.id,
+            narration: r.description || r.event_type,
+            dr_account: "Various (see lines)",
+            dr_code: "10000",
+            cr_account: "Various (see lines)",
+            cr_code: "10000",
+            amount: r.total_debit || 0,
+            status: "Posted",
+            property_name: (r.metadata as any)?.property_name,
+            unit_ref: (r.metadata as any)?.unit_ref,
+            tenant_name: (r.metadata as any)?.tenant_name,
+          };
+          setJournalEntries(prev => {
+            if (prev.some(j => j.id === r.id || j.je_no === entry.je_no)) return prev;
+            return [entry, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    // Listen for cross-module voucher sync events (e.g. from procurement AP payments)
+    const handleVoucherSync = () => {
+      const STORE_KEY_V = `${FINANCE_STORAGE_KEY}-vouchers`;
+      const STORE_KEY_AP = `${FINANCE_STORAGE_KEY}-ap`;
+      try {
+        const vData: FinanceVoucher[] = JSON.parse(localStorage.getItem(STORE_KEY_V) || "[]");
+        setVouchers(prev => {
+          const existingNos = new Set(prev.map(v => v.voucher_no));
+          const newOnes = vData.filter(v => !existingNos.has(v.voucher_no));
+          return newOnes.length ? [...newOnes, ...prev] : prev;
+        });
+        const apData: PayableInvoice[] = JSON.parse(localStorage.getItem(STORE_KEY_AP) || "[]");
+        setPayableInvoices(prev => {
+          const existingNos = new Set(prev.map(i => i.invoice_no));
+          const newOnes = apData.filter(i => !existingNos.has(i.invoice_no));
+          const updates = apData.filter(i => existingNos.has(i.invoice_no));
+          let merged = newOnes.length ? [...newOnes, ...prev] : [...prev];
+          if (updates.length) {
+            merged = merged.map(i => {
+              const u = updates.find(u => u.invoice_no === i.invoice_no);
+              return u ? { ...i, status: u.status } : i;
+            });
+          }
+          return merged;
+        });
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("finance_vouchers_updated", handleVoucherSync);
+    // Run once on mount to pick up any payments made before this render
+    handleVoucherSync();
+
+    return () => {
+      supabase.removeChannel(voucherChannel);
+      supabase.removeChannel(eventChannel);
+      window.removeEventListener("finance_vouchers_updated", handleVoucherSync);
+    };
+  }, []);
+
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -364,6 +684,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     };
     setJournalEntries(prev => [newEntry, ...prev]);
     toast.success(`Journal Entry ${newEntry.je_no} posted to General Ledger!`);
+
+    // Persist to Supabase journal_entries table (best-effort, fire-and-forget).
+    void Promise.resolve(
+      supabase.from("journal_entries").insert({
+        je_no: newEntry.je_no,
+        posting_date: newEntry.posting_date,
+        period: newEntry.posting_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7),
+        source_module: "Finance Store",
+        source_id: newEntry.reference || null,
+        narration: newEntry.narration || null,
+        status: "posted",
+      })
+    ).then(({ error }: any) => {
+      if (error) console.warn("[FinanceStore] journal_entries persist warn:", error.message);
+    });
   }
 
   function addGrnMapping(mapping: Omit<GrnCostMapping, "id">) {
@@ -396,9 +731,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           date: new Date().toISOString().split("T")[0],
           name: `Settlement for Invoice ${invoiceNo}`,
           debit: inv.account,
-          debit_code: inv.account_code || "20100",
+          debit_code: inv.account_code || "22100001",
           credit: "Bank Operating Account",
-          credit_code: "12000",
+          credit_code: "12000001",
           amount: inv.amount,
           method: "Bank Transfer",
           status: "Posted"
@@ -419,6 +754,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     };
     setVouchers(prev => [newVch, ...prev]);
     toast.success(`${newVch.voucher_type} ${newVch.voucher_no} posted successfully!`);
+
+    // Persist to Supabase fin_vouchers (best-effort, fire-and-forget).
+    const typeCode = newVch.voucher_type === "Payment Voucher" ? "PV" : newVch.voucher_type === "Receipt Voucher" ? "RV" : "JV";
+    void Promise.resolve(
+      supabase.from("fin_vouchers").insert({
+        voucher_number: newVch.voucher_no,
+        voucher_date: newVch.date,
+        voucher_type: typeCode,
+        reference_no: newVch.debit_code || null,
+        description: newVch.name,
+        total_amount: newVch.amount,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id")
+    ).then(({ error, data }: any) => {
+      if (error) {
+        console.warn("[FinanceStore] fin_vouchers persist warn:", error.message);
+        return;
+      }
+      // Mark the newly inserted row as seen so realtime won't toast it again.
+      const insertedId = Array.isArray(data) ? data[0]?.id : (data as any)?.id;
+      if (insertedId) seenVoucherIds.current.add(String(insertedId));
+    });
   }
 
   function addReceivableInvoice(inv: Omit<ReceivableInvoice, "id" | "status">) {
@@ -442,7 +800,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           date: new Date().toISOString().split("T")[0],
           name: `Receipt for Rent Invoice ${invoiceNo}`,
           debit: "Bank Operating Account",
-          debit_code: "12000",
+          debit_code: "12000001",
           credit: "Rental Revenue",
           credit_code: inv.account_code || "41100",
           amount: inv.amount,
@@ -466,26 +824,37 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     toast.success(`Legal Case ${newLgl.legal_case_id} escalated and posted to Legal Receivables (12411).`);
   }
 
-  function recoverLegalReceivable(caseId: string, amount: number, bankRef: string) {
+  function recoverLegalReceivable(
+    caseId: string,
+    amount: number,
+    bankRef: string,
+    paymentMethod: string = "Bank Transfer",
+    propertyName?: string,
+    unitRef?: string,
+    tenantName?: string,
+    details?: {
+      date?: string;
+      transactionNo?: string;
+      chequeNo?: string;
+      chequeBank?: string;
+      maturityDate?: string;
+    }
+  ) {
+    const isCash = paymentMethod.toLowerCase().includes("cash");
+    const isCheque = paymentMethod.toLowerCase().includes("cheque");
+    const isPdc = paymentMethod.toLowerCase().includes("pdc");
+    const methodType = isCash ? "CASH" : isPdc ? "PDC" : "BANK";
+
+    const entryDate = details?.date || new Date().toISOString().split("T")[0];
+    const finalTenant = tenantName || "Valued Tenant";
+    const finalUnit = unitRef || "General";
+    const finalProp = propertyName || "Main Portfolio";
+    const detailNarration = isCheque && details?.chequeNo ? ` [Cheque #${details.chequeNo} - ${details.chequeBank || "Bank"}]` : "";
+
+    // 1. Update legal receivables balances
     setLegalReceivables(prev => prev.map(l => {
       if (l.legal_case_id === caseId || l.id === caseId) {
         const newBal = Math.max(0, l.outstanding_balance - amount);
-        // Post Receipt Voucher
-        const rv: FinanceVoucher = {
-          id: `vch-rec-lgl-${Date.now()}`,
-          voucher_no: `VCH-REC-${bankRef}`,
-          voucher_type: "Receipt Voucher",
-          date: new Date().toISOString().split("T")[0],
-          name: `Legal Settlement Recovery - ${caseId}`,
-          debit: "Bank Operating Account",
-          debit_code: "12000",
-          credit: "Legal Receivables",
-          credit_code: "12411",
-          amount: amount,
-          method: "Bank Transfer",
-          status: "Posted"
-        };
-        setVouchers(v => [rv, ...v]);
         return {
           ...l,
           outstanding_balance: newBal,
@@ -494,6 +863,55 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
       return l;
     }));
+
+    // 2. Add single local voucher entry if not already present
+    const drCode = isCash ? "12100001" : isPdc ? "12900" : "12000001";
+    const drAccount = isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : isCheque ? `Bank Account (${details?.chequeBank || "Bank"})` : "Bank Operating Account";
+
+    const voucherNumber = `VCH-REC-${bankRef}`;
+    setVouchers(prev => {
+      if (prev.some(v => v.voucher_no === voucherNumber)) return prev;
+      const rv: FinanceVoucher = {
+        id: `vch-rec-lgl-${Date.now()}`,
+        voucher_no: voucherNumber,
+        voucher_type: "Receipt Voucher",
+        date: entryDate,
+        name: `Legal Settlement Recovery — ${finalTenant} (${finalUnit}) [${caseId}]${detailNarration}`,
+        debit: drAccount,
+        debit_code: drCode,
+        credit: "Legal Receivables (12411)",
+        credit_code: "12411",
+        amount: amount,
+        method: paymentMethod,
+        status: "Posted",
+        property_name: finalProp,
+        unit_ref: finalUnit,
+        tenant_name: finalTenant,
+      };
+      return [rv, ...prev];
+    });
+
+    // 3. Trigger authoritative posting engine in background
+    void resolveAccountingAccounts({
+      transactionType: 'LEGAL_RECOVERY',
+      paymentMethod: methodType as any,
+      propertyId: propertyName || "1",
+      unitName: unitRef,
+    }).then(({ debit: drAcct, credit: crAcct }) => {
+      return postVoucher({
+        voucher_date: entryDate,
+        voucher_type: "Receipt",
+        description: `Legal Settlement Recovery — ${finalTenant} (${finalUnit}) [${caseId}]${detailNarration}`,
+        reference_no: bankRef,
+        lines: [
+          { account_code: drAcct.slCode, account_name: `${drAcct.glName} / ${drAcct.slName}`, debit: amount, credit: 0, description: drAcct.slName },
+          { account_code: crAcct.slCode, account_name: `${crAcct.glName} / ${crAcct.slName}`, debit: 0, credit: amount, description: crAcct.slName },
+        ],
+      });
+    }).catch(err => {
+      console.warn("[FinanceStore] Legal recovery posting note:", err?.message);
+    });
+
     toast.success(`Recovered QR ${amount.toLocaleString()} for Legal Case ${caseId}.`);
   }
 
@@ -516,7 +934,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       debit: "Staff Salaries & Allowances",
       debit_code: "50100",
       credit: "Bank Operating Account",
-      credit_code: "12000",
+      credit_code: "12000001",
       amount: run.total_amount,
       method: "Bank Transfer",
       status: "Posted"
@@ -553,18 +971,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addCashBookEntry(entry: { date: string; voucher: string; description: string; type: "in" | "out"; amount: number }) {
-    const lastBal = cashBookEntries[0]?.balance || 24500;
-    const newBal = entry.type === "in" ? lastBal + entry.amount : lastBal - entry.amount;
-    const newEntry: CashBookEntry = {
-      id: `cb-${Date.now()}`,
-      date: entry.date,
-      voucher: entry.voucher,
-      description: entry.description,
-      cash_in: entry.type === "in" ? entry.amount : 0,
-      cash_out: entry.type === "out" ? entry.amount : 0,
-      balance: newBal
-    };
-    setCashBookEntries(prev => [newEntry, ...prev]);
+    setCashBookEntries(prev => {
+      const currentIn = prev.reduce((s, r) => s + (r.cash_in || 0), 0);
+      const currentOut = prev.reduce((s, r) => s + (r.cash_out || 0), 0);
+      const newTotalIn = currentIn + (entry.type === "in" ? entry.amount : 0);
+      const newTotalOut = currentOut + (entry.type === "out" ? entry.amount : 0);
+      const newBal = newTotalIn - newTotalOut;
+
+      const newEntry: CashBookEntry = {
+        id: `cb-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        date: entry.date,
+        voucher: entry.voucher,
+        description: entry.description,
+        cash_in: entry.type === "in" ? entry.amount : 0,
+        cash_out: entry.type === "out" ? entry.amount : 0,
+        balance: newBal
+      };
+      return [newEntry, ...prev];
+    });
     toast.success("Cash Book entry recorded.");
   }
 
@@ -582,31 +1006,159 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const allLedgerTransactions: LedgerTransaction[] = useMemo(() => {
     const list: LedgerTransaction[] = [];
 
-    // Baseline opening transactions
-    list.push({
-      id: "tx-init-1",
-      date: "2026-08-01",
-      account_code: "12000",
-      account_name: "QNB Operating Bank Account",
-      account_type: "Assets",
-      reference: "OPENING-BAL",
-      debit: 1500000,
-      credit: 0,
-      source: "Opening Balance",
-      description: "QNB Main Account Opening Balance"
-    });
-    list.push({
-      id: "tx-init-2",
-      date: "2026-08-01",
-      account_code: "30000",
-      account_name: "Owner Capital Account",
-      account_type: "Capital",
-      reference: "OPENING-CAP",
-      debit: 0,
-      credit: 1500000,
-      source: "Opening Balance",
-      description: "Initial Capital Investment"
-    });
+        // Authoritative Official ERP Chart of Accounts Master Names Dictionary
+    const COA_ACCOUNT_NAMES: Record<string, string> = {
+      // ── Type 1: Assets ──
+      "10000": "Assets Control Account",
+      "12000": "Bank Accounts",
+      "12000001": "Bank Operating Account (QNB)",
+      "12000002": "CBQ Escrow Bank Account",
+      "12100": "Cash Accounts",
+      "12100001": "Cash in Hand / Operating Cash",
+      "12300001": "Advance to Vendors",
+      "12400": "Receivables Control",
+      "12411001": "Legal Receivables (Defaulted / Escalated)",
+      "12413001": "Tenant Receivables",
+      "12900001": "Rent PDC In Hand",
+      "12900002": "Guarantee Cheque In Hand",
+      "13000": "Fixed Assets Portfolio",
+      "13900": "Accumulated Depreciation",
+
+      // ── Type 2: Liabilities ──
+      "20000": "Liabilities Control Account",
+      "22100": "Trade Payables",
+      "22100001": "Trade Payables - Vendors",
+      "22100002": "Vendor Retention Payable",
+      "21100001": "Reservation Advance Deposit",
+      "21100003": "Kahramaa Utility Deposit",
+      "21100004": "Qatar Cool Deposit",
+      "21100005": "Service Fee Deposit",
+      "21100006": "Guarantee Cheque Liability",
+      "21200001": "Guarantee Cheque Received",
+      "21300001": "Tenant Refund Payable",
+      "21400001": "Customer PDC Liability",
+      "21500001": "Security Deposit Liability",
+      "21600001": "Utility Deposit Liability",
+
+      // ── Type 3: Equity / Capital ──
+      "30000": "Owner Capital & Equity",
+
+      // ── Type 4: Revenue ──
+      "40000": "Revenue Control Account",
+      "41100001": "Rental Revenue",
+      "41201001": "Parking Revenue",
+      "41201002": "Agency & Admin Commission",
+      "41201003": "Utility Recovery Income",
+      "41201004": "CAM & Maintenance Recovery",
+      "41201005": "Late Payment Penalty Revenue",
+      "41201006": "Lease Transfer Fee Revenue",
+      "41201007": "Cheque Dishonour Recovery",
+
+      // ── Type 5: Expenditure (Direct Expenses 510) ──
+      "51001": "Labour Outsource",
+      "51001001": "CMEP-Labor Cost-Facilities Mgt",
+      "51001002": "House Keeping Labor Cost",
+      "51001003": "Security Staff Labor Cost",
+
+      "51002": "Annual Maintenance Contract",
+      "51002001": "CMEP-Facilities Mgt AMC",
+      "51002002": "Swimming Pool Maintenance",
+      "51002003": "CCTV AMC Charges",
+      "51002004": "Landscaping AMC Charges",
+      "51002005": "Fire Fighting AMC Charges",
+      "51002006": "Fire Alarm AMC Charges",
+
+      "51003": "Utilities & Other Direct Exp",
+      "51003001": "Electricity & Water-Common Area",
+      "51003002": "Electricity & Water-Vacant Period",
+      "51003003": "Electricity & Water- Inclusive",
+      "51003004": "Telephone & Internet Expenses",
+      "51003005": "Master Community Charges",
+      "51003006": "Common Area Maintenance Cost",
+
+      "51004": "Repairs & Maintenance",
+      "51004001": "Repair and Maintenance Cost",
+      "51004002": "Bathtub, Kitchen Zinc & WC Charges",
+      "51004003": "Sewage & Waste Removal Charges",
+      "51004004": "Sweet Water Charges",
+      "51004005": "Sports&Gym Equipment Maintenance",
+      "51004006": "Cost of CMEP Materials",
+      "51004007": "Cost of House Keeping Materials",
+      "51004008": "Cost of Landscaping Material",
+      "51004009": "Check Out Expenses",
+
+      // ── Type 5: Expenditure (Indirect Expenses 511) ──
+      "51101": "Staff Cost",
+      "51101001": "Staff Basic Salary",
+      "51101002": "Staff Accommodation Allowance",
+      "51101003": "Staff Transportation Allowance",
+      "51101004": "Staff Mobile & Telephone Allowance",
+      "51101005": "Staff Overtime - Fixed",
+      "51101006": "Staff Leave Salary",
+      "51101007": "Staff Air Ticket",
+      "51101008": "Staff End of Service Benefits",
+      "51101009": "Staff Bonus",
+      "51101010": "Staff Special Allowance",
+      "51101011": "Staff Food Allowance",
+      "51101012": "Staff Other Allowance",
+      "51101013": "Staff Laundry Cost",
+      "51101014": "Staff Medical & Insurance Cost",
+      "51101015": "Staff Uniform Cost",
+      "51101016": "Staff Visa & Immigration Cost",
+
+      "51102": "General and Administrative Expenses",
+      "51102001": "Vehicles & Other Insurance Expenses",
+      "51102002": "Government & Municipal Charges",
+      "51102003": "Legal Charges",
+      "51102004": "Other General & Administration Expenses",
+      "51102005": "Commission & Brokerage Expenses",
+      "51102006": "Printing & Stationary Expenses",
+      "51102007": "Subscription Fees",
+      "51102008": "Audit Fees",
+      "51102009": "Vehicle Hire Expenses",
+      "51102010": "Vehicle Maintenance Cost",
+      "51102011": "Miscellaneous Expense",
+      "51102012": "Generator Maintenance Expenses",
+      "51102013": "Brokerage Leasing",
+      "51102014": "IT Expenses",
+      "51102015": "Recruitment Charges",
+
+      "51103": "Head office expenses",
+      "51103001": "Head office expenses",
+
+      "51104": "Selling and Marketing Expenses",
+      "51104001": "Sales Promotion Expenses",
+      "51104002": "Other Advertisement Expenses",
+
+      "51105": "Finance Cost",
+      "51105001": "Other Bank Charges",
+
+      "51106": "Depreciation&Amortization",
+      "51106001": "Machinery (Light) - Depreciation",
+      "51106002": "Furniture & Fixtures - Depreciation",
+      "51106003": "Office Equipment - Depreciation",
+      "51106004": "Commercial Kitchen Equipment - Depreciation",
+      "51106005": "Appliances - Depreciation",
+      "51106006": "IT Software Amortization",
+      "51106007": "Sports And Gym Equipment - Depreciation",
+      "51106008": "Tools And Equipment - Depreciation",
+      "51106009": "CCTV Systems - Depreciation",
+      "51106010": "Access Control - Depreciation",
+      "51106011": "Vehicles - Depreciation",
+    };
+
+    const getCoaName = (name: string | undefined, code: string | undefined, defaultFallback: string) => {
+      const trimmedCode = (code || "").trim();
+      // Always prefer the authoritative COA dictionary first — it is ground truth for account names.
+      if (trimmedCode && COA_ACCOUNT_NAMES[trimmedCode]) return COA_ACCOUNT_NAMES[trimmedCode];
+      const trimmedName = (name || "").trim();
+      // Strip leading account-code prefix if present (e.g. "12000 - Bank Operating Account (QNB/CBQ)" → "Bank Operating Account (QNB/CBQ)")
+      const strippedName = trimmedName.replace(/^\d{4,6}\s*[-–—]\s*/, "");
+      if (strippedName && !/^\d+$/.test(strippedName) && strippedName !== trimmedCode) {
+        return strippedName;
+      }
+      return defaultFallback;
+    };
 
     // 1. Journal Ledger Entries
     journalEntries.forEach(je => {
@@ -615,17 +1167,77 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const isLiab = je.dr_code.startsWith("2");
       const isRev = je.dr_code.startsWith("4");
 
+      // Extract / resolve tenant, unit, and property
+      let derivedTenant = je.tenant_name;
+      let derivedUnit = je.unit_ref;
+      let derivedProperty = je.property_name;
+
+      if ((!derivedTenant || derivedTenant === "Corporate / Admin") && je.narration) {
+        // e.g. "Security Deposit reclassified as Refundable — Mr. Hafeez Shaik (AAA - Flat16)"
+        // or "Refundable Deposit Settlement (Reservation Advance Deposit) — Vipind (Flat14)"
+        // or "Security Deposit Receipt — Mr. Hafeez Shaik / AAA - Flat16 via Cash"
+        const slashMatch = je.narration.match(/[—–\-]\s*([^(|—–\-/]+?)\s*\/\s*([^(|—–\-/]+)/);
+        if (slashMatch && slashMatch[1]?.trim() && slashMatch[1].trim() !== "Tenant") {
+          derivedTenant = slashMatch[1].trim();
+          if (!derivedUnit || derivedUnit === "General") derivedUnit = slashMatch[2].trim().replace(/\s+via.*$/i, "");
+        } else {
+          const parenMatch = je.narration.match(/[—–\-]\s*([^(|—–\-]+?)\s*\(([^)]+)\)/);
+          if (parenMatch && parenMatch[1]?.trim() && parenMatch[1].trim() !== "Tenant") {
+            derivedTenant = parenMatch[1].trim();
+            if (!derivedUnit || derivedUnit === "General") derivedUnit = parenMatch[2].trim();
+          } else {
+            const dashMatch = je.narration.match(/[—–\-]\s*([^|—–\-]+)/);
+            if (dashMatch && dashMatch[1]?.trim() && dashMatch[1].trim() !== "Tenant") {
+              const cand = dashMatch[1].trim();
+              if (cand.startsWith("Flat") || cand.startsWith("AAA") || cand.includes("Unit")) {
+                if (!derivedUnit || derivedUnit === "General") derivedUnit = cand;
+              } else {
+                derivedTenant = cand;
+              }
+            }
+          }
+        }
+      }
+
+      // Unit to property map fallback
+      if ((!derivedProperty || derivedProperty === "Main Portfolio" || derivedProperty === "Unassigned") && derivedUnit) {
+        const u = derivedUnit.toLowerCase();
+        if (u.includes("flat16") || u.includes("aaa")) {
+          derivedProperty = "Old Salata - Residence No:23";
+        } else if (u.includes("flat14") || u.includes("flat08") || u.includes("bldg06") || u.includes("mansoura")) {
+          derivedProperty = "MANSOURA - BLDG06";
+        } else if (u.includes("002") || u.includes("neeman")) {
+          derivedProperty = "Neeman's New Building";
+        }
+      }
+
+      if (derivedTenant && derivedTenant.toLowerCase().includes("ashutosh")) {
+        if (!derivedProperty || derivedProperty === "Main Portfolio" || derivedProperty === "Unassigned") {
+          derivedProperty = "MANSOURA - BLDG06";
+        }
+        if (!derivedUnit || derivedUnit === "General" || derivedUnit === "Unassigned") {
+          derivedUnit = "Flat14";
+        }
+      }
+
+      const finalProperty = derivedProperty && derivedProperty !== "Main Portfolio" ? derivedProperty : "Unassigned";
+      const finalUnit = derivedUnit && derivedUnit !== "General" ? derivedUnit : "Unassigned";
+      const finalTenant = derivedTenant && derivedTenant !== "Corporate / Admin" ? derivedTenant : "Unassigned";
+
       list.push({
         id: `tx-je-dr-${je.id}`,
         date: je.posting_date,
         account_code: je.dr_code,
-        account_name: je.dr_account,
+        account_name: getCoaName(je.dr_account, je.dr_code, "Operating Account"),
         account_type: isExpense ? "Expenses" : isAsset ? "Assets" : isLiab ? "Liabilities" : isRev ? "Revenue" : "Assets",
         reference: je.je_no,
         debit: je.amount,
         credit: 0,
         source: "Journal Ledger",
-        description: je.narration
+        description: je.narration,
+        property_name: finalProperty,
+        unit_ref: finalUnit,
+        tenant_name: finalTenant,
       });
 
       const isCrRev = je.cr_code.startsWith("4");
@@ -637,13 +1249,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         id: `tx-je-cr-${je.id}`,
         date: je.posting_date,
         account_code: je.cr_code,
-        account_name: je.cr_account,
+        account_name: getCoaName(je.cr_account, je.cr_code, "Operating Account"),
         account_type: isCrRev ? "Revenue" : isCrLiab ? "Liabilities" : isCrAsset ? "Assets" : isCrExp ? "Expenses" : "Capital",
         reference: je.je_no,
         debit: 0,
         credit: je.amount,
         source: "Journal Ledger",
-        description: je.narration
+        description: je.narration,
+        property_name: finalProperty,
+        unit_ref: finalUnit,
+        tenant_name: finalTenant,
       });
     });
 
@@ -652,26 +1267,32 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       list.push({
         id: `tx-grn-dr-${grn.id}`,
         date: "2026-08-18",
-        account_code: grn.mapped_code || "50200",
-        account_name: grn.mapped_gl,
+        account_code: grn.mapped_code || "51004001",
+        account_name: getCoaName(grn.mapped_gl, grn.mapped_code, "Repairs & Maintenance"),
         account_type: grn.mapped_code?.startsWith("1") ? "Assets" : "Expenses",
         reference: grn.grn_no,
         debit: grn.amount,
         credit: 0,
         source: "GRN Cost Mapping",
-        description: `${grn.vendor} - ${grn.description}`
+        description: `${grn.vendor} - ${grn.description}`,
+        property_name: grn.property || "Unassigned",
+        unit_ref: "Facility Plant & Equip",
+        tenant_name: grn.vendor,
       });
       list.push({
         id: `tx-grn-cr-${grn.id}`,
         date: "2026-08-18",
-        account_code: "20100",
+        account_code: "22100001",
         account_name: "Accounts Payable",
         account_type: "Liabilities",
         reference: grn.grn_no,
         debit: 0,
         credit: grn.amount,
         source: "GRN Cost Mapping",
-        description: `Payable to ${grn.vendor}`
+        description: `Payable to ${grn.vendor}`,
+        property_name: grn.property || "Unassigned",
+        unit_ref: "Facility Plant & Equip",
+        tenant_name: grn.vendor,
       });
     });
 
@@ -680,26 +1301,32 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       list.push({
         id: `tx-ap-dr-${ap.id}`,
         date: ap.date,
-        account_code: ap.account_code || "50200",
-        account_name: ap.account,
+        account_code: ap.account_code || "51004001",
+        account_name: getCoaName(ap.account, ap.account_code, "Repairs & Maintenance"),
         account_type: "Expenses",
         reference: ap.invoice_no,
         debit: ap.amount,
         credit: 0,
         source: "Payable Invoice",
-        description: `Invoice from ${ap.vendor}`
+        description: `Invoice from ${ap.vendor}`,
+        property_name: "Unassigned",
+        unit_ref: "Building Maintenance",
+        tenant_name: ap.vendor,
       });
       list.push({
         id: `tx-ap-cr-${ap.id}`,
         date: ap.date,
-        account_code: "20100",
+        account_code: "22100001",
         account_name: "Accounts Payable",
         account_type: "Liabilities",
         reference: ap.invoice_no,
         debit: 0,
         credit: ap.amount,
         source: "Payable Invoice",
-        description: `Payable to ${ap.vendor}`
+        description: `Payable to ${ap.vendor}`,
+        property_name: "Unassigned",
+        unit_ref: "Building Maintenance",
+        tenant_name: ap.vendor,
       });
     });
 
@@ -709,17 +1336,59 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const isDrAsset = vch.debit_code.startsWith("1");
       const isDrLiab = vch.debit_code.startsWith("2");
 
+      let propName = (vch as any).property_name || (vch as any).property;
+      let unitName = (vch as any).unit_ref || (vch as any).unit;
+      let tenantName = (vch as any).tenant_name || (vch as any).tenant;
+
+      if ((!tenantName || tenantName === "Corporate / Admin") && vch.name) {
+        const slashMatch = vch.name.match(/[—–\-]\s*([^(|—–\-/]+?)\s*\/\s*([^(|—–\-/]+)/);
+        if (slashMatch && slashMatch[1]?.trim() && slashMatch[1].trim() !== "Tenant") {
+          tenantName = slashMatch[1].trim();
+          if (!unitName || unitName === "General") unitName = slashMatch[2].trim();
+        } else {
+          const parenMatch = vch.name.match(/[—–\-]\s*([^(|—–\-]+?)\s*\(([^)]+)\)/);
+          if (parenMatch && parenMatch[1]?.trim() && parenMatch[1].trim() !== "Tenant") {
+            tenantName = parenMatch[1].trim();
+            if (!unitName || unitName === "General") unitName = parenMatch[2].trim();
+          } else {
+            const dashMatch = vch.name.match(/[—–\-]\s*([^|—–\-]+)/);
+            if (dashMatch && dashMatch[1]?.trim()) {
+              tenantName = dashMatch[1].trim();
+            }
+          }
+        }
+      }
+
+      if ((!propName || propName === "Main Portfolio") && unitName) {
+        const u = unitName.toLowerCase();
+        if (u.includes("flat16") || u.includes("aaa")) propName = "Old Salata - Residence No:23";
+        else if (u.includes("flat14") || u.includes("flat08") || u.includes("mansoura")) propName = "MANSOURA - BLDG06";
+        else if (u.includes("002") || u.includes("neeman")) propName = "Neeman's New Building";
+      }
+
+      if (tenantName && tenantName.toLowerCase().includes("ashutosh")) {
+        if (!propName || propName === "Main Portfolio") propName = "MANSOURA - BLDG06";
+        if (!unitName || unitName === "General") unitName = "Flat14";
+      }
+
+      const finalProp = propName || (vch.name.includes("Depreciation") ? "Main Portfolio (Corporate)" : "Main Portfolio");
+      const finalUnit = unitName || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr" : "General");
+      const finalTenant = tenantName || (vch.name.includes("Depreciation") ? "Internal Assets Desk" : "Corporate / Admin");
+
       list.push({
         id: `tx-vch-dr-${vch.id}`,
         date: vch.date,
-        account_code: vch.debit_code || "12000",
-        account_name: vch.debit,
+        account_code: vch.debit_code || "12000001",
+        account_name: getCoaName(vch.debit, vch.debit_code, "Bank Operating Account"),
         account_type: isDrExp ? "Expenses" : isDrAsset ? "Assets" : isDrLiab ? "Liabilities" : "Assets",
         reference: vch.voucher_no,
         debit: vch.amount,
         credit: 0,
         source: vch.voucher_type,
-        description: vch.name
+        description: vch.name,
+        property_name: finalProp,
+        unit_ref: finalUnit,
+        tenant_name: finalTenant,
       });
 
       const isCrRev = vch.credit_code.startsWith("4");
@@ -730,13 +1399,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         id: `tx-vch-cr-${vch.id}`,
         date: vch.date,
         account_code: vch.credit_code || "41100",
-        account_name: vch.credit,
+        account_name: getCoaName(vch.credit, vch.credit_code, "Rental Revenue"),
         account_type: isCrRev ? "Revenue" : isCrAsset ? "Assets" : isCrLiab ? "Liabilities" : "Capital",
         reference: vch.voucher_no,
         debit: 0,
         credit: vch.amount,
         source: vch.voucher_type,
-        description: vch.name
+        description: vch.name,
+        property_name: finalProp,
+        unit_ref: finalUnit,
+        tenant_name: finalTenant,
       });
     });
 
@@ -752,7 +1424,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: ar.amount,
         credit: 0,
         source: "Receivable Invoice",
-        description: `Rent Invoice for ${ar.tenant}`
+        description: `Rent Invoice for ${ar.tenant}`,
+        property_name: ar.property,
+        unit_ref: ar.unit,
+        tenant_name: ar.tenant,
       });
       list.push({
         id: `tx-ar-cr-${ar.id}`,
@@ -764,7 +1439,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: ar.amount,
         source: "Receivable Invoice",
-        description: `${ar.stream} - ${ar.tenant}`
+        description: `${ar.stream} - ${ar.tenant}`,
+        property_name: ar.property,
+        unit_ref: ar.unit,
+        tenant_name: ar.tenant,
       });
     });
 
@@ -780,7 +1458,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: lgl.original_amount,
         credit: 0,
         source: "Legal Receivables",
-        description: `Legal Escalation: ${lgl.tenant_name}`
+        description: `Legal Escalation: ${lgl.tenant_name}`,
+        property_name: lgl.property_name,
+        unit_ref: lgl.unit_ref,
+        tenant_name: lgl.tenant_name,
       });
       list.push({
         id: `tx-lgl-cr-${lgl.id}`,
@@ -792,74 +1473,63 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: lgl.original_amount,
         source: "Legal Receivables",
-        description: `Transferred to Legal: ${lgl.tenant_name}`
+        description: `Transferred to Legal: ${lgl.tenant_name}`,
+        property_name: lgl.property_name,
+        unit_ref: lgl.unit_ref,
+        tenant_name: lgl.tenant_name,
       });
     });
 
-    return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
-  }, [journalEntries, grnMappings, payableInvoices, vouchers, receivableInvoices, legalReceivables]);
+    // 7. Bank Clearances (Cleared: DR 12000 Bank Operating / CR 12900 PDC In Hand or AP)
+    bankClearances.forEach(clr => {
+      if (clr.status === "Cleared") {
+        const isUtilityOrPayment = clr.type.toLowerCase().includes("utility") || clr.type.toLowerCase().includes("transfer") || clr.type.toLowerCase().includes("payment");
+        const drCode = isUtilityOrPayment ? "22100001" : "12000001";
+        const drName = isUtilityOrPayment ? "Accounts Payable (Utility/Disbursement)" : "Bank Operating Account (Cleared Funds)";
+        const crCode = isUtilityOrPayment ? "12000001" : "12900";
+        const crName = isUtilityOrPayment ? "Bank Operating Account" : "PDC In Hand / Cheques Held";
 
-  // Derived Trial Balance Summary
-  const trialBalanceSummary = useMemo(() => {
-    let assets = 0;
-    let liabilities = 0;
-    let capital = 0;
-    let revenue = 0;
-    let expenses = 0;
+        list.push({
+          id: `tx-clr-dr-${clr.id}`,
+          date: clr.date,
+          account_code: drCode,
+          account_name: drName,
+          account_type: isUtilityOrPayment ? "Liabilities" : "Assets",
+          reference: clr.ref,
+          debit: clr.amount,
+          credit: 0,
+          source: "Bank Clearance",
+          description: `Bank Clearance for ${clr.ref} (${clr.bank})`,
+          property_name: "Corporate Treasury",
+          unit_ref: "Bank Operations",
+          tenant_name: clr.bank,
+        });
 
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type === "Assets") assets += (tx.debit - tx.credit);
-      else if (tx.account_type === "Liabilities") liabilities += (tx.credit - tx.debit);
-      else if (tx.account_type === "Capital") capital += (tx.credit - tx.debit);
-      else if (tx.account_type === "Revenue") revenue += (tx.credit - tx.debit);
-      else if (tx.account_type === "Expenses") expenses += (tx.debit - tx.credit);
+        list.push({
+          id: `tx-clr-cr-${clr.id}`,
+          date: clr.date,
+          account_code: crCode,
+          account_name: crName,
+          account_type: isUtilityOrPayment ? "Assets" : "Assets",
+          reference: clr.ref,
+          debit: 0,
+          credit: clr.amount,
+          source: "Bank Clearance",
+          description: `Bank Clearance for ${clr.ref} (${clr.bank})`,
+          property_name: "Corporate Treasury",
+          unit_ref: "Bank Operations",
+          tenant_name: clr.bank,
+        });
+      }
     });
 
-    // Ensure baseline realistic amounts for asset reserves & initial properties
-    assets = Math.max(assets, 1850000);
-    capital = Math.max(capital, 1500000);
-    revenue = Math.max(revenue, 240000);
-    expenses = Math.max(expenses, 65000);
+    // Sort ascending by date (oldest first)
+    return list.sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
+  }, [journalEntries, grnMappings, payableInvoices, vouchers, receivableInvoices, legalReceivables, bankClearances]);
 
-    const totalDebit = assets + expenses;
-    const totalCredit = liabilities + capital + revenue;
-    const isBalanced = Math.abs(totalDebit - totalCredit) < 1;
-
-    return {
-      assets,
-      liabilities,
-      capital,
-      revenue,
-      expenses,
-      totalDebit,
-      totalCredit,
-      isBalanced: true
-    };
-  }, [allLedgerTransactions]);
-
-  // Derived Trial Balance Detailed
+  // Derived Trial Balance Detailed — 100% computed from allLedgerTransactions
   const trialBalanceDetailed = useMemo(() => {
     const map = new Map<string, { code: string; name: string; type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses"; debit: number; credit: number }>();
-
-    // Baseline list
-    const seeds: { code: string; name: string; type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses"; debit: number; credit: number }[] = [
-      { code: "10100", name: "Cash In Hand", type: "Assets", debit: 24500, credit: 0 },
-      { code: "12000", name: "QNB Operating Bank Account", type: "Assets", debit: 1500000, credit: 0 },
-      { code: "12001", name: "CBQ Escrow Bank Account", type: "Assets", debit: 450000, credit: 0 },
-      { code: "12413", name: "Tenant Receivables", type: "Assets", debit: 64500, credit: 0 },
-      { code: "12411", name: "Legal Receivables (Escalated)", type: "Assets", debit: 20500, credit: 0 },
-      { code: "12900", name: "PDC In Hand", type: "Assets", debit: 67200, credit: 0 },
-      { code: "20100", name: "Accounts Payable (Vendors)", type: "Liabilities", debit: 0, credit: 26500 },
-      { code: "21400", name: "PDC Received - Customer Liability", type: "Liabilities", debit: 0, credit: 67200 },
-      { code: "21500", name: "Security Deposit Liability", type: "Liabilities", debit: 0, credit: 14600 },
-      { code: "30000", name: "Owner Capital Account", type: "Capital", debit: 0, credit: 1750000 },
-      { code: "41100", name: "Rental Income", type: "Revenue", debit: 0, credit: 385000 },
-      { code: "50100", name: "Staff Salaries & Payroll", type: "Expenses", debit: 45000, credit: 0 },
-      { code: "50200", name: "Repairs & Maintenance Expenses", type: "Expenses", debit: 65400, credit: 0 },
-      { code: "50500", name: "Electricity & Water Expenses", type: "Expenses", debit: 24600, credit: 0 },
-    ];
-
-    seeds.forEach(s => map.set(s.code, { ...s }));
 
     allLedgerTransactions.forEach(tx => {
       const existing = map.get(tx.account_code) || {
@@ -869,8 +1539,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         debit: 0,
         credit: 0
       };
-      existing.debit += tx.debit;
-      existing.credit += tx.credit;
+      existing.debit += (tx.debit || 0);
+      existing.credit += (tx.credit || 0);
       map.set(tx.account_code, existing);
     });
 
@@ -880,36 +1550,83 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }));
   }, [allLedgerTransactions]);
 
-  // Derived Profit & Loss
+  // Derived Trial Balance Summary — 100% computed by grouping account-level balances from trialBalanceDetailed
+  const trialBalanceSummary = useMemo(() => {
+    let assetsDr = 0;
+    let liabilitiesCr = 0;
+    let capitalCr = 0;
+    let revenueCr = 0;
+    let expensesDr = 0;
+
+    trialBalanceDetailed.forEach(acc => {
+      const netDr = acc.debit - acc.credit;
+      const netCr = acc.credit - acc.debit;
+
+      if (acc.type === "Assets") {
+        assetsDr += netDr;
+      } else if (acc.type === "Liabilities") {
+        liabilitiesCr += netCr;
+      } else if (acc.type === "Capital") {
+        capitalCr += netCr;
+      } else if (acc.type === "Revenue") {
+        revenueCr += netCr;
+      } else if (acc.type === "Expenses") {
+        expensesDr += netDr;
+      }
+    });
+
+    const totalDebit = (assetsDr > 0 ? assetsDr : 0) + (expensesDr > 0 ? expensesDr : 0) + (liabilitiesCr < 0 ? -liabilitiesCr : 0) + (capitalCr < 0 ? -capitalCr : 0) + (revenueCr < 0 ? -revenueCr : 0);
+    const totalCredit = (liabilitiesCr > 0 ? liabilitiesCr : 0) + (capitalCr > 0 ? capitalCr : 0) + (revenueCr > 0 ? revenueCr : 0) + (assetsDr < 0 ? -assetsDr : 0) + (expensesDr < 0 ? -expensesDr : 0);
+    const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+    return {
+      assets: assetsDr,
+      liabilities: liabilitiesCr,
+      capital: capitalCr,
+      revenue: revenueCr,
+      expenses: expensesDr,
+      totalDebit,
+      totalCredit,
+      isBalanced
+    };
+  }, [trialBalanceDetailed]);
+
+  // Derived Profit & Loss — 100% computed from allLedgerTransactions
   const profitAndLossReport = useMemo(() => {
-    let rentalRevenue = 385000;
-    let otherRevenue = 15000;
-    let maintenanceExpense = 65400;
-    let payrollExpense = 45000;
-    let utilitiesExpense = 24600;
-    let cleaningExpense = 8200;
+    let rentalRevenue = 0;
+    let otherRevenue = 0;
+    let maintenanceExpense = 0;
+    let payrollExpense = 0;
+    let utilitiesExpense = 0;
+    let cleaningExpense = 0;
+    let totalRevenue = 0;
+    let totalExpenses = 0;
 
-    // Add up dynamic AP invoices & GRNs
-    grnMappings.forEach(g => {
-      if (g.mapped_code === "50200" || g.mapped_gl.includes("Repairs")) maintenanceExpense += g.amount;
-      else if (g.mapped_code === "50300" || g.mapped_gl.includes("Cleaning")) cleaningExpense += g.amount;
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Revenue") {
+        const netRev = (tx.credit || 0) - (tx.debit || 0);
+        totalRevenue += netRev;
+        // 41100xxx = Rental Revenue, 41201xxx+ = Other Revenue
+        if (tx.account_code.startsWith("411")) rentalRevenue += netRev;
+        else otherRevenue += netRev;
+      } else if (tx.account_type === "Expenses") {
+        const netExp = (tx.debit || 0) - (tx.credit || 0);
+        totalExpenses += netExp;
+        // 51101xxx = Staff Cost / Payroll
+        if (tx.account_code.startsWith("51101")) payrollExpense += netExp;
+        // 51003xxx = Utilities & Other Direct Exp
+        else if (tx.account_code.startsWith("51003")) utilitiesExpense += netExp;
+        // 51004007 = Housekeeping Materials, 51002002 = Pool AMC → Cleaning
+        else if (
+          tx.account_code === "51004007" ||
+          tx.account_code === "51001002" ||
+          tx.account_code === "51002002"
+        ) cleaningExpense += netExp;
+        // 51001xxx = Labour Outsource, 51002xxx = AMC, 51004xxx = R&M, 51102xxx = G&A, 51103-51106 = Other
+        else maintenanceExpense += netExp;
+      }
     });
 
-    payableInvoices.forEach(ap => {
-      if (ap.account_code === "50500" || ap.account.includes("Water")) utilitiesExpense += ap.amount;
-      else maintenanceExpense += ap.amount;
-    });
-
-    payrollSyncs.forEach(p => {
-      payrollExpense += p.total_amount;
-    });
-
-    receivableInvoices.forEach(ar => {
-      rentalRevenue += ar.amount;
-    });
-
-    const totalRevenue = rentalRevenue + otherRevenue;
-    const totalExpenses = maintenanceExpense + payrollExpense + utilitiesExpense + cleaningExpense;
     const netProfit = totalRevenue - totalExpenses;
 
     return {
@@ -923,42 +1640,63 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       totalExpenses,
       netProfit
     };
-  }, [grnMappings, payableInvoices, payrollSyncs, receivableInvoices]);
+  }, [allLedgerTransactions]);
 
-  // Derived Balance Sheet
+  // Derived Balance Sheet — 100% computed from allLedgerTransactions & P&L
   const balanceSheetReport = useMemo(() => {
-    let bankCashAssets = 1950000;
-    let pdcInHandAssets = 67200;
-    let arReceivablesAssets = 64500;
-    let legalReceivablesAssets = 20500;
-    let fixedAssets = 15000000;
+    let bankCashAssets = 0;
+    let pdcInHandAssets = 0;
+    let arReceivablesAssets = 0;
+    let legalReceivablesAssets = 0;
+    let fixedAssets = 0;
+    let totalAssets = 0;
 
-    let apLiabilities = 26500;
-    let securityDepositLiabilities = 14600;
-    let pdcCustomerLiabilities = 67200;
+    let apLiabilities = 0;
+    let securityDepositLiabilities = 0;
+    let pdcCustomerLiabilities = 0;
+    let totalLiabilities = 0;
+    let ownerCapital = 0;
 
-    // Sum AR receivables
-    receivableInvoices.forEach(ar => {
-      if (ar.status !== "Paid") arReceivablesAssets += ar.amount;
-      else bankCashAssets += ar.amount;
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Assets") {
+        const netAsset = (tx.debit || 0) - (tx.credit || 0);
+        totalAssets += netAsset;
+        // 12000001 = Bank Operating (QNB), 12000002 = CBQ Escrow, 12100001 = Cash in Hand
+        if (
+          tx.account_code.startsWith("121") ||
+          tx.account_code.startsWith("12000") ||
+          tx.account_code === "10000"
+        ) bankCashAssets += netAsset;
+        // 12900001 = Rent PDC In Hand, 12900002 = Guarantee Cheque In Hand
+        else if (tx.account_code.startsWith("129")) pdcInHandAssets += netAsset;
+        // 12411001 = Legal Receivables
+        else if (tx.account_code.startsWith("12411")) legalReceivablesAssets += netAsset;
+        // 12413001 = Tenant Receivables, 12300001 = Advance to Vendors, 12400 = Receivables Control
+        else if (tx.account_code.startsWith("124") || tx.account_code.startsWith("123")) arReceivablesAssets += netAsset;
+        // 13000 = Fixed Assets, 13900 = Accumulated Depreciation
+        else if (tx.account_code.startsWith("13")) fixedAssets += netAsset;
+        else bankCashAssets += netAsset; // fallback to bank/cash bucket
+      } else if (tx.account_type === "Liabilities") {
+        const netLiab = (tx.credit || 0) - (tx.debit || 0);
+        totalLiabilities += netLiab;
+        // 22100xxx = Trade Payables / AP
+        if (tx.account_code.startsWith("221")) apLiabilities += netLiab;
+        // 21400001 = Customer PDC Liability
+        else if (tx.account_code.startsWith("214")) pdcCustomerLiabilities += netLiab;
+        // 21500001 = Security Deposit, 21100xxx = Reservation / Utility Deposits, 21100006 = Guarantee Cheque Liability
+        else if (
+          tx.account_code.startsWith("215") ||
+          tx.account_code.startsWith("211") ||
+          tx.account_code.startsWith("213")
+        ) securityDepositLiabilities += netLiab;
+        // Other liabilities default to AP bucket
+        else apLiabilities += netLiab;
+      } else if (tx.account_type === "Capital") {
+        ownerCapital += ((tx.credit || 0) - (tx.debit || 0));
+      }
     });
-
-    // Sum AP payables
-    payableInvoices.forEach(ap => {
-      if (ap.status === "Unpaid") apLiabilities += ap.amount;
-      else bankCashAssets -= ap.amount;
-    });
-
-    // Legal receivables
-    legalReceivables.forEach(l => {
-      legalReceivablesAssets += l.outstanding_balance;
-    });
-
-    const totalAssets = bankCashAssets + pdcInHandAssets + arReceivablesAssets + legalReceivablesAssets + fixedAssets;
-    const totalLiabilities = apLiabilities + securityDepositLiabilities + pdcCustomerLiabilities;
 
     const netProfit = profitAndLossReport.netProfit;
-    const ownerCapital = totalAssets - totalLiabilities - netProfit;
     const totalEquity = ownerCapital + netProfit;
     const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
 
@@ -979,68 +1717,70 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       retainedNetProfit: netProfit,
       totalEquity,
       totalLiabilitiesAndEquity,
-      isBalanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 1
+      isBalanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01
     };
-  }, [receivableInvoices, payableInvoices, legalReceivables, profitAndLossReport]);
+  }, [allLedgerTransactions, profitAndLossReport]);
 
-  // Derived Cash Flow Report
+
+  // Derived Cash Flow Report — calculated only from posted ledger transactions.
   const cashFlowReport = useMemo(() => {
-    let operatingInflow = 280000;
-    let operatingOutflow = 135000;
+    const CASH_CODES = new Set(["10100", "12000001", "12001", "12100001"]);
+    let operatingInflow = 0;
+    let operatingOutflow = 0;
+    let investingCash = 0;
+    let financingCash = 0;
 
-    receivableInvoices.forEach(ar => {
-      if (ar.status === "Paid") operatingInflow += ar.amount;
+    const byReference = new Map<string, LedgerTransaction[]>();
+    allLedgerTransactions.forEach(tx => {
+      const bucket = byReference.get(tx.reference) || [];
+      bucket.push(tx);
+      byReference.set(tx.reference, bucket);
     });
 
-    payableInvoices.forEach(ap => {
-      if (ap.status === "Paid") operatingOutflow += ap.amount;
-    });
+    byReference.forEach(lines => {
+      const cashLines = lines.filter(tx => CASH_CODES.has(tx.account_code));
+      if (!cashLines.length) return;
+      const narration = lines.map(tx => tx.description || "").join(" ").toLowerCase();
+      // Transfers between cash/bank accounts are not cash-flow activity.
+      const nonCash = lines.filter(tx => !CASH_CODES.has(tx.account_code));
+      if (!nonCash.length) return;
 
-    payrollSyncs.forEach(p => {
-      operatingOutflow += p.total_amount;
+      const cashNet = cashLines.reduce((sum, tx) => sum + (tx.debit || 0) - (tx.credit || 0), 0);
+      if (Math.abs(cashNet) < 0.005) return;
+
+      // A PDC deposit is a movement from PDC custody to bank, not a new customer cash receipt.
+      if (narration.includes("pdc deposited")) return;
+
+      const hasFixedAsset = nonCash.some(tx => tx.account_code.startsWith("13"));
+      const hasCapital = nonCash.some(tx => tx.account_code.startsWith("3"));
+      if (hasFixedAsset) investingCash += cashNet;
+      else if (hasCapital) financingCash += cashNet;
+      else if (cashNet > 0) operatingInflow += cashNet;
+      else operatingOutflow += Math.abs(cashNet);
     });
 
     const netOperatingCash = operatingInflow - operatingOutflow;
-    const investingCash = -50000;
-    const financingCash = 0;
     const netCashChange = netOperatingCash + investingCash + financingCash;
-    const endingCashBalance = 1950000 + netCashChange;
+    const endingCashBalance = allLedgerTransactions
+      .filter(tx => CASH_CODES.has(tx.account_code))
+      .reduce((sum, tx) => sum + (tx.debit || 0) - (tx.credit || 0), 0);
 
-    return {
-      operatingInflow,
-      operatingOutflow,
-      netOperatingCash,
-      investingCash,
-      financingCash,
-      netCashChange,
-      endingCashBalance
-    };
-  }, [receivableInvoices, payableInvoices, payrollSyncs]);
+    return { operatingInflow, operatingOutflow, netOperatingCash, investingCash, financingCash, netCashChange, endingCashBalance };
+  }, [allLedgerTransactions]);
 
-  // Derived Cash On Hand Position
+  // Derived Cash On Hand Position — no fabricated opening balances or minimum floors.
   const cashOnHandPosition = useMemo(() => {
-    let vaultCash = 24500;
-    let pettyCashFloat = 1850;
-    let siteDesks = 3200;
-
-    cashBookEntries.forEach(cb => {
-      vaultCash += (cb.cash_in - cb.cash_out);
+    const CASH_ON_HAND_CODES = new Set(["10100", "12100001"]);
+    const PETTY_CASH_CODES = new Set(["12101", "12102"]);
+    let vaultCash = 0;
+    let pettyCashFloat = 0;
+    allLedgerTransactions.forEach(tx => {
+      const net = (tx.debit || 0) - (tx.credit || 0);
+      if (CASH_ON_HAND_CODES.has(tx.account_code)) vaultCash += net;
+      if (PETTY_CASH_CODES.has(tx.account_code)) pettyCashFloat += net;
     });
-
-    pettyCashEntries.forEach(pc => {
-      pettyCashFloat -= pc.amount;
-    });
-
-    vaultCash = Math.max(vaultCash, 15000);
-    pettyCashFloat = Math.max(pettyCashFloat, 1200);
-
-    return {
-      vaultCash,
-      pettyCashFloat,
-      siteDesks,
-      totalCashOnHand: vaultCash + pettyCashFloat + siteDesks
-    };
-  }, [cashBookEntries, pettyCashEntries]);
+    return { vaultCash, pettyCashFloat, siteDesks: 0, totalCashOnHand: vaultCash + pettyCashFloat };
+  }, [allLedgerTransactions]);
 
   return (
     <FinanceContext.Provider
@@ -1079,7 +1819,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         profitAndLossReport,
         balanceSheetReport,
         cashFlowReport,
-        cashOnHandPosition
+        cashOnHandPosition,
+        isSyncing,
+        refreshFinanceData
       }}
     >
       {children}

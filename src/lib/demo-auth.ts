@@ -85,6 +85,22 @@ const DEMO_USERS: Record<AppRole, DemoSession> = {
 };
 
 
+export const DEMO_CREDENTIALS: Record<string, { role: AppRole; password: string; fullName: string }> = {
+  "tenant@zyno.com": { role: "TENANT", password: "Password123!", fullName: "Demo Tenant" },
+  "propmgr@zyno.com": { role: "PROP_MGR", password: "Password123!", fullName: "Demo Property Manager" },
+  "admin@zyno.com": { role: "ADMIN", password: "Password123!", fullName: "Demo Admin" },
+  "superadmin@zyno.com": { role: "SUPER_ADMIN", password: "Password123!", fullName: "Demo Super Admin" },
+  "leasing@zyno.com": { role: "LEASING", password: "Password123!", fullName: "Demo Leasing Officer" },
+  "finance@zyno.com": { role: "FINANCE", password: "Password123!", fullName: "Demo Finance Officer" },
+  "cashier@zyno.com": { role: "CASHIER", password: "Password123!", fullName: "Demo Cashier" },
+  "maintenance@zyno.com": { role: "MAINTENANCE", password: "Password123!", fullName: "Demo Maintenance Officer" },
+};
+
+export function findDemoUserByEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  return DEMO_CREDENTIALS[normalized] ?? null;
+}
+
 export function createDemoSession(role: AppRole) {
   return DEMO_USERS[role];
 }
@@ -111,3 +127,4 @@ export function clearDemoSession() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(DEMO_SESSION_KEY);
 }
+

@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 // ── Extended Finance Data Types & API Helpers ─────────────────────────────────
 
 export type FinFinancialYear = {
-  id: number;
+  id: string;
   name: string;
   start_date: string;
   end_date: string;
@@ -11,7 +11,7 @@ export type FinFinancialYear = {
 };
 
 export type FinRegion = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   currency?: string;
@@ -20,7 +20,7 @@ export type FinRegion = {
 };
 
 export type FinVendor = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   contact_person?: string;
@@ -28,10 +28,18 @@ export type FinVendor = {
   phone?: string;
   tax_number?: string;
   status: 'Active' | 'Inactive';
+  vendor_type?: string;
+  payment_terms?: string;
+  settlement_mode?: string;
+  currency?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  notes?: string;
 };
 
 export type FinCustomer = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   type: string;
@@ -41,14 +49,14 @@ export type FinCustomer = {
 };
 
 export type FinCostCenter = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   manager?: string;
 };
 
 export type FinPostingPeriod = {
-  id: number;
+  id: string;
   period_name: string;
   year: number | string;
   month: number;
@@ -56,15 +64,15 @@ export type FinPostingPeriod = {
 };
 
 export type FinBank = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   swift_code?: string;
 };
 
 export type FinBankAccount = {
-  id: number;
-  bank_id?: number;
+  id: string;
+  bank_id?: string;
   account_number: string;
   account_title: string;
   currency: string;
@@ -72,7 +80,7 @@ export type FinBankAccount = {
 };
 
 export type FinBankReconciliation = {
-  id: number;
+  id: string;
   account_number: string;
   statement_date: string;
   statement_balance: number;
@@ -81,7 +89,7 @@ export type FinBankReconciliation = {
 };
 
 export type FinContract = {
-  id: number;
+  id: string;
   contract_number: string;
   title: string;
   party_name: string;
@@ -93,7 +101,7 @@ export type FinContract = {
 };
 
 export type FinCoaAccount = {
-  id: number;
+  id: string;
   account_code: string;
   account_name: string;
   account_type: string;
@@ -102,7 +110,7 @@ export type FinCoaAccount = {
 };
 
 export type FinVoucher = {
-  id: number;
+  id: string;
   voucher_number: string;
   voucher_date: string;
   voucher_type: string;
@@ -115,28 +123,29 @@ export type FinVoucher = {
 };
 
 export type FinVoucherLine = {
-  id: number;
-  voucher_id: number;
-  account_id: number;
-  cost_center_id?: number;
-  property_id?: number;
-  unit_id?: number;
-  tenant_id?: number;
-  vendor_id?: number;
+  id: string;
+  voucher_id: string;
+  account_id: string;
+  cost_center_id?: string;
+  property_id?: string;
+  unit_id?: string;
+  tenant_id?: string;
+  vendor_id?: string;
   debit_amount: number;
   credit_amount: number;
   description?: string;
 };
 
 export type FinPdcRegister = {
-  id: number;
+  id: string;
   cheque_number: string;
-  bank_id?: number;
+  bank_id?: string;
   cheque_date: string;
   amount: number;
-  tenant_id?: number;
-  property_id?: number;
-  unit_id?: number;
+  tenant_id?: string;
+  property_id?: string;
+  unit_id?: string;
+  lease_id?: string;
   status: string;
   deposit_date?: string;
   cleared_date?: string;
@@ -145,11 +154,11 @@ export type FinPdcRegister = {
 };
 
 export type FinLegalReceivable = {
-  id: number;
-  tenant_id: number;
-  property_id?: number;
-  unit_id?: number;
-  lease_id?: number;
+  id: string;
+  tenant_id: string;
+  property_id?: string;
+  unit_id?: string;
+  lease_id?: string;
   original_amount: number;
   outstanding_balance: number;
   escalation_date: string;
@@ -159,20 +168,23 @@ export type FinLegalReceivable = {
 };
 
 export type FinDeposit = {
-  id: number;
+  id: string;
   deposit_type: string;
   coa_account_code: string;
   amount: number;
-  tenant_id: number;
-  property_id?: number;
-  unit_id?: number;
-  lease_id?: number;
+  tenant_id: string;
+  property_id?: string;
+  unit_id?: string;
+  lease_id?: string;
   status: string;
   receipt_ref?: string;
+  deduction_amount?: number;
+  refund_amount?: number;
+  settled_at?: string;
 };
 
 export type FinPayrollSync = {
-  id: number;
+  id: string;
   payroll_run_id: string;
   period: string;
   status: string;
@@ -181,7 +193,7 @@ export type FinPayrollSync = {
 };
 
 // Generic CRUD helper generator
-function createFinanceCrud<T extends { id: number }>(tableName: string, defaultSort = 'id') {
+function createFinanceCrud<T extends { id: string }>(tableName: string, defaultSort = 'id') {
   return {
     fetchAll: async (): Promise<T[]> => {
       const { data, error } = await supabase.from(tableName).select('*').order(defaultSort);
@@ -193,11 +205,11 @@ function createFinanceCrud<T extends { id: number }>(tableName: string, defaultS
       if (error) throw error;
       return data;
     },
-    update: async (id: number, payload: Partial<Omit<T, 'id'>>): Promise<void> => {
+    update: async (id: string, payload: Partial<Omit<T, 'id'>>): Promise<void> => {
       const { error } = await supabase.from(tableName).update(payload as any).eq('id', id);
       if (error) throw error;
     },
-    delete: async (id: number): Promise<void> => {
+    delete: async (id: string): Promise<void> => {
       const { error } = await supabase.from(tableName).delete().eq('id', id);
       if (error) throw error;
     }

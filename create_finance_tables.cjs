@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS public.fin_deposits (
   lease_id          bigint,
   status            text        NOT NULL DEFAULT 'Held',
   receipt_ref       text,
+  deduction_amount  numeric(18,4) NOT NULL DEFAULT 0,
+  refund_amount     numeric(18,4) NOT NULL DEFAULT 0,
+  settled_at        timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 

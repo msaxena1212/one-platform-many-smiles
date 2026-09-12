@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { createERPVoucher, type ERPVoucher } from "@/lib/supabase";
+import type { ERPVoucher } from "@/lib/supabase";
+import { postVoucher } from "@/lib/finance/posting-engine";
 import { useAppData } from "@/lib/app-data-context";
 import { Loader2, Plus, ArrowDownLeft, ArrowUpRight, Receipt, Banknote, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -81,16 +82,33 @@ function TransactionsPage() {
 
     setSaving(true);
     try {
-      await createERPVoucher({ ...vForm }, lines.filter((line) => line.account_name));
+      const usableLines = lines.filter((line) => line.account_name);
+      if (usableLines.length === 0) {
+        throw new Error("At least one accounting line is required.");
+      }
 
-      const primaryDebit = lines.find((line) => line.debit > 0);
-      const primaryCredit = lines.find((line) => line.credit > 0);
+      const result = await postVoucher({
+        voucher_date: vForm.voucher_date,
+        voucher_type: vForm.voucher_type,
+        description: vForm.notes || `${vForm.voucher_type} Voucher`,
+        reference_no: vForm.voucher_no,
+        source_type: "FINANCE_JOURNAL",
+        lines: usableLines.map((line) => ({
+          account_code: line.account_name.split(" ")[0],
+          debit: Number(line.debit) || 0,
+          credit: Number(line.credit) || 0,
+          description: line.account_name,
+        })),
+      });
+
+      const primaryDebit = usableLines.find((line) => line.debit > 0);
+      const primaryCredit = usableLines.find((line) => line.credit > 0);
       setVouchers((previous) => [
         {
-          id: `v${previous.length + 1}`,
+          id: result.voucher_id,
           leaseId: "",
           name: `${vForm.voucher_type} Voucher`,
-          receiptNo: vForm.voucher_no,
+          receiptNo: result.receipt_number,
           method: vForm.voucher_type === "Receipt" ? "Manual" : "Journal",
           period: vForm.voucher_date,
           debit: primaryDebit?.account_name || "Unknown Debit",
@@ -101,7 +119,7 @@ function TransactionsPage() {
         ...previous,
       ]);
 
-      toast.success("Voucher created successfully");
+      toast.success(`Voucher ${result.voucher_number} posted. Receipt ${result.receipt_number} generated.`);
       setShowNew(false);
       setVForm({ voucher_no: "", voucher_type: "Receipt", voucher_date: new Date().toISOString().slice(0, 10), total_amount: 0, notes: "" });
       setLines([

@@ -5,6 +5,7 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+
 // ---- Typed Helpers ----
 
 export type Property = {
@@ -455,19 +456,6 @@ export type Invoice = {
   created_at: string;
 };
 
-export type Receipt = {
-  id: string;
-  customer_id?: string;
-  payment_mode: 'cash' | 'bank' | 'cheque' | 'sadad' | 'mada' | 'apple_pay' | 'stc_pay' | 'card' | 'bank_transfer';
-  amount: number;
-  currency: string;
-  ref?: string;
-  received_at: string;
-  allocations: any;
-  status: string;
-  created_at: string;
-};
-
 export type CustomerDraft = {
   id: string;
   name: string;
@@ -516,16 +504,6 @@ export async function fetchJournalEntries() {
   return data as JournalEntry[];
 }
 
-export async function fetchReceipts() {
-  const { data, error } = await supabase
-    .from('receipts')
-    .select('*')
-    .order('received_at', { ascending: false });
-
-  if (error) throw error;
-  return data as Receipt[];
-}
-
 // ---- Maintenance Types ----
 
 export type MaintenanceTicket = {
@@ -536,7 +514,7 @@ export type MaintenanceTicket = {
   description: string | null;
   category: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+  status: 'new' | 'assigned' | 'dispatched' | 'scheduled' | 'in_progress' | 'resolved' | 'completed' | 'closed' | 'cancelled';
   assignee: string | null;
   host_id: string | null;
   reported_by: string | null;
@@ -552,6 +530,8 @@ export type InventoryPart = {
   quantity_on_hand: number;
   unit_cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
+  unit_of_measure?: string;
 };
 
 export type MaterialUsage = {
@@ -561,6 +541,7 @@ export type MaterialUsage = {
   quantity: number;
   cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
 };
 
 export type PropertyImage = {
@@ -611,6 +592,7 @@ export type Asset = {
   closing_accumulated_depreciation?: number;
   net_book_value?: number;
   remarks?: string;
+  description?: string;
   created_at: string;
   updated_at: string;
   
@@ -732,6 +714,18 @@ export async function updateAsset(id: string, payload: Partial<Asset>) {
   return data as Asset;
 }
 
+export async function deleteAsset(id: string) {
+  const { error } = await supabase.from('assets').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteAllAssets() {
+  const { error } = await supabase.from('assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw error;
+  return true;
+}
+
 
 export type ApprovalRequest = {
   id: string;
@@ -849,19 +843,6 @@ export async function updateJournalEntry(id: string, payload: Partial<Pick<Journ
   return data as JournalEntry;
 }
 
-// Receipts — Create & Update
-export async function createReceipt(payload: Omit<Receipt, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('receipts').insert(payload).select().single();
-  if (error) throw error;
-  return data as Receipt;
-}
-
-export async function updateReceipt(id: string, payload: Partial<Pick<Receipt, 'status' | 'amount' | 'payment_mode'>>) {
-  const { data, error } = await supabase.from('receipts').update(payload).eq('id', id).select().single();
-  if (error) throw error;
-  return data as Receipt;
-}
-
 // Fixed Assets
 export async function fetchFixedAssets(filters?: { property_id?: string }) {
   let query = supabase.from('fixed_assets').select('*').order('created_at', { ascending: false });
@@ -925,14 +906,22 @@ export async function fetchMaterialUsage(ticketId: string) {
   return data;
 }
 
-export async function logMaterialUsage(payload: { ticket_id: string; part_id?: string; quantity: number; cost: number }) {
-  const { data, error } = await supabase.from('material_usage').insert(payload).select().single();
+export async function logMaterialUsage(payload: { ticket_id: string; part_id: string; quantity: number }) {
+  const { data, error } = await supabase.rpc('issue_maintenance_material', {
+    p_ticket_id: payload.ticket_id,
+    p_part_id: payload.part_id,
+    p_quantity: payload.quantity,
+  });
   if (error) throw error;
-  return data;
+  return data as string;
 }
 
 export async function fetchInventoryParts() {
-  const { data, error } = await supabase.from('inventory_parts').select('*').order('name');
+  const { data, error } = await supabase
+    .from('inventory_parts')
+    .select('*')
+    .not('procurement_item_id', 'is', null)
+    .order('name');
   if (error) throw error;
   return data as InventoryPart[];
 }
@@ -1189,12 +1178,27 @@ export async function createERPVoucher(
   voucher: Omit<ERPVoucher, 'id' | 'created_at' | 'journal_entries'>,
   lines: Omit<ERPJournalEntry, 'id' | 'voucher_id' | 'created_at'>[]
 ) {
-  const { data: v, error: ve } = await supabase.from('erp_vouchers').insert(voucher).select().single();
-  if (ve) throw ve;
-  const linePayloads = lines.map(l => ({ ...l, voucher_id: (v as any).id }));
-  const { error: le } = await supabase.from('erp_journal_entries').insert(linePayloads);
-  if (le) throw le;
-  return v as ERPVoucher;
+  // DEPRECATED (Phase 2 — 2026-08-27):
+  // The PMS Finance architecture mandates a single-accounting-engine model
+  // where every accounting event flows through the resolver + posting
+  // engine (fin_accounting_events -> fin_vouchers / fin_voucher_lines).
+  // Direct erp_vouchers / erp_journal_entries writes are no longer supported.
+  //
+  // Callers should use:
+  //   - postVoucher() in src/lib/finance/posting-engine.ts for direct
+  //     voucher creation
+  //   - resolveAccountingAccounts() in src/lib/finance/account-resolver.ts
+  //     for GL/SL resolution
+  //
+  // This shim is preserved only to keep old callers compiling during the
+  // cutover window; it throws so the runtime is forced onto the new path.
+  void voucher; void lines;
+  throw new Error(
+    'createERPVoucher is deprecated. Use postVoucher() in src/lib/finance/posting-engine.ts ' +
+    'and resolveAccountingAccounts() in src/lib/finance/account-resolver.ts instead. ' +
+    'See phase2-account-resolver-hardened.md and the Phase 2 enforcement migration ' +
+    '(20260829110000) for the migration path.'
+  );
 }
 
 export async function fetchERPChartOfAccounts() {

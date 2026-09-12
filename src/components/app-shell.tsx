@@ -111,7 +111,7 @@ export function AppShell({
   // ════════════════════════════════════════════════════════════════════════════
   if (navModules) {
     return (
-      <div className="flex min-h-screen">
+      <div className="flex h-screen overflow-hidden">
         <NavModulesSidebar
           navModules={navModules}
           consoleLabel={consoleLabel}
@@ -122,12 +122,12 @@ export function AppShell({
           onSignOut={handleSignOut}
         />
         {/* ── Main content ─────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 bg-background">
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
           {/* Top bar */}
           <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm gap-3">
             <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
           </header>
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          <main className="flex-1 overflow-y-auto p-6">{children}</main>
         </div>
       </div>
     );
@@ -155,8 +155,8 @@ export function AppShell({
   // Flat nav
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="flex min-h-screen">
-      <nav className={cn("hidden md:flex w-56 shrink-0 flex-col border-r", DIVIDER, SIDEBAR_BG)}>
+    <div className="flex h-screen overflow-hidden">
+      <nav className={cn("hidden md:flex w-56 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b", DIVIDER, SIDEBAR_HEADER)}>
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
           <div className="min-w-0">
@@ -184,11 +184,11 @@ export function AppShell({
           </button>
         </div>
       </nav>
-      <div className="flex-1 flex flex-col min-w-0 bg-background">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
         <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm">
           <h1 className="text-sm font-semibold truncate">{title}</h1>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );
@@ -479,8 +479,8 @@ function LegacyNavGroupsLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <nav className={cn("hidden md:flex w-60 shrink-0 flex-col border-r overflow-hidden", DIVIDER, SIDEBAR_BG)}>
+    <div className="flex h-screen overflow-hidden">
+      <nav className={cn("hidden md:flex w-60 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         {/* Logo */}
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b shrink-0", DIVIDER, SIDEBAR_HEADER)}>
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
@@ -560,11 +560,11 @@ function LegacyNavGroupsLayout({
         </div>
       </nav>
 
-      <div className="flex-1 flex flex-col min-w-0 bg-background">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
         <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm">
           <h1 className="text-sm font-semibold truncate">{title}</h1>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

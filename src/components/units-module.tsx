@@ -533,14 +533,21 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
   const total = units.length;
   const occupied = units.filter(
-    (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
+    (u) =>
+      u.status?.toLowerCase() === "occupied" ||
+      (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available"),
   ).length;
   const available = units.filter(
-    (u) => u.status?.toLowerCase() === "available" || u.lease_status === "Vacant",
+    (u) =>
+      u.status?.toLowerCase() === "available" ||
+      u.lease_status?.toLowerCase() === "vacant" ||
+      (!u.status && !u.lease_status),
   ).length;
   const renewalDue = units.filter((u) => {
-    const isVacant = u.status?.toLowerCase() === "available" || u.lease_status?.toLowerCase() === "vacant";
-    if (isVacant || !u.contract_end_date) return false;
+    const isOccupied =
+      u.status?.toLowerCase() === "occupied" ||
+      (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available");
+    if (!isOccupied || !u.contract_end_date) return false;
     const end = new Date(u.contract_end_date);
     end.setHours(0, 0, 0, 0);
     return end <= in60Days; // includes already expired + expiring within 60 days
@@ -566,7 +573,9 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   const unitsByProperty = properties.map((prop) => {
     const propUnits = units.filter((u) => u.property_id === prop.id);
     const propOccupied = propUnits.filter(
-      (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
+      (u) =>
+        u.status?.toLowerCase() === "occupied" ||
+        (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available"),
     ).length;
     return { ...prop, total: propUnits.length, occupied: propOccupied };
   });

@@ -1,5 +1,10 @@
+import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { UnitsModule } from "@/components/units-module";
+import { ModuleSuspense } from "@/components/module-suspense";
+
+const UnitsModule = lazy(() =>
+  import("@/components/units-module").then((m) => ({ default: m.UnitsModule }))
+);
 
 export const Route = createFileRoute("/prop-mgr/units")({
   head: () => ({ meta: [{ title: "Units - Property Manager" }] }),
@@ -7,5 +12,9 @@ export const Route = createFileRoute("/prop-mgr/units")({
 });
 
 function PropMgrUnits() {
-  return <UnitsModule role="prop-mgr" />;
+  return (
+    <ModuleSuspense>
+      <UnitsModule role="prop-mgr" />
+    </ModuleSuspense>
+  );
 }
