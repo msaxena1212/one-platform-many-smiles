@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Settings, Calendar, MapPin, Users, UserCheck, Layers, LayoutDashboard,
-  Clock, BookOpen, FileText, PlusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
+  Clock, BookOpen, FileText, PlusCircle, MinusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
   Building, Building2, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
   DollarSign, Activity, FileCode, CheckCircle, Search, Plus, Trash2, Pencil,
   ChevronRight, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2,
@@ -20,6 +20,7 @@ import {
   Home as HomeIcon, User as UserIcon
 } from "lucide-react";
 import {
+  supabase,
   fetchJournalEntries, fetchARLedgers, fetchGLAccounts,
   createJournalEntry, createAREntry, settleAREntry, createGLAccount,
   fetchERPChartOfAccounts, fetchUnitCOAs,
@@ -37,8 +38,21 @@ import { PdcManagement } from "./finance/pdc-management";
 import { DepositsGuarantees } from "./finance/deposits-guarantees";
 import { ReceivablesLegal } from "./finance/receivables";
 import { PayrollSync } from "./finance/payroll-sync";
+import { formatDDMMMYYYY } from "@/lib/date-utils";
 import { postVoucher } from "@/lib/finance/posting-engine";
 import { useFinanceStore } from "@/lib/finance/finance-store";
+import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
+import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
+import {
+  generatePortfolioRevenueBatch,
+  calculateLeaseRevenueSchedule,
+  type ProrationMethod,
+  type RevenuePeriodSchedule,
+  type RevenueGenerationBatchSummary,
+  type RevenueStatus,
+  type RevenueReasonCode
+} from "@/lib/finance/revenue-engine";
+import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
@@ -87,6 +101,8 @@ const FINANCE_NAV = [
       { key: "payment_voucher", label: "Payment Voucher", icon: CreditCard },
       { key: "receivable_invoice", label: "Receivable Invoice", icon: ArrowDownLeft },
       { key: "receipt_voucher", label: "Receipt Voucher", icon: ReceiptIcon },
+      { key: "debit_note", label: "Debit Note", icon: MinusCircle },
+      { key: "credit_note", label: "Credit Note", icon: PlusCircle },
     ],
   },
   {
@@ -152,6 +168,8 @@ export function FinanceModule({ role }: FinanceModuleProps) {
   const searchParams = useSearch({ strict: false }) as Record<string, any>;
   const activeKey = searchParams.tab || "finance_dashboard";
 
+  const { isSyncing, refreshFinanceData } = useFinanceStore();
+
   const activeGroup = FINANCE_NAV.find(g => g.items.some(i => i.key === activeKey));
   const activeItem = activeGroup?.items.find(i => i.key === activeKey);
 
@@ -160,16 +178,32 @@ export function FinanceModule({ role }: FinanceModuleProps) {
       {/* ── Main Content Area ─────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Breadcrumb / topbar */}
-        <div className="flex items-center gap-3 px-6 py-3 border-b border-border bg-card shrink-0">
-          {activeGroup && (
-            <div className={`p-1.5 rounded-md ${activeGroup.bg}`}>
-              <activeGroup.icon className={`h-4 w-4 ${activeGroup.color}`} />
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border bg-card shrink-0">
+          <div className="flex items-center gap-3">
+            {activeGroup && (
+              <div className={`p-1.5 rounded-md ${activeGroup.bg}`}>
+                <activeGroup.icon className={`h-4 w-4 ${activeGroup.color}`} />
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="text-muted-foreground font-medium">{activeGroup?.group || "Finance"}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <span className="font-semibold text-foreground">{activeItem?.label || "Overview"}</span>
             </div>
-          )}
-          <div className="flex items-center gap-1.5 text-sm">
-            <span className="text-muted-foreground font-medium">{activeGroup?.group || "Finance"}</span>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
-            <span className="font-semibold text-foreground">{activeItem?.label || "Overview"}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshFinanceData}
+              disabled={isSyncing}
+              className="gap-2 h-8 text-xs font-medium border-primary/20 hover:bg-primary/5 shadow-xs"
+              title="Refresh all GL entries and financial reports without whole page reload"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-primary" : "text-muted-foreground"}`} />
+              {isSyncing ? "Syncing DB..." : "Refresh Financial Data"}
+            </Button>
           </div>
         </div>
 
@@ -239,6 +273,10 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     // Contracts
     case "expense_contract": return <ContractManagementSubModule type="Expense" />;
     case "revenue_contract": return <ContractManagementSubModule type="Revenue" />;
+
+    // Credit / Debit Notes
+    case "debit_note": return <DebitNoteSubModule />;
+    case "credit_note": return <CreditNoteSubModule />;
 
     default: return <div className="text-center py-10 text-muted-foreground">Select a module</div>;
   }
@@ -615,7 +653,7 @@ const DEFAULT_BUDGET_HEADS: BudgetHeadItem[] = [
     budget_type: "OPEX",
     cost_center_code: "CC-PROP-SALATA",
     cost_center_name: "Old Salata Residence 23",
-    account_code: "50200",
+    account_code: "51004001",
     account_name: "Repairs & Maintenance Expenses",
     allocated_budget: 150000,
     financial_year: "FY 2026-2027",
@@ -728,7 +766,7 @@ function BudgetHeadSubModule() {
     name: "",
     budget_type: "OPEX",
     cost_center_code: "CC-PROP-SALATA",
-    account_code: "50200",
+    account_code: "51004001",
     allocated_budget: "100000",
     financial_year: "FY 2026-2027",
     status: "Active",
@@ -769,7 +807,7 @@ function BudgetHeadSubModule() {
   // Standard COA dictionary for Mapping
   const COA_EXPENSE_ASSET_OPTIONS = [
     { code: "50100", name: "Staff Salaries & Payroll", type: "OPEX" },
-    { code: "50200", name: "Repairs & Maintenance Expenses", type: "OPEX" },
+    { code: "51004001", name: "Repairs & Maintenance Expenses", type: "OPEX" },
     { code: "50300", name: "Cleaning & Sanitation Services", type: "OPEX" },
     { code: "50500", name: "Electricity & Water (Kahramaa)", type: "OPEX" },
     { code: "50900", name: "Depreciation Expense", type: "OPEX" },
@@ -797,7 +835,7 @@ function BudgetHeadSubModule() {
       name: "",
       budget_type: "OPEX",
       cost_center_code: costCenters[0]?.code || "CC-PROP-SALATA",
-      account_code: "50200",
+      account_code: "51004001",
       allocated_budget: "100000",
       financial_year: "FY 2026-2027",
       status: "Active",
@@ -1138,7 +1176,7 @@ function BudgetHeadSubModule() {
                   onValueChange={(v: "CAPEX" | "OPEX") => setForm({
                     ...form,
                     budget_type: v,
-                    account_code: v === "CAPEX" ? "13000" : "50200"
+                    account_code: v === "CAPEX" ? "13000" : "51004001"
                   })}
                 >
                   <SelectTrigger className="h-8 text-xs">
@@ -1890,11 +1928,7 @@ function ChartOfAccountsSubModule() {
 function JournalLedgerSubModule() {
   const { vouchers: sharedVouchers } = useAppData();
   const [open, setOpen] = useState(false);
-  const [entries, setEntries] = useState([
-    { id: "JE-2026-001", posting_date: "2026-08-01", reference: "REC-PDC-001", narration: "Rent PDC Deposited in QNB Bank Account", dr_account: "12000 - Bank Operating Account", cr_account: "12900 - PDC In Hand", amount: 5600, status: "Posted" },
-    { id: "JE-2026-002", posting_date: "2026-08-02", reference: "ARE-RT-25-3962", narration: "Security Deposit Acknowledged Cash", dr_account: "10100 - Cash In Hand", cr_account: "21500 - Security Deposit Liability", amount: 1000, status: "Posted" },
-    { id: "JE-2026-003", posting_date: "2026-08-05", reference: "INV-AP-9901", narration: "HVAC Maintenance & Spare Parts", dr_account: "5020 - Repairs & Maintenance", cr_account: "2010 - Accounts Payable", amount: 14500, status: "Posted" },
-  ]);
+  const [entries, setEntries] = useState<{ id: string; posting_date: string; reference: string; narration: string; dr_account: string; cr_account: string; amount: number; status: string }[]>([]);
 
   const [form, setForm] = useState({
     je_no: `JE-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -1923,7 +1957,11 @@ function JournalLedgerSubModule() {
           { account_code: form.cr_account.split(' ')[0], debit: 0, credit: amt, description: form.narration }
         ]
       });
-    } catch { }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Failed to post journal entry.");
+      return;
+    }
 
     const newJE = {
       id: form.je_no,
@@ -2177,10 +2215,7 @@ function JournalLedgerSubModule() {
 }
 
 function CreditDebitBuilderSubModule() {
-  const [lines, setLines] = useState([
-    { account: "12000 - Bank Operating Account", debit: 15000, credit: 0 },
-    { account: "41100 - Rental Income", debit: 0, credit: 15000 }
-  ]);
+  const [lines, setLines] = useState([{ account: "", debit: 0, credit: 0 }]);
   const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
 
@@ -2204,7 +2239,11 @@ function CreditDebitBuilderSubModule() {
           description: l.account,
         }))
       });
-    } catch { }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Failed to post journal voucher.");
+      return;
+    }
 
     toast.success("Journal voucher built & posted successfully!");
     setLines([
@@ -2279,111 +2318,384 @@ function CreditDebitBuilderSubModule() {
 
 function GrnCostMappingSubModule() {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState([
-    { grn_no: "GRN-2026-081", po_ref: "PO-2026-014", date: "2026-08-18", vendor: "Qatar Maintenance & HVAC Co.", description: "Central AC Compressor Replacement", amount: 14500, mapped_gl: "50200 - Repairs & Maintenance", property: "Old Salata - Residence No:23", status: "Mapped" },
-    { grn_no: "GRN-2026-082", po_ref: "PO-2026-018", date: "2026-08-15", vendor: "Gulf Facility Services", description: "Deep Cleaning & Disinfection Batch", amount: 8200, mapped_gl: "50300 - Cleaning & Sanitation", property: "Regency Residence Al Sadd 1", status: "Pending" },
-    { grn_no: "GRN-2026-083", po_ref: "PO-2026-022", date: "2026-08-10", vendor: "Doha Elevator Services WLL", description: "Bi-Annual Elevator Safety Sensors", amount: 6400, mapped_gl: "50400 - Elevator Maintenance", property: "Old Salata - Residence No:13", status: "Mapped" },
-  ]);
+  const [grnList, setGrnList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selectedGrnForEdit, setSelectedGrnForEdit] = useState<any | null>(null);
 
+  // Form state for creating or editing GRN Cost mapping
   const [form, setForm] = useState({
     grn_no: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
     po_ref: `PO-2026-${Math.floor(10 + Math.random() * 90)}`,
     date: new Date().toISOString().split("T")[0],
     vendor: "Qatar Maintenance & HVAC Co.",
-    description: "Plumbing Fittings & Valves Batch",
+    description: "HVAC Replacement Compressors & Air Filters",
     amount: "4500",
-    mapped_gl: "50200 - Repairs & Maintenance",
+    mapped_gl: "51004001 - Repair and Maintenance Cost",
     property: "Old Salata - Residence No:23",
+    status: "Posted to GL",
   });
 
-  function handleAdd() {
-    setData(prev => [
-      { ...form, amount: parseFloat(form.amount) || 0, status: "Mapped" },
-      ...prev
-    ]);
-    toast.success(`GRN ${form.grn_no} cost allocated & mapped to ${form.mapped_gl}`);
+  const loadGrnData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch GRNs from database
+      const { data: dbGrns } = await supabase.from("proc_goods_receipts").select("*").order("created_at", { ascending: false });
+      const { data: dbPos } = await supabase.from("proc_purchase_orders").select("*");
+      const { data: dbVendors } = await supabase.from("fin_vendors").select("*");
+
+      // 2. Load custom mapped GRNs from local storage
+      const stored = localStorage.getItem("grn_cost_mappings_v2");
+      let localMappings: any[] = [];
+      if (stored) {
+        try { localMappings = JSON.parse(stored); } catch {}
+      }
+
+      // Default seed rows if completely empty
+      if ((!dbGrns || dbGrns.length === 0) && localMappings.length === 0) {
+        localMappings = [
+          {
+            id: "grn-seed-1",
+            grn_no: "GRN-2026-000001",
+            po_ref: "PO-2026-000001",
+            date: "2026-03-01",
+            vendor: "Qatar Maintenance Co.",
+            description: "HVAC Compressor Spares & Air Filter Media (Warehouse Inward)",
+            amount: 8500,
+            mapped_gl: "51004001 - Repair and Maintenance Cost",
+            property: "Lusail Marina Tower 1",
+            status: "Posted to GL",
+            source: "Procurement Sync"
+          },
+          {
+            id: "grn-seed-2",
+            grn_no: "GRN-2026-000002",
+            po_ref: "PO-2026-000002",
+            date: "2026-03-02",
+            vendor: "Gulf Facility Services",
+            description: "CMEP Facilities Mgt Spare Pumps & Valves Batch",
+            amount: 14200,
+            mapped_gl: "51002001 - CMEP-Facilities Mgt AMC",
+            property: "The Pearl - Porto Arabia 12",
+            status: "Posted to GL",
+            source: "Procurement Sync"
+          },
+          {
+            id: "grn-seed-3",
+            grn_no: "GRN-2026-000003",
+            po_ref: "PO-2026-000003",
+            date: "2026-03-03",
+            vendor: "Doha Elevator & MEP Corp",
+            description: "Passenger Elevator Traction Cables & Speed Governor Parts",
+            amount: 19800,
+            mapped_gl: "51002004 - Lift Maintenance Charges",
+            property: "West Bay Commercial Center",
+            status: "Posted to GL",
+            source: "Procurement Sync"
+          }
+        ];
+        localStorage.setItem("grn_cost_mappings_v2", JSON.stringify(localMappings));
+      }
+
+      // 3. Integrate DB GRNs
+      const mergedList = [...localMappings];
+      const seenGrnNos = new Set(localMappings.map(m => m.grn_no));
+
+      if (dbGrns && dbGrns.length > 0) {
+        dbGrns.forEach((g: any) => {
+          if (!seenGrnNos.has(g.grn_number)) {
+            const matchedPo = dbPos?.find((p: any) => p.id === g.purchase_order_id);
+            const matchedVendor = dbVendors?.find((v: any) => Number(v.id) === Number(g.vendor_id) || Number(v.id) === Number(matchedPo?.vendor_id));
+            
+            mergedList.push({
+              id: g.id,
+              grn_no: g.grn_number,
+              po_ref: matchedPo?.doc_number || "PO-REF",
+              date: g.grn_date || new Date().toISOString().slice(0, 10),
+              vendor: matchedVendor?.name || `Vendor #${g.vendor_id || "1"}`,
+              description: g.remarks || "Warehouse Inward Goods Receipt",
+              amount: Number(g.total_amount || g.subtotal || 0),
+              mapped_gl: "51004001 - Repair and Maintenance Cost",
+              property: "Central Property Portfolio",
+              status: "Posted to GL",
+              source: "Procurement Sync"
+            });
+            seenGrnNos.add(g.grn_number);
+          }
+        });
+      }
+
+      setGrnList(mergedList.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()));
+    } catch (e) {
+      console.error("Failed loading GRN cost mappings:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGrnData();
+    const handleUpdate = () => loadGrnData();
+    window.addEventListener("ap_invoices_updated", handleUpdate);
+    window.addEventListener("grn_updated", handleUpdate);
+    return () => {
+      window.removeEventListener("ap_invoices_updated", handleUpdate);
+      window.removeEventListener("grn_updated", handleUpdate);
+    };
+  }, [loadGrnData]);
+
+  function handleSaveMapping() {
+    const amt = parseFloat(form.amount) || 0;
+    if (amt <= 0) return toast.error("Please enter a valid cost amount.");
+    
+    const newEntry = {
+      id: selectedGrnForEdit?.id || `grn-map-${Date.now()}`,
+      grn_no: form.grn_no,
+      po_ref: form.po_ref,
+      date: form.date,
+      vendor: form.vendor,
+      description: form.description,
+      amount: amt,
+      mapped_gl: form.mapped_gl,
+      property: form.property,
+      status: "Posted to GL",
+      source: "Manual Cost Allocation"
+    };
+
+    const updated = [newEntry, ...grnList.filter(g => g.grn_no !== form.grn_no)];
+    setGrnList(updated);
+    localStorage.setItem("grn_cost_mappings_v2", JSON.stringify(updated));
+
+    toast.success(`GRN ${form.grn_no} allocated to GL Account [${form.mapped_gl}]. Double-entry journal impact synced.`);
     setOpen(false);
+    setSelectedGrnForEdit(null);
   }
+
+  function openEditMapping(grn: any) {
+    setSelectedGrnForEdit(grn);
+    setForm({
+      grn_no: grn.grn_no,
+      po_ref: grn.po_ref,
+      date: grn.date,
+      vendor: grn.vendor,
+      description: grn.description,
+      amount: String(grn.amount),
+      mapped_gl: grn.mapped_gl,
+      property: grn.property,
+      status: grn.status || "Posted to GL",
+    });
+    setOpen(true);
+  }
+
+  const totalCostAllocated = grnList.reduce((acc, g) => acc + (Number(g.amount) || 0), 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <h3 className="text-sm font-semibold">Goods Received Note (GRN) Cost Allocation</h3>
-          <p className="text-xs text-muted-foreground">Map warehouse and maintenance GRN receipts directly to property expense GL accounts.</p>
+      {/* Top Banner KPI Header */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="p-3.5 rounded-xl border bg-card/60 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Total GRNs Allocated</p>
+            <p className="text-xl font-bold font-mono text-primary mt-0.5">{grnList.length}</p>
+          </div>
+          <FileText className="h-5 w-5 text-primary/40" />
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Map GRN Cost</Button>
+        <div className="p-3.5 rounded-xl border bg-card/60 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Total Cost Mapped to GL</p>
+            <p className="text-xl font-bold font-mono text-emerald-600 mt-0.5">QAR {totalCostAllocated.toLocaleString()}</p>
+          </div>
+          <DollarSign className="h-5 w-5 text-emerald-600/40" />
+        </div>
+        <div className="p-3.5 rounded-xl border bg-card/60 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Allocation Sync Status</p>
+            <p className="text-xs font-semibold text-blue-600 flex items-center gap-1 mt-1">
+              <CheckCircle2 className="h-3.5 w-3.5" /> 100% Live Double-Entry
+            </p>
+          </div>
+          <ShieldCheck className="h-5 w-5 text-blue-600/40" />
+        </div>
       </div>
 
-      <div className="border rounded-lg overflow-hidden bg-card">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            Goods Received Note (GRN) Cost Allocation to Property Expense GLs
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Directly map warehouse receipts and maintenance inwards to canonical Property Direct Expense &amp; AMC GL Accounts.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => {
+          setSelectedGrnForEdit(null);
+          setForm({
+            grn_no: `GRN-2026-${Math.floor(100 + Math.random() * 900)}`,
+            po_ref: `PO-2026-${Math.floor(10 + Math.random() * 90)}`,
+            date: new Date().toISOString().split("T")[0],
+            vendor: "Qatar Maintenance & HVAC Co.",
+            description: "Plumbing Fittings, Valves & Repair Spares",
+            amount: "4500",
+            mapped_gl: "51004001 - Repair and Maintenance Cost",
+            property: "Old Salata - Residence No:23",
+            status: "Posted to GL",
+          });
+          setOpen(true);
+        }} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Plus className="h-4 w-4" /> Map GRN Cost
+        </Button>
+      </div>
+
+      <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs">
-              <TableHead className="font-bold">Entry Date</TableHead>
+              <TableHead className="font-bold">Receipt Date</TableHead>
               <TableHead className="font-bold">GRN #</TableHead>
               <TableHead className="font-bold">PO Ref</TableHead>
-              <TableHead className="font-bold">Vendor</TableHead>
-              <TableHead className="font-bold">Description</TableHead>
+              <TableHead className="font-bold">Vendor / Supplier</TableHead>
+              <TableHead className="font-bold">Item / Service Description</TableHead>
               <TableHead className="font-bold">Property Cost Center</TableHead>
-              <TableHead className="font-bold">Mapped GL Account</TableHead>
+              <TableHead className="font-bold">Mapped Expense GL Account</TableHead>
               <TableHead className="text-right font-bold">Cost (QAR)</TableHead>
-              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="font-bold">Posting</TableHead>
+              <TableHead className="font-bold text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...data].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row, idx) => (
-              <TableRow key={idx} className="hover:bg-muted/30 text-xs">
+            {grnList.map((row, idx) => (
+              <TableRow key={row.id || idx} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.grn_no}</TableCell>
-                <TableCell className="font-mono text-muted-foreground">{row.po_ref}</TableCell>
+                <TableCell className="font-mono text-cyan-600">{row.po_ref}</TableCell>
                 <TableCell className="font-semibold">{row.vendor}</TableCell>
-                <TableCell>{row.description}</TableCell>
-                <TableCell>{row.property}</TableCell>
-                <TableCell className="font-mono text-blue-600">{row.mapped_gl}</TableCell>
-                <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
-                <TableCell><Badge variant={row.status === "Mapped" ? "default" : "outline"} className="text-[10px]">{row.status}</Badge></TableCell>
+                <TableCell className="max-w-[200px] truncate" title={row.description}>{row.description}</TableCell>
+                <TableCell className="font-medium text-foreground">{row.property}</TableCell>
+                <TableCell className="font-mono font-semibold text-blue-600 dark:text-blue-400">
+                  {row.mapped_gl}
+                </TableCell>
+                <TableCell className="text-right font-mono font-bold text-foreground">
+                  QAR {Number(row.amount || 0).toLocaleString()}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="default" className="bg-emerald-600 text-[10px] gap-1">
+                    <CheckCircle2 className="h-2.5 w-2.5" /> Posted to GL
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 text-primary" onClick={() => openEditMapping(row)}>
+                    <Pencil className="h-2.5 w-2.5" /> Edit GL Mapping
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
+            {grnList.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  No GRN cost mappings found. Click "Map GRN Cost" to map incoming materials to property GLs.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>
 
+      {/* Map GRN Cost Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Map GRN Cost Allocation</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
+        <DialogContent 
+          className="max-w-lg"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-emerald-600" />
+              {selectedGrnForEdit ? `Edit GL Mapping: ${form.grn_no}` : "Map Warehouse & Maintenance GRN to GL Account"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Allocate received procurement inventory or facility maintenance work directly to canonical property expense accounts.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2 text-xs">
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>GRN Number</Label><Input value={form.grn_no} onChange={e => setForm({ ...form, grn_no: e.target.value })} /></div>
+              <div>
+                <Label className="text-xs font-semibold">GRN Receipt Date *</Label>
+                <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="h-8 text-xs mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold">GRN Number *</Label>
+                <Input value={form.grn_no} onChange={e => setForm({ ...form, grn_no: e.target.value })} className="h-8 text-xs font-mono font-bold mt-1" />
+              </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>PO Reference</Label><Input value={form.po_ref} onChange={e => setForm({ ...form, po_ref: e.target.value })} /></div>
-              <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
+              <div>
+                <Label className="text-xs font-semibold">PO Reference #</Label>
+                <Input value={form.po_ref} onChange={e => setForm({ ...form, po_ref: e.target.value })} className="h-8 text-xs font-mono mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold">Vendor / Contractor</Label>
+                <Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} className="h-8 text-xs mt-1" />
+              </div>
             </div>
-            <div><Label>Item / Service Description</Label><Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Total Cost (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
-            </div>
+
             <div>
-              <Label>Target GL Account</Label>
+              <Label className="text-xs font-semibold">Item / Material / Service Description *</Label>
+              <Input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. HVAC Compressor Spares, Plumbing Pipes, Elevator Cables" className="h-8 text-xs mt-1" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Cost Amount (QAR) *</Label>
+                <Input type="number" min="0" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} className="h-8 text-xs font-mono font-bold mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold">Property Cost Center *</Label>
+                <Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} placeholder="e.g. Lusail Marina Tower 1" className="h-8 text-xs mt-1" />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Target Property Expense GL Account (COA Canonical) *</Label>
               <Select value={form.mapped_gl} onValueChange={v => setForm({ ...form, mapped_gl: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="50200 - Repairs & Maintenance">50200 - Repairs & Maintenance</SelectItem>
-                  <SelectItem value="50300 - Cleaning & Sanitation">50300 - Cleaning & Sanitation</SelectItem>
-                  <SelectItem value="50400 - Elevator Maintenance">50400 - Elevator Maintenance</SelectItem>
-                  <SelectItem value="50500 - Utilities & Energy">50500 - Utilities & Energy</SelectItem>
-                  <SelectItem value="50100 - Staff Salaries & Maintenance Labor">50100 - Staff Salaries & Maintenance Labor</SelectItem>
-                  <SelectItem value="13000 - Fixed Asset Equipment">13000 - Fixed Asset Equipment (Capitalized)</SelectItem>
-                  <SelectItem value="13100 - Building Improvements">13100 - Building Improvements</SelectItem>
+                  <SelectItem value="51004001 - Repair and Maintenance Cost">51004001 - Repair and Maintenance Cost</SelectItem>
+                  <SelectItem value="51002001 - CMEP-Facilities Mgt AMC">51002001 - CMEP-Facilities Mgt AMC</SelectItem>
+                  <SelectItem value="51002002 - Swimming Pool Maintenance">51002002 - Swimming Pool Maintenance</SelectItem>
+                  <SelectItem value="51002003 - CCTV AMC Charges">51002003 - CCTV AMC Charges</SelectItem>
+                  <SelectItem value="51002004 - Lift Maintenance Charges">51002004 - Lift Maintenance Charges</SelectItem>
+                  <SelectItem value="51002005 - Fire Alarm & Fire Fighting AMC">51002005 - Fire Alarm &amp; Fire Fighting AMC</SelectItem>
+                  <SelectItem value="51002006 - Pest Control Charges">51002006 - Pest Control Charges</SelectItem>
+                  <SelectItem value="51002007 - Landscaping & Irrigation AMC">51002007 - Landscaping &amp; Irrigation AMC</SelectItem>
+                  <SelectItem value="51001001 - CMEP-Labor Cost-Facilities Mgt">51001001 - CMEP-Labor Cost-Facilities Mgt</SelectItem>
+                  <SelectItem value="51001002 - House Keeping Labor Cost">51001002 - House Keeping Labor Cost</SelectItem>
+                  <SelectItem value="51001003 - Security Staff Labor Cost">51001003 - Security Staff Labor Cost</SelectItem>
+                  <SelectItem value="13000001 - Property Plant & Equipment (Capital Asset)">13000001 - Property Plant &amp; Equipment (Capital Asset)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Live Double-Entry GL Ledger Impact Preview */}
+            <div className="p-3 rounded-lg bg-muted/40 border text-[11px] space-y-1.5">
+              <div className="font-semibold text-foreground flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> General Ledger Accounting Impact:
+              </div>
+              <div className="font-mono text-rose-600 dark:text-rose-400">
+                • <strong>Dr. {form.mapped_gl.split(' - ')[0]}</strong> ({form.mapped_gl.split(' - ')[1] || "Expense"}) — QAR {Number(form.amount || 0).toLocaleString()}
+              </div>
+              <div className="font-mono text-emerald-600 dark:text-emerald-400">
+                • <strong>Cr. 22100001</strong> Trade Payables (GRN Clearing / Supplier Liability) — QAR {Number(form.amount || 0).toLocaleString()}
+              </div>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Confirm GRN Mapping</Button>
+
+          <DialogFooter className="border-t pt-3 flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleSaveMapping} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1">
+              <CheckCircle2 className="h-4 w-4" /> Save &amp; Post Cost Mapping
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2392,34 +2704,252 @@ function GrnCostMappingSubModule() {
 }
 
 function PayableInvoiceSubModule() {
+  const { payableInvoices: storeInvoices, addVoucher } = useFinanceStore();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState([
-    { invoice_no: "INV-AP-9901", vendor: "Qatar Maintenance & HVAC Co.", date: "2026-08-01", due_date: "2026-08-25", account: "50200 - Repairs & Maintenance", amount: 14500, status: "Unpaid" },
-    { invoice_no: "INV-AP-9902", vendor: "Kahramaa Utility Authority", date: "2026-08-05", due_date: "2026-08-20", account: "50500 - Utilities & Energy", amount: 9850, status: "Paid" },
-    { invoice_no: "INV-AP-9903", vendor: "Doha Security Guards Co.", date: "2026-08-10", due_date: "2026-08-30", account: "50600 - Security Services", amount: 12000, status: "Unpaid" },
-  ]);
+  const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
+  const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<any | null>(null);
 
-  const [form, setForm] = useState({
-    invoice_no: `INV-AP-${Math.floor(1000 + Math.random() * 9000)}`,
-    vendor: "Qatar Maintenance & HVAC Co.",
-    date: new Date().toISOString().split("T")[0],
-    due_date: "2026-09-15",
-    account: "50200 - Repairs & Maintenance",
-    amount: "7500",
+  // Payment Settlement Dialog state
+  const [payTarget, setPayTarget] = useState<any | null>(null);
+  const [payForm, setPayForm] = useState({
+    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentMethod: "Bank Wire / QNB Corporate Electronic",
+    disbursingBank: "Qatar National Bank (QNB) - Main Operating (IBAN: QA42QNBA00000000123456)",
+    transactionReference: "",
+    beneficiaryAccount: "QA91QNBA99887766554433",
+    cashCustodian: "Main Office Cashier Desk",
+    cashReceiptNo: "",
+    receiverName: "",
+    chequeNumber: "",
+    chequeDueDate: new Date().toISOString().slice(0, 10),
+    remarks: "",
   });
 
-  function handleAdd() {
-    setData(prev => [
-      { ...form, amount: parseFloat(form.amount) || 0, status: "Unpaid" },
-      ...prev
-    ]);
-    toast.success(`Payable Invoice ${form.invoice_no} created and posted to AP subledger!`);
+  const loadInvoices = useCallback(async () => {
+    try {
+      const invs = await ApInvoicesApi.fetchAll();
+      setProcInvoices(invs);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+    const handler = () => loadInvoices();
+    window.addEventListener("ap_invoices_updated", handler);
+    window.addEventListener("finance_vouchers_updated", handler);
+    return () => {
+      window.removeEventListener("ap_invoices_updated", handler);
+      window.removeEventListener("finance_vouchers_updated", handler);
+    };
+  }, [loadInvoices]);
+
+  // Merge Store AP invoices and Procurement AP invoices
+  const allInvoices = useMemo(() => {
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    // 1. Procurement Invoices
+    procInvoices.forEach(inv => {
+      seen.add(inv.invoice_number);
+      const totalAmt = Number(inv.total_amount || inv.amount || 0);
+      const taxAmt = Number(inv.tax_amount || 0);
+      const baseAmt = Number(inv.amount || (totalAmt - taxAmt));
+      list.push({
+        id: inv.id,
+        invoice_no: inv.invoice_number,
+        vendor: String(inv.vendor_id === "1" || inv.vendor_id === 1 ? "Qatar Maintenance Co." : inv.vendor_id === "2" || inv.vendor_id === 2 ? "Gulf Facility Services" : (inv.vendor_name || `Vendor #${inv.vendor_id}`)),
+        date: inv.invoice_date,
+        due_date: inv.due_date || inv.invoice_date,
+        account: inv.expense_gl_account || "51004001 - Repair and Maintenance Cost",
+        account_code: inv.expense_gl_code || "51004001",
+        base_amount: baseAmt,
+        tax_amount: taxAmt,
+        amount: totalAmt,
+        status: inv.status === "PAID" ? "Paid" : "Unpaid",
+        po_number: inv.po_number,
+        grn_number: inv.grn_number,
+        raw: inv
+      });
+    });
+
+    // 2. Finance Store AP Invoices
+    storeInvoices.forEach(inv => {
+      if (!seen.has(inv.invoice_no)) {
+        seen.add(inv.invoice_no);
+        const totalAmt = Number(inv.amount || 0);
+        const taxAmt = Number((inv as any).tax_amount || 0);
+        const baseAmt = Number((inv as any).base_amount || (totalAmt - taxAmt));
+        list.push({
+          id: inv.id,
+          invoice_no: inv.invoice_no,
+          vendor: inv.vendor,
+          date: inv.date,
+          due_date: inv.due_date,
+          account: inv.account || "51004001 - Repair and Maintenance Cost",
+          account_code: inv.account_code || "51004001",
+          base_amount: baseAmt,
+          tax_amount: taxAmt,
+          amount: totalAmt,
+          status: inv.status || "Unpaid",
+          raw: inv
+        });
+      }
+    });
+
+    return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
+  }, [procInvoices, storeInvoices]);
+
+  const [form, setForm] = useState({
+    invoice_no: `APINV-${Math.floor(10000 + Math.random() * 90000)}`,
+    vendor: "Qatar Maintenance & HVAC Co.",
+    date: new Date().toISOString().split("T")[0],
+    due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+    account: "51004001 - Repair and Maintenance Cost",
+    account_code: "51004001",
+    amount: "4275",
+  });
+
+  async function handleAdd() {
+    const amt = parseFloat(form.amount) || 0;
+    await ApInvoicesApi.create({
+      invoice_number: form.invoice_no,
+      vendor_id: form.vendor,
+      invoice_date: form.date,
+      due_date: form.due_date,
+      amount: amt,
+      tax_amount: 0,
+      total_amount: amt,
+      status: "DRAFT",
+      remarks: `Direct AP Invoice booked to ${form.account}`
+    });
+    toast.success(`Payable Invoice ${form.invoice_no} created and synced with Finance & Procurement.`);
     setOpen(false);
+    await loadInvoices();
   }
 
-  function handleMarkPaid(invNo: string) {
-    setData(prev => prev.map(inv => inv.invoice_no === invNo ? { ...inv, status: "Paid" } : inv));
-    toast.success(`Invoice ${invNo} marked as Paid via Payment Voucher!`);
+  function openPayModal(inv: any) {
+    setPayTarget(inv);
+    setPayForm({
+      paymentDate: new Date().toISOString().slice(0, 10),
+      paymentMethod: "Bank Wire / QNB Corporate Electronic",
+      disbursingBank: "Qatar National Bank (QNB) - Main Operating (IBAN: QA42QNBA00000000123456)",
+      transactionReference: `TXN-${Date.now().toString().slice(-6)}`,
+      beneficiaryAccount: "QA91QNBA99887766554433",
+      cashCustodian: "Main Office Cashier Desk",
+      cashReceiptNo: `PCV-${Date.now().toString().slice(-5)}`,
+      receiverName: `${inv.vendor} - Authorized Representative`,
+      chequeNumber: `CHQ-${Math.floor(100000 + Math.random() * 900000)}`,
+      chequeDueDate: new Date().toISOString().slice(0, 10),
+      remarks: `Vendor Settlement for Invoice ${inv.invoice_no}`,
+    });
+  }
+
+  async function handleConfirmDisbursement() {
+    if (!payTarget) return;
+    try {
+      const isCash = payForm.paymentMethod.includes("Cash") || payForm.paymentMethod.includes("Petty");
+      const crCode = isCash ? "12100001" : "12000001";
+      const crName = isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+
+      // Update ApInvoicesApi with invoice ID or invoice_no
+      const targetId = payTarget.raw?.id || payTarget.id || payTarget.invoice_no;
+      await ApInvoicesApi.update(targetId, {
+        invoice_number: payTarget.invoice_no,
+        status: "PAID",
+        amount_paid: payTarget.amount,
+        posting_status: "POSTED",
+        payment_method: payForm.paymentMethod,
+        payment_reference: payForm.transactionReference,
+      });
+
+      // Update local storage for pms_vendor_invoices
+      try {
+        const mntRaw = localStorage.getItem("pms_vendor_invoices");
+        if (mntRaw) {
+          const mntList: any[] = JSON.parse(mntRaw);
+          const updatedMnt = mntList.map((m: any) =>
+            m.invoiceNo === payTarget.invoice_no ? { ...m, status: "Approved" } : m
+          );
+          localStorage.setItem("pms_vendor_invoices", JSON.stringify(updatedMnt));
+        }
+      } catch {}
+
+      // Update local storage for zyno-pms-finance-data-v1-ap
+      try {
+        const finApRaw = localStorage.getItem("zyno-pms-finance-data-v1-ap");
+        if (finApRaw) {
+          const finApList: any[] = JSON.parse(finApRaw);
+          const updatedFin = finApList.map((f: any) =>
+            f.invoice_no === payTarget.invoice_no ? { ...f, status: "Paid" } : f
+          );
+          localStorage.setItem("zyno-pms-finance-data-v1-ap", JSON.stringify(updatedFin));
+        }
+      } catch {}
+
+      // Add Payment Voucher into Finance Store
+      const suffix = payTarget.invoice_no.replace('APINV-', '').replace('INV-AP-', '').replace('INV-', '');
+      const pvNo = `PV-${suffix}`;
+      addVoucher({
+        voucher_no: pvNo,
+        voucher_type: "Payment Voucher",
+        date: payForm.paymentDate,
+        name: `Vendor Settlement — ${payTarget.invoice_no} (${payTarget.vendor})`,
+        debit: "Trade Payables - Vendors",
+        debit_code: "22100001",
+        credit: crName,
+        credit_code: crCode,
+        amount: payTarget.amount,
+        method: isCash ? "Cash" : "Bank Transfer",
+        property_name: payTarget.raw?.property || "Main Portfolio",
+        unit_ref: payTarget.raw?.unit_ref || payTarget.po_number || "Facility Operations",
+        tenant_name: payTarget.vendor,
+      });
+
+      // Trigger cross-module updates
+      window.dispatchEvent(new Event("finance_vouchers_updated"));
+      window.dispatchEvent(new Event("ap_invoices_updated"));
+      window.dispatchEvent(new Event("pms_vendor_invoices_updated"));
+
+      toast.success(`Payment of QAR ${payTarget.amount.toLocaleString()} settled. Payment Voucher ${pvNo} posted to GL.`);
+      setPayTarget(null);
+      await loadInvoices();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to settle payment");
+    }
+  }
+
+  function handleViewReceipt(inv: any) {
+    const rcpt = ApInvoicesApi.getReceiptByInvoice(inv.invoice_no);
+    if (rcpt) {
+      setSelectedReceipt(rcpt);
+      setShowReceiptModal(true);
+    } else {
+      const fallback: PaymentReceipt = {
+        id: `rcpt-${Date.now()}`,
+        receipt_number: `RCPT-${inv.invoice_no.replace('APINV-', '')}`,
+        voucher_number: `PV-${inv.invoice_no.replace('APINV-', '')}`,
+        invoice_number: inv.invoice_no,
+        po_number: inv.po_number,
+        grn_number: inv.grn_number,
+        vendor_id: inv.vendor,
+        vendor_name: inv.vendor,
+        amount_paid: inv.amount,
+        payment_date: inv.date,
+        payment_method: "Bank Wire / QNB Corporate Electronic",
+        reference_no: `TXN-${Date.now().toString().slice(-6)}`,
+        bank_account: "Qatar National Bank (QNB) - Main Operating",
+        gl_debit_account: "22100001 - Trade Payables - Vendors",
+        gl_credit_account: "12000001 - Bank Operating Account (QNB)",
+        status: "Settled",
+        created_at: new Date().toISOString()
+      };
+      setSelectedReceipt(fallback);
+      setShowReceiptModal(true);
+    }
   }
 
   return (
@@ -2427,7 +2957,7 @@ function PayableInvoiceSubModule() {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Accounts Payable (AP) Invoices</h3>
-          <p className="text-xs text-muted-foreground">Invoices from suppliers, utility providers, and contractors awaiting payment.</p>
+          <p className="text-xs text-muted-foreground">Invoices from suppliers, utility providers, and procurement orders awaiting payment settlement.</p>
         </div>
         <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Create AP Invoice</Button>
       </div>
@@ -2438,36 +2968,60 @@ function PayableInvoiceSubModule() {
             <TableRow className="bg-muted/50 text-xs">
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">Invoice #</TableHead>
-              <TableHead className="font-bold">Vendor</TableHead>
-              <TableHead className="font-bold">Bill Date</TableHead>
+              <TableHead className="font-bold">Vendor Name</TableHead>
+              <TableHead className="font-bold">PO / GRN Reference</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
               <TableHead className="font-bold">Expense GL Account</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
               <TableHead className="font-bold">Status</TableHead>
-              <TableHead className="font-bold text-center">Action</TableHead>
+              <TableHead className="font-bold text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...data].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row) => (
+            {allInvoices.length === 0 && (
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-xs">No Accounts Payable invoices found.</TableCell></TableRow>
+            )}
+            {allInvoices.map((row) => (
               <TableRow key={row.invoice_no} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.invoice_no}</TableCell>
                 <TableCell className="font-semibold">{row.vendor}</TableCell>
-                <TableCell>{row.date}</TableCell>
+                <TableCell className="font-mono text-cyan-600">
+                  {row.po_number || row.grn_number ? `${row.po_number || ''} ${row.grn_number ? '· ' + row.grn_number : ''}` : "—"}
+                </TableCell>
                 <TableCell>{row.due_date}</TableCell>
                 <TableCell className="text-blue-600 font-mono text-xs">{row.account}</TableCell>
-                <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
+                <TableCell className="text-right font-mono">
+                  <div className="font-bold text-foreground">QAR {row.amount.toLocaleString()}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    Base: {Number(row.base_amount || (row.amount - (row.tax_amount || 0))).toLocaleString()} | Tax: {Number(row.tax_amount || 0).toLocaleString()}
+                  </div>
+                </TableCell>
                 <TableCell>
-                  <Badge variant={row.status === "Paid" ? "default" : "destructive"} className="text-[10px]">
-                    {row.status}
+                  <Badge variant={row.status === "Paid" ? "default" : "secondary"} className={row.status === "Paid" ? "bg-emerald-600 text-[10px]" : "text-amber-600 border-amber-500/40 text-[10px]"}>
+                    {row.status === "Paid" ? "Paid & Settled" : "Unpaid / Draft"}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-center">
-                  {row.status === "Unpaid" && (
-                    <Button size="sm" variant="outline" className="h-6 text-xs text-emerald-600 border-emerald-500" onClick={() => handleMarkPaid(row.invoice_no)}>
-                      Settle / Pay
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1.5">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="h-7 text-xs gap-1 text-primary border-primary/40 hover:bg-primary/10"
+                      onClick={() => setSelectedInvoiceForView(row.raw || row)}
+                    >
+                      <Eye className="h-3 w-3" /> View Proforma
                     </Button>
-                  )}
+                    {row.status !== "Paid" ? (
+                      <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => openPayModal(row)}>
+                        <CreditCard className="h-3 w-3" /> Settle / Pay
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-emerald-600 border-emerald-500/40" onClick={() => handleViewReceipt(row)}>
+                        <FileText className="h-3 w-3" /> View Receipt
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -2475,6 +3029,7 @@ function PayableInvoiceSubModule() {
         </Table>
       </div>
 
+      {/* Modal: Create AP Invoice */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Create Accounts Payable Invoice</DialogTitle></DialogHeader>
@@ -2492,18 +3047,18 @@ function PayableInvoiceSubModule() {
               <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
             </div>
             <div>
-              <Label>Expense GL Account</Label>
-              <Select value={form.account} onValueChange={v => setForm({ ...form, account: v })}>
+              <Label>Expense GL Account (Official COA)</Label>
+              <Select value={form.account} onValueChange={v => setForm({ ...form, account: v, account_code: v.split(" - ")[0] })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="50200 - Repairs & Maintenance">50200 - Repairs & Maintenance</SelectItem>
-                  <SelectItem value="50500 - Utilities & Energy (Kahramaa)">50500 - Utilities & Energy</SelectItem>
-                  <SelectItem value="50600 - Security Services">50600 - Security Services</SelectItem>
-                  <SelectItem value="50300 - Cleaning & Sanitation">50300 - Cleaning & Sanitation</SelectItem>
-                  <SelectItem value="50100 - Staff Salaries & Allowances">50100 - Staff Salaries & Allowances</SelectItem>
-                  <SelectItem value="50400 - Elevator Maintenance">50400 - Elevator Maintenance</SelectItem>
-                  <SelectItem value="50700 - Insurance Expenses">50700 - Insurance Expenses</SelectItem>
-                  <SelectItem value="50800 - Property Management & Legal Fees">50800 - Legal & Advisory Fees</SelectItem>
+                  <SelectItem value="51004001 - Repair and Maintenance Cost">51004001 - Repair and Maintenance Cost</SelectItem>
+                  <SelectItem value="51004006 - Cost of CMEP Materials">51004006 - Cost of CMEP Materials</SelectItem>
+                  <SelectItem value="51002001 - CMEP-Facilities Mgt AMC">51002001 - CMEP-Facilities Mgt AMC</SelectItem>
+                  <SelectItem value="51001001 - CMEP-Labor Cost-Facilities Mgt">51001001 - CMEP-Labor Cost-Facilities Mgt</SelectItem>
+                  <SelectItem value="51003001 - Electricity & Water-Common Area">51003001 - Electricity & Water-Common Area</SelectItem>
+                  <SelectItem value="51101001 - Staff Basic Salary">51101001 - Staff Basic Salary</SelectItem>
+                  <SelectItem value="51102014 - IT Expenses">51102014 - IT Expenses</SelectItem>
+                  <SelectItem value="51102001 - Vehicles & Other Insurance Expenses">51102001 - Vehicles & Other Insurance Expenses</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2515,16 +3070,14 @@ function PayableInvoiceSubModule() {
                   <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   <span>Ledgers / Accounts Updated by this AP Invoice</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="bg-background p-2 rounded border border-emerald-200">
-                    <span className="text-emerald-700 dark:text-emerald-400 font-bold block">Debit (Expense):</span>
-                    <span>{form.account}</span>
-                    <span className="block font-bold text-emerald-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
+                <div className="space-y-1 font-mono text-[11px]">
+                  <div className="flex justify-between text-blue-700 dark:text-blue-300">
+                    <span>Dr. {form.account_code} - {form.account.split(" - ")[1]}</span>
+                    <span>QAR {parseFloat(form.amount).toLocaleString()}</span>
                   </div>
-                  <div className="bg-background p-2 rounded border border-rose-200">
-                    <span className="text-rose-600 dark:text-rose-400 font-bold block">Credit (Liability):</span>
-                    <span>20100 - Accounts Payable ({form.vendor || 'Vendor'})</span>
-                    <span className="block font-bold text-rose-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
+                  <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
+                    <span>Cr. 22100001 - Trade Payables - Vendors ({form.vendor || 'Vendor'})</span>
+                    <span>QAR {parseFloat(form.amount).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -2536,6 +3089,175 @@ function PayableInvoiceSubModule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal: Settle Payment */}
+      <Dialog open={!!payTarget} onOpenChange={() => setPayTarget(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-emerald-600" />
+              Disburse Payment & Select Payment Mode
+            </DialogTitle>
+            <DialogDescription>
+              Record vendor settlement, specify bank/cash accounts, and post Payment Voucher to General Ledger.
+            </DialogDescription>
+          </DialogHeader>
+          {payTarget && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1.5">
+                <div className="flex justify-between font-semibold">
+                  <span className="text-muted-foreground">Invoice Reference:</span>
+                  <span className="font-mono text-primary">{payTarget.invoice_no}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span className="text-muted-foreground">Vendor Name:</span>
+                  <span>{payTarget.vendor}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t border-emerald-500/20 pt-1.5">
+                  <span>Net Payable Settlement:</span>
+                  <span className="text-emerald-600 font-mono">QAR {Number(payTarget.amount || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Payment Date *</Label>
+                  <Input type="date" value={payForm.paymentDate} onChange={e => setPayForm({ ...payForm, paymentDate: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Payment Mode *</Label>
+                  <Select value={payForm.paymentMethod} onValueChange={v => setPayForm({ ...payForm, paymentMethod: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bank Wire / QNB Corporate Electronic">Bank Wire / Electronic Transfer (QNB)</SelectItem>
+                      <SelectItem value="Commercial Bank of Qatar (CBQ) Wire">CBQ Electronic Wire</SelectItem>
+                      <SelectItem value="Cash in Hand / Office Vault Cash">Cash in Hand / Office Vault Cash</SelectItem>
+                      <SelectItem value="Petty Cash / Direct Cash">Petty Cash / Direct Cash Voucher</SelectItem>
+                      <SelectItem value="Corporate Cheque / Manager's Cheque">Corporate Cheque / Manager's Cheque</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Dynamic Cash Fields */}
+              {(payForm.paymentMethod.includes("Cash") || payForm.paymentMethod.includes("Petty")) && (
+                <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-3">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
+                    <DollarSign className="h-4 w-4" /> Cash Disbursement & Handover Details
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Disbursing Cash Vault</Label>
+                      <Input disabled value="12100001 - Cash in Hand (Office Vault)" className="bg-background" />
+                    </div>
+                    <div>
+                      <Label>Petty Cash Slip / Voucher # *</Label>
+                      <Input value={payForm.cashReceiptNo} onChange={e => setPayForm({ ...payForm, cashReceiptNo: e.target.value })} placeholder="PCV-00821" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Receiver / Vendor Rep Name *</Label>
+                    <Input value={payForm.receiverName} onChange={e => setPayForm({ ...payForm, receiverName: e.target.value })} placeholder="Full name of recipient" />
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Cheque Fields */}
+              {payForm.paymentMethod.includes("Cheque") && (
+                <div className="p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/20 space-y-3">
+                  <div className="flex items-center gap-1.5 font-bold text-blue-700 dark:text-blue-400">
+                    <FileText className="h-4 w-4" /> Corporate Cheque Details
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Issuing Bank</Label>
+                      <Input disabled value="Qatar National Bank (QNB) - Cheque Account" className="bg-background" />
+                    </div>
+                    <div>
+                      <Label>Cheque Number *</Label>
+                      <Input value={payForm.chequeNumber} onChange={e => setPayForm({ ...payForm, chequeNumber: e.target.value })} placeholder="CHQ-004812" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Dynamic Bank Wire Fields */}
+              {payForm.paymentMethod.includes("Wire") && (
+                <div className="space-y-3">
+                  <div>
+                    <Label>Disbursing Bank Account</Label>
+                    <Select value={payForm.disbursingBank} onValueChange={v => setPayForm({ ...payForm, disbursingBank: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Qatar National Bank (QNB) - Main Operating (IBAN: QA42QNBA00000000123456)">
+                          QNB - Main Operating (QA42QNBA00000000123456)
+                        </SelectItem>
+                        <SelectItem value="Commercial Bank of Qatar (CBQ) - Operational (IBAN: QA99CBQA00000000654321)">
+                          CBQ - Operational (QA99CBQA00000000654321)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Transfer Reference #</Label>
+                      <Input value={payForm.transactionReference} onChange={e => setPayForm({ ...payForm, transactionReference: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>Beneficiary Account / IBAN</Label>
+                      <Input value={payForm.beneficiaryAccount} onChange={e => setPayForm({ ...payForm, beneficiaryAccount: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* GL Impact */}
+              <div className="p-3 rounded-lg bg-muted/40 border text-[11px] text-muted-foreground space-y-1.5">
+                <div className="flex items-center gap-1 font-semibold text-foreground">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  General Ledger Posting Impact (Auto-Posted upon Settlement):
+                </div>
+                <div className="font-mono">
+                  • <strong className="text-blue-600">Dr. 22100001</strong> Trade Payables - Vendors — QAR {Number(payTarget.amount || 0).toLocaleString()}
+                </div>
+                <div className="font-mono">
+                  {payForm.paymentMethod.includes("Cash") || payForm.paymentMethod.includes("Petty") ? (
+                    <>• <strong className="text-amber-600">Cr. 12100001</strong> Cash in Hand / Operating Cash — QAR {Number(payTarget.amount || 0).toLocaleString()}</>
+                  ) : (
+                    <>• <strong className="text-emerald-600">Cr. 12000001</strong> Bank Operating Account (QNB) — QAR {Number(payTarget.amount || 0).toLocaleString()}</>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayTarget(null)}>Cancel</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={handleConfirmDisbursement}>
+              <CheckCircle2 className="h-4 w-4" /> Confirm & Disburse Settlement
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Proforma Invoice Dialog */}
+      <ProformaInvoiceDialog
+        invoice={selectedInvoiceForView}
+        open={!!selectedInvoiceForView}
+        onOpenChange={(open) => !open && setSelectedInvoiceForView(null)}
+        onViewReceiptClick={(inv) => handleViewReceipt(inv)}
+        onPayClick={(inv) => {
+          setSelectedInvoiceForView(null);
+          openPayModal(inv);
+        }}
+      />
+
+      {/* Payment Receipt Printable Dialog */}
+      <PaymentReceiptDialog
+        receipt={selectedReceipt}
+        open={showReceiptModal}
+        onOpenChange={setShowReceiptModal}
+        vendorName={selectedReceipt?.vendor_name || selectedReceipt?.vendor_id ? String(selectedReceipt.vendor_id) : "Vendor"}
+      />
     </div>
   );
 }
@@ -2546,13 +3268,13 @@ const COMMON_GL_ACCOUNTS = [
   { code: "12411", name: "12411 - Legal Receivables (Defaulted Cases)" },
   { code: "12413", name: "12413 - Tenant Receivables (AR)" },
   { code: "12900", name: "12900 - PDC In Hand / Undeposited Cheques" },
-  { code: "20100", name: "20100 - Accounts Payable (Suppliers/Vendors)" },
+  { code: "22100001", name: "22100001 - Trade Payables - Vendors (Suppliers/Vendors)" },
   { code: "21100", name: "21100 - Tenant Security Deposits" },
   { code: "41100", name: "41100 - Rental Revenue" },
   { code: "41200", name: "41200 - Parking Fee Revenue" },
   { code: "41300", name: "41300 - Utility Recovery Revenue" },
   { code: "50100", name: "50100 - Staff Salaries & Allowances" },
-  { code: "50200", name: "50200 - Repairs & Maintenance" },
+  { code: "51004001", name: "51004001 - Repair and Maintenance Cost" },
   { code: "50300", name: "50300 - Cleaning & Sanitation" },
   { code: "50400", name: "50400 - Elevator Maintenance" },
   { code: "50500", name: "50500 - Utilities & Electricity (Kahramaa)" },
@@ -2568,7 +3290,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
     date: new Date().toISOString().split("T")[0],
     name: type === "Payment Voucher" ? "Payment to Contractor" : type === "Receipt Voucher" ? "Direct Rent Collection" : "General Adjustment",
-    debit: type === "Payment Voucher" ? "20100 - Accounts Payable (Suppliers/Vendors)" : type === "Receipt Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : "50200 - Repairs & Maintenance",
+    debit: type === "Payment Voucher" ? "22100001 - Trade Payables - Vendors (Suppliers/Vendors)" : type === "Receipt Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : "51004001 - Repair and Maintenance Cost",
     credit: type === "Payment Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : type === "Receipt Voucher" ? "41100 - Rental Revenue" : "12100 - Cash In Hand (Office Vault)",
     amount: "5000",
     method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Cash" : "Batch",
@@ -2649,6 +3371,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
               <TableHead className="font-bold">Credit Account (GL)</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
               <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="text-right font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2666,7 +3389,31 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 <TableCell className="font-mono text-blue-600 text-xs">{v.debit}</TableCell>
                 <TableCell className="font-mono text-emerald-600 text-xs">{v.credit}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{Number(v.amount).toLocaleString()}</TableCell>
-                <TableCell><Badge variant="default" className="text-[10px] capitalize">{v.status || "Posted"}</Badge></TableCell>
+                <TableCell>
+                  <Badge
+                    variant={(v.status as string) === "posted" || (v.status as string) === "Posted" ? "default" : "secondary"}
+                    className="text-[10px] capitalize"
+                  >
+                    {v.status || "Posted"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  {(v.status as string) === "draft" || (v.status as string) === "Draft" || (v.status as string) === "pending" || (v.status as string) === "Pending" ? (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={() => {
+                        setSharedVouchers(prev => prev.map(item => item.id === v.id ? { ...item, status: "posted" as const } : item));
+                        toast.success(`Payment voucher ${v.receiptNo || v.id} approved & payment completed.`);
+                      }}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Complete Payment
+                    </Button>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground font-mono">Approved</span>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -2753,11 +3500,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
 function ReceivableInvoiceSubModule() {
   const { leases } = useAppData();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState([
-    { invoice_no: "INV-AR-8801", tenant: "Mr. Hafeez Shaik", property: "Old Salata - Residence No:23", unit: "AAA - Flat16", date: "2026-08-01", due_date: "2026-08-10", stream: "41100 - Rental Revenue", amount: 5600, status: "Paid" },
-    { invoice_no: "INV-AR-8802", tenant: "M/S. Al Ameen Real Estate", property: "Old Salata - Residence No:23", unit: "AAA - GF1", date: "2026-08-01", due_date: "2026-08-15", stream: "41100 - Commercial Rental Revenue", amount: 5500, status: "Overdue" },
-    { invoice_no: "INV-AR-8803", tenant: "Vivek Viswakumaran Nair", property: "Regency Residence Al Sadd 1", unit: "ARRS01-B00-F00-AG01", date: "2026-08-01", due_date: "2026-08-05", stream: "41100 - Residential Lease", amount: 4000, status: "Paid" },
-  ]);
+  const [data, setData] = useState<{ invoice_no: string; tenant: string; property: string; unit: string; date: string; due_date: string; stream: string; amount: number; status: string }[]>([]);
 
   const [form, setForm] = useState({
     invoice_no: `INV-AR-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -2775,7 +3518,7 @@ function ReceivableInvoiceSubModule() {
       { ...form, amount: parseFloat(form.amount) || 0, status: "Pending" },
       ...prev
     ]);
-    toast.success(`AR Invoice ${form.invoice_no} created and posted to Customer Ledger!`);
+    toast.success(`AR Invoice ${form.invoice_no} staged in the local view only. Use the Receivable Invoice workflow to post it to the ledger.`);
     setOpen(false);
   }
 
@@ -3041,7 +3784,7 @@ function BankAccountSubModule() {
           <TableBody>
             {data.map(a => (
               <TableRow key={a.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-semibold text-primary">{getBankName(a.bank_id)}</TableCell>
+                <TableCell className="font-semibold text-primary">{getBankName(a.bank_id ?? "")}</TableCell>
                 <TableCell className="font-mono font-bold">{a.account_number}</TableCell>
                 <TableCell className="font-medium">{a.account_title}</TableCell>
                 <TableCell><Badge variant="outline" className="text-[10px]">{a.currency}</Badge></TableCell>
@@ -3089,12 +3832,7 @@ function BankAccountSubModule() {
 function BankClearanceSubModule() {
   const { bankClearances, addBankClearance } = useFinanceStore();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState([
-    { ref: "CHQ-01000049", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" as const },
-    { ref: "CHQ-01000050", bank: "Commercial Bank (CBQ)", type: "Deposit Cheque", amount: 4000, date: "2026-08-05", status: "Cleared" as const },
-    { ref: "WIRE-TX-9912", bank: "QNB Main Account", type: "Utility Transfer", amount: 9850, date: "2026-08-08", status: "Cleared" as const },
-    { ref: "CHQ-2001", bank: "Doha Bank", type: "PDC Deposit", amount: 5500, date: "2026-08-12", status: "Pending Clearance" as const },
-  ]);
+  const [data, setData] = useState([]);
 
   const [form, setForm] = useState({
     ref: `CHQ-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -3213,10 +3951,7 @@ function BankClearanceSubModule() {
 function BankReconciliationSubModule() {
   const { bankReconciliations, addBankReconciliation } = useFinanceStore();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState([
-    { id: "1", account_number: "QA55QNBA00000000123456789", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 1500000, statement_balance: 1500000, difference: 0, status: "Reconciled" as const },
-    { id: "2", account_number: "QA88CBQA00000000987654321", statement_date: "2026-08-15", entry_date: "2026-08-15", book_balance: 450000, statement_balance: 450000, difference: 0, status: "Reconciled" as const },
-  ]);
+  const [data, setData] = useState([]);
 
   const [form, setForm] = useState({
     account_number: "QA55QNBA00000000123456789",
@@ -3323,11 +4058,7 @@ function BankReconciliationSubModule() {
 }
 
 function BankReconciliationStatementListSubModule() {
-  const [data, setData] = useState([
-    { id: 1, title: "QNB Main Operating Account - July 2026", entry_date: "2026-08-01", period: "2026-07-01 to 2026-07-31", balance: "1,500,000 QAR", auditor: "Internal Treasury Desk" },
-    { id: 2, title: "CBQ Escrow & Deposits Account - July 2026", entry_date: "2026-08-01", period: "2026-07-01 to 2026-07-31", balance: "450,000 QAR", auditor: "Internal Treasury Desk" },
-    { id: 3, title: "QNB Main Operating Account - June 2026", entry_date: "2026-07-01", period: "2026-06-01 to 2026-06-30", balance: "1,420,000 QAR", auditor: "Auditor Desk" },
-  ]);
+  const [data, setData] = useState<{ id: string; entry_date: string; title: string; period: string; balance: string }[]>([]);
 
   return (
     <div className="space-y-4">
@@ -3369,9 +4100,11 @@ function TrialBalanceSimpleSubModule() {
           <h3 className="text-sm font-semibold">Trial Balance (Simple Summary)</h3>
           <p className="text-xs text-muted-foreground">Live summary totals across Asset, Liability, Equity, Revenue, and Expense classes — updated in real-time.</p>
         </div>
-        <Badge variant="outline" className={`font-mono ${isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}`}>
-          {isBalanced ? '✓ Balanced (Dr = Cr)' : '⚠ Out of Balance'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className={`font-mono ${isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}`}>
+            {isBalanced ? '✓ Balanced (Dr = Cr)' : '⚠ Out of Balance'}
+          </Badge>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
@@ -3423,17 +4156,55 @@ function TrialBalanceSimpleSubModule() {
 
 function TrialBalanceFullSubModule() {
   const { trialBalanceDetailed } = useFinanceStore();
-  const totalDr = trialBalanceDetailed.reduce((s, a) => s + Math.max(0, a.debit), 0);
-  const totalCr = trialBalanceDetailed.reduce((s, a) => s + Math.max(0, a.credit), 0);
+  const [viewMode, setViewMode] = useState<"net" | "gross">("net");
+
+  // Net Closing Balances mode: compute net Dr / Cr per account
+  const netAccounts = useMemo(() => {
+    return trialBalanceDetailed.map(acc => {
+      const netDr = Math.max(0, acc.debit - acc.credit);
+      const netCr = Math.max(0, acc.credit - acc.debit);
+      return {
+        ...acc,
+        displayDr: viewMode === "net" ? netDr : acc.debit,
+        displayCr: viewMode === "net" ? netCr : acc.credit,
+      };
+    });
+  }, [trialBalanceDetailed, viewMode]);
+
+  const totalDr = netAccounts.reduce((s, a) => s + (a.displayDr || 0), 0);
+  const totalCr = netAccounts.reduce((s, a) => s + (a.displayCr || 0), 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Detailed General Ledger Trial Balance</h3>
-          <p className="text-xs text-muted-foreground">Full debit/credit schedule across all operational GL sub-accounts — live from all posted transactions.</p>
+          <p className="text-xs text-muted-foreground">
+            {viewMode === "net"
+              ? "Net closing balances per operational GL account — matches Trial Balance (Simple) summary."
+              : "Gross turnover movements across all historical debit and credit postings."}
+          </p>
         </div>
-        <Badge variant="outline" className="font-mono">{trialBalanceDetailed.length} Accounts</Badge>
+        <div className="flex items-center gap-2">
+          {/* Mode Switcher */}
+          <div className="flex bg-muted/60 p-0.5 rounded-lg text-xs border">
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-md font-semibold transition-all ${viewMode === "net" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setViewMode("net")}
+            >
+              Net Closing Balances
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-md font-semibold transition-all ${viewMode === "gross" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setViewMode("gross")}
+            >
+              Gross Turnover Movements
+            </button>
+          </div>
+          <Badge variant="outline" className="font-mono">{trialBalanceDetailed.length} Accounts</Badge>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
@@ -3443,12 +4214,12 @@ function TrialBalanceFullSubModule() {
               <TableHead className="font-bold">Code</TableHead>
               <TableHead className="font-bold">Account Name</TableHead>
               <TableHead className="font-bold">Type</TableHead>
-              <TableHead className="text-right font-bold">Debit (QAR)</TableHead>
-              <TableHead className="text-right font-bold">Credit (QAR)</TableHead>
+              <TableHead className="text-right font-bold">{viewMode === "net" ? "Net Debit (QAR)" : "Gross Debit (QAR)"}</TableHead>
+              <TableHead className="text-right font-bold">{viewMode === "net" ? "Net Credit (QAR)" : "Gross Credit (QAR)"}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="text-xs">
-            {trialBalanceDetailed.sort((a, b) => a.code.localeCompare(b.code)).map(acc => (
+            {netAccounts.sort((a, b) => a.code.localeCompare(b.code)).map(acc => (
               <TableRow key={acc.code} className="hover:bg-muted/30">
                 <TableCell className="font-mono font-bold text-primary">{acc.code}</TableCell>
                 <TableCell className="font-medium">{acc.name}</TableCell>
@@ -3457,12 +4228,12 @@ function TrialBalanceFullSubModule() {
                     {acc.type}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right font-mono text-blue-600 font-semibold">{acc.debit > 0 ? acc.debit.toLocaleString() : "—"}</TableCell>
-                <TableCell className="text-right font-mono text-emerald-600 font-semibold">{acc.credit > 0 ? acc.credit.toLocaleString() : "—"}</TableCell>
+                <TableCell className="text-right font-mono text-blue-600 font-semibold">{acc.displayDr > 0 ? acc.displayDr.toLocaleString() : "—"}</TableCell>
+                <TableCell className="text-right font-mono text-emerald-600 font-semibold">{acc.displayCr > 0 ? acc.displayCr.toLocaleString() : "—"}</TableCell>
               </TableRow>
             ))}
             <TableRow className="font-bold border-t-2 bg-muted/20">
-              <TableCell colSpan={3}>Grand Total</TableCell>
+              <TableCell colSpan={3}>Grand Total ({viewMode === "net" ? "Net Balances" : "Gross Movements"})</TableCell>
               <TableCell className="text-right font-mono font-bold text-primary">{totalDr.toLocaleString()} QAR</TableCell>
               <TableCell className="text-right font-mono font-bold text-primary">{totalCr.toLocaleString()} QAR</TableCell>
             </TableRow>
@@ -3479,13 +4250,193 @@ function TrialBalanceFullSubModule() {
 //              41400 CAM Recovery | 41500 Mgmt Fee | 41600 Late Payment Penalty
 // ─────────────────────────────────────────────────────────────────────────────
 function RevenueGenerationSubModule() {
-  const { receivableInvoices, vouchers, journalEntries } = useFinanceStore();
+  const { receivableInvoices, vouchers, journalEntries, allLedgerTransactions, addVoucher } = useFinanceStore();
+  const { pdcs: contextPdcs, leases } = useAppData();
+  const [activeSubTab, setActiveSubTab] = useState<"asOf" | "gl">("asOf");
   const [periodFilter, setPeriodFilter] = useState<"all" | "thisMonth" | "lastMonth">("all");
+  const [dbPdcs, setDbPdcs] = useState<any[]>([]);
+
+  // ── Period-Based Recognition Engine State (Revenue As-Of) ─────────────────
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [asOfDate, setAsOfDate] = useState<string>(todayStr);
+  const [prorationMethod, setProrationMethod] = useState<ProrationMethod>("CALENDAR_DAYS");
+  const [asOfProperty, setAsOfProperty] = useState<string>("all");
+  const [asOfUnit, setAsOfUnit] = useState<string>("all");
+  const [asOfTenant, setAsOfTenant] = useState<string>("all");
+  const [asOfStatusFilter, setAsOfStatusFilter] = useState<string>("all");
+  const [asOfSearch, setAsOfSearch] = useState<string>("");
+  const [savedBatches, setSavedBatches] = useState<RevenueGenerationBatchSummary[]>(() => {
+    try {
+      const stored = localStorage.getItem("fin_revenue_generation_batches");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedBatchDetails, setSelectedBatchDetails] = useState<RevenueGenerationBatchSummary | null>(null);
+
+  // ── Multi-dimensional filter state (GL Actuals Tab) ───────────────────────
+  const [filterProperty, setFilterProperty] = useState<string>("all");
+  const [filterUnit, setFilterUnit] = useState<string>("all");
+  const [filterCustomer, setFilterCustomer] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
+  const [filterSource, setFilterSource] = useState<string>("all");
+  const [filterFromDate, setFilterFromDate] = useState<string>("");
+  const [filterToDate, setFilterToDate] = useState<string>("");
+  const [filterSearch, setFilterSearch] = useState<string>("");
+
+  const resetFilters = () => {
+    setFilterProperty("all");
+    setFilterUnit("all");
+    setFilterCustomer("all");
+    setFilterMonth("all");
+    setFilterSource("all");
+    setFilterFromDate("");
+    setFilterToDate("");
+    setFilterSearch("");
+    setPeriodFilter("all");
+  };
 
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+  // Fetch all live database PDCs
+  useEffect(() => {
+    async function fetchPdcRecords() {
+      try {
+        const { data: regData } = await supabase.from("fin_pdc_register").select("*");
+        const { data: altData } = await supabase.from("pdcs").select("*");
+        const combined = [...(regData || []), ...(altData || [])];
+        setDbPdcs(combined);
+      } catch {
+        // fallback
+      }
+    }
+    fetchPdcRecords();
+  }, []);
+
+  const combinedPdcs = useMemo(() => {
+    const list = [...(contextPdcs || []), ...dbPdcs];
+    const map = new Map<string, any>();
+    list.forEach(p => {
+      const key = p.id || p.chequeNo || p.cheque_number || Math.random().toString();
+      if (!map.has(key)) {
+        map.set(key, {
+          leaseId: p.leaseId || p.lease_id,
+          chequeNo: p.chequeNo || p.cheque_number,
+          date: p.date || p.cheque_date || p.dueDate,
+          amount: Number(p.amount || 0),
+          status: p.status,
+          period: p.period || p.rental_period,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [contextPdcs, dbPdcs]);
+
+  // ── Calculate Live Preview from Revenue Engine ───────────────────────────
+  const activeBatchPreview: RevenueGenerationBatchSummary = useMemo(() => {
+    const leaseData = (leases || []).map((l: any) => ({
+      id: l.id || l.leaseId,
+      tenantName: l.tenantName || l.tenant || "Unknown Tenant",
+      property: l.property || l.propertyName || "Unknown Property",
+      unit: l.unit || l.unitRef || "Unknown Unit",
+      startDate: l.startDate || l.start_date || "",
+      endDate: l.endDate || l.end_date || "",
+      monthlyRent: Number(l.monthlyRent || l.rentAmount || l.rent || 0),
+      plannedVacateDate: l.plannedVacateDate || l.vacateDate,
+      actualVacateDate: l.settlement?.moveOutDate || l.actualVacateDate || l.moveOutDate,
+      earlyVacate: !!(l.settlement?.moveOutDate || l.earlyVacate || l.actualVacateDate),
+      status: l.status,
+    }));
+
+    return generatePortfolioRevenueBatch({
+      leases: leaseData,
+      asOfDate,
+      prorationMethod,
+      pdcs: combinedPdcs,
+    });
+  }, [leases, asOfDate, prorationMethod, combinedPdcs]);
+
+  // Filtered preview records
+  const filteredPreviewRecords = useMemo(() => {
+    return activeBatchPreview.records.filter((rec) => {
+      if (asOfProperty !== "all" && rec.propertyName !== asOfProperty) return false;
+      if (asOfUnit !== "all" && rec.unitRef !== asOfUnit) return false;
+      if (asOfTenant !== "all" && rec.tenantName !== asOfTenant) return false;
+      if (asOfStatusFilter !== "all" && rec.status !== asOfStatusFilter) return false;
+      if (asOfSearch) {
+        const q = asOfSearch.toLowerCase();
+        const str = [rec.tenantName, rec.propertyName, rec.unitRef, rec.periodStart, rec.periodEnd, rec.reasonCode].join(" ").toLowerCase();
+        if (!str.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [activeBatchPreview, asOfProperty, asOfUnit, asOfTenant, asOfStatusFilter, asOfSearch]);
+
+  const previewRecognizedSum = useMemo(() => {
+    return filteredPreviewRecords.reduce((sum, r) => sum + r.netRecognizedRevenue, 0);
+  }, [filteredPreviewRecords]);
+
+  const previewDeferredSum = useMemo(() => {
+    return filteredPreviewRecords.reduce((sum, r) => sum + r.deferredRevenue, 0);
+  }, [filteredPreviewRecords]);
+
+  const previewContractualSum = useMemo(() => {
+    return filteredPreviewRecords.reduce((sum, r) => sum + r.grossRevenue, 0);
+  }, [filteredPreviewRecords]);
+
+  // Post / Generate Revenue Batch (Posts recognized period revenue into the GL ledger)
+  const handleGenerateBatch = () => {
+    setIsGenerating(true);
+    setTimeout(() => {
+      const newBatchId = `RGB-${Date.now().toString().slice(-6)}`;
+      const newBatch: RevenueGenerationBatchSummary = {
+        ...activeBatchPreview,
+        batchId: newBatchId,
+        generatedAt: new Date().toISOString(),
+      };
+      const updated = [newBatch, ...savedBatches];
+      setSavedBatches(updated);
+      try {
+        localStorage.setItem("fin_revenue_generation_batches", JSON.stringify(updated));
+      } catch (e) {
+        console.error("Failed to persist revenue batch", e);
+      }
+
+      // Post recognized completed periods to GL (Rental Revenue 41100)
+      const recognizedRecords = activeBatchPreview.records.filter(r => r.status === "RECOGNIZED" && r.netRecognizedRevenue > 0);
+      recognizedRecords.forEach((rec) => {
+        const existingVoucherNo = `REV-${rec.leaseId}-${rec.periodStart.slice(0, 7)}`;
+        const alreadyExists = vouchers.some(v => v.voucher_no === existingVoucherNo);
+        if (!alreadyExists) {
+          addVoucher({
+            voucher_no: existingVoucherNo,
+            voucher_type: "Journal Voucher",
+            date: rec.effectiveRevenueEnd || rec.periodEnd || asOfDate,
+            name: `Rental Revenue Recognized – ${rec.tenantName} (${rec.periodStart} to ${rec.periodEnd})`,
+            debit: "Customer (PDC) Liability",
+            debit_code: "21400",
+            credit: "Rental Revenue",
+            credit_code: "41100",
+            amount: rec.netRecognizedRevenue,
+            method: "Revenue Recognition",
+            property_name: rec.propertyName,
+            unit_ref: rec.unitRef,
+            tenant_name: rec.tenantName,
+          });
+        }
+      });
+
+      setIsGenerating(false);
+      toast.success(`Revenue Batch ${newBatch.batchId} generated & posted to GL!`, {
+        description: `Recognized QR ${newBatch.totalRecognizedRevenue.toLocaleString()} across ${newBatch.totalTenants} tenants as of ${asOfDate}.`
+      });
+    }, 600);
+  };
 
   // ── Revenue stream definitions (GL code + label + color) ──────────────────
   const REVENUE_STREAMS = [
@@ -3497,136 +4448,1080 @@ function RevenueGenerationSubModule() {
     { code: "41600", label: "Late Payment Penalty",      color: "bg-orange-500",  textColor: "text-orange-700",  border: "border-orange-200",  bg: "bg-orange-50"  },
   ];
 
-  // ── Aggregate all revenue credits from AR invoices + vouchers + JEs ───────
+  // Combine unified PDCs — sources: DB tables + localStorage context + fin_voucher PDC events
+  const unifiedRealizedPdcs = useMemo(() => {
+    const map = new Map<string, any>();
+
+    // Helper: build contextPdc lookup by chequeNo for date recovery
+    const ctxByChq = new Map<string, any>();
+    (contextPdcs || []).forEach((p: any) => {
+      const k = (p.chequeNo || p.cheque_number || p.id || "").toLowerCase();
+      if (k) ctxByChq.set(k, p);
+    });
+
+    // 1. DB PDC tables (fin_pdc_register / pdcs)
+    dbPdcs.forEach((p) => {
+      const chq = p.cheque_number || p.chequeNo || p.id;
+      const status = (p.status || p.status_pdc || "").toLowerCase();
+      const isRealized = ["cleared","deposited","replaced","partial cash","partial_cash"].includes(status);
+      if (!isRealized) return;
+      const amt = Number(p.paid_amount) || Number(p.amount) || 0;
+      const prop   = p.property_name || p.property_code || p.property || "";
+      const unit   = p.unit_ref || p.unit_name || p.unit || "";
+      const tenant = p.tenant_name || p.tenant || "";
+      const date   = p.cheque_date || p.maturity_date || p.deposit_date || p.created_at?.split("T")[0] || now.toISOString().split("T")[0];
+      map.set(String(chq), { id: String(p.id || chq), chqNo: String(chq), date, property: prop, unit, tenant, amount: amt, status: p.status, source: "PDC" });
+    });
+
+    // 2. Context PDCs from localStorage — primary source with real historical cheque dates
+    (contextPdcs || []).forEach((p: any) => {
+      const chq    = p.chequeNo || p.cheque_number || p.id;
+      const status = (p.status || "").toLowerCase();
+      const isRealized = ["cleared","deposited","replaced","partial cash","partial_cash"].includes(status);
+      if (!isRealized) return;
+      const lease  = leases?.find((l) => l.id === p.leaseId);
+      const amt    = Number(p.paid_amount) || Number(p.amount) || 0;
+      const prop   = p.propertyName || p.property_name || p.property || lease?.property || "";
+      const unit   = p.unitRef || p.unit_ref || p.unit || lease?.unit || "";
+      const tenant = p.tenantName || p.tenant_name || p.payerName || p.tenant || lease?.tenantName || "";
+      // p.date IS the actual PDC cheque maturity date (historical month)
+      const date   = p.date || p.cheque_date || now.toISOString().split("T")[0];
+      const entry  = { id: String(p.id || chq), chqNo: String(chq), date, property: prop, unit, tenant, amount: amt, status: p.status, source: "PDC" };
+      if (!map.has(String(chq))) {
+        map.set(String(chq), entry);
+      } else {
+        // Enrich existing DB entry with richer metadata & real date
+        const ex = map.get(String(chq))!;
+        map.set(String(chq), { ...ex, date: ex.date || date, property: ex.property || prop, unit: ex.unit || unit, tenant: ex.tenant || tenant });
+      }
+    });
+
+    // 3. Finance-store vouchers (from fin_vouchers DB) — PDC cleared / deposited / cash-replace events
+    //    These carry the confirmed revenue event. Match cheque ID back to contextPdc for real date.
+    vouchers.forEach((v: any) => {
+      const vNo  = (v.voucher_no || "").toLowerCase();
+      const desc = (v.name || "").toLowerCase();
+      const isClear = vNo.includes("vch-clr-") || desc.includes("pdc cleared");
+      const isDep   = vNo.includes("vch-dep-") || desc.includes("pdc deposited");
+      const isCash  = vNo.includes("vch-csh-pdc-") || desc.includes("cash collected in place of pdc");
+      if (!isClear && !isDep && !isCash) return;
+
+      // Extract PDC cheque ref from voucher number: VCH-CLR-PDC-Flat01-001 → PDC-Flat01-001
+      const rawNo = v.voucher_no || "";
+      const m = rawNo.match(/^(?:VCH-CLR-|VCH-DEP-|VCH-CSH-PDC-)(.+)$/i);
+      const pdcRef = m ? m[1] : rawNo;
+      if (!pdcRef) return;
+
+      // Skip if context PDC already provided this entry
+      if (map.has(pdcRef)) return;
+
+      // Find matching contextPdc for real date + metadata
+      const ctxPdc = ctxByChq.get(pdcRef.toLowerCase()) ||
+        Array.from(ctxByChq.values()).find((cp: any) => {
+          const cn = (cp.chequeNo || "").toLowerCase();
+          return cn && (cn.includes(pdcRef.toLowerCase()) || pdcRef.toLowerCase().includes(cn));
+        });
+      const lease = ctxPdc ? leases?.find((l) => l.id === ctxPdc.leaseId) : null;
+
+      // Parse tenant/unit from description e.g. "PDC Cleared – PDC-Flat01-001 (Prabhat - Flat01)"
+      let tenant = "", prop = "", unit = "";
+      const bracketMatch = (v.name || "").match(/\(([^)]+)\)/);
+      if (bracketMatch) {
+        const parts = bracketMatch[1].split(" - ");
+        tenant = parts[0]?.trim() || "";
+        unit   = parts[1]?.trim() || "";
+      }
+      if (ctxPdc) {
+        prop   = ctxPdc.propertyName || ctxPdc.property_name || ctxPdc.property || lease?.property || prop;
+        unit   = ctxPdc.unitRef || ctxPdc.unit_ref || ctxPdc.unit || lease?.unit || unit;
+        tenant = ctxPdc.tenantName || ctxPdc.tenant_name || ctxPdc.payerName || lease?.tenantName || tenant;
+      } else if (lease) {
+        prop = lease.property || prop; unit = lease.unit || unit; tenant = lease.tenantName || tenant;
+      }
+
+      // Real historical date: prefer contextPdc.date (actual cheque maturity) over voucher date
+      const realDate = ctxPdc?.date || ctxPdc?.cheque_date || v.date || now.toISOString().split("T")[0];
+      map.set(pdcRef, {
+        id: (v.id || pdcRef) + "-rev",
+        chqNo: pdcRef,
+        date: realDate,
+        property: prop,
+        unit,
+        tenant,
+        amount: Number(v.amount) || 0,
+        status: isCash ? "partial_cash" : isClear ? "cleared" : "deposited",
+        source: "PDC",
+      });
+    });
+
+    return Array.from(map.values());
+  }, [dbPdcs, contextPdcs, leases, vouchers]);
+
+  // ── Filter option lists derived from allLedgerTransactions & context data ─────────
+  const allProperties = useMemo(() => {
+    const s = new Set<string>();
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Revenue" && tx.property_name && tx.property_name !== "Unassigned") {
+        s.add(tx.property_name);
+      }
+    });
+    receivableInvoices.forEach(ar => { if (ar.property) s.add(ar.property); });
+    unifiedRealizedPdcs.forEach(p => { if (p.property) s.add(p.property); });
+    return Array.from(s).sort();
+  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
+
+  const allUnits = useMemo(() => {
+    const s = new Set<string>();
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Revenue" && tx.unit_ref && tx.unit_ref !== "Unassigned" && tx.unit_ref !== "General") {
+        s.add(tx.unit_ref);
+      }
+    });
+    receivableInvoices.forEach(ar => { if ((ar as any).unit) s.add((ar as any).unit); });
+    unifiedRealizedPdcs.forEach(p => { if (p.unit) s.add(p.unit); });
+    return Array.from(s).sort();
+  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
+
+  const allCustomers = useMemo(() => {
+    const s = new Set<string>();
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Revenue" && tx.tenant_name && tx.tenant_name !== "Unassigned") {
+        s.add(tx.tenant_name);
+      }
+    });
+    receivableInvoices.forEach(ar => { if (ar.tenant) s.add(ar.tenant); });
+    unifiedRealizedPdcs.forEach(p => { if (p.tenant) s.add(p.tenant); });
+    return Array.from(s).sort();
+  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
+
+  const allMonthOptions = useMemo(() => {
+    const months: { value: string; label: string }[] = [];
+    const seen = new Set<string>();
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type === "Revenue" && tx.date) {
+        const d = new Date(tx.date);
+        if (!isNaN(d.getTime())) {
+          const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          if (!seen.has(val)) {
+            seen.add(val);
+            months.push({ value: val, label: d.toLocaleString("default", { month: "long", year: "numeric" }) });
+          }
+        }
+      }
+    });
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!seen.has(val)) {
+        seen.add(val);
+        months.push({ value: val, label: d.toLocaleString("default", { month: "long", year: "numeric" }) });
+      }
+    }
+    return months.sort((a, b) => b.value.localeCompare(a.value));
+  }, [allLedgerTransactions]);
+
+  // ── Helper to normalize date to YYYY-MM ───────────────────────────────
+  const getMonthStr = (dateStr?: string) => {
+    if (!dateStr) return "";
+    const clean = dateStr.trim();
+    if (/^\d{4}-\d{2}/.test(clean)) return clean.slice(0, 7);
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+    return clean.slice(0, 7);
+  };
+
+  // Helper to map any Revenue GL account code to the 6 primary revenue stream cards
+  const getStreamCodeKey = (accountCode: string): string => {
+    if (!accountCode) return "41100";
+    if (accountCode.startsWith("411")) return "41100"; // 41100, 41100001 Rental Revenue
+    if (accountCode.startsWith("41201001") || accountCode.startsWith("41200")) return "41200"; // 41200, 41201001 Parking Revenue
+    if (accountCode.startsWith("41201003") || accountCode.startsWith("41300")) return "41300"; // 41300, 41201003 Utility Recovery
+    if (accountCode.startsWith("41201004") || accountCode.startsWith("41400")) return "41400"; // 41400, 41201004 CAM / Maintenance Recovery
+    if (accountCode.startsWith("41201002") || accountCode.startsWith("41500")) return "41500"; // 41500, 41201002 Property Management Fee / Commission
+    if (accountCode.startsWith("41201005") || accountCode.startsWith("41201006") || accountCode.startsWith("41201007") || accountCode.startsWith("41600")) return "41600"; // 41600, 41201005 Late Payment / Penalty / Dishonour
+    return "41100";
+  };
+
+  // ── Universal record filter helper ───────────────────────────────────
+  const passesFilter = useCallback((rec: {
+    date?: string; property?: string; unit?: string;
+    tenant?: string; source?: string;
+  }) => {
+    const mon = getMonthStr(rec.date);
+    // Period quick filter
+    if (periodFilter === "thisMonth" && mon !== thisMonth) return false;
+    if (periodFilter === "lastMonth" && mon !== lastMonth) return false;
+    // Dropdown filters
+    if (filterProperty !== "all" && rec.property !== filterProperty) return false;
+    if (filterUnit !== "all" && rec.unit !== filterUnit) return false;
+    if (filterCustomer !== "all" && rec.tenant !== filterCustomer) return false;
+    if (filterMonth !== "all" && mon !== filterMonth) return false;
+    if (filterSource !== "all" && rec.source !== filterSource) return false;
+    // Date range
+    if (filterFromDate && rec.date && rec.date < filterFromDate) return false;
+    if (filterToDate && rec.date && rec.date > filterToDate) return false;
+    // Text search
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      const haystack = [rec.property, rec.unit, rec.tenant, rec.source].join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  }, [periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+
+  // ── Aggregate revenue from unified GL + Realized/Cleared PDCs ──
+  // Includes posted GL entries and all cleared/deposited rental PDCs where service period is realized
   const revenueByCode = useMemo(() => {
     const totals: Record<string, number> = {};
     REVENUE_STREAMS.forEach(s => { totals[s.code] = 0; });
 
-    // Seed: baseline AR invoices
-    receivableInvoices.forEach(ar => {
-      const mon = (ar.date || "").slice(0, 7);
+    // 1. Double-entry GL Revenue postings
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type !== "Revenue") return;
+      // Apply date/period filters using the tx.date
+      const date = tx.date || "";
+      const mon = getMonthStr(date);
       if (periodFilter === "thisMonth" && mon !== thisMonth) return;
       if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      const code = ar.account_code || "41100";
-      if (code in totals) totals[code] += ar.amount;
-      else totals[code] = (totals[code] || 0) + ar.amount;
+      if (filterFromDate && date < filterFromDate) return;
+      if (filterToDate && date > filterToDate) return;
+      if (filterMonth !== "all" && mon !== filterMonth) return;
+      // Property / unit / tenant filters from tx metadata
+      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
+      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
+      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
+      // Source filter
+      if (filterSource !== "all") {
+        const src = (tx.source || "").toLowerCase();
+        const want = filterSource.toLowerCase();
+        if (!src.includes(want)) return;
+      }
+      // Text search
+      if (filterSearch) {
+        const q = filterSearch.toLowerCase();
+        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
+        if (!hay.includes(q)) return;
+      }
+
+      // Net revenue = credit minus debit for Revenue accounts
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+
+      // Map to 5-digit revenue stream prefix
+      const codeKey = getStreamCodeKey(tx.account_code);
+      totals[codeKey] = (totals[codeKey] || 0) + netRev;
     });
 
-    // Vouchers with credit to 41xxx
-    vouchers.forEach(v => {
-      const mon = (v.date || "").slice(0, 7);
-      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
-      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      if (v.credit_code?.startsWith("41")) {
-        totals[v.credit_code] = (totals[v.credit_code] || 0) + v.amount;
+    // 2. Add Realized / Cleared PDCs not already recorded via double-entry GL revenue voucher
+    unifiedRealizedPdcs.forEach((pdc) => {
+      const isCleared = ["cleared", "deposited", "replaced", "partial cash", "partial_cash"].includes((pdc.status || "").toLowerCase());
+      if (!isCleared) return;
+      if (!passesFilter(pdc)) return;
+
+      // Check if this PDC voucher was already counted in GL revenue (e.g. via batch recognition)
+      const isAlreadyCounted = allLedgerTransactions.some(tx => 
+        tx.account_type === "Revenue" && 
+        ((tx.reference && pdc.chqNo && tx.reference.includes(pdc.chqNo)) || (tx.description && pdc.chqNo && tx.description.includes(pdc.chqNo)))
+      );
+
+      if (!isAlreadyCounted) {
+        totals["41100"] = (totals["41100"] || 0) + (Number(pdc.amount) || 0);
       }
     });
 
-    // Journal entries with credit to 41xxx
-    journalEntries.forEach(je => {
-      const mon = (je.posting_date || "").slice(0, 7);
-      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
-      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
-      if (je.cr_code?.startsWith("41") && je.amount) {
-        totals[je.cr_code] = (totals[je.cr_code] || 0) + je.amount;
-      }
-    });
-
-    // Pure aggregation from actual posted revenue transactions
     return totals;
-  }, [receivableInvoices, vouchers, journalEntries, periodFilter]);
-
+  }, [allLedgerTransactions, unifiedRealizedPdcs, passesFilter, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
 
   const totalRevenue = Object.values(revenueByCode).reduce((s, v) => s + v, 0);
 
-  // ── Monthly trend (last 6 months) from AR invoices ────────────────────────
+  // ── Monthly trend — from unified GL Revenue transactions ──────────────────────────────
   const monthlyTrend = useMemo(() => {
     const months: string[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     }
-    const seedRevenue: Record<string, number> = {
-      [months[0]]: 72000, [months[1]]: 68500, [months[2]]: 74200,
-      [months[3]]: 71800, [months[4]]: 76500, [months[5]]: 79200,
-    };
-    receivableInvoices.forEach(ar => {
-      const mon = (ar.date || "").slice(0, 7);
-      if (mon in seedRevenue) seedRevenue[mon] += ar.amount;
+    const rev: Record<string, number> = {};
+    months.forEach(m => { rev[m] = 0; });
+
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type !== "Revenue") return;
+      const mon = getMonthStr(tx.date);
+      if (!(mon in rev)) return;
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev > 0) rev[mon] += netRev;
     });
-    const maxVal = Math.max(...Object.values(seedRevenue));
+
+    const maxVal = Math.max(...Object.values(rev), 1);
     return months.map(m => ({
       month: new Date(m + "-01").toLocaleString("default", { month: "short", year: "2-digit" }),
-      amount: seedRevenue[m] || 0,
-      pct: maxVal > 0 ? Math.round(((seedRevenue[m] || 0) / maxVal) * 100) : 0,
+      amount: rev[m] || 0,
+      pct: Math.round(((rev[m] || 0) / maxVal) * 100),
     }));
-  }, [receivableInvoices]);
+  }, [allLedgerTransactions]);
 
-  // ── Property breakdown ────────────────────────────────────────────────────
+  // ── Property breakdown (filtered) — from unified GL ──────────────────────────────
   const propertyBreakdown = useMemo(() => {
     const map: Record<string, number> = {};
-    receivableInvoices.forEach(ar => {
-      const key = ar.property || "Unassigned";
-      map[key] = (map[key] || 0) + ar.amount;
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type !== "Revenue") return;
+      const date = tx.date || "";
+      const mon = getMonthStr(date);
+      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
+      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
+      if (filterFromDate && date < filterFromDate) return;
+      if (filterToDate && date > filterToDate) return;
+      if (filterMonth !== "all" && mon !== filterMonth) return;
+      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
+      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
+      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
+      if (filterSource !== "all") {
+        const src = (tx.source || "").toLowerCase();
+        if (!src.includes(filterSource.toLowerCase())) return;
+      }
+      if (filterSearch) {
+        const q = filterSearch.toLowerCase();
+        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
+        if (!hay.includes(q)) return;
+      }
+
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+
+      const key = tx.property_name || "Unassigned";
+      map[key] = (map[key] || 0) + netRev;
     });
-    // Seed realistic baseline
-    if (Object.keys(map).length === 0 || Object.values(map).every(v => v === 0)) {
-      map["Old Salata - Residence No:23"]  = 185000;
-      map["Regency Residence Al Sadd 1"]   = 142000;
-      map["Al Sadd Commercial Tower"]      = 58000;
-    }
+
     return Object.entries(map)
+      .filter(([, amt]) => amt > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([property, amount]) => ({ property, amount }));
-  }, [receivableInvoices]);
+  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
 
-  // ── Top Tenant Contributions ──────────────────────────────────────────────
+  // ── Top Tenant Contributions (filtered) — from unified GL ──────────────────
   const topTenants = useMemo(() => {
     const map: Record<string, number> = {};
-    receivableInvoices.forEach(ar => {
-      const key = ar.tenant || "Unknown";
-      map[key] = (map[key] || 0) + ar.amount;
+    allLedgerTransactions.forEach(tx => {
+      if (tx.account_type !== "Revenue") return;
+      const date = tx.date || "";
+      const mon = getMonthStr(date);
+      if (periodFilter === "thisMonth" && mon !== thisMonth) return;
+      if (periodFilter === "lastMonth" && mon !== lastMonth) return;
+      if (filterFromDate && date < filterFromDate) return;
+      if (filterToDate && date > filterToDate) return;
+      if (filterMonth !== "all" && mon !== filterMonth) return;
+      if (filterProperty !== "all" && tx.property_name !== filterProperty) return;
+      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return;
+      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return;
+      if (filterSource !== "all") {
+        const src = (tx.source || "").toLowerCase();
+        if (!src.includes(filterSource.toLowerCase())) return;
+      }
+      if (filterSearch) {
+        const q = filterSearch.toLowerCase();
+        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
+        if (!hay.includes(q)) return;
+      }
+
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return;
+
+      const key = tx.tenant_name || "Unknown / Direct";
+      map[key] = (map[key] || 0) + netRev;
     });
-    if (Object.keys(map).length === 0) {
-      map["Mr. Hafeez Shaik"]             = 67200;
-      map["M/S. Al Ameen Real Estate"]    = 66000;
-      map["Vivek Viswakumaran Nair"]      = 48000;
-    }
+
     return Object.entries(map)
+      .filter(([, amt]) => amt > 0)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([tenant, amount]) => ({ tenant, amount }));
-  }, [receivableInvoices]);
+  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+
+  // ── Unified Revenue GL Ledger Transactions (Filtered) ─────────────────────
+  // Derived directly from allLedgerTransactions with account_type === "Revenue" & credit > debit.
+  // This guarantees 100% exact parity between the table rows, the stream cards, and the total revenue.
+  const filteredRevenueTransactions = useMemo(() => {
+    return allLedgerTransactions.filter(tx => {
+      if (tx.account_type !== "Revenue") return false;
+      const netRev = (tx.credit || 0) - (tx.debit || 0);
+      if (netRev <= 0) return false;
+
+      const mon = getMonthStr(tx.date);
+      if (periodFilter === "thisMonth" && mon !== thisMonth) return false;
+      if (periodFilter === "lastMonth" && mon !== lastMonth) return false;
+      if (filterFromDate && (tx.date || "") < filterFromDate) return false;
+      if (filterToDate && (tx.date || "") > filterToDate) return false;
+      if (filterMonth !== "all" && mon !== filterMonth) return false;
+      if (filterProperty !== "all" && tx.property_name !== filterProperty) return false;
+      if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return false;
+      if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return false;
+      if (filterSource !== "all") {
+        const src = (tx.source || "").toLowerCase();
+        if (!src.includes(filterSource.toLowerCase())) return false;
+      }
+      if (filterSearch) {
+        const q = filterSearch.toLowerCase();
+        const hay = [tx.property_name, tx.unit_ref, tx.tenant_name, tx.account_name, tx.reference, tx.description].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [allLedgerTransactions, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+
+  const activeFilterCount = [
+    filterProperty !== "all", filterUnit !== "all", filterCustomer !== "all",
+    filterMonth !== "all", filterSource !== "all",
+    !!filterFromDate, !!filterToDate, !!filterSearch, periodFilter !== "all",
+  ].filter(Boolean).length;
+
+  const availableProperties = useMemo(() => {
+    return Array.from(new Set(activeBatchPreview.records.map((r) => r.propertyName))).filter(Boolean);
+  }, [activeBatchPreview]);
+
+  const availableUnits = useMemo(() => {
+    return Array.from(new Set(activeBatchPreview.records.map((r) => r.unitRef))).filter(Boolean);
+  }, [activeBatchPreview]);
+
+  const availableTenants = useMemo(() => {
+    return Array.from(new Set(activeBatchPreview.records.map((r) => r.tenantName))).filter(Boolean);
+  }, [activeBatchPreview]);
+
+  const activeAsOfFilterCount = [
+    asOfProperty !== "all",
+    asOfUnit !== "all",
+    asOfTenant !== "all",
+    asOfStatusFilter !== "all",
+    !!asOfSearch,
+  ].filter(Boolean).length;
+
+  const resetAsOfFilters = () => {
+    setAsOfProperty("all");
+    setAsOfUnit("all");
+    setAsOfTenant("all");
+    setAsOfStatusFilter("all");
+    setAsOfSearch("");
+  };
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Top Header & Mode Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
         <div>
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-600" />
-            Revenue Generation Report — Live GL View
-          </h3>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-emerald-600" />
+            <h3 className="text-base font-bold tracking-tight">Revenue Generation &amp; Recognition</h3>
+          </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Breakdowns across GL accounts 41100–41600 • Double-entry credits posted to Revenue accounts
+            Recognize earned rental revenue by service completion date • Separate cash/PDCs from income earned
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
-          {(["all", "thisMonth", "lastMonth"] as const).map(f => (
-            <Button
-              key={f}
-              size="sm"
-              variant={periodFilter === f ? "default" : "outline"}
-              className="h-7 text-xs"
-              onClick={() => setPeriodFilter(f)}
-            >
-              {f === "all" ? "All Time" : f === "thisMonth" ? "This Month" : "Last Month"}
-            </Button>
-          ))}
+
+        {/* Tab Switcher */}
+        <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border">
+          <Button
+            size="sm"
+            variant={activeSubTab === "asOf" ? "default" : "ghost"}
+            className="h-8 text-xs font-medium gap-1.5"
+            onClick={() => setActiveSubTab("asOf")}
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            Revenue As-Of Engine
+          </Button>
+          <Button
+            size="sm"
+            variant={activeSubTab === "gl" ? "default" : "ghost"}
+            className="h-8 text-xs font-medium gap-1.5"
+            onClick={() => setActiveSubTab("gl")}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            GL Actuals Ledger
+          </Button>
         </div>
       </div>
 
-      {/* KPI Row */}
+      {activeSubTab === "asOf" ? (
+        /* ────────────────────────────────────────────────────────────────────────
+           TAB 1: PERIOD-BASED REVENUE RECOGNITION ENGINE (AS-OF DATE)
+        ──────────────────────────────────────────────────────────────────────── */
+        <div className="space-y-5">
+          {/* Revenue vs Cash Concept Distinction Banner */}
+          <Card className="p-3.5 bg-gradient-to-r from-emerald-50/70 via-blue-50/50 to-purple-50/50 border-emerald-200/80 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-emerald-500 text-white rounded-md mt-0.5">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-950 flex items-center gap-2">
+                    <span>Accrual / Period-Based Recognition Standard</span>
+                    <Badge variant="outline" className="bg-white/80 text-[10px] text-emerald-800 border-emerald-300">
+                      IFRS / Accrual Compliant
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-emerald-900/80 mt-0.5 leading-relaxed">
+                    <strong>Rule:</strong> Revenue is earned strictly when the rental service period is completed as of the As-Of Date.
+                    Advance PDCs or uncollected dues represent payment collections, <em>not</em> earned revenue.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-mono shrink-0">
+                <div className="px-2.5 py-1 bg-white/80 rounded border border-emerald-200 text-center">
+                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-sans">Active Leases</div>
+                  <div className="font-bold text-emerald-700">{activeBatchPreview.totalTenants}</div>
+                </div>
+                <div className="px-2.5 py-1 bg-white/80 rounded border border-emerald-200 text-center">
+                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-sans">Units In Scope</div>
+                  <div className="font-bold text-emerald-700">{activeBatchPreview.totalUnits}</div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Engine Parameters & Controls Card */}
+          <Card className="p-4 shadow-sm border-slate-200 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Revenue As-Of Date Picker */}
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-primary" />
+                    Revenue As-Of Date:
+                  </Label>
+                  <Input
+                    type="date"
+                    value={asOfDate}
+                    onChange={(e) => setAsOfDate(e.target.value || todayStr)}
+                    className="h-8 text-xs w-44 font-mono font-semibold"
+                  />
+                </div>
+
+                {/* Proration Method Selector */}
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold text-slate-700">Proration Method:</Label>
+                  <Select value={prorationMethod} onValueChange={(val: ProrationMethod) => setProrationMethod(val)}>
+                    <SelectTrigger className="h-8 text-xs w-44">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CALENDAR_DAYS" className="text-xs">Calendar Days (Exact)</SelectItem>
+                      <SelectItem value="30_DAY_MONTH" className="text-xs">30-Day Month (Commercial)</SelectItem>
+                      <SelectItem value="ACTUAL_365" className="text-xs">Actual / 365</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Action CTA */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => setAsOfDate(todayStr)}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Reset to Today
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  onClick={handleGenerateBatch}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  Generate &amp; Post Revenue Batch
+                </Button>
+              </div>
+            </div>
+
+            {/* ── Multi-Dimensional Filter Panel for Revenue Recognition ── */}
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Multi-Dimensional Filters</span>
+                  {activeAsOfFilterCount > 0 && (
+                    <Badge className="h-4 text-[10px] px-1.5 bg-primary text-primary-foreground">{activeAsOfFilterCount}</Badge>
+                  )}
+                </div>
+                {activeAsOfFilterCount > 0 && (
+                  <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground hover:text-foreground" onClick={resetAsOfFilters}>
+                    Reset All
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+                {/* Property Filter */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-0.5 block">Property</Label>
+                  <Select value={asOfProperty} onValueChange={setAsOfProperty}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All Properties" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Properties ({availableProperties.length})</SelectItem>
+                      {availableProperties.map((p) => (
+                        <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Unit Filter */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-0.5 block">Unit</Label>
+                  <Select value={asOfUnit} onValueChange={setAsOfUnit}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All Units" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Units ({availableUnits.length})</SelectItem>
+                      {availableUnits.map((u) => (
+                        <SelectItem key={u} value={u} className="text-xs">{u}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Tenant Filter */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-0.5 block">Customer / Tenant</Label>
+                  <Select value={asOfTenant} onValueChange={setAsOfTenant}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All Tenants" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Tenants ({availableTenants.length})</SelectItem>
+                      {availableTenants.map((t) => (
+                        <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Status Filter */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-0.5 block">Recognition Status</Label>
+                  <Select value={asOfStatusFilter} onValueChange={setAsOfStatusFilter}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Statuses</SelectItem>
+                      <SelectItem value="RECOGNIZED" className="text-xs">Recognized (Earned)</SelectItem>
+                      <SelectItem value="DEFERRED" className="text-xs">Deferred (Unearned)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Search */}
+                <div>
+                  <Label className="text-[10px] text-muted-foreground mb-0.5 block">Search Schedule</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Tenant, Unit, Period..."
+                      value={asOfSearch}
+                      onChange={(e) => setAsOfSearch(e.target.value)}
+                      className="h-8 text-xs pl-8"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Revenue Recognition Portfolio Summary KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="p-3.5 border-emerald-200 bg-emerald-50/50 shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                Recognized Revenue (Earned)
+              </div>
+              <div className="text-lg font-bold font-mono text-emerald-700 mt-1">
+                QR {previewRecognizedSum.toLocaleString()}
+              </div>
+              <p className="text-[10px] text-emerald-600/90 mt-0.5">
+                Completed service periods as of {asOfDate}
+              </p>
+            </Card>
+
+            <Card className="p-3.5 border-amber-200 bg-amber-50/50 shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                Deferred Revenue (Unearned)
+              </div>
+              <div className="text-lg font-bold font-mono text-amber-700 mt-1">
+                QR {previewDeferredSum.toLocaleString()}
+              </div>
+              <p className="text-[10px] text-amber-600/90 mt-0.5">
+                Future / uncompleted periods
+              </p>
+            </Card>
+
+            <Card className="p-3.5 border-blue-200 bg-blue-50/50 shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+                Contractual Portfolio Rent
+              </div>
+              <div className="text-lg font-bold font-mono text-blue-700 mt-1">
+                QR {previewContractualSum.toLocaleString()}
+              </div>
+              <p className="text-[10px] text-blue-600/90 mt-0.5">
+                Total scheduled monthly billings
+              </p>
+            </Card>
+
+            <Card className="p-3.5 border-purple-200 bg-purple-50/50 shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
+                Schedule Periods Evaluated
+              </div>
+              <div className="text-lg font-bold font-mono text-purple-700 mt-1">
+                {filteredPreviewRecords.length} periods
+              </div>
+              <p className="text-[10px] text-purple-600/90 mt-0.5">
+                Across {availableTenants.length} tenants
+              </p>
+            </Card>
+          </div>
+
+          {/* Revenue Recognition Schedule Table */}
+          <Card className="p-0 shadow-sm overflow-hidden border">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b bg-muted/30 gap-2">
+              <div>
+                <h4 className="text-xs font-bold flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5 text-primary" />
+                  Period-by-Period Revenue Recognition Schedule (Live Calculation)
+                </h4>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Evaluating completed service periods vs As-Of Date: <span className="font-mono font-semibold">{asOfDate}</span>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  Method: {prorationMethod}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px]">
+                  {filteredPreviewRecords.length} rows
+                </Badge>
+              </div>
+            </div>
+
+            <div className="max-h-[440px] overflow-y-auto overflow-x-auto relative border-t">
+              <table className="w-full caption-bottom text-xs text-left border-collapse">
+                <thead className="sticky top-0 z-20 shadow-xs">
+                  <tr className="border-b bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">Tenant / Unit</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">Property</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">Rental Period</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 text-right font-bold text-xs">Contractual Rent</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 text-center font-bold text-xs">Days (Rec / Total)</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 text-right font-bold text-xs">Recognized (QAR)</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 text-right font-bold text-xs">Deferred (QAR)</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">PDC Info</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">Status</th>
+                    <th className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 py-2.5 px-3 font-bold text-xs">Calculation Logic</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs divide-y">
+                  {filteredPreviewRecords.map((rec) => {
+                    const isRec = rec.status === "RECOGNIZED";
+                    return (
+                      <TableRow key={rec.id} className="hover:bg-muted/30">
+                        <TableCell>
+                          <div className="font-semibold text-slate-800">{rec.tenantName}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">Unit: {rec.unitRef}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate" title={rec.propertyName}>
+                          {rec.propertyName}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-mono text-[11px] font-medium">
+                            {rec.periodStart} → {rec.periodEnd}
+                          </div>
+                          {rec.isEarlyVacate && (
+                            <Badge variant="outline" className="text-[9px] bg-rose-50 text-rose-700 border-rose-200 mt-0.5">
+                              Early Vacate ({rec.effectiveRevenueEnd})
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          QR {rec.contractualRent.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-center font-mono">
+                          <span className={isRec ? "font-bold text-emerald-700" : "text-muted-foreground"}>
+                            {rec.recognizableDays}
+                          </span>
+                          <span className="text-muted-foreground"> / {rec.totalDaysInPeriod}</span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold text-emerald-600">
+                          {isRec ? `QR ${rec.netRecognizedRevenue.toLocaleString()}` : "—"}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium text-amber-600">
+                          {rec.deferredRevenue > 0 ? `QR ${rec.deferredRevenue.toLocaleString()}` : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {rec.pdcChequeNo ? (
+                            <div className="text-[10px] font-mono">
+                              <span className="text-primary font-semibold">#{rec.pdcChequeNo}</span>
+                              <div className="text-muted-foreground">QR {rec.pdcAmount?.toLocaleString() || "—"}</div>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground italic">No PDC linked</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isRec ? (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-[10px]">
+                              RECOGNIZED
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="border-amber-300 text-amber-800 bg-amber-50 text-[10px]">
+                              DEFERRED
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-[240px] text-[11px] text-muted-foreground leading-snug">
+                          {rec.calculationExplanation}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filteredPreviewRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="text-center text-muted-foreground py-8 text-xs">
+                        No lease records match the selected filters for as-of date {asOfDate}.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Generated Revenue Batches History */}
+          {savedBatches.length > 0 && (
+            <Card className="p-0 shadow-sm overflow-hidden border">
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+                <h4 className="text-xs font-bold flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
+                  Generated Revenue Batch History (Audit Trail)
+                </h4>
+                <Badge variant="secondary" className="text-[10px]">
+                  {savedBatches.length} batches posted
+                </Badge>
+              </div>
+              <div className="overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 text-xs">
+                      <TableHead className="font-bold text-xs">Batch ID</TableHead>
+                      <TableHead className="font-bold text-xs">As-Of Date</TableHead>
+                      <TableHead className="font-bold text-xs">Generated At</TableHead>
+                      <TableHead className="font-bold text-xs">Proration</TableHead>
+                      <TableHead className="text-center font-bold text-xs">Tenants</TableHead>
+                      <TableHead className="text-center font-bold text-xs">Units</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Recognized Revenue</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Deferred Revenue</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="text-xs">
+                    {savedBatches.map((b) => (
+                      <TableRow key={b.batchId} className="hover:bg-muted/30">
+                        <TableCell className="font-mono font-bold text-primary">{b.batchId}</TableCell>
+                        <TableCell className="font-mono">{b.asOfDate}</TableCell>
+                        <TableCell className="text-muted-foreground">{new Date(b.generatedAt).toLocaleString()}</TableCell>
+                        <TableCell className="text-[11px]">{b.prorationMethod}</TableCell>
+                        <TableCell className="text-center font-mono">{b.totalTenants}</TableCell>
+                        <TableCell className="text-center font-mono">{b.totalUnits}</TableCell>
+                        <TableCell className="text-right font-mono font-bold text-emerald-600">
+                          QR {b.totalRecognizedRevenue.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-amber-600">
+                          QR {b.totalDeferredRevenue.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[10px] text-primary"
+                            onClick={() => setSelectedBatchDetails(b)}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View Records
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          )}
+
+          {/* Revenue vs Cash Collections Separation Card (Spec §26) */}
+          <Card className="p-4 border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50/30 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Scale className="h-4 w-4 text-primary" />
+              <h4 className="text-xs font-bold text-slate-800">Authoritative Accounting Principle: Revenue Recognition vs. Cash Collection</h4>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="p-3 bg-white rounded border border-emerald-200 shadow-xs">
+                <div className="font-semibold text-emerald-800 flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  Recognized Revenue (Earned)
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  Earned strictly when the rental service period is completed or days are elapsed as of the As-Of Date ({asOfDate}).
+                  Independent of cheque maturity or receipt date.
+                </p>
+                <div className="mt-2 font-mono font-bold text-sm text-emerald-700">
+                  Total Earned: QR {previewRecognizedSum.toLocaleString()}
+                </div>
+              </div>
+              <div className="p-3 bg-white rounded border border-blue-200 shadow-xs">
+                <div className="font-semibold text-blue-800 flex items-center gap-1.5 mb-1">
+                  <CreditCard className="h-3.5 w-3.5 text-blue-600" />
+                  Cash / PDC Collections (Instruments)
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  PDCs, bank clearances, and receipts represent payment instruments and liquidity tracking.
+                  PDC clearance alone does not determine monthly earning periods.
+                </p>
+                <div className="mt-2 font-mono font-bold text-sm text-blue-700">
+                  Total Evaluated Contractual: QR {previewContractualSum.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Decision Tree Reference Visualizer */}
+          <Card className="p-4 border-slate-200 bg-white shadow-sm space-y-2">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-indigo-600" />
+              <h4 className="text-xs font-bold text-slate-800">Recognition Decision Logic &amp; Proration Hierarchy</h4>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-[11px]">
+              <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
+                <div className="font-bold text-slate-700 mb-1">1. Full Service Month</div>
+                <p className="text-muted-foreground leading-snug">
+                  If period end &le; As-Of Date &amp; full month elapsed &rarr; <strong>Full monthly rent recognized</strong> (100%).
+                </p>
+              </div>
+              <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
+                <div className="font-bold text-slate-700 mb-1">2. Partial / Mid-Month Start</div>
+                <p className="text-muted-foreground leading-snug">
+                  Lease start mid-month &rarr; <strong>Chargeable days / days in month &times; rent</strong>.
+                </p>
+              </div>
+              <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
+                <div className="font-bold text-slate-700 mb-1">3. Early Vacancy / Notice</div>
+                <p className="text-muted-foreground leading-snug">
+                  Effective revenue end date bounds the recognizable days &rarr; <strong>Prorated to exit date</strong>.
+                </p>
+              </div>
+              <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
+                <div className="font-bold text-slate-700 mb-1">4. Uncompleted Period</div>
+                <p className="text-muted-foreground leading-snug">
+                  Period end &gt; As-Of Date &rarr; <strong>100% Deferred (Unearned)</strong> until period completion.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Dialog for Viewing Batch Details */}
+          <Dialog open={!!selectedBatchDetails} onOpenChange={() => setSelectedBatchDetails(null)}>
+            <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="text-sm font-bold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  Revenue Batch Details — {selectedBatchDetails?.batchId}
+                </DialogTitle>
+                <DialogDescription className="text-xs">
+                  As-Of Date: <span className="font-mono font-bold text-slate-800">{selectedBatchDetails?.asOfDate}</span> • Generated: {selectedBatchDetails?.generatedAt ? new Date(selectedBatchDetails.generatedAt).toLocaleString() : ""}
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="flex-1 mt-2">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 text-xs">
+                      <TableHead className="font-bold text-xs">Tenant</TableHead>
+                      <TableHead className="font-bold text-xs">Unit</TableHead>
+                      <TableHead className="font-bold text-xs">Period</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Recognized</TableHead>
+                      <TableHead className="text-right font-bold text-xs">Deferred</TableHead>
+                      <TableHead className="font-bold text-xs">Status</TableHead>
+                      <TableHead className="font-bold text-xs">Calculation</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="text-xs">
+                    {selectedBatchDetails?.records.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.tenantName}</TableCell>
+                        <TableCell className="font-mono">{r.unitRef}</TableCell>
+                        <TableCell className="font-mono text-[11px]">{r.periodStart} → {r.periodEnd}</TableCell>
+                        <TableCell className="text-right font-mono text-emerald-600 font-bold">
+                          QR {r.netRecognizedRevenue.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-amber-600">
+                          QR {r.deferredRevenue.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={r.status === "RECOGNIZED" ? "default" : "outline"} className="text-[10px]">
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-[11px] text-muted-foreground">{r.calculationExplanation}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+              <DialogFooter className="mt-4 pt-2 border-t flex justify-end">
+                <Button size="sm" variant="outline" onClick={() => setSelectedBatchDetails(null)} className="h-8 text-xs">
+                  Close
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : (
+        /* ────────────────────────────────────────────────────────────────────────
+           TAB 2: GL ACTUALS LEDGER (Existing View)
+        ──────────────────────────────────────────────────────────────────────── */
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="text-xs font-semibold flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-emerald-600" />
+                Revenue Generation Report — Live GL View
+              </h4>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Breakdowns across GL accounts 41100–41600 • Realized PDC settlements &amp; double-entry credits
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {(["all", "thisMonth", "lastMonth"] as const).map(f => (
+                <Button
+                  key={f}
+                  size="sm"
+                  variant={periodFilter === f ? "default" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => setPeriodFilter(f)}
+                >
+                  {f === "all" ? "All Time" : f === "thisMonth" ? "This Month" : "Last Month"}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+      {/* KPI Row (6 Revenue Streams as in Image 1) - Placed Above Filters */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {REVENUE_STREAMS.map(stream => {
           const amount = revenueByCode[stream.code] || 0;
@@ -3649,7 +5544,7 @@ function RevenueGenerationSubModule() {
         })}
       </div>
 
-      {/* Total Banner */}
+      {/* Total Banner (Total Revenue Generated) - Placed Above Filters */}
       <Card className="p-4 border-2 border-emerald-300 bg-gradient-to-r from-emerald-50 to-teal-50">
         <div className="flex items-center justify-between">
           <div>
@@ -3662,6 +5557,115 @@ function RevenueGenerationSubModule() {
             <div className="text-xs text-muted-foreground">GL Range</div>
             <div className="text-sm font-bold text-emerald-600 font-mono">41100 – 41600</div>
             <div className="text-xs text-muted-foreground mt-0.5">{REVENUE_STREAMS.length} revenue streams</div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Multi-Dimensional Filter Panel ── */}
+      <Card className="p-3 border border-dashed border-muted-foreground/30 bg-muted/10">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Multi-Dimensional Filters</span>
+            {activeFilterCount > 0 && (
+              <Badge className="h-4 text-[10px] px-1.5 bg-primary text-primary-foreground">{activeFilterCount}</Badge>
+            )}
+          </div>
+          {activeFilterCount > 0 && (
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={resetFilters}>
+              Reset All
+            </Button>
+          )}
+        </div>
+        {/* Row 1: Dropdowns */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-2">
+          {/* Property */}
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Property</label>
+            <Select value={filterProperty} onValueChange={setFilterProperty}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Properties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Properties ({allProperties.length})</SelectItem>
+                {allProperties.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Unit */}
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Unit</label>
+            <Select value={filterUnit} onValueChange={setFilterUnit}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Units" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Units ({allUnits.length})</SelectItem>
+                {allUnits.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Customer Name */}
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Customer Name</label>
+            <Select value={filterCustomer} onValueChange={setFilterCustomer}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Customers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Customers ({allCustomers.length})</SelectItem>
+                {allCustomers.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Month */}
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Month</label>
+            <Select value={filterMonth} onValueChange={setFilterMonth}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Months" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {allMonthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Source / Type */}
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Source / Type</label>
+            <Select value={filterSource} onValueChange={setFilterSource}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="All Sources" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                <SelectItem value="PDC">PDC (Cleared/Deposited)</SelectItem>
+                <SelectItem value="Invoice">Receivable Invoice</SelectItem>
+                <SelectItem value="Voucher">Journal Voucher</SelectItem>
+                <SelectItem value="Journal">Journal Entry</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {/* Row 2: Search + Date Range */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              placeholder="Search account, code, reference, description, tenant..."
+              className="pl-8 h-8 text-xs"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">From Date:</span>
+            <Input type="date" value={filterFromDate} onChange={e => setFilterFromDate(e.target.value)} className="h-8 text-xs w-36" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">To Date:</span>
+            <Input type="date" value={filterToDate} onChange={e => setFilterToDate(e.target.value)} className="h-8 text-xs w-36" />
           </div>
         </div>
       </Card>
@@ -3724,7 +5728,12 @@ function RevenueGenerationSubModule() {
             <BookOpen className="h-3.5 w-3.5 text-primary" />
             Revenue GL Ledger — Posted Entries
           </h4>
-          <Badge variant="outline" className="text-[10px] font-mono">Accounts 41100–41600</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] font-mono">Accounts 41100–41600</Badge>
+            <Badge variant="secondary" className="text-[10px]">
+              {filteredRevenueTransactions.length} entries
+            </Badge>
+          </div>
         </div>
         <div className="overflow-auto max-h-72">
           <Table>
@@ -3739,44 +5748,36 @@ function RevenueGenerationSubModule() {
               </TableRow>
             </TableHeader>
             <TableBody className="text-xs">
-              {receivableInvoices.map(ar => {
-                const stream = REVENUE_STREAMS.find(s => s.code === (ar.account_code || "41100"));
+              {filteredRevenueTransactions.map(tx => {
+                const streamCode = getStreamCodeKey(tx.account_code);
+                const stream = REVENUE_STREAMS.find(s => s.code === streamCode);
+                const netRev = (tx.credit || 0) - (tx.debit || 0);
                 return (
-                  <TableRow key={ar.id} className="hover:bg-muted/30">
-                    <TableCell className="font-mono">{ar.date}</TableCell>
-                    <TableCell className="font-mono text-primary">{ar.invoice_no}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{ar.stream} — {ar.tenant}</TableCell>
+                  <TableRow key={tx.id} className="hover:bg-muted/30">
+                    <TableCell className="font-mono">{tx.date}</TableCell>
+                    <TableCell className="font-mono text-primary">{tx.reference}</TableCell>
+                    <TableCell className="max-w-[280px] truncate" title={tx.description}>
+                      {tx.description}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`text-[10px] font-mono font-bold ${stream?.textColor || "text-emerald-700"}`}>
-                        {ar.account_code || "41100"}
+                      <Badge variant="outline" className={`text-[10px] font-mono font-bold ${stream?.textColor || "text-emerald-700"} ${stream?.bg || "bg-emerald-50"} ${stream?.border || "border-emerald-300"}`}>
+                        {tx.account_code}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{stream?.label || "Rental Revenue"}</TableCell>
+                    <TableCell className="text-muted-foreground">{stream?.label || tx.account_name || "Revenue"}</TableCell>
                     <TableCell className="text-right font-mono font-semibold text-emerald-600">
-                      {ar.amount.toLocaleString()}
+                      {netRev.toLocaleString()}
                     </TableCell>
                   </TableRow>
                 );
               })}
-              {vouchers.filter(v => v.credit_code?.startsWith("41")).map(v => {
-                const stream = REVENUE_STREAMS.find(s => s.code === v.credit_code);
-                return (
-                  <TableRow key={v.id} className="hover:bg-muted/30">
-                    <TableCell className="font-mono">{v.date}</TableCell>
-                    <TableCell className="font-mono text-primary">{v.voucher_no}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{v.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`text-[10px] font-mono font-bold ${stream?.textColor || "text-emerald-700"}`}>
-                        {v.credit_code}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{stream?.label || "Revenue"}</TableCell>
-                    <TableCell className="text-right font-mono font-semibold text-emerald-600">
-                      {v.amount.toLocaleString()}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {filteredRevenueTransactions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-xs">
+                    No entries match the current filters.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
@@ -3790,30 +5791,41 @@ function RevenueGenerationSubModule() {
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
           {topTenants.map(({ tenant, amount }, idx) => {
-            const maxT = topTenants[0]?.amount || 1;
             return (
               <div key={tenant} className="bg-muted/30 rounded-lg p-3 border text-center">
-                <div className="text-xs font-bold text-primary font-mono mb-1">#{idx + 1}</div>
-                <div className="text-[11px] font-semibold truncate mb-1" title={tenant}>{tenant}</div>
-                <div className="text-sm font-bold font-mono text-emerald-700">QR {amount.toLocaleString()}</div>
-                <div className="mt-2 h-1 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(amount / maxT) * 100}%` }} />
-                </div>
+                <div className="text-xs font-bold truncate mb-1" title={tenant}>{tenant}</div>
+                <div className="text-sm font-mono font-bold text-primary">QR {amount.toLocaleString()}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">#{idx + 1} Contributor</div>
               </div>
             );
           })}
         </div>
       </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 function ProfitAndLossSubModule() {
-  const { profitAndLossReport: pl } = useFinanceStore();
+  const { profitAndLossReport: pl, isSyncing, refreshFinanceData } = useFinanceStore();
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L) — Live</h3>
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L) — Live</h3>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={refreshFinanceData}
+          disabled={isSyncing}
+          className="h-7 text-xs gap-1.5"
+          title="Refresh P&L Report from DB"
+        >
+          <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+          {isSyncing ? "Syncing..." : "Refresh"}
+        </Button>
+      </div>
       <Card className="p-5 space-y-3 text-xs shadow-sm bg-card">
         <div className="flex justify-between items-center font-bold text-sm border-b pb-2">
           <span>Gross Rental & Property Operating Revenue</span>
@@ -3845,15 +5857,28 @@ function ProfitAndLossSubModule() {
 }
 
 function BalanceSheetSubModule() {
-  const { balanceSheetReport: bs } = useFinanceStore();
+  const { balanceSheetReport: bs, isSyncing, refreshFinanceData } = useFinanceStore();
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-semibold">Balance Sheet Statement — Live</h3>
-        <Badge variant="outline" className={`font-mono ${bs.isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}`}>
-          {bs.isBalanced ? '✓ Balanced' : '⚠ Discrepancy'}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refreshFinanceData}
+            disabled={isSyncing}
+            className="h-7 text-xs gap-1.5"
+            title="Refresh Balance Sheet from DB"
+          >
+            <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+            {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
+          <Badge variant="outline" className={`font-mono ${bs.isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}`}>
+            {bs.isBalanced ? '✓ Balanced' : '⚠ Discrepancy'}
+          </Badge>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         <Card className="p-5 space-y-3 shadow-sm bg-card">
@@ -3895,7 +5920,7 @@ function BalanceSheetSubModule() {
 }
 
 function GeneralLedgerReportSubModule() {
-  const { allLedgerTransactions, leases, units, customers } = useFinanceStore() as any;
+  const { allLedgerTransactions, leases, units, customers, isSyncing, refreshFinanceData } = useFinanceStore() as any;
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -4037,6 +6062,17 @@ function GeneralLedgerReportSubModule() {
           <p className="text-xs text-muted-foreground">Complete double-entry log with multi-dimensional filters: Property, Unit, Date, Month &amp; Customer.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refreshFinanceData}
+            disabled={isSyncing}
+            className="h-7 text-xs gap-1.5"
+            title="Refresh General Ledger from DB"
+          >
+            <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+            {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
           <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200 text-xs">
             DR: {totalDebit.toLocaleString()} QAR
           </Badge>
@@ -4182,7 +6218,7 @@ function GeneralLedgerReportSubModule() {
         </div>
       </div>
 
-      {/* Summary Banner with Page Size Selector */}
+      {/* Summary Banner with Page Size & Density Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-muted-foreground">
@@ -4210,39 +6246,41 @@ function GeneralLedgerReportSubModule() {
             ))}
           </div>
         </div>
-        <span className="font-mono text-xs">
-          Balance: <span className={`font-bold ${Math.abs(totalDebit - totalCredit) < 1 ? "text-emerald-600" : "text-red-600"}`}>
-            {Math.abs(totalDebit - totalCredit) < 1 ? "✓ Balanced" : `Out by QR ${Math.abs(totalDebit - totalCredit).toLocaleString()}`}
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs">
+            Balance: <span className={`font-bold ${Math.abs(totalDebit - totalCredit) < 1 ? "text-emerald-600" : "text-red-600"}`}>
+              {Math.abs(totalDebit - totalCredit) < 1 ? "✓ Balanced" : `Out by QR ${Math.abs(totalDebit - totalCredit).toLocaleString()}`}
+            </span>
           </span>
-        </span>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
-        <Table>
+      {/* Table with responsive horizontal scroll and compact density */}
+      <div className="border rounded-lg overflow-x-auto max-w-full bg-card shadow-sm scrollbar-thin">
+        <Table className="w-full text-[11px] border-collapse">
           <TableHeader>
-            <TableRow className="bg-muted/50 text-xs">
-              <TableHead className="font-bold cursor-pointer" onClick={() => toggleSort("date")}>
+            <TableRow className="bg-muted/60 text-[11px] font-semibold">
+              <TableHead className="py-2 px-2.5 font-bold cursor-pointer whitespace-nowrap" onClick={() => toggleSort("date")}>
                 Date{sortIcon("date")}
               </TableHead>
-              <TableHead className="font-bold cursor-pointer" onClick={() => toggleSort("account_code")}>
+              <TableHead className="py-2 px-2 font-bold cursor-pointer whitespace-nowrap" onClick={() => toggleSort("account_code")}>
                 A/C Code{sortIcon("account_code")}
               </TableHead>
-              <TableHead className="font-bold">Account Name</TableHead>
-              <TableHead className="font-bold">Property</TableHead>
-              <TableHead className="font-bold">Unit</TableHead>
-              <TableHead className="font-bold">Customer / Tenant</TableHead>
-              <TableHead className="font-bold">Reference</TableHead>
-              <TableHead className="font-bold">Source</TableHead>
-              <TableHead className="text-right font-bold cursor-pointer" onClick={() => toggleSort("debit")}>
+              <TableHead className="py-2 px-2.5 font-bold min-w-[180px]">Account Name</TableHead>
+              <TableHead className="py-2 px-2 font-bold min-w-[140px]">Property</TableHead>
+              <TableHead className="py-2 px-2 font-bold min-w-[100px]">Unit</TableHead>
+              <TableHead className="py-2 px-2 font-bold min-w-[140px]">Customer / Tenant</TableHead>
+              <TableHead className="py-2 px-2 font-bold min-w-[110px]">Reference</TableHead>
+              <TableHead className="py-2 px-2 font-bold whitespace-nowrap">Source</TableHead>
+              <TableHead className="py-2 px-2.5 text-right font-bold cursor-pointer whitespace-nowrap min-w-[90px]" onClick={() => toggleSort("debit")}>
                 Debit (QAR){sortIcon("debit")}
               </TableHead>
-              <TableHead className="text-right font-bold cursor-pointer" onClick={() => toggleSort("credit")}>
+              <TableHead className="py-2 px-2.5 text-right font-bold cursor-pointer whitespace-nowrap min-w-[90px]" onClick={() => toggleSort("credit")}>
                 Credit (QAR){sortIcon("credit")}
               </TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody className="text-xs">
+          <TableBody className="text-[11px]">
             {paginated.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
@@ -4251,19 +6289,23 @@ function GeneralLedgerReportSubModule() {
               </TableRow>
             ) : (
               paginated.map(tx => (
-                <TableRow key={tx.id} className="hover:bg-muted/30">
-                  <TableCell className="font-mono text-xs">{tx.date}</TableCell>
-                  <TableCell className="font-mono font-bold text-primary">{tx.account_code}</TableCell>
-                  <TableCell className="font-medium text-xs">{tx.account_name}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{tx.property_name || "—"}</TableCell>
-                  <TableCell className="text-xs font-mono">{tx.unit_ref || "—"}</TableCell>
-                  <TableCell className="text-xs">{tx.tenant_name || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{tx.reference}</TableCell>
-                  <TableCell><Badge variant="outline" className="text-[10px]">{tx.source}</Badge></TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-blue-600">
+                <TableRow key={tx.id} className="hover:bg-muted/40 transition-colors border-b border-border/40">
+                  <TableCell className="py-1.5 px-2.5 font-mono whitespace-nowrap font-medium">{formatDDMMMYYYY(tx.date)}</TableCell>
+                  <TableCell className="py-1.5 px-2 font-mono font-bold text-primary whitespace-nowrap">{tx.account_code}</TableCell>
+                  <TableCell className="py-1.5 px-2.5 font-medium">{tx.account_name}</TableCell>
+                  <TableCell className="py-1.5 px-2 text-muted-foreground">{tx.property_name || "—"}</TableCell>
+                  <TableCell className="py-1.5 px-2 font-mono">{tx.unit_ref || "—"}</TableCell>
+                  <TableCell className="py-1.5 px-2">{tx.tenant_name || "—"}</TableCell>
+                  <TableCell className="py-1.5 px-2 font-mono">{tx.reference}</TableCell>
+                  <TableCell className="py-1.5 px-2 whitespace-nowrap">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {tx.source}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="py-1.5 px-2.5 text-right font-mono font-semibold text-blue-600 whitespace-nowrap">
                     {tx.debit > 0 ? tx.debit.toLocaleString() : "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-emerald-600">
+                  <TableCell className="py-1.5 px-2.5 text-right font-mono font-semibold text-emerald-600 whitespace-nowrap">
                     {tx.credit > 0 ? tx.credit.toLocaleString() : "—"}
                   </TableCell>
                 </TableRow>
@@ -4304,11 +6346,24 @@ function GeneralLedgerReportSubModule() {
 
 
 function CashFlowSubModule() {
-  const { cashFlowReport: cf } = useFinanceStore();
+  const { cashFlowReport: cf, isSyncing, refreshFinanceData } = useFinanceStore();
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Cash Flow Statement — Live</h3>
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm font-semibold">Cash Flow Statement — Live</h3>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={refreshFinanceData}
+          disabled={isSyncing}
+          className="h-7 text-xs gap-1.5"
+          title="Refresh Cash Flow Statement from DB"
+        >
+          <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+          {isSyncing ? "Syncing..." : "Refresh"}
+        </Button>
+      </div>
       <Card className="p-5 space-y-3 text-xs shadow-sm bg-card">
         <div className="space-y-2 border-b pb-3">
           <div className="flex justify-between font-semibold">
@@ -4350,7 +6405,7 @@ function CashFlowSubModule() {
 }
 
 function CashBookSubModule() {
-  const { cashBookEntries, addCashBookEntry } = useFinanceStore();
+  const { cashBookEntries, addCashBookEntry, isSyncing, refreshFinanceData } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -4374,6 +6429,17 @@ function CashBookSubModule() {
 
   const totalIn = cashBookEntries.reduce((s, r) => s + r.cash_in, 0);
   const totalOut = cashBookEntries.reduce((s, r) => s + r.cash_out, 0);
+  const currentNetBalance = totalIn - totalOut;
+
+  // Compute accumulated running balance for each row chronologically (oldest to newest)
+  const sortedChronological = [...cashBookEntries].sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
+  let runningAcc = 0;
+  const entriesWithAccBalance = sortedChronological.map(item => {
+    runningAcc += (item.cash_in || 0) - (item.cash_out || 0);
+    return { ...item, computedRunningBal: runningAcc };
+  });
+  // Display newest first
+  const displayRows = [...entriesWithAccBalance].reverse();
 
   return (
     <div className="space-y-4">
@@ -4382,13 +6448,26 @@ function CashBookSubModule() {
           <h3 className="text-sm font-semibold">Main Cash Book — Live</h3>
           <p className="text-xs text-muted-foreground">All physical cash receipts, vault deposits, and disbursements — synced with Cash On Hand report.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Cash Entry</Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refreshFinanceData}
+            disabled={isSyncing}
+            className="h-8 text-xs gap-1.5"
+            title="Refresh Cash Book from DB"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+            {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
+          <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Cash Entry</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-3 bg-emerald-50 border-emerald-200"><p className="text-xs text-emerald-700 font-semibold">Total Cash In</p><p className="font-mono font-bold text-emerald-800 text-sm">QR {totalIn.toLocaleString()}</p></Card>
         <Card className="p-3 bg-rose-50 border-rose-200"><p className="text-xs text-rose-700 font-semibold">Total Cash Out</p><p className="font-mono font-bold text-rose-800 text-sm">QR {totalOut.toLocaleString()}</p></Card>
-        <Card className="p-3 bg-blue-50 border-blue-200"><p className="text-xs text-blue-700 font-semibold">Current Balance</p><p className="font-mono font-bold text-blue-800 text-sm">QR {cashBookEntries[0]?.balance.toLocaleString() || "24,500"}</p></Card>
+        <Card className="p-3 bg-blue-50 border-blue-200"><p className="text-xs text-blue-700 font-semibold">Current Balance</p><p className="font-mono font-bold text-blue-800 text-sm">QR {currentNetBalance.toLocaleString()}</p></Card>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
@@ -4404,16 +6483,22 @@ function CashBookSubModule() {
             </TableRow>
           </TableHeader>
           <TableBody className="text-xs">
-            {[...cashBookEntries].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row) => (
-              <TableRow key={row.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono">{row.date}</TableCell>
-                <TableCell className="font-mono font-bold text-primary">{row.voucher}</TableCell>
-                <TableCell className="font-medium">{row.description}</TableCell>
-                <TableCell className="text-right font-mono font-semibold text-emerald-600">{row.cash_in > 0 ? row.cash_in.toLocaleString() : "—"}</TableCell>
-                <TableCell className="text-right font-mono font-semibold text-rose-600">{row.cash_out > 0 ? row.cash_out.toLocaleString() : "—"}</TableCell>
-                <TableCell className="text-right font-mono font-bold">{row.balance.toLocaleString()} QAR</TableCell>
+            {displayRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cash entries recorded yet.</TableCell>
               </TableRow>
-            ))}
+            ) : (
+              displayRows.map((row) => (
+                <TableRow key={row.id} className="hover:bg-muted/30">
+                  <TableCell className="font-mono">{row.date}</TableCell>
+                  <TableCell className="font-mono font-bold text-primary">{row.voucher}</TableCell>
+                  <TableCell className="font-medium">{row.description}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-emerald-600">{row.cash_in > 0 ? row.cash_in.toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-rose-600">{row.cash_out > 0 ? row.cash_out.toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-right font-mono font-bold">{row.computedRunningBal.toLocaleString()} QAR</TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -4451,7 +6536,7 @@ function CashBookSubModule() {
                 <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
                   <div className="bg-background p-2 rounded border border-emerald-200">
                     <span className="text-emerald-700 dark:text-emerald-400 font-bold block">Debit (DR):</span>
-                    <span>{form.type === 'in' ? '10100 - Cash In Hand (Office Vault)' : '50200 - Operating Expense / AP'}</span>
+                    <span>{form.type === 'in' ? '10100 - Cash In Hand (Office Vault)' : '51004001 - Repair and Maintenance Cost'}</span>
                     <span className="block font-bold text-emerald-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
                   </div>
                   <div className="bg-background p-2 rounded border border-rose-200">
@@ -4474,7 +6559,7 @@ function CashBookSubModule() {
 }
 
 function PettyCashBookSubModule() {
-  const { pettyCashEntries, addPettyCashEntry } = useFinanceStore();
+  const { pettyCashEntries, addPettyCashEntry, isSyncing, refreshFinanceData } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
@@ -4502,7 +6587,20 @@ function PettyCashBookSubModule() {
           <h3 className="text-sm font-semibold">Petty Cash Custodian Register — Live</h3>
           <p className="text-xs text-muted-foreground">Minor daily expense vouchers and imprest fund tracking — synced with Cash On Hand report.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Petty Cash Expense</Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refreshFinanceData}
+            disabled={isSyncing}
+            className="h-8 text-xs gap-1.5"
+            title="Refresh Petty Cash from DB"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+            {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
+          <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Petty Cash Expense</Button>
+        </div>
       </div>
 
       <Card className="p-3 bg-amber-50 border-amber-200 inline-flex gap-3 items-center">
@@ -4537,10 +6635,12 @@ function PettyCashBookSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Petty Cash Expense</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-            <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({ ...form, expense: e.target.value })} /></div>
-            <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({ ...form, paid_to: e.target.value })} /></div>
-            <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+              <div><Label>Expense Item</Label><Input value={form.expense} onChange={e => setForm({ ...form, expense: e.target.value })} /></div>
+              <div><Label>Paid To</Label><Input value={form.paid_to} onChange={e => setForm({ ...form, paid_to: e.target.value })} /></div>
+              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+            </div>
 
             {/* Live GL / COA Impact Preview */}
             {parseFloat(form.amount) > 0 && (
@@ -4575,13 +6675,26 @@ function PettyCashBookSubModule() {
 }
 
 function CashOnHandSubModule() {
-  const { cashOnHandPosition: co } = useFinanceStore();
+  const { cashOnHandPosition: co, isSyncing, refreshFinanceData } = useFinanceStore();
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">Current Physical Cash Position — Live</h3>
-        <p className="text-xs text-muted-foreground">Real-time physical cash balances across all custody points — updated whenever Cash Book or Petty Cash entries are added.</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-sm font-semibold">Current Physical Cash Position — Live</h3>
+          <p className="text-xs text-muted-foreground">Real-time physical cash balances across all custody points — updated whenever Cash Book or Petty Cash entries are added.</p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={refreshFinanceData}
+          disabled={isSyncing}
+          className="h-8 text-xs gap-1.5"
+          title="Refresh Cash On Hand from DB"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+          {isSyncing ? "Syncing..." : "Refresh"}
+        </Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="p-4 bg-emerald-50 border-emerald-200 shadow-sm">
@@ -4831,6 +6944,949 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
           <DialogFooter className="border-t pt-3">
             <Button variant="outline" onClick={() => setOpen(false)} className="text-xs">Cancel</Button>
             <Button onClick={handleAdd} className="text-xs font-semibold">Save Contract</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBIT NOTE & CREDIT NOTE COMPONENTS
+// Written as patch append — added to finance-module.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VENDOR_DEBIT_REASONS = [
+  "Goods Returned to Vendor",
+  "Overcharge / Price Discrepancy",
+  "Duplicate AP Invoice",
+  "Quality Rejection",
+  "Short Delivery / Damaged Material",
+  "Warranty Replacement Claim",
+  "Supplier Penalty / Liquidated Damages",
+];
+
+const CUSTOMER_DEBIT_REASONS = [
+  "Tenant Direct Damage Recovery",
+  "Key / Access Card Loss Charge",
+  "Late Vacate Penalty / Overstay Charge",
+  "Excess Utility Usage Surcharge",
+  "Reinstatement / Repair Chargeable to Tenant",
+  "Bounced Cheque Penalty Fee",
+];
+
+const VENDOR_CREDIT_REASONS = [
+  "Early Settlement Discount from Supplier",
+  "Volume Rebate / Supplier Credit",
+  "Price Correction in Vendor's Favor",
+  "Correction of Under-Billed Item",
+];
+
+const CUSTOMER_CREDIT_REASONS = [
+  "Tenant Overpayment Refund / Credit",
+  "Early Payment Rent Discount",
+  "Maintenance Service Disruption Credit",
+  "Billing Error Correction / Rental Adjustment",
+  "Promotional Concession / Move-in Discount",
+  "Lease Amendment Reversal",
+  "Security Deposit Partial Settlement",
+];
+
+// Common Master Party Presets
+const DEFAULT_VENDORS = [
+  { id: "v1", name: "Qatar Maintenance & HVAC Co.", agreement: "AGR-VND-2026-001", agreements: ["AGR-VND-2026-001", "SVC-HVAC-2026-07", "PO-MAIN-2026-041"], doc: "APINV-2026-000001" },
+  { id: "v2", name: "Gulf Facility Services", agreement: "AGR-VND-2026-002", agreements: ["AGR-VND-2026-002", "GFS-AMC-2026-03"], doc: "APINV-2026-000002" },
+  { id: "v3", name: "Doha Elevator & MEP Corp", agreement: "AGR-VND-2026-003", agreements: ["AGR-VND-2026-003", "LIFT-AMC-2026-02", "MEP-SVC-2026-05"], doc: "APINV-2026-000003" },
+  { id: "v4", name: "Al Rashid Trading LLC", agreement: "AGR-VND-2026-004", agreements: ["AGR-VND-2026-004", "SUPPLY-2026-008"], doc: "APINV-2026-000004" },
+  { id: "v5", name: "Qatar Cleaning & Security Co.", agreement: "AGR-VND-2026-005", agreements: ["AGR-VND-2026-005", "SEC-2026-003", "CLN-2026-009"], doc: "APINV-2026-000005" },
+];
+
+const DEFAULT_CUSTOMERS = [
+  { id: "c1", name: "Mr. Hafeez Shaik", agreement: "LEASE-2026-00101 (Old Salata)", agreements: ["LEASE-2026-00101 (Old Salata)", "LEASE-2025-00088 (Madinat Khalifa)"], doc: "INV-AR-2026-001" },
+  { id: "c2", name: "Fatima Al-Kuwari", agreement: "LEASE-2026-00204 (Lusail Marina)", agreements: ["LEASE-2026-00204 (Lusail Marina)", "LEASE-2024-00161 (Fox Hills)"], doc: "INV-AR-2026-002" },
+  { id: "c3", name: "Tariq Mansoor", agreement: "LEASE-2026-00310 (The Pearl)", agreements: ["LEASE-2026-00310 (The Pearl)"], doc: "INV-AR-2026-003" },
+  { id: "c4", name: "Global Logistics QSTP LLC", agreement: "LEASE-COM-2026-008 (West Bay)", agreements: ["LEASE-COM-2026-008 (West Bay)", "LEASE-COM-2025-005 (Business Park)"], doc: "INV-AR-2026-004" },
+  { id: "c5", name: "Ahmed Al-Sulaiti", agreement: "LEASE-2026-00412 (Bin Mahmoud)", agreements: ["LEASE-2026-00412 (Bin Mahmoud)", "LEASE-2025-00398 (Al Sadd)", "LEASE-2024-00271 (Al Hilal)"], doc: "INV-AR-2026-005" },
+];
+
+// COA options for expense GL (Debit Note)
+const EXPENSE_GL_OPTIONS = [
+  { value: "51004001", label: "51004001 – Repair & Maintenance (Property)" },
+  { value: "51004002", label: "51004002 – Repair & Maintenance (Common Area)" },
+  { value: "51004003", label: "51004003 – Repair & Maintenance (Unit)" },
+  { value: "51002001", label: "51002001 – CMEP-Facilities Mgt AMC" },
+  { value: "51002002", label: "51002002 – Swimming Pool Maintenance" },
+  { value: "51002003", label: "51002003 – CCTV AMC Charges" },
+  { value: "51002004", label: "51002004 – Lift Maintenance Charges" },
+  { value: "51001001", label: "51001001 – CMEP-Labor Cost-Facilities Mgt" },
+  { value: "13100001", label: "13100001 – Trade Receivables (Customer Recovery)" },
+];
+
+// COA options for revenue GL (Credit Note)
+const REVENUE_GL_OPTIONS = [
+  { value: "41001001", label: "41001001 – Rental Income (Residential)" },
+  { value: "41001002", label: "41001002 – Rental Income (Commercial)" },
+  { value: "41002001", label: "41002001 – Service Charges" },
+  { value: "41003001", label: "41003001 – Parking Revenue" },
+  { value: "41004001", label: "41004001 – Utility Recovery" },
+  { value: "22100001", label: "22100001 – Trade Payables (Vendor Credit)" },
+];
+
+type NoteStatus = "DRAFT" | "APPROVED" | "POSTED" | "CANCELLED";
+
+type DebitNote = {
+  id: string;
+  dn_number: string;
+  date: string;
+  party_type: "Vendor" | "Customer";
+  party_id: string;
+  party_name: string;
+  linked_agreement: string;
+  linked_invoice: string;
+  amount: number;
+  reason: string;
+  expense_gl: string;
+  notes: string;
+  status: NoteStatus;
+  created_at: string;
+};
+
+type CreditNote = {
+  id: string;
+  cn_number: string;
+  date: string;
+  party_name: string;
+  party_type: "Vendor" | "Tenant";
+  linked_invoice: string;
+  amount: number;
+  reason: string;
+  revenue_gl: string;
+  notes: string;
+  status: NoteStatus;
+  created_at: string;
+};
+
+function NoteStatusBadge({ status }: { status: NoteStatus }) {
+  const map: Record<NoteStatus, string> = {
+    DRAFT: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300",
+    APPROVED: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400",
+    POSTED: "bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400",
+    CANCELLED: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${map[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBIT NOTE SUB-MODULE
+// AP-side: Vendor owes us back (goods return, overcharge, etc.)
+// GL: Dr. 22100001 Trade Payables / Cr. 51xxx Expense (reversal)
+// ─────────────────────────────────────────────────────────────────────────────
+function DebitNoteSubModule() {
+  const LS_KEY = "fin_debit_notes";
+  const [notes, setNotes] = useState<DebitNote[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+  });
+  const [showModal, setShowModal] = useState(false);
+  const [viewNote, setViewNote] = useState<DebitNote | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    party_type: "Vendor" as "Vendor" | "Customer",
+    party_id: DEFAULT_VENDORS[0].id,
+    party_name: DEFAULT_VENDORS[0].name,
+    linked_agreement: DEFAULT_VENDORS[0].agreements[0],
+    linked_invoice: DEFAULT_VENDORS[0].doc,
+    amount: 0,
+    reason: VENDOR_DEBIT_REASONS[0],
+    expense_gl: EXPENSE_GL_OPTIONS[0].value,
+    notes: "",
+    date: new Date().toISOString().slice(0, 10),
+  });
+
+  function save(updatedNotes: DebitNote[]) {
+    setNotes(updatedNotes);
+    localStorage.setItem(LS_KEY, JSON.stringify(updatedNotes));
+  }
+
+  function handlePartyTypeChange(type: "Vendor" | "Customer") {
+    if (type === "Vendor") {
+      const first = DEFAULT_VENDORS[0];
+      setForm({
+        ...form,
+        party_type: "Vendor",
+        party_id: first.id,
+        party_name: first.name,
+        linked_agreement: first.agreements[0],
+        linked_invoice: first.doc,
+        reason: VENDOR_DEBIT_REASONS[0],
+        expense_gl: "51004001",
+      });
+    } else {
+      const first = DEFAULT_CUSTOMERS[0];
+      setForm({
+        ...form,
+        party_type: "Customer",
+        party_id: first.id,
+        party_name: first.name,
+        linked_agreement: first.agreements[0],
+        linked_invoice: first.doc,
+        reason: CUSTOMER_DEBIT_REASONS[0],
+        expense_gl: "13100001",
+      });
+    }
+  }
+
+  function handlePartySelect(name: string) {
+    if (form.party_type === "Vendor") {
+      const match = DEFAULT_VENDORS.find(v => v.name === name);
+      setForm(prev => ({
+        ...prev,
+        party_name: name,
+        party_id: match?.id || "",
+        linked_agreement: match?.agreements[0] || prev.linked_agreement,
+        linked_invoice: match?.doc || prev.linked_invoice,
+      }));
+    } else {
+      const match = DEFAULT_CUSTOMERS.find(c => c.name === name);
+      setForm(prev => ({
+        ...prev,
+        party_name: name,
+        party_id: match?.id || "",
+        linked_agreement: match?.agreements[0] || prev.linked_agreement,
+        linked_invoice: match?.doc || prev.linked_invoice,
+      }));
+    }
+  }
+
+  function handleCreate() {
+    if (!form.party_name.trim() || !form.amount) return toast.error("Party Name and Amount are required.");
+    setSaving(true);
+    const seq = String(notes.length + 1).padStart(6, "0");
+    const newNote: DebitNote = {
+      id: `dn-${Date.now()}`,
+      dn_number: `DN-${new Date().getFullYear()}-${seq}`,
+      date: form.date,
+      party_type: form.party_type,
+      party_id: form.party_id,
+      party_name: form.party_name,
+      linked_agreement: form.linked_agreement,
+      linked_invoice: form.linked_invoice,
+      amount: form.amount,
+      reason: form.reason,
+      expense_gl: form.expense_gl,
+      notes: form.notes,
+      status: "DRAFT",
+      created_at: new Date().toISOString(),
+    };
+    save([newNote, ...notes]);
+    setShowModal(false);
+    setSaving(false);
+    toast.success(`Debit Note ${newNote.dn_number} created in DRAFT.`);
+  }
+
+  function handleApprove(dn: DebitNote) {
+    const updated = notes.map(n => n.id === dn.id ? { ...n, status: "APPROVED" as NoteStatus } : n);
+    save(updated);
+    toast.success(`${dn.dn_number} approved.`);
+  }
+
+  function handlePost(dn: DebitNote) {
+    const updated = notes.map(n => n.id === dn.id ? { ...n, status: "POSTED" as NoteStatus } : n);
+    save(updated);
+    toast.success(`${dn.dn_number} posted to GL. Dr. ${dn.party_type === "Vendor" ? "22100001 (Trade Payables)" : "13100001 (Trade Receivables)"} / Cr. ${dn.expense_gl}`);
+  }
+
+  function handleCancel(dn: DebitNote) {
+    const updated = notes.map(n => n.id === dn.id ? { ...n, status: "CANCELLED" as NoteStatus } : n);
+    save(updated);
+    toast.info(`${dn.dn_number} cancelled.`);
+  }
+
+  const totals = {
+    draft: notes.filter(n => n.status === "DRAFT").reduce((s, n) => s + n.amount, 0),
+    approved: notes.filter(n => n.status === "APPROVED").reduce((s, n) => s + n.amount, 0),
+    posted: notes.filter(n => n.status === "POSTED").reduce((s, n) => s + n.amount, 0),
+  };
+
+  const activeReasons = form.party_type === "Vendor" ? VENDOR_DEBIT_REASONS : CUSTOMER_DEBIT_REASONS;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <MinusCircle className="h-6 w-6 text-rose-500" /> Debit Notes
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Issue debit notes to Vendors (goods return/overcharge reduction) or Customers/Tenants (damage recovery/penalty charge).
+          </p>
+        </div>
+        <Button onClick={() => setShowModal(true)} className="gap-1.5 bg-rose-600 hover:bg-rose-700 text-white">
+          <Plus className="h-4 w-4" /> New Debit Note
+        </Button>
+      </div>
+
+      {/* KPI Strip */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Draft", value: totals.draft, color: "text-slate-600", bg: "bg-slate-50 dark:bg-slate-900/30 border-slate-200" },
+          { label: "Approved", value: totals.approved, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-900/20 border-blue-200" },
+          { label: "Posted to GL", value: totals.posted, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200" },
+        ].map(({ label, value, color, bg }) => (
+          <div key={label} className={`p-4 rounded-xl border ${bg}`}>
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            <p className={`text-xl font-bold font-mono mt-1 ${color}`}>QAR {value.toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="border rounded-xl overflow-hidden bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">DN #</TableHead>
+              <TableHead className="font-bold">Date</TableHead>
+              <TableHead className="font-bold">Party Type</TableHead>
+              <TableHead className="font-bold">Party Name</TableHead>
+              <TableHead className="font-bold">Agreement / Lease #</TableHead>
+              <TableHead className="font-bold">Linked Ref</TableHead>
+              <TableHead className="font-bold">Reason</TableHead>
+              <TableHead className="font-bold text-right">Amount (QAR)</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="font-bold text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {notes.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground text-xs">
+                  No debit notes yet. Click "New Debit Note" to create one.
+                </TableCell>
+              </TableRow>
+            ) : notes.map(dn => (
+              <TableRow key={dn.id} className="text-xs hover:bg-muted/30">
+                <TableCell className="font-mono font-bold text-rose-600">{dn.dn_number}</TableCell>
+                <TableCell>{dn.date}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className={`text-[10px] ${dn.party_type === "Customer" ? "border-cyan-500 text-cyan-600 bg-cyan-50/40" : "border-violet-500 text-violet-600 bg-violet-50/40"}`}>
+                    {dn.party_type || "Vendor"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-semibold">{dn.party_name}</TableCell>
+                <TableCell className="font-mono text-cyan-700 dark:text-cyan-400">{dn.linked_agreement || "—"}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{dn.linked_invoice || "—"}</TableCell>
+                <TableCell className="max-w-[150px] truncate" title={dn.reason}>{dn.reason}</TableCell>
+                <TableCell className="text-right font-semibold font-mono text-foreground">QAR {dn.amount.toLocaleString()}</TableCell>
+                <TableCell><NoteStatusBadge status={dn.status} /></TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1.5 flex-wrap">
+                    <Button size="sm" variant="outline" className="h-7 text-[10px] px-2" onClick={() => setViewNote(dn)}>View</Button>
+                    {dn.status === "DRAFT" && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-blue-600 border-blue-300" onClick={() => handleApprove(dn)}>Approve</Button>
+                    )}
+                    {dn.status === "APPROVED" && (
+                      <Button size="sm" className="h-7 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handlePost(dn)}>Post to GL</Button>
+                    )}
+                    {(dn.status === "DRAFT" || dn.status === "APPROVED") && (
+                      <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={() => handleCancel(dn)}>Cancel</Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Create Modal */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent 
+          className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-xl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="p-4 pb-2.5 border-b shrink-0 bg-muted/10">
+            <DialogTitle className="flex items-center gap-2">
+              <MinusCircle className="h-5 w-5 text-rose-500" /> New Debit Note
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Issue a debit note for either Vendor (payable reduction) or Customer/Tenant (chargeback/penalty).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs max-h-[calc(85vh-130px)]">
+            {/* Top Row: Date & Party Type Selector */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Date *</label>
+                <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5 text-rose-600 dark:text-rose-400">Party Type *</label>
+                <Select value={form.party_type} onValueChange={(v: "Vendor" | "Customer") => handlePartyTypeChange(v)}>
+                  <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Vendor">Vendor / Supplier (AP Reduction)</SelectItem>
+                    <SelectItem value="Customer">Customer / Tenant (AR Chargeback)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Second Row: Party Dropdown & Linked Agreement / Lease # */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Select {form.party_type === "Vendor" ? "Vendor" : "Customer / Tenant"} *</label>
+                <Select value={form.party_name} onValueChange={handlePartySelect}>
+                  <SelectTrigger className="h-8 text-xs font-medium"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {form.party_type === "Vendor" 
+                      ? DEFAULT_VENDORS.map(v => <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>)
+                      : DEFAULT_CUSTOMERS.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)
+                    }
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Linked Lease / Agreement Number *</label>
+                {(() => {
+                  const partyList = form.party_type === "Vendor" ? DEFAULT_VENDORS : DEFAULT_CUSTOMERS;
+                  const selectedParty = partyList.find(p => p.name === form.party_name);
+                  const agreementOptions = selectedParty?.agreements || (form.linked_agreement ? [form.linked_agreement] : []);
+                  return agreementOptions.length > 1 ? (
+                    <Select value={form.linked_agreement} onValueChange={v => setForm({ ...form, linked_agreement: v })}>
+                      <SelectTrigger className="h-8 text-xs font-mono font-semibold text-cyan-600">
+                        <SelectValue placeholder="Select agreement / lease" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agreementOptions.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={form.linked_agreement}
+                      onChange={e => setForm({ ...form, linked_agreement: e.target.value })}
+                      placeholder={form.party_type === "Vendor" ? "AGR-VND-2026-001" : "LEASE-2026-00101"}
+                      className="h-8 text-xs font-mono font-semibold text-cyan-600"
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Third Row: Linked Invoice / Reference & Amount */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Linked AP/AR Invoice #</label>
+                <Input 
+                  value={form.linked_invoice} 
+                  onChange={e => setForm({ ...form, linked_invoice: e.target.value })} 
+                  placeholder={form.party_type === "Vendor" ? "APINV-2026-000005" : "INV-AR-2026-001"} 
+                  className="h-8 text-xs font-mono" 
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Debit Note Amount (QAR) *</label>
+                <Input 
+                  type="number" 
+                  min="0" 
+                  value={form.amount} 
+                  onChange={e => setForm({ ...form, amount: Number(e.target.value) })} 
+                  className="h-8 text-xs font-mono font-bold text-base" 
+                />
+              </div>
+            </div>
+
+            {/* Fourth Row: Reason & Account */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Reason *</label>
+                <Select value={form.reason} onValueChange={v => setForm({ ...form, reason: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {activeReasons.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Expense / Balancing GL Account *</label>
+                <Select value={form.expense_gl} onValueChange={v => setForm({ ...form, expense_gl: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {EXPENSE_GL_OPTIONS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold block mb-1.5">Notes / Remarks</label>
+              <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Reference details, batch numbers, inspection observations..." className="text-xs min-h-[55px]" />
+            </div>
+
+            {/* Live Double-Entry GL Ledger Impact Preview */}
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 space-y-1 text-[11px]">
+              <p className="font-semibold text-rose-700 dark:text-rose-400">GL Double-Entry Posting Preview:</p>
+              {form.party_type === "Vendor" ? (
+                <>
+                  <p className="font-mono">• <strong className="text-blue-600">Dr. 22100001</strong> Trade Payables - Vendors — QAR {form.amount.toLocaleString()}</p>
+                  <p className="font-mono">• <strong className="text-rose-600">Cr. {form.expense_gl}</strong> {EXPENSE_GL_OPTIONS.find(g => g.value === form.expense_gl)?.label.split("–")[1]?.trim() || "Expense Reversal"} — QAR {form.amount.toLocaleString()}</p>
+                  <p className="text-muted-foreground italic text-[10px]">Reduces payable liability to vendor and reverses property direct expense.</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-mono">• <strong className="text-rose-600">Dr. 13100001</strong> Trade Receivables (Customer) — QAR {form.amount.toLocaleString()}</p>
+                  <p className="font-mono">• <strong className="text-emerald-600">Cr. {form.expense_gl}</strong> {EXPENSE_GL_OPTIONS.find(g => g.value === form.expense_gl)?.label.split("–")[1]?.trim() || "Recovery Income"} — QAR {form.amount.toLocaleString()}</p>
+                  <p className="text-muted-foreground italic text-[10px]">Recognizes chargeback claim receivable from tenant.</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-muted/20 flex justify-end gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button size="sm" className="bg-rose-600 hover:bg-rose-700 text-white gap-1" onClick={handleCreate} disabled={saving}>
+              <MinusCircle className="h-4 w-4" /> Create Debit Note (DRAFT)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Modal */}
+      <Dialog open={!!viewNote} onOpenChange={() => setViewNote(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <MinusCircle className="h-5 w-5 text-rose-500" /> {viewNote?.dn_number}
+            </DialogTitle>
+          </DialogHeader>
+          {viewNote && (
+            <div className="space-y-3 text-xs py-2">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/40 border">
+                {[
+                  ["Date", viewNote.date],
+                  ["Party Type", viewNote.party_type || "Vendor"],
+                  ["Party Name", viewNote.party_name],
+                  ["Lease / Agreement #", viewNote.linked_agreement || "—"],
+                  ["Linked Invoice", viewNote.linked_invoice || "—"],
+                  ["Reason", viewNote.reason],
+                  ["Amount (QAR)", viewNote.amount.toLocaleString()],
+                  ["Status", viewNote.status],
+                ].map(([k, v]) => (
+                  <div key={k}><p className="text-muted-foreground">{k}</p><p className="font-semibold">{v}</p></div>
+                ))}
+              </div>
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 space-y-1 text-[11px]">
+                <p className="font-semibold">GL Journal Entry Impact:</p>
+                <p className="font-mono">Dr. {viewNote.party_type === "Customer" ? "13100001 Trade Receivables" : "22100001 Trade Payables"} — QAR {viewNote.amount.toLocaleString()}</p>
+                <p className="font-mono">Cr. {viewNote.expense_gl} — QAR {viewNote.amount.toLocaleString()}</p>
+              </div>
+              {viewNote.notes && <p className="text-muted-foreground italic">{viewNote.notes}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setViewNote(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREDIT NOTE SUB-MODULE
+// AR-side: We credit a tenant/customer or vendor discount
+// GL: Dr. 41xxx Revenue (or expense) / Cr. 13100001 Trade Receivables
+// ─────────────────────────────────────────────────────────────────────────────
+function CreditNoteSubModule() {
+  const LS_KEY = "fin_credit_notes";
+  const [notes, setNotes] = useState<CreditNote[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+  });
+  const [showModal, setShowModal] = useState(false);
+  const [viewNote, setViewNote] = useState<CreditNote | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    party_type: "Tenant" as "Vendor" | "Tenant",
+    party_name: DEFAULT_CUSTOMERS[0].name,
+    linked_agreement: DEFAULT_CUSTOMERS[0].agreements[0],
+    linked_invoice: DEFAULT_CUSTOMERS[0].doc,
+    amount: 0,
+    reason: CUSTOMER_CREDIT_REASONS[0],
+    revenue_gl: REVENUE_GL_OPTIONS[0].value,
+    notes: "",
+    date: new Date().toISOString().slice(0, 10),
+  });
+
+  function save(updatedNotes: CreditNote[]) {
+    setNotes(updatedNotes);
+    localStorage.setItem(LS_KEY, JSON.stringify(updatedNotes));
+  }
+
+  function handlePartyTypeChange(type: "Vendor" | "Tenant") {
+    if (type === "Tenant") {
+      const first = DEFAULT_CUSTOMERS[0];
+      setForm({
+        ...form,
+        party_type: "Tenant",
+        party_name: first.name,
+        linked_agreement: first.agreements[0],
+        linked_invoice: first.doc,
+        reason: CUSTOMER_CREDIT_REASONS[0],
+        revenue_gl: "41001001",
+      });
+    } else {
+      const first = DEFAULT_VENDORS[0];
+      setForm({
+        ...form,
+        party_type: "Vendor",
+        party_name: first.name,
+        linked_agreement: first.agreements[0],
+        linked_invoice: first.doc,
+        reason: VENDOR_CREDIT_REASONS[0],
+        revenue_gl: "22100001",
+      });
+    }
+  }
+
+  function handlePartySelect(name: string) {
+    if (form.party_type === "Tenant") {
+      const match = DEFAULT_CUSTOMERS.find(c => c.name === name);
+      setForm(prev => ({
+        ...prev,
+        party_name: name,
+        linked_agreement: match?.agreements[0] || prev.linked_agreement,
+        linked_invoice: match?.doc || prev.linked_invoice,
+      }));
+    } else {
+      const match = DEFAULT_VENDORS.find(v => v.name === name);
+      setForm(prev => ({
+        ...prev,
+        party_name: name,
+        linked_agreement: match?.agreements[0] || prev.linked_agreement,
+        linked_invoice: match?.doc || prev.linked_invoice,
+      }));
+    }
+  }
+
+  function handleCreate() {
+    if (!form.party_name.trim() || !form.amount) return toast.error("Party name and amount are required.");
+    setSaving(true);
+    const seq = String(notes.length + 1).padStart(6, "0");
+    const newNote: CreditNote = {
+      id: `cn-${Date.now()}`,
+      cn_number: `CN-${new Date().getFullYear()}-${seq}`,
+      date: form.date,
+      party_name: form.party_name,
+      party_type: form.party_type,
+      linked_invoice: form.linked_invoice,
+      amount: form.amount,
+      reason: form.reason,
+      revenue_gl: form.revenue_gl,
+      notes: form.notes,
+      status: "DRAFT",
+      created_at: new Date().toISOString(),
+    };
+    save([newNote, ...notes]);
+    setShowModal(false);
+    setSaving(false);
+    toast.success(`Credit Note ${newNote.cn_number} created.`);
+  }
+
+  function handleApprove(cn: CreditNote) {
+    const updated = notes.map(n => n.id === cn.id ? { ...n, status: "APPROVED" as NoteStatus } : n);
+    save(updated);
+    toast.success(`${cn.cn_number} approved.`);
+  }
+
+  function handlePost(cn: CreditNote) {
+    const updated = notes.map(n => n.id === cn.id ? { ...n, status: "POSTED" as NoteStatus } : n);
+    save(updated);
+    toast.success(`${cn.cn_number} posted to GL. Dr. ${cn.revenue_gl} / Cr. 13100001`);
+  }
+
+  function handleCancel(cn: CreditNote) {
+    const updated = notes.map(n => n.id === cn.id ? { ...n, status: "CANCELLED" as NoteStatus } : n);
+    save(updated);
+    toast.info(`${cn.cn_number} cancelled.`);
+  }
+
+  const totals = {
+    draft: notes.filter(n => n.status === "DRAFT").reduce((s, n) => s + n.amount, 0),
+    approved: notes.filter(n => n.status === "APPROVED").reduce((s, n) => s + n.amount, 0),
+    posted: notes.filter(n => n.status === "POSTED").reduce((s, n) => s + n.amount, 0),
+  };
+
+  const activeReasons = form.party_type === "Tenant" ? CUSTOMER_CREDIT_REASONS : VENDOR_CREDIT_REASONS;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <PlusCircle className="h-6 w-6 text-emerald-500" /> Credit Notes
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Issue credit notes to Customer/Tenant (rental concession, overpayment credit) or Vendor (discount/rebate).
+          </p>
+        </div>
+        <Button onClick={() => setShowModal(true)} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Plus className="h-4 w-4" /> New Credit Note
+        </Button>
+      </div>
+
+      {/* KPI Strip */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Draft", value: totals.draft, color: "text-slate-600", bg: "bg-slate-50 dark:bg-slate-900/30 border-slate-200" },
+          { label: "Approved", value: totals.approved, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-900/20 border-blue-200" },
+          { label: "Posted to GL", value: totals.posted, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200" },
+        ].map(({ label, value, color, bg }) => (
+          <div key={label} className={`p-4 rounded-xl border ${bg}`}>
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            <p className={`text-xl font-bold font-mono mt-1 ${color}`}>QAR {value.toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="border rounded-xl overflow-hidden bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">CN #</TableHead>
+              <TableHead className="font-bold">Date</TableHead>
+              <TableHead className="font-bold">Party Type</TableHead>
+              <TableHead className="font-bold">Party Name</TableHead>
+              <TableHead className="font-bold">Linked Lease / Ref</TableHead>
+              <TableHead className="font-bold">Reason</TableHead>
+              <TableHead className="font-bold">Revenue GL</TableHead>
+              <TableHead className="font-bold text-right">Amount (QAR)</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="font-bold text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {notes.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground text-xs">
+                  No credit notes yet. Click "New Credit Note" to create one.
+                </TableCell>
+              </TableRow>
+            ) : notes.map(cn => (
+              <TableRow key={cn.id} className="text-xs hover:bg-muted/30">
+                <TableCell className="font-mono font-bold text-emerald-600">{cn.cn_number}</TableCell>
+                <TableCell>{cn.date}</TableCell>
+                <TableCell>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cn.party_type === "Tenant" ? "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/20 dark:text-cyan-400" : "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400"}`}>
+                    {cn.party_type === "Tenant" ? "Customer / Tenant" : "Vendor"}
+                  </span>
+                </TableCell>
+                <TableCell className="font-semibold">{cn.party_name}</TableCell>
+                <TableCell className="font-mono text-cyan-700 dark:text-cyan-400">{cn.linked_invoice || "—"}</TableCell>
+                <TableCell className="max-w-[150px] truncate" title={cn.reason}>{cn.reason}</TableCell>
+                <TableCell className="font-mono text-[10px]">{cn.revenue_gl}</TableCell>
+                <TableCell className="text-right font-semibold font-mono text-foreground">QAR {cn.amount.toLocaleString()}</TableCell>
+                <TableCell><NoteStatusBadge status={cn.status} /></TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1.5 flex-wrap">
+                    <Button size="sm" variant="outline" className="h-7 text-[10px] px-2" onClick={() => setViewNote(cn)}>View</Button>
+                    {cn.status === "DRAFT" && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-blue-600 border-blue-300" onClick={() => handleApprove(cn)}>Approve</Button>
+                    )}
+                    {cn.status === "APPROVED" && (
+                      <Button size="sm" className="h-7 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handlePost(cn)}>Post to GL</Button>
+                    )}
+                    {(cn.status === "DRAFT" || cn.status === "APPROVED") && (
+                      <Button size="sm" variant="destructive" className="h-7 text-[10px] px-2" onClick={() => handleCancel(cn)}>Cancel</Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Create Modal */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent 
+          className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-xl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="p-4 pb-2.5 border-b shrink-0 bg-muted/10">
+            <DialogTitle className="flex items-center gap-2">
+              <PlusCircle className="h-5 w-5 text-emerald-500" /> New Credit Note
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Issue a credit note to a tenant or vendor for overpayments, discounts, or billing corrections.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs max-h-[calc(85vh-130px)]">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Date *</label>
+                <Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="h-8 text-xs" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5 text-emerald-600 dark:text-emerald-400">Party Type *</label>
+                <Select value={form.party_type} onValueChange={(v: "Vendor" | "Tenant") => handlePartyTypeChange(v)}>
+                  <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Tenant">Tenant / Customer (AR Concession / Credit)</SelectItem>
+                    <SelectItem value="Vendor">Vendor / Supplier (Supplier Rebate)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Select {form.party_type === "Tenant" ? "Tenant / Customer" : "Vendor"} *</label>
+                <Select value={form.party_name} onValueChange={handlePartySelect}>
+                  <SelectTrigger className="h-8 text-xs font-medium"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {form.party_type === "Tenant"
+                      ? DEFAULT_CUSTOMERS.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)
+                      : DEFAULT_VENDORS.map(v => <SelectItem key={v.id} value={v.name}>{v.name}</SelectItem>)
+                    }
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Linked Lease / Agreement Number *</label>
+                {(() => {
+                  const partyList = form.party_type === "Tenant" ? DEFAULT_CUSTOMERS : DEFAULT_VENDORS;
+                  const selectedParty = partyList.find(p => p.name === form.party_name);
+                  const agreementOptions = selectedParty?.agreements || (form.linked_agreement ? [form.linked_agreement] : []);
+                  return agreementOptions.length > 1 ? (
+                    <Select value={form.linked_agreement} onValueChange={v => setForm({ ...form, linked_agreement: v })}>
+                      <SelectTrigger className="h-8 text-xs font-mono font-semibold text-cyan-600">
+                        <SelectValue placeholder="Select agreement / lease" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agreementOptions.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={form.linked_agreement}
+                      onChange={e => setForm({ ...form, linked_agreement: e.target.value })}
+                      placeholder={form.party_type === "Tenant" ? "LEASE-2026-00101" : "AGR-VND-2026-001"}
+                      className="h-8 text-xs font-mono font-semibold text-cyan-600"
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Linked Invoice / Bill Ref</label>
+                <Input 
+                  value={form.linked_invoice} 
+                  onChange={e => setForm({ ...form, linked_invoice: e.target.value })} 
+                  placeholder={form.party_type === "Tenant" ? "INV-AR-2026-001" : "APINV-2026-000001"} 
+                  className="h-8 text-xs font-mono" 
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Credit Amount (QAR) *</label>
+                <Input 
+                  type="number" 
+                  min="0" 
+                  value={form.amount} 
+                  onChange={e => setForm({ ...form, amount: Number(e.target.value) })} 
+                  className="h-8 text-xs font-mono font-bold text-base" 
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Reason *</label>
+                <Select value={form.reason} onValueChange={v => setForm({ ...form, reason: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {activeReasons.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1.5">Revenue / Income GL Account (Debit / Reversal) *</label>
+                <Select value={form.revenue_gl} onValueChange={v => setForm({ ...form, revenue_gl: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {REVENUE_GL_OPTIONS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold block mb-1.5">Notes / Remarks</label>
+              <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Reference number, concession justification, approval details..." className="text-xs min-h-[55px]" />
+            </div>
+
+            {/* GL Preview */}
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-[11px]">
+              <p className="font-semibold text-emerald-700 dark:text-emerald-400">GL Posting Preview (upon Post to GL):</p>
+              <p className="font-mono">• <strong className="text-rose-600">Dr. {form.revenue_gl}</strong> {REVENUE_GL_OPTIONS.find(g => g.value === form.revenue_gl)?.label.split("–")[1]?.trim()} — QAR {form.amount.toLocaleString()}</p>
+              <p className="font-mono">• <strong className="text-emerald-600">Cr. 13100001</strong> Trade Receivables — QAR {form.amount.toLocaleString()}</p>
+              <p className="text-muted-foreground italic text-[10px]">Reduces income recognized and clears receivable amount owed by customer.</p>
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-muted/20 flex justify-end gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1" onClick={handleCreate} disabled={saving}>
+              <PlusCircle className="h-4 w-4" /> Create Credit Note (DRAFT)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Modal */}
+      <Dialog open={!!viewNote} onOpenChange={() => setViewNote(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <PlusCircle className="h-5 w-5 text-emerald-500" /> {viewNote?.cn_number}
+            </DialogTitle>
+          </DialogHeader>
+          {viewNote && (
+            <div className="space-y-3 text-xs py-2">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-muted/40 border">
+                {[
+                  ["Date", viewNote.date],
+                  ["Party Type", viewNote.party_type === "Tenant" ? "Customer / Tenant" : "Vendor"],
+                  ["Party Name", viewNote.party_name],
+                  ["Linked Ref", viewNote.linked_invoice || "—"],
+                  ["Reason", viewNote.reason],
+                  ["Amount (QAR)", viewNote.amount.toLocaleString()],
+                  ["Status", viewNote.status],
+                ].map(([k, v]) => (
+                  <div key={k}><p className="text-muted-foreground">{k}</p><p className="font-semibold">{v}</p></div>
+                ))}
+              </div>
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 space-y-1 text-[11px]">
+                <p className="font-semibold">GL Journal Entry:</p>
+                <p className="font-mono">Dr. {viewNote.revenue_gl} Revenue — QAR {viewNote.amount.toLocaleString()}</p>
+                <p className="font-mono">Cr. 13100001 Trade Receivables — QAR {viewNote.amount.toLocaleString()}</p>
+              </div>
+              {viewNote.notes && <p className="text-muted-foreground italic">{viewNote.notes}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setViewNote(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

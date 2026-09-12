@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Plus, RefreshCw, CheckCircle2, ArrowDownUp, Landmark, ShieldCheck } from "lucide-react";
+import { Users, Plus, RefreshCw, CheckCircle2, ArrowDownUp, Landmark, ShieldCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { syncPayrollRun, type PayrollSyncPayload } from "@/lib/finance/payrollIntegrationService";
@@ -15,34 +15,12 @@ import { useFinanceStore } from "@/lib/finance/finance-store";
 
 const PAGE_SIZE = 20;
 
-const DEFAULT_SYNCS = [
-  {
-    id: 1,
-    payroll_run_id: "PR-RUN-2026-08",
-    period: "2026-08",
-    property_name: "Portfolio-Wide Operations",
-    unit_ref: "Maintenance & Security",
-    account_code: "5010 - Basic Salaries",
-    total_amount: 45000,
-    status: "Posted",
-    error_details: "Successfully mapped & journal posted to GL Account 5010",
-  },
-  {
-    id: 2,
-    payroll_run_id: "PR-RUN-2026-07",
-    period: "2026-07",
-    property_name: "Portfolio-Wide Operations",
-    unit_ref: "Facility Management",
-    account_code: "5010 - Basic Salaries",
-    total_amount: 45000,
-    status: "Posted",
-    error_details: "Successfully mapped & journal posted to GL Account 5010",
-  }
-];
+const DEFAULT_SYNCS: any[] = [];
 
 export function PayrollSync() {
   const { payrollSyncs, addPayrollSync } = useFinanceStore();
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [page, setPage] = useState(1);
   const [openModal, setOpenModal] = useState(false);
 
@@ -101,8 +79,6 @@ export function PayrollSync() {
           account_code: '50100',
           debit: basic + allow + ot,
           credit: 0,
-          property_id: 1,
-          unit_id: 1,
         },
         {
           employee_id: 'BANK-TREASURY',
@@ -128,6 +104,7 @@ export function PayrollSync() {
       });
     }
 
+    setIsSyncing(true);
     try {
       await syncPayrollRun(payload);
     } catch {
@@ -147,6 +124,8 @@ export function PayrollSync() {
       bank_account: form.bank_account,
     });
 
+    await new Promise(r => setTimeout(r, 400));
+    setIsSyncing(false);
     setOpenModal(false);
   }
 
@@ -349,9 +328,10 @@ export function PayrollSync() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenModal(false)}>Cancel</Button>
-            <Button onClick={handleTriggerSync} className="bg-blue-600 hover:bg-blue-700">
-              Confirm & Post Payroll Run
+            <Button variant="outline" onClick={() => setOpenModal(false)} disabled={isSyncing}>Cancel</Button>
+            <Button onClick={handleTriggerSync} disabled={isSyncing} className="bg-blue-600 hover:bg-blue-700 gap-1.5">
+              {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {isSyncing ? "Syncing DB & General Ledger..." : "Confirm & Post Payroll Run"}
             </Button>
           </DialogFooter>
         </DialogContent>

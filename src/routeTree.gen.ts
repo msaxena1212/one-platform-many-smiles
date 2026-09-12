@@ -43,6 +43,7 @@ import { Route as SalesReservationsRouteImport } from './routes/sales.reservatio
 import { Route as SalesListingsRouteImport } from './routes/sales.listings'
 import { Route as SalesContractsRouteImport } from './routes/sales.contracts'
 import { Route as SalesAppointmentsRouteImport } from './routes/sales.appointments'
+import { Route as PropMgrVendorsRouteImport } from './routes/prop-mgr.vendors'
 import { Route as PropMgrUsersRouteImport } from './routes/prop-mgr.users'
 import { Route as PropMgrUnitsRouteImport } from './routes/prop-mgr.units'
 import { Route as PropMgrPropertiesRouteImport } from './routes/prop-mgr.properties'
@@ -71,8 +72,10 @@ import { Route as FinanceReceivablesRouteImport } from './routes/finance.receiva
 import { Route as FinanceProcurementRouteImport } from './routes/finance.procurement'
 import { Route as FinanceLedgerRouteImport } from './routes/finance.ledger'
 import { Route as FinanceJournalRouteImport } from './routes/finance.journal'
+import { Route as EmployeePortalRouteImport } from './routes/employee.portal'
 import { Route as CashierReceiptsRouteImport } from './routes/cashier.receipts'
 import { Route as CashierPdcRouteImport } from './routes/cashier.pdc'
+import { Route as AdminVendorsRouteImport } from './routes/admin.vendors'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
 import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
@@ -264,6 +267,11 @@ const SalesAppointmentsRoute = SalesAppointmentsRouteImport.update({
   path: '/appointments',
   getParentRoute: () => SalesRoute,
 } as any)
+const PropMgrVendorsRoute = PropMgrVendorsRouteImport.update({
+  id: '/vendors',
+  path: '/vendors',
+  getParentRoute: () => PropMgrRoute,
+} as any)
 const PropMgrUsersRoute = PropMgrUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -404,6 +412,11 @@ const FinanceJournalRoute = FinanceJournalRouteImport.update({
   path: '/journal',
   getParentRoute: () => FinanceRoute,
 } as any)
+const EmployeePortalRoute = EmployeePortalRouteImport.update({
+  id: '/employee/portal',
+  path: '/employee/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CashierReceiptsRoute = CashierReceiptsRouteImport.update({
   id: '/receipts',
   path: '/receipts',
@@ -413,6 +426,11 @@ const CashierPdcRoute = CashierPdcRouteImport.update({
   id: '/pdc',
   path: '/pdc',
   getParentRoute: () => CashierRoute,
+} as any)
+const AdminVendorsRoute = AdminVendorsRouteImport.update({
+  id: '/vendors',
+  path: '/vendors',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
@@ -543,8 +561,10 @@ export interface FileRoutesByFullPath {
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/vendors': typeof AdminVendorsRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
+  '/employee/portal': typeof EmployeePortalRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
@@ -573,6 +593,7 @@ export interface FileRoutesByFullPath {
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
+  '/prop-mgr/vendors': typeof PropMgrVendorsRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -621,8 +642,10 @@ export interface FileRoutesByTo {
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/vendors': typeof AdminVendorsRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
+  '/employee/portal': typeof EmployeePortalRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
@@ -651,6 +674,7 @@ export interface FileRoutesByTo {
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
+  '/prop-mgr/vendors': typeof PropMgrVendorsRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -708,8 +732,10 @@ export interface FileRoutesById {
   '/admin/properties': typeof AdminPropertiesRoute
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/admin/vendors': typeof AdminVendorsRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
+  '/employee/portal': typeof EmployeePortalRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
@@ -738,6 +764,7 @@ export interface FileRoutesById {
   '/prop-mgr/properties': typeof PropMgrPropertiesRoute
   '/prop-mgr/units': typeof PropMgrUnitsRouteWithChildren
   '/prop-mgr/users': typeof PropMgrUsersRoute
+  '/prop-mgr/vendors': typeof PropMgrVendorsRoute
   '/sales/appointments': typeof SalesAppointmentsRoute
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
@@ -796,8 +823,10 @@ export interface FileRouteTypes {
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/admin/vendors'
     | '/cashier/pdc'
     | '/cashier/receipts'
+    | '/employee/portal'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
@@ -826,6 +855,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
+    | '/prop-mgr/vendors'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -874,8 +904,10 @@ export interface FileRouteTypes {
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/admin/vendors'
     | '/cashier/pdc'
     | '/cashier/receipts'
+    | '/employee/portal'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
@@ -904,6 +936,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
+    | '/prop-mgr/vendors'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -960,8 +993,10 @@ export interface FileRouteTypes {
     | '/admin/properties'
     | '/admin/units'
     | '/admin/users'
+    | '/admin/vendors'
     | '/cashier/pdc'
     | '/cashier/receipts'
+    | '/employee/portal'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
@@ -990,6 +1025,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/properties'
     | '/prop-mgr/units'
     | '/prop-mgr/users'
+    | '/prop-mgr/vendors'
     | '/sales/appointments'
     | '/sales/contracts'
     | '/sales/listings'
@@ -1034,6 +1070,7 @@ export interface RootRouteChildren {
   SalesRoute: typeof SalesRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SuperAdminRoute: typeof SuperAdminRouteWithChildren
+  EmployeePortalRoute: typeof EmployeePortalRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1276,6 +1313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesAppointmentsRouteImport
       parentRoute: typeof SalesRoute
     }
+    '/prop-mgr/vendors': {
+      id: '/prop-mgr/vendors'
+      path: '/vendors'
+      fullPath: '/prop-mgr/vendors'
+      preLoaderRoute: typeof PropMgrVendorsRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
     '/prop-mgr/users': {
       id: '/prop-mgr/users'
       path: '/users'
@@ -1472,6 +1516,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FinanceJournalRouteImport
       parentRoute: typeof FinanceRoute
     }
+    '/employee/portal': {
+      id: '/employee/portal'
+      path: '/employee/portal'
+      fullPath: '/employee/portal'
+      preLoaderRoute: typeof EmployeePortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cashier/receipts': {
       id: '/cashier/receipts'
       path: '/receipts'
@@ -1485,6 +1536,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/cashier/pdc'
       preLoaderRoute: typeof CashierPdcRouteImport
       parentRoute: typeof CashierRoute
+    }
+    '/admin/vendors': {
+      id: '/admin/vendors'
+      path: '/vendors'
+      fullPath: '/admin/vendors'
+      preLoaderRoute: typeof AdminVendorsRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/users': {
       id: '/admin/users'
@@ -1655,6 +1713,7 @@ interface AdminRouteChildren {
   AdminPropertiesRoute: typeof AdminPropertiesRoute
   AdminUnitsRoute: typeof AdminUnitsRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  AdminVendorsRoute: typeof AdminVendorsRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminManageIdRoute: typeof AdminManageIdRoute
 }
@@ -1673,6 +1732,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPropertiesRoute: AdminPropertiesRoute,
   AdminUnitsRoute: AdminUnitsRoute,
   AdminUsersRoute: AdminUsersRoute,
+  AdminVendorsRoute: AdminVendorsRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminManageIdRoute: AdminManageIdRoute,
 }
@@ -1822,6 +1882,7 @@ interface PropMgrRouteChildren {
   PropMgrPropertiesRoute: typeof PropMgrPropertiesRoute
   PropMgrUnitsRoute: typeof PropMgrUnitsRouteWithChildren
   PropMgrUsersRoute: typeof PropMgrUsersRoute
+  PropMgrVendorsRoute: typeof PropMgrVendorsRoute
   PropMgrIndexRoute: typeof PropMgrIndexRoute
   PropMgrManageIdRoute: typeof PropMgrManageIdRoute
 }
@@ -1837,6 +1898,7 @@ const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrPropertiesRoute: PropMgrPropertiesRoute,
   PropMgrUnitsRoute: PropMgrUnitsRouteWithChildren,
   PropMgrUsersRoute: PropMgrUsersRoute,
+  PropMgrVendorsRoute: PropMgrVendorsRoute,
   PropMgrIndexRoute: PropMgrIndexRoute,
   PropMgrManageIdRoute: PropMgrManageIdRoute,
 }
@@ -1903,6 +1965,7 @@ const rootRouteChildren: RootRouteChildren = {
   SalesRoute: SalesRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SuperAdminRoute: SuperAdminRouteWithChildren,
+  EmployeePortalRoute: EmployeePortalRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

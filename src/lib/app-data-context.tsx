@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 export type UnitStatus = "Available" | "Occupied" | "Reserved" | "Vacant - Under Maintenance";
@@ -18,8 +18,8 @@ export type LeaseStatus =
   | "non_renewal"
   | "checkout"
   | "closed";
-export type PdcStatus = "received" | "deposited" | "cleared" | "bounced" | "returned" | "replaced" | "cancelled";
-export type VoucherStatus = "draft" | "posted" | "shared";
+export type PdcStatus = "received" | "deposited" | "cleared" | "bounced" | "returned" | "replaced" | "cancelled" | "partial_cash";
+export type VoucherStatus = "draft" | "posted" | "shared" | "settled";
 
 export interface PmsUnit {
   id: string;
@@ -83,6 +83,7 @@ export interface PmsPdc {
   bank: string;
   date: string;
   amount: number;
+  paid_amount?: number;
   status: PdcStatus;
   payerName?: string;
   period?: string;
@@ -100,6 +101,10 @@ export interface PmsVoucher {
   credit: string;
   amount: number;
   status: VoucherStatus;
+  /** Settlement details — populated when status is "settled" */
+  settlement_deductions?: number;
+  settlement_refund?: number;
+  settlement_date?: string;
 }
 
 export interface PmsKeyNotice {
@@ -199,7 +204,7 @@ export interface PmsAppData {
 }
 
 const STORAGE_KEY = "zyno-pms-app-data";
-const STORAGE_VERSION = 4;
+const STORAGE_VERSION = 7;
 
 const SEED_DATA: PmsAppData = {
   units: [],
@@ -289,26 +294,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Persist to localStorage AND broadcast to other tabs + Supabase on every change.
-  useEffect(() => {
-    if (typeof window === "undefined" || syncing) return;
-    const payload: PersistedAppData = { ...appData, _version: STORAGE_VERSION };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  // Track the previous appData so we can diff before syncing to Supabase.
+  const prevAppDataRef = useRef<PmsAppData | null>(null);
+  // Timer ref for debouncing Supabase writes.
+  const supabaseSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Broadcast to other tabs via BroadcastChannel (faster than storage events).
-    bcRef.current?.postMessage({ type: "STATE_UPDATE", payload });
+  // Build a stable sync function that diffs and only writes changed records.
+  const syncChangedRecordsToSupabase = useCallback((current: PmsAppData, prev: PmsAppData | null) => {
+    const now = new Date().toISOString();
 
-    // ── Supabase write-through (best-effort) ───────────────────────────────
-    // Persist lease STATUS changes — update rows matched by lease_number.
-    // We only attempt this for leases that have a meaningful status set.
-    appData.leases.forEach(lease => {
-      if (!lease.status) return;
+    // ── Lease status sync ─────────────────────────────────────────────────
+    const prevLeaseMap = new Map((prev?.leases ?? []).map(l => [l.id, l.status]));
+    const changedLeases = current.leases.filter(
+      l => l.status && l.status !== prevLeaseMap.get(l.id)
+    );
+    changedLeases.forEach(lease => {
       supabase
         .from("leases")
-        .update({
-          lease_status: lease.status,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ lease_status: lease.status, updated_at: now })
         .eq("lease_number", lease.id)
         .then(({ error }) => {
           if (error && error.code !== "PGRST116") {
@@ -318,28 +321,57 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
     });
 
-    // Persist PDC status changes — update rows matched by cheque_number.
-    appData.pdcs.forEach(pdc => {
-      if (!pdc.status) return;
-      const supabaseStatus =
-        pdc.status === "deposited" ? "deposited" :
-        pdc.status === "cleared"   ? "cleared"   :
-        pdc.status === "bounced"   ? "bounced"   :
-        pdc.status === "returned"  ? "returned"  :
-        pdc.status === "replaced"  ? "replaced"  :
-        pdc.status === "cancelled" ? "cancelled" :
-        "held";
+    // ── PDC status sync ───────────────────────────────────────────────────
+    const prevPdcMap = new Map((prev?.pdcs ?? []).map(p => [p.chequeNo, p.status]));
+    const changedPdcs = current.pdcs.filter(
+      p => p.status && p.chequeNo && p.status !== prevPdcMap.get(p.chequeNo)
+    );
+    changedPdcs.forEach(pdc => {
+      const normalizedStatus =
+        pdc.status === "deposited"    ? "Deposited"    :
+        pdc.status === "cleared"      ? "Cleared"      :
+        pdc.status === "bounced"      ? "Returned"     :
+        pdc.status === "returned"     ? "Returned"     :
+        pdc.status === "replaced"     ? "Replaced"     :
+        pdc.status === "cancelled"    ? "Cancelled"    :
+        pdc.status === "partial_cash" || (pdc.status as string) === "Partial Cash"
+          ? "Partial Cash"
+          : "In Hand";
       supabase
-        .from("pdcs")
-        .update({ status: supabaseStatus, updated_at: new Date().toISOString() })
+        .from("fin_pdc_register")
+        .update({ status: normalizedStatus, updated_at: now })
         .eq("cheque_number", pdc.chequeNo)
-        .then(({ error }) => {
-          if (error && error.code !== "PGRST116") {
-            console.warn("[AppData] pdc sync warn:", error.message);
-          }
-        });
+        .then(
+          ({ error }) => {
+            if (error && error.code !== "PGRST116" && error.code !== "42P01") {
+              // Ignore non-blocking sync notices.
+            }
+          },
+          () => {}
+        );
     });
-  }, [appData, syncing]);
+  }, []);
+
+  // Persist to localStorage AND broadcast to other tabs on every change.
+  // Supabase writes are debounced by 2 s and only fire for actually-changed records.
+  useEffect(() => {
+    if (typeof window === "undefined" || syncing) return;
+    const payload: PersistedAppData = { ...appData, _version: STORAGE_VERSION };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    // Broadcast to other tabs via BroadcastChannel (faster than storage events).
+    bcRef.current?.postMessage({ type: "STATE_UPDATE", payload });
+
+    // ── Debounced Supabase write-through (best-effort) ────────────────────
+    // Cancel any pending sync timer from a rapid previous change.
+    if (supabaseSyncTimerRef.current) clearTimeout(supabaseSyncTimerRef.current);
+
+    const snapshot = prevAppDataRef.current;
+    supabaseSyncTimerRef.current = setTimeout(() => {
+      syncChangedRecordsToSupabase(appData, snapshot);
+      prevAppDataRef.current = appData;
+    }, 2000);
+  }, [appData, syncing, syncChangedRecordsToSupabase]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

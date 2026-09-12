@@ -5,6 +5,7 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+
 // ---- Typed Helpers ----
 
 export type Property = {
@@ -513,7 +514,7 @@ export type MaintenanceTicket = {
   description: string | null;
   category: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+  status: 'new' | 'assigned' | 'dispatched' | 'scheduled' | 'in_progress' | 'resolved' | 'completed' | 'closed' | 'cancelled';
   assignee: string | null;
   host_id: string | null;
   reported_by: string | null;
@@ -591,6 +592,7 @@ export type Asset = {
   closing_accumulated_depreciation?: number;
   net_book_value?: number;
   remarks?: string;
+  description?: string;
   created_at: string;
   updated_at: string;
   
@@ -710,6 +712,18 @@ export async function updateAsset(id: string, payload: Partial<Asset>) {
   const { data, error } = await supabase.from('assets').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw error;
   return data as Asset;
+}
+
+export async function deleteAsset(id: string) {
+  const { error } = await supabase.from('assets').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteAllAssets() {
+  const { error } = await supabase.from('assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw error;
+  return true;
 }
 
 

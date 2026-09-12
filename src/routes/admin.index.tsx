@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Building2, Wallet, Wrench, FileSignature, ArrowRight, TrendingUp } from "lucide-react";
+import { Building2, Wallet, Wrench, FileSignature, ArrowRight, TrendingUp, Loader2, Home } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { properties, tickets, payments, leases, formatSAR } from "@/lib/mock-data";
+import { formatSAR } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { supabase, fetchAllProperties, type Property } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({ meta: [{ title: "Dashboard — ZYNO Property Management Staff" }] }),
@@ -11,19 +13,74 @@ export const Route = createFileRoute("/admin/")({
 });
 
 function AdminDashboard() {
-  const totalUnits = properties.reduce((s, p) => s + p.units, 0);
-  const avgOcc = properties.reduce((s, p) => s + p.occupancy, 0) / properties.length;
-  const collected = payments.filter(p => p.status === "completed").reduce((s, p) => s + p.amount, 0);
-  const openTickets = tickets.filter(t => t.status !== "closed" && t.status !== "resolved").length;
-  const expiringLeases = leases.filter(l => l.status === "expiring").length;
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [stats, setStats] = useState({
+    unitsCount: 0,
+    activeLeases: 0,
+    openTickets: 0,
+    collected: 0,
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [props, { count: unitCount }, { count: leaseCount }] = await Promise.all([
+          fetchAllProperties().catch(() => []),
+          supabase.from("units").select("*", { count: "exact", head: true }),
+          supabase.from("leases").select("*", { count: "exact", head: true }).eq("lease_status", "ACTIVE"),
+        ]);
+        setProperties(props);
+        setStats({
+          unitsCount: unitCount || 0,
+          activeLeases: leaseCount || 0,
+          openTickets: 0,
+          collected: 0,
+        });
+      } catch (err) {
+        console.error("Failed to load admin stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const totalUnits = stats.unitsCount;
+  const activeLeases = stats.activeLeases;
+  const occupancyRate = totalUnits > 0 ? Math.round((activeLeases / totalUnits) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Portfolio" value={`${properties.length} properties`} hint={`${totalUnits} units total`} icon={<Building2 className="h-4 w-4" />} />
-        <StatCard label="Occupancy" value={`${Math.round(avgOcc * 100)}%`} tone="success" delta="▲ 2.1%" hint="vs last month" icon={<TrendingUp className="h-4 w-4" />} />
-        <StatCard label="Collected (June)" value={formatSAR(collected)} tone="success" delta="▲ 12%" icon={<Wallet className="h-4 w-4" />} />
-        <StatCard label="Open tickets" value={String(openTickets)} tone="warning" hint={`${tickets.filter(t => t.priority === "Urgent").length} urgent`} icon={<Wrench className="h-4 w-4" />} />
+        <StatCard
+          label="Portfolio"
+          value={loading ? "Loading..." : `${properties.length} properties`}
+          hint={`${totalUnits} units total`}
+          icon={<Building2 className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Occupancy"
+          value={loading ? "..." : `${occupancyRate}%`}
+          tone={occupancyRate > 0 ? "success" : "default"}
+          delta={occupancyRate > 0 ? "▲ Live" : "0 active"}
+          hint="Active leases / Units"
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Collected (MTD)"
+          value={loading ? "..." : formatSAR(stats.collected)}
+          tone="default"
+          delta="QAR"
+          icon={<Wallet className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Open tickets"
+          value={loading ? "..." : String(stats.openTickets)}
+          tone="default"
+          hint="0 pending resolution"
+          icon={<Wrench className="h-4 w-4" />}
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -31,37 +88,49 @@ function AdminDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">Portfolio at a glance</h3>
-              <Button asChild variant="ghost" size="sm"><Link to="/admin/properties">All properties <ArrowRight /></Link></Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/admin/properties">All properties <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              </Button>
             </div>
-            <div className="mt-4 space-y-3">
-              {properties.slice(0, 5).map(p => (
-                <div key={p.id} className="grid grid-cols-12 items-center gap-3">
-                  <div className="col-span-5 min-w-0">
-                    <p className="truncate font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.city} · {p.units} units</p>
-                  </div>
-                  <div className="col-span-5">
-                    <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${p.occupancy * 100}%` }} />
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Loading portfolio...
+              </div>
+            ) : properties.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No properties registered yet.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {properties.slice(0, 5).map(p => (
+                  <div key={p.id} className="grid grid-cols-12 items-center gap-3">
+                    <div className="col-span-5 min-w-0">
+                      <p className="truncate font-medium">{p.title}</p>
+                      <p className="text-xs text-muted-foreground">{p.city} · {p.property_type || "Commercial/Res"}</p>
                     </div>
+                    <div className="col-span-5">
+                      <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                        <div className="h-full rounded-full bg-primary" style={{ width: p.is_active ? "100%" : "0%" }} />
+                      </div>
+                    </div>
+                    <p className="col-span-2 text-right text-sm font-medium">{p.is_active ? "Active" : "Unlisted"}</p>
                   </div>
-                  <p className="col-span-2 text-right text-sm font-medium">{Math.round(p.occupancy * 100)}%</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-6">
             <h3 className="text-base font-semibold">Approvals queue</h3>
-            <ul className="mt-4 space-y-3 text-sm">
-              <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease draft L4" sub="Layla Al-Harbi · A-1202" />
-              <Approval icon={<Wrench className="h-4 w-4" />} title="Vendor PO #2241" sub="HVAC repair · A-1201" />
-              <Approval icon={<Wallet className="h-4 w-4" />} title="Refund request" sub="RCT-10395 · 4,500 USD" />
-              <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease termination" sub="Lease L2 · Sara Al-Qahtani" />
-            </ul>
-            <Button asChild variant="outline" className="mt-5 w-full"><Link to="/admin/leases">Open queue</Link></Button>
+            <div className="mt-4 text-center py-6 text-muted-foreground text-xs">
+              <FileSignature className="mx-auto h-8 w-8 mb-2 opacity-30" />
+              All approval queues are clear.
+            </div>
+            <Button asChild variant="outline" className="mt-5 w-full">
+              <Link to="/admin/leases">Open Lease Registry</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -69,39 +138,20 @@ function AdminDashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-base font-semibold">Recent tickets</h3>
-            <ul className="mt-4 divide-y divide-border">
-              {tickets.slice(0, 4).map(t => (
-                <li key={t.id} className="flex items-center justify-between py-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{t.subject}</p>
-                    <p className="text-xs text-muted-foreground">{t.unit} · {t.category}</p>
-                  </div>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-secondary-foreground">{t.status.replace("_", " ")}</span>
-                </li>
-              ))}
-            </ul>
+            <h3 className="text-base font-semibold">Recent Tickets</h3>
+            <div className="mt-4 text-center py-6 text-muted-foreground text-xs">
+              <Wrench className="mx-auto h-8 w-8 mb-2 opacity-30" />
+              No open maintenance tickets.
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-base font-semibold">Leases needing attention</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{expiringLeases} expiring · 1 draft awaiting approval</p>
-            <ul className="mt-4 divide-y divide-border">
-              {leases.map(l => (
-                <li key={l.id} className="flex items-center justify-between py-3 text-sm">
-                  <div>
-                    <p className="font-medium">{l.tenant}</p>
-                    <p className="text-xs text-muted-foreground">{l.start} → {l.end} · {formatSAR(l.annualRent)}/yr</p>
-                  </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-                    l.status === "active" ? "bg-[oklch(0.55_0.13_155)]/15 text-[oklch(0.4_0.13_155)]" :
-                    l.status === "expiring" ? "bg-gold/20 text-gold-foreground" :
-                    l.status === "draft" ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground"
-                  }`}>{l.status}</span>
-                </li>
-              ))}
-            </ul>
+            <h3 className="text-base font-semibold">Leases Needing Attention</h3>
+            <p className="mt-1 text-xs text-muted-foreground">0 expiring contracts</p>
+            <div className="mt-4 text-center py-6 text-muted-foreground text-xs">
+              No leases pending renewal or review.
+            </div>
           </CardContent>
         </Card>
       </div>

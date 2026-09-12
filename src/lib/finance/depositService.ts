@@ -33,6 +33,26 @@ export type DepositCollectionPayload = {
   ref: string;
 };
 
+const COA_TO_DEPOSIT_TYPE: Record<string, DepositType> = {
+  '21500':    'SECURITY',
+  '21200':    'GUARANTEE',
+  '21100003': 'QATAR_COOL',
+  '21100004': 'KAHRAMAA',
+  '21100005': 'SERVICE_FEE',
+  '21100001': 'RESERVATION',
+  '21100006': 'SECURITY',
+};
+
+function coaCodeToDepositType(coaCode: string): DepositType {
+  const normalized = coaCode.replace(/\D/g, '').slice(0, 8);
+  for (const [prefix, type] of Object.entries(COA_TO_DEPOSIT_TYPE)) {
+    if (normalized.startsWith(prefix) || coaCode.includes(prefix)) return type;
+  }
+  return 'SECURITY';
+}
+
+const SETTLEABLE_STATUSES = new Set(['Refundable', 'Active', 'Held']);
+
 // ── Step 1: Collect Deposit ───────────────────────────────────────────────────
 
 /**
@@ -59,6 +79,8 @@ export async function collectSecurityDeposit(payload: DepositCollectionPayload) 
     payload.mode,
     payload.ref,
     payload.unit_name,
+    depositType,
+    payload.lease_id,
   );
 
   // Map depositType to COA account code for subledger recording
@@ -177,9 +199,9 @@ export async function transferDepositToRefundable(
  * Settle refundable deposit with deductions + bank refund.
  *
  * COA:
- *   Dr 21100006  Refundable Security Deposit    (full deposit amount)
- *   Cr 12000001  Bank                           (refund portion)
- *   Cr 12413[unit SL] Tenant Receivable         (deduction offset)
+ *   Dr deposit SL (per deposit.coa_account_code)   (full deposit amount)
+ *   Cr 12000001  Bank                              (refund portion)
+ *   Cr 41201     Damage & Utility Recovery         (deduction offset)
  */
 export async function settleDeposit(
   depositId: number | string,
@@ -203,28 +225,37 @@ export async function settleDeposit(
     .single();
 
   if (error) throw error;
-  if (deposit.status !== 'Refundable') {
-    throw new Error('Deposit must be marked Refundable before settlement.');
+
+  if (!SETTLEABLE_STATUSES.has(deposit.status)) {
+    throw new Error(`Deposit cannot be settled — current status: ${deposit.status}`);
+  }
+
+  // Auto-transfer 21500 security deposits to refundable before settlement
+  if (deposit.coa_account_code === '21500' && deposit.status === 'Active') {
+    await transferDepositToRefundable(numId, propertyId, unitId, unitName);
+    const { data: refreshed } = await supabase
+      .from('fin_deposits')
+      .select('*')
+      .eq('id', numId)
+      .single();
+    if (refreshed) Object.assign(deposit, refreshed);
   }
 
   const total = deductions + refundAmount;
-  if (Math.abs(total - deposit.amount) > 0.001) {
+  if (Math.abs(total - Number(deposit.amount)) > 0.001) {
     throw new Error('Deductions and Refund must equal Deposit Amount.');
   }
 
   const today = new Date().toISOString().split('T')[0];
   const resolvedPropertyId = propertyId ?? deposit.property_id;
   const resolvedUnitId     = unitId     ?? deposit.unit_id;
+  const depositType = coaCodeToDepositType(deposit.coa_account_code);
 
-  // Resolve the two fixed SLs (Refundable SD 21100006, Bank 12000001)
-  // through the canonical resolver so any admin renames in fin_coa_accounts
-  // are picked up automatically.
-  const [refundableSd, bank] = await Promise.all([
-    resolveGlOnlyAccount('21100006'),
-    resolveGlOnlyAccount('12000001'),
-  ]);
+  // Resolve the deposit liability account from the deposit's own COA code
+  const depositLiability = await resolveGlOnlyAccount(
+    deposit.coa_account_code.replace(/[^0-9]/g, '').slice(0, 8) || deposit.coa_account_code,
+  );
 
-  // Lines start with the debit of 21100006
   const lines: Array<{
     account_code: string;
     account_name?: string;
@@ -236,9 +267,9 @@ export async function settleDeposit(
     description?: string;
   }> = [
     {
-      account_code: refundableSd.slCode,
-      account_name: `${refundableSd.groupName} / ${refundableSd.className} / ${refundableSd.glName} / ${refundableSd.slName}`,
-      debit:  deposit.amount,
+      account_code: depositLiability.slCode,
+      account_name: `${depositLiability.groupName} / ${depositLiability.className} / ${depositLiability.glName} / ${depositLiability.slName}`,
+      debit:  Number(deposit.amount),
       credit: 0,
       tenant_id:   deposit.tenant_id,
       property_id: deposit.property_id,
@@ -249,9 +280,20 @@ export async function settleDeposit(
 
   // Refund via bank
   if (refundAmount > 0) {
+    const { debit: drRef, credit: crRef } = await resolveAccountingAccounts({
+      transactionType: 'DEPOSIT_REFUND',
+      paymentMethod:   'BANK',
+      depositType,
+      propertyId:      String(resolvedPropertyId),
+      unitId:          resolvedUnitId ? String(resolvedUnitId) : undefined,
+      tenantId:        deposit.tenant_id ? String(deposit.tenant_id) : undefined,
+      leaseId:         deposit.lease_id ? String(deposit.lease_id) : undefined,
+      unitName,
+    });
+
     lines.push({
-      account_code: bank.slCode,
-      account_name: `${bank.groupName} / ${bank.className} / ${bank.glName} / ${bank.slName}`,
+      account_code: crRef.slCode,
+      account_name: `${crRef.groupName} / ${crRef.className} / ${crRef.glName} / ${crRef.slName}`,
       debit:  0,
       credit: refundAmount,
       tenant_id:   deposit.tenant_id,
@@ -259,29 +301,33 @@ export async function settleDeposit(
       unit_id:     deposit.unit_id,
       description: 'Deposit Refund via Bank',
     });
+    // Suppress unused variable warning — drRef is the debit side of DEPOSIT_REFUND
+    void drRef;
   }
 
-  // Deductions offset against tenant receivable (unit SL)
+  // Deductions offset against damage recovery
   if (deductions > 0) {
-    // Resolve AR unit SL
-    const { credit: arAcct } = await resolveAccountingAccounts({
-      transactionType: 'RENT_RECEIPT',
-      paymentMethod:   'BANK',
+    const { debit: drDed, credit: crDed } = await resolveAccountingAccounts({
+      transactionType: 'DEPOSIT_DEDUCTION_SETTLE',
+      depositType,
       propertyId:      String(resolvedPropertyId),
       unitId:          resolvedUnitId ? String(resolvedUnitId) : undefined,
+      tenantId:        deposit.tenant_id ? String(deposit.tenant_id) : undefined,
+      leaseId:         deposit.lease_id ? String(deposit.lease_id) : undefined,
       unitName,
     });
 
     lines.push({
-      account_code: arAcct.slCode,
-      account_name: `${arAcct.groupName} / ${arAcct.className} / ${arAcct.glName} / ${arAcct.slName}`,
+      account_code: crDed.slCode,
+      account_name: `${crDed.groupName} / ${crDed.className} / ${crDed.glName} / ${crDed.slName}`,
       debit:  0,
       credit: deductions,
       tenant_id:   deposit.tenant_id,
       property_id: deposit.property_id,
       unit_id:     deposit.unit_id,
-      description: `Offset Tenant Dues – ${arAcct.slName}`,
+      description: `Deposit Deduction Offset – ${crDed.slName}`,
     });
+    void drDed;
   }
 
   await postVoucher({
@@ -291,7 +337,11 @@ export async function settleDeposit(
     lines,
   });
 
+  const settledAt = new Date().toISOString();
   await FinDepositsApi.update(String(numId), {
-    status: refundAmount > 0 ? 'Refunded' : 'Settled',
+    status:           refundAmount > 0 ? 'Refunded' : 'Settled',
+    deduction_amount: deductions,
+    refund_amount:    refundAmount,
+    settled_at:       settledAt,
   });
 }

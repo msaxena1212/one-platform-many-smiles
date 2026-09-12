@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info } from "lucide-react";
+import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { settleDeposit } from "@/lib/finance/depositService";
@@ -29,6 +29,9 @@ export interface DepositRecord {
   coa_account_code: string;
   amount: number;
   status: "Refundable" | "Settled" | "Active";
+  deduction_amount?: number;
+  refund_amount?: number;
+  settled_at?: string;
   property_name?: string;
   unit_ref?: string;
   tenant_name?: string;
@@ -41,105 +44,33 @@ export interface DepositRecord {
   category?: "Reservation Advance" | "Qatar Cool" | "Kahramaa" | "Service Fee" | "Guarantee Cheque" | "Unclaimed Deposit" | "Unit Deposit";
 }
 
+function isSettledStatus(status: string | undefined): boolean {
+  const s = (status || "").toLowerCase();
+  return s === "settled" || s === "refunded";
+}
+
+// ── Helper to normalize deposit category for signature matching ────────────────
+function getDepositTypeKey(type: string): string {
+  const t = (type || "").toLowerCase();
+  if (t.includes("kahramaa") || t.includes("utility")) return "kahramaa";
+  if (t.includes("qatar cool") || t.includes("cool")) return "qatar_cool";
+  if (t.includes("reservation")) return "reservation";
+  if (t.includes("service fee") || t.includes("key")) return "service_fee";
+  if (t.includes("guarantee")) return "guarantee";
+  if (t.includes("unclaimed")) return "unclaimed";
+  return "security";
+}
+
+function getDepositSignature(d: Partial<DepositRecord>): string {
+  const typeKey = getDepositTypeKey(d.deposit_type || d.coa_account_code || "");
+  const leaseKey = d.leaseId ? String(d.leaseId).trim().toLowerCase() : "";
+  const tenantKey = (d.tenant_name || "").toLowerCase().trim();
+  const unitKey = (d.unit_ref || "").toLowerCase().trim();
+  return `${leaseKey || `${unitKey}_${tenantKey}`}_${typeKey}`;
+}
+
 // ── Standard Default Refundable Deposits Seed Data (GL 21100) ──────────────────
-const DEFAULT_GL21100_DEPOSITS: DepositRecord[] = [
-  {
-    id: "dep-21100-01",
-    deposit_type: "Kahramaa Deposit - Tenant",
-    coa_account_code: "21100003 - Kahramaa Utility Deposit (21100)",
-    amount: 1500,
-    status: "Refundable",
-    property_name: "Old Salata - Residence No:23",
-    unit_ref: "AAA - Flat16",
-    tenant_name: "Mr. Hafeez Shaik",
-    lease_start_date: "2025-10-01",
-    lease_end_date: "2026-09-30",
-    monthly_rent: 5600,
-    total_contract_rent: 67200,
-    category: "Kahramaa",
-    created_at: "2025-10-01",
-  },
-  {
-    id: "dep-21100-02",
-    deposit_type: "Qatar Cool Deposit - Tenant",
-    coa_account_code: "21100004 - Qatar Cool Deposit (21100)",
-    amount: 1000,
-    status: "Refundable",
-    property_name: "Old Salata - Residence No:23",
-    unit_ref: "AAA - Flat16",
-    tenant_name: "Mr. Hafeez Shaik",
-    lease_start_date: "2025-10-01",
-    lease_end_date: "2026-09-30",
-    monthly_rent: 5600,
-    total_contract_rent: 67200,
-    category: "Qatar Cool",
-    created_at: "2025-10-01",
-  },
-  {
-    id: "dep-21100-03",
-    deposit_type: "Guarantee Cheque Received",
-    coa_account_code: "21100006 - Guarantee Cheque Liability (21100)",
-    amount: 5600,
-    status: "Refundable",
-    property_name: "Old Salata - Residence No:23",
-    unit_ref: "AAA - Flat16",
-    tenant_name: "Mr. Hafeez Shaik",
-    lease_start_date: "2025-10-01",
-    lease_end_date: "2026-09-30",
-    monthly_rent: 5600,
-    total_contract_rent: 67200,
-    category: "Guarantee Cheque",
-    created_at: "2025-10-01",
-  },
-  {
-    id: "dep-21100-04",
-    deposit_type: "Reservation Advance Deposit",
-    coa_account_code: "21100001 - Reservation Advance (21100)",
-    amount: 2000,
-    status: "Refundable",
-    property_name: "MANSOURA - BLDG06",
-    unit_ref: "Flat14",
-    tenant_name: "Vipind",
-    lease_start_date: "2026-08-26",
-    lease_end_date: "2027-08-25",
-    monthly_rent: 7400,
-    total_contract_rent: 88800,
-    category: "Reservation Advance",
-    created_at: "2026-08-26",
-  },
-  {
-    id: "dep-21100-05",
-    deposit_type: "Service Fee - Tenant",
-    coa_account_code: "21100005 - Service Fee / Key Deposit (21100)",
-    amount: 500,
-    status: "Refundable",
-    property_name: "Neeman's New Building",
-    unit_ref: "Flat 002",
-    tenant_name: "Vishal Sharma",
-    lease_start_date: "2026-08-21",
-    lease_end_date: "2027-08-20",
-    monthly_rent: 4000,
-    total_contract_rent: 48000,
-    category: "Service Fee",
-    created_at: "2026-08-21",
-  },
-  {
-    id: "dep-21100-06",
-    deposit_type: "Unclaimed Liability - Deposit",
-    coa_account_code: "21100002 - Unclaimed Deposit Liability (21100)",
-    amount: 1200,
-    status: "Refundable",
-    property_name: "MANSOURA - BLDG06",
-    unit_ref: "Flat08",
-    tenant_name: "Tariq Mahmood",
-    lease_start_date: "2025-06-01",
-    lease_end_date: "2026-05-31",
-    monthly_rent: 5200,
-    total_contract_rent: 62400,
-    category: "Unclaimed Deposit",
-    created_at: "2025-06-01",
-  },
-];
+const DEFAULT_GL21100_DEPOSITS: DepositRecord[] = [];
 
 // ── Settle & Refund Modal (Compact 2-Column Layout) ───────────────────────────
 function SettleRefundModal({
@@ -279,8 +210,8 @@ function SettleRefundModal({
             disabled={loading || isOverDeduction}
             className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
           >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {loading ? "Settling…" : "Confirm Settlement & Refund"}
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {loading ? "Syncing DB & Settling…" : "Confirm Settlement & Refund"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -291,7 +222,7 @@ function SettleRefundModal({
 // ── Deposits & Guarantees Component ──────────────────────────────────────────
 export function DepositsGuarantees() {
   const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases } = useAppData();
-  const { addJournalEntry, addVoucher, addCashBookEntry } = useFinanceStore();
+  const { addVoucher: addFinanceStoreVoucher, addReceivableInvoice } = useFinanceStore();
   const [deposits, setDeposits] = useState<DepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -303,10 +234,22 @@ export function DepositsGuarantees() {
   const [settleDeductions, setSettleDeductions] = useState("0");
   const [settleLoading, setSettleLoading] = useState(false);
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("deposits-guarantees:live")
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "fin_deposits" },
+        () => { load(false); }
+      )
+      .subscribe();
 
-  async function load() {
-    setLoading(true);
+    return () => { supabase.removeChannel(channel); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function load(showLoading = true) {
+    if (showLoading) setLoading(true);
     try {
       let dbData: any[] = [];
       try {
@@ -320,19 +263,21 @@ export function DepositsGuarantees() {
           const credit = v.credit.toLowerCase();
           return (
             credit.includes("21100") ||
+            credit.includes("21500") ||
             credit.includes("refundable") ||
+            credit.includes("security deposit") ||
+            name.includes("security deposit") ||
             name.includes("kahramaa") ||
             name.includes("qatar cool") ||
             name.includes("reservation") ||
             name.includes("service fee") ||
             name.includes("guarantee cheque") ||
-            name.includes("utility deposit") ||
-            credit.includes("utility deposit")
+            name.includes("utility deposit")
           );
         })
         .map((v, idx) => {
           const lease = leases?.find((l) => l.id === v.leaseId);
-          const isSettled = (v.status as any) === "settled";
+          const isSettled = (v.status as any) === "settled" || (lease && lease.status === "closed");
           return {
             id: v.id || `ctx-dep-${idx}`,
             leaseId: v.leaseId,
@@ -340,9 +285,12 @@ export function DepositsGuarantees() {
             coa_account_code: v.credit || "21100 - Refundable Deposit Liability",
             amount: Number(v.amount) || 0,
             status: isSettled ? "Settled" : "Refundable",
+            deduction_amount: v.settlement_deductions != null ? Number(v.settlement_deductions) : undefined,
+            refund_amount: v.settlement_refund != null ? Number(v.settlement_refund) : undefined,
+            settled_at: v.settlement_date || (lease && (lease as any).actualVacateDate),
             property_name: lease?.property || "Old Salata - Residence No:23",
             unit_ref: lease?.unit || "AAA - Flat16",
-            tenant_name: lease?.tenantName || "Mr. Hafeez Shaik",
+            tenant_name: lease?.tenantName || "Valued Tenant",
             lease_start_date: lease?.startDate || "2025-10-01",
             lease_end_date: lease?.endDate || "2026-09-30",
             monthly_rent: lease?.monthlyRent || 5600,
@@ -352,28 +300,63 @@ export function DepositsGuarantees() {
         });
 
       const allMap = new Map<string, DepositRecord>();
+      const sigMap = new Map<string, DepositRecord>();
 
-      DEFAULT_GL21100_DEPOSITS.forEach(d => allMap.set(String(d.id), { ...d }));
+      DEFAULT_GL21100_DEPOSITS.forEach(d => {
+        allMap.set(String(d.id), { ...d });
+        sigMap.set(getDepositSignature(d), { ...d });
+      });
 
       dbData.forEach(d => {
-        allMap.set(String(d.id), {
+        const isSettledDb = d.status === "Settled" || d.status === "Refunded";
+        const rec: DepositRecord = {
           id: d.id,
+          leaseId: d.lease_id,
           deposit_type: d.deposit_type || "Refundable Deposit (21100)",
           coa_account_code: d.coa_account_code || "21100 - Refundable Security Deposit",
           amount: Number(d.amount) || 0,
-          status: d.status === "Settled" ? "Settled" : "Refundable",
+          status: isSettledDb ? "Settled" : "Refundable",
+          deduction_amount: d.deduction_amount != null ? Number(d.deduction_amount) : undefined,
+          refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
+          settled_at: d.settled_at,
           property_name: d.property_name || "Old Salata - Residence No:23",
           unit_ref: d.unit_ref || "AAA - Flat16",
-          tenant_name: d.tenant_name || "Mr. Hafeez Shaik",
+          tenant_name: d.tenant_name || "Valued Tenant",
           lease_start_date: d.lease_start_date,
           lease_end_date: d.lease_end_date,
           created_at: d.created_at,
-        });
+        };
+        allMap.set(String(d.id), rec);
+        sigMap.set(getDepositSignature(rec), rec);
       });
 
-      contextDeposits.forEach(d => {
-        allMap.set(String(d.id), d);
+      // Merge context vouchers without creating duplicate rows
+      contextDeposits.forEach(cd => {
+        const sig = getDepositSignature(cd);
+        const existing = sigMap.get(sig) || allMap.get(String(cd.id));
+        if (existing) {
+          if (cd.status === "Settled") {
+            existing.status = "Settled";
+            if (cd.deduction_amount != null) existing.deduction_amount = cd.deduction_amount;
+            if (cd.refund_amount != null) existing.refund_amount = cd.refund_amount;
+            if (cd.settled_at) existing.settled_at = cd.settled_at;
+          }
+        } else {
+          allMap.set(String(cd.id), cd);
+          sigMap.set(sig, cd);
+        }
       });
+
+      // Also propagate settlement status from any closed leases
+      for (const d of allMap.values()) {
+        const lease = leases?.find((l) => l.id === d.leaseId || l.tenantName === d.tenant_name || l.unit === d.unit_ref);
+        if (lease && lease.status === "closed") {
+          d.status = "Settled";
+          if (!d.settled_at) {
+            d.settled_at = (lease as any).actualVacateDate || (lease as any).moveOutDate || new Date().toISOString().split("T")[0];
+          }
+        }
+      }
 
       const merged = Array.from(allMap.values());
       merged.sort((a, b) => new Date(b.lease_start_date || b.created_at || "").getTime() - new Date(a.lease_start_date || a.created_at || "").getTime());
@@ -382,7 +365,7 @@ export function DepositsGuarantees() {
     } catch (e: any) {
       toast.error(e.message);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -403,22 +386,34 @@ export function DepositsGuarantees() {
 
       const isStringId = typeof id === "string" && (id.startsWith("v") || id.startsWith("ctx-") || id.startsWith("dep-") || isNaN(Number(id)));
       if (isStringId) {
-        setSharedVouchers(prev => prev.map(v => v.id === id ? { ...v, status: "settled" as any } : v));
-        setDeposits(prev => prev.map(d => d.id === id ? { ...d, status: "Settled" } : d));
+        setSharedVouchers(prev => prev.map(v => v.id === id ? {
+          ...v,
+          status: "settled" as any,
+          settlement_deductions: deductions,
+          settlement_refund: refund,
+          settlement_date: todayStr,
+        } : v));
+        setDeposits(prev => prev.map(d => d.id === id ? {
+          ...d,
+          status: "Settled",
+          deduction_amount: deductions,
+          refund_amount: refund,
+          settled_at: todayStr,
+        } : d));
       } else {
         await settleDeposit(Number(id), deductions, refund);
       }
 
+      // 1. Post Refund Voucher (Debit 21100 Refundable Deposit / Credit 12000 Bank Operating Account)
       if (refund > 0) {
-        // Payment Voucher handles the fund outflow posting to GL (DR 21100 / CR 12000)
-        addVoucher({
-          voucher_no: `VCH-PAY-REF-${Date.now().toString().slice(-4)}`,
+        addFinanceStoreVoucher({
+          voucher_no: `VCH-REF-${String(id).slice(-4)}`,
           voucher_type: "Payment Voucher",
           date: todayStr,
-          name: `Deposit Settlement Refund — ${targetTenant} (${targetDep.deposit_type})`,
-          debit: "Refundable Security Deposit - Tenant",
-          debit_code: "21100006",
-          credit: "Bank Account",
+          name: `Deposit Refund (${targetDep.deposit_type}) – ${targetTenant} (${targetUnit})`,
+          debit: "Refundable Security Deposit",
+          debit_code: "21100",
+          credit: "Bank Operating Account",
           credit_code: "12000",
           amount: refund,
           method: "Bank Transfer",
@@ -428,17 +423,31 @@ export function DepositsGuarantees() {
         });
       }
 
+      // 2. If deductions exist, post Damage/Utility Recovery Invoice & Settlement Offset Voucher
       if (deductions > 0) {
-        addJournalEntry({
-          je_no: `JE-DED-21100-${String(id).replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`,
-          posting_date: todayStr,
-          reference: `DED-21100-${id}`,
-          narration: `Deductions from Refundable Deposit (${targetDep.deposit_type}) — ${targetTenant} (${targetUnit})`,
-          dr_account: "Refundable Security Deposit - Tenant",
-          dr_code: "21100006",
-          cr_account: "Damage Recovery Income",
-          cr_code: "41201001",
+        addReceivableInvoice({
+          invoice_no: `INV-DED-${String(id).slice(-4)}`,
+          date: todayStr,
+          due_date: todayStr,
+          tenant: targetTenant,
+          property: targetProp,
+          unit: targetUnit,
+          stream: `Deposit Deduction / Damage Recovery (${targetDep.deposit_type})`,
           amount: deductions,
+          account_code: "41201",
+        });
+
+        addFinanceStoreVoucher({
+          voucher_no: `VCH-DED-${String(id).slice(-4)}`,
+          voucher_type: "Journal Voucher",
+          date: todayStr,
+          name: `Deposit Deduction Offset – ${targetDep.deposit_type} (${targetTenant} - ${targetUnit})`,
+          debit: "Refundable Security Deposit",
+          debit_code: "21100",
+          credit: "Damage & Utility Recovery",
+          credit_code: "41201",
+          amount: deductions,
+          method: "Deposit Offset",
           property_name: targetProp,
           unit_ref: targetUnit,
           tenant_name: targetTenant,
@@ -460,17 +469,35 @@ export function DepositsGuarantees() {
         depositMode: "Bank Transfer",
         pdcCount: 0,
         pdcs: [],
-        vouchers: [{
-          receiptNo: `PV-REF-${Date.now().toString().slice(-4)}`,
-          name: `${targetDep.deposit_type} Settlement Refund (Gross: ${amount}, Deductions: ${deductions}, Net: ${refund})`,
-          amount: refund,
-          method: "Bank Transfer",
-          debit: "21100 - Refundable Deposit Liability",
-          credit: "12000 - Bank Operating Account",
-        }],
+        vouchers: [
+          {
+            receiptNo: `DEP-GROSS-${Date.now().toString().slice(-4)}`,
+            name: `${targetDep.deposit_type} (Gross Deposit Released)`,
+            amount: amount,
+            method: "Deposit Release",
+            debit: "21100 - Refundable Deposit Liability",
+            credit: "21100 - Refundable Deposit Liability",
+          },
+          ...(deductions > 0 ? [{
+            receiptNo: `DED-OFFSET-${Date.now().toString().slice(-4)}`,
+            name: `Approved Deductions (Damage & Utility Offset) [− QR ${deductions.toLocaleString()}]`,
+            amount: deductions,
+            method: "Deposit Offset",
+            debit: "21100 - Refundable Deposit Liability",
+            credit: "41201 - Damage & Utility Recovery",
+          }] : []),
+          {
+            receiptNo: `PV-REF-${Date.now().toString().slice(-4)}`,
+            name: `Net Settlement Refund Disbursed to Tenant [QR ${refund.toLocaleString()}]`,
+            amount: refund,
+            method: "Bank Transfer",
+            debit: "21100 - Refundable Deposit Liability",
+            credit: "12000 - Bank Operating Account",
+          },
+        ],
         totalCollected: refund,
         cashierName: "Finance Department",
-        notes: `OFFICIAL SETTLEMENT REFUND RECEIPT (${targetDep.deposit_type}): Gross: QR ${amount.toLocaleString()} | Deductions: QR ${deductions.toLocaleString()} | Net Refund: QR ${refund.toLocaleString()}. GL 21100 posted.`,
+        notes: `OFFICIAL SETTLEMENT REFUND RECEIPT (${targetDep.deposit_type}): Gross: QR ${amount.toLocaleString()} | Approved Deductions: QR ${deductions.toLocaleString()} | Net Refund Paid: QR ${refund.toLocaleString()}. Auto-posted to GL 21100, 12000 & 41201.`,
       };
       setReceiptData(refReceipt);
       setReceiptOpen(true);
@@ -486,10 +513,15 @@ export function DepositsGuarantees() {
   }
 
   function handleViewReceipt(dep: DepositRecord) {
+    const isSettled = dep.status === "Settled";
+    const grossAmt = Number(dep.amount) || 0;
+    const deductionAmt = Number(dep.deduction_amount) || 0;
+    const refundAmt = dep.refund_amount != null ? Number(dep.refund_amount) : Math.max(0, grossAmt - deductionAmt);
+
     const details: TenantReceiptDetails = {
-      receiptNo: dep.receipt_no || `REC-DEP-${String(dep.id).slice(-4)}`,
+      receiptNo: dep.receipt_no || (isSettled ? `REC-REF-${String(dep.id).slice(-4)}` : `REC-DEP-${String(dep.id).slice(-4)}`),
       acknowledgementNo: `DEP-ACK-${dep.id}`,
-      date: new Date().toISOString().split("T")[0],
+      date: isSettled && dep.settled_at ? dep.settled_at.split("T")[0] : new Date().toISOString().split("T")[0],
       tenantName: dep.tenant_name && dep.tenant_name !== "—" ? dep.tenant_name : "Mr. Hafeez Shaik",
       propertyName: dep.property_name && dep.property_name !== "—" ? dep.property_name : "Old Salata - Residence No:23",
       unitRef: dep.unit_ref && dep.unit_ref !== "—" ? dep.unit_ref : "AAA - Flat16",
@@ -497,20 +529,51 @@ export function DepositsGuarantees() {
       leaseEndDate: dep.lease_end_date || "2026-09-30",
       monthlyRent: dep.monthly_rent || 5600,
       totalContractRent: dep.total_contract_rent || (dep.monthly_rent ? dep.monthly_rent * 12 : 67200),
-      depositAmount: Number(dep.amount) || 0,
-      depositMode: dep.deposit_type || "Refundable Security Deposit",
+      depositAmount: grossAmt,
+      depositMode: isSettled ? "Bank Transfer (Settlement Refund)" : (dep.deposit_type || "Refundable Security Deposit"),
       pdcCount: 0,
       pdcs: [],
-      vouchers: [{
-        receiptNo: dep.receipt_no || `RV-DEP-${dep.id}`,
-        name: `${dep.deposit_type} Voucher`,
-        amount: Number(dep.amount) || 0,
-        debit: "Cash In Hand / Bank",
-        credit: dep.coa_account_code || "21100 - Refundable Deposit Liability",
-      }],
-      totalCollected: Number(dep.amount) || 0,
+      vouchers: isSettled
+        ? [
+            {
+              receiptNo: `DEP-GROSS-${String(dep.id).slice(-4)}`,
+              name: `${dep.deposit_type} (Gross Deposit Released)`,
+              amount: grossAmt,
+              method: "Deposit Release",
+              debit: "21100 - Refundable Deposit Liability",
+              credit: "21100 - Refundable Deposit Liability",
+            },
+            ...(deductionAmt > 0
+              ? [{
+                  receiptNo: `DED-OFFSET-${String(dep.id).slice(-4)}`,
+                  name: `Approved Deductions (Damage & Utility Offset) [− QR ${deductionAmt.toLocaleString()}]`,
+                  amount: deductionAmt,
+                  method: "Deposit Offset",
+                  debit: "21100 - Refundable Deposit Liability",
+                  credit: "41201 - Damage & Utility Recovery",
+                }]
+              : []),
+            {
+              receiptNo: `PV-REF-${String(dep.id).slice(-4)}`,
+              name: `Net Settlement Refund Disbursed to Tenant [QR ${refundAmt.toLocaleString()}]`,
+              amount: refundAmt,
+              method: "Bank Transfer",
+              debit: "21100 - Refundable Deposit Liability",
+              credit: "12000 - Bank Operating Account",
+            },
+          ]
+        : [{
+            receiptNo: dep.receipt_no || `RV-DEP-${dep.id}`,
+            name: `${dep.deposit_type} Voucher`,
+            amount: grossAmt,
+            debit: "Cash In Hand / Bank",
+            credit: dep.coa_account_code || "21100 - Refundable Deposit Liability",
+          }],
+      totalCollected: isSettled ? refundAmt : grossAmt,
       cashierName: "Finance Department",
-      notes: `Official acknowledgment for ${dep.deposit_type} held under GL ${dep.coa_account_code}. Status: ${dep.status} (By Default Refundable).`,
+      notes: isSettled
+        ? `OFFICIAL SETTLEMENT REFUND RECEIPT (${dep.deposit_type}): Gross: QR ${grossAmt.toLocaleString()} | Approved Deductions: QR ${deductionAmt.toLocaleString()} | Net Refund Paid: QR ${refundAmt.toLocaleString()}. Auto-posted to GL 21100, 12000 & 41201.`
+        : `Official acknowledgment for ${dep.deposit_type} held under GL ${dep.coa_account_code}. Status: ${dep.status} (By Default Refundable).`,
     };
     setReceiptData(details);
     setReceiptOpen(true);
@@ -570,7 +633,7 @@ export function DepositsGuarantees() {
                     )}
                     {paginated.map(d => (
                       <TableRow key={String(d.id)} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-xs text-muted-foreground">{d.lease_start_date || d.created_at || "2026-08-01"}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{d.settled_at ? d.settled_at.split("T")[0] : (d.lease_start_date || d.created_at || "2026-08-01")}</TableCell>
                         <TableCell className="text-xs font-medium">
                           <div className="flex items-center gap-1.5">
                             <span>{d.deposit_type}</span>
@@ -582,7 +645,15 @@ export function DepositsGuarantees() {
                         <TableCell className="text-xs">{d.property_name || "—"}</TableCell>
                         <TableCell className="font-mono text-xs">{d.unit_ref || "—"}</TableCell>
                         <TableCell className="text-xs">{d.tenant_name || "—"}</TableCell>
-                        <TableCell className="text-right font-bold font-mono text-xs">{Number(d.amount).toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-bold font-mono text-xs">
+                          <div>{Number(d.amount).toLocaleString()}</div>
+                          {d.status === "Settled" && d.deduction_amount != null && d.deduction_amount > 0 && (
+                            <div className="text-[10px] text-red-500 font-normal">−{Number(d.deduction_amount).toLocaleString()} ded.</div>
+                          )}
+                          {d.status === "Settled" && d.refund_amount != null && (
+                            <div className="text-[10px] text-emerald-600 font-normal">↳ {Number(d.refund_amount).toLocaleString()} refunded</div>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <Badge
                             variant={d.status === "Settled" ? "outline" : "secondary"}
@@ -592,7 +663,7 @@ export function DepositsGuarantees() {
                                 : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300"
                             }`}
                           >
-                            {d.status === "Settled" ? "Settled" : "Refundable (Default)"}
+                            {d.status === "Settled" ? "Settled / Refunded" : "Refundable (Default)"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right pr-2 space-x-1">

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,12 +6,35 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { getLandingRouteForRole } from "@/lib/console-config";
-import { clearDemoSession, setDemoSession } from "@/lib/demo-auth";
+import { clearDemoSession, setDemoSession, findDemoUserByEmail, getDemoSession } from "@/lib/demo-auth";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Loader2, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
+  beforeLoad: async () => {
+    // If user is already logged in as a demo user or supabase user, forward to their dashboard
+    const demo = getDemoSession();
+    if (demo?.role) {
+      const landing = getLandingRouteForRole(demo.role);
+      throw redirect({ to: landing as any });
+    }
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.session.user.id)
+          .single();
+        if (profile?.role) {
+          throw redirect({ to: getLandingRouteForRole(profile.role) as any });
+        }
+      }
+    } catch (err: any) {
+      if (err && (err instanceof Response || err.isRedirect || err.to || err.statusCode)) throw err;
+    }
+  },
   component: AuthPage,
 });
 
@@ -27,11 +50,31 @@ function AuthPage() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    // Check if user is logging in with one of the configured demo accounts
+    const demoUser = findDemoUserByEmail(trimmedEmail);
+    if (demoUser) {
+      if (demoUser.password === trimmedPassword) {
+        setDemoSession(demoUser.role);
+        toast.success(`Signed in as ${demoUser.fullName}`);
+        const landing = getLandingRouteForRole(demoUser.role);
+        navigate({ to: landing as any });
+        return;
+      } else {
+        toast.error("Invalid login credentials");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       clearDemoSession();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password.trim(),
+        email: trimmedEmail,
+        password: trimmedPassword,
       });
 
       if (error) throw error;
@@ -50,7 +93,7 @@ function AuthPage() {
          return;
       }
         
-      navigate({ to: getLandingRouteForRole(profile?.role) });
+      navigate({ to: getLandingRouteForRole(profile?.role) as any });
     } catch (error: any) {
       toast.error(`Auth Error: ${error.message || JSON.stringify(error)}`);
     } finally {
@@ -85,40 +128,17 @@ function AuthPage() {
     }
   };
 
-  const handleMockSignIn = async (
-    mockRole: "SUPER_ADMIN" | "ADMIN" | "PROP_MGR" | "LEASING" | "FINANCE" | "CASHIER" | "MAINTENANCE" | "GUEST" | "SALES" | "OWNER"
+  const handleMockSignIn = (
+    mockRole: "SUPER_ADMIN" | "ADMIN" | "PROP_MGR" | "LEASING" | "FINANCE" | "CASHIER" | "MAINTENANCE" | "GUEST" | "SALES" | "OWNER" | "TENANT"
   ) => {
     setLoading(true);
     try {
-      clearDemoSession();
-      await supabase.auth.signOut({ scope: "local" });
-
-      switch (mockRole) {
-        case "SUPER_ADMIN":
-        case "ADMIN":
-        case "PROP_MGR":
-        case "LEASING":
-        case "FINANCE":
-        case "CASHIER":
-        case "MAINTENANCE":
-        case "GUEST":
-          setDemoSession(mockRole);
-          navigate({ to: getLandingRouteForRole(mockRole) });
-          break;
-        case "SALES":
-          setDemoSession(mockRole);
-          navigate({ to: "/sales" });
-          break;
-        case "OWNER":
-          setDemoSession(mockRole);
-          navigate({ to: "/owner" });
-          break;
-      }
-
+      setDemoSession(mockRole);
+      const targetRoute = getLandingRouteForRole(mockRole);
       toast.success(`Signed in as demo ${mockRole}`);
+      navigate({ to: targetRoute as any });
     } catch (error: any) {
-      toast.error(error.message ?? "Unable to open demo account");
-    } finally {
+      toast.error(error?.message ?? "Unable to open demo account");
       setLoading(false);
     }
   };
@@ -315,7 +335,7 @@ function AuthPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("GUEST")} className="text-xs">
+                  <Button variant="outline" size="sm" onClick={() => handleMockSignIn("TENANT")} className="text-xs">
                     Tenant Portal
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => handleMockSignIn("PROP_MGR")} className="text-xs">

@@ -1,5 +1,10 @@
+import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { LeasesModule } from "@/components/leases-module";
+import { ModuleSuspense } from "@/components/module-suspense";
+
+const LeasesModule = lazy(() =>
+  import("@/components/leases-module").then((m) => ({ default: m.LeasesModule }))
+);
 
 export const Route = createFileRoute("/prop-mgr/leases")({
   head: () => ({ meta: [{ title: "Leases - Property Manager" }] }),
@@ -7,5 +12,9 @@ export const Route = createFileRoute("/prop-mgr/leases")({
 });
 
 function HostLeases() {
-  return <LeasesModule role="prop-mgr" />;
+  return (
+    <ModuleSuspense>
+      <LeasesModule role="prop-mgr" />
+    </ModuleSuspense>
+  );
 }

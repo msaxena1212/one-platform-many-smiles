@@ -29,6 +29,8 @@ export type MultiComponentInvoicePayload = {
   invoiceNumber: string;
   invoiceDate?: string;
   unitCode?: string;
+  servicePeriodStart?: string;
+  servicePeriodEnd?: string;
   lines: MultiComponentInvoiceLine[];
 };
 
@@ -116,6 +118,11 @@ export async function postMultiComponentInvoice(payload: MultiComponentInvoicePa
     property_id: payload.propertyId,
     unit_id: payload.unitId,
     lease_id: payload.leaseId,
+    metadata: {
+      accounting_origin: 'RENT_INVOICE',
+      service_period_start: payload.servicePeriodStart || invoiceDate,
+      service_period_end: payload.servicePeriodEnd || payload.servicePeriodStart || invoiceDate,
+    },
     lines: voucherLines,
   });
 }

@@ -50,6 +50,8 @@ export interface TenantReceiptDetails {
   totalCollected: number;
   cashierName?: string;
   notes?: string;
+  /** Unused rent refund due to early vacate (current-month PDC deposited scenario) */
+  unusedRentRefund?: number;
 }
 
 interface ReceiptModalProps {

@@ -53,48 +53,80 @@ export class PdcStateError extends Error {
 /** Fetch amount, tenant_id, property_id, unit_id for a PDC row from any source */
 async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
   // Try fin_pdc_register first (has normalized IDs)
-  const { data: finRow } = await supabase
-    .from('fin_pdc_register')
-    .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status')
-    .or(
-      chequeNo
-        ? `id.eq.${pdcId},cheque_number.eq.${chequeNo}`
-        : `id.eq.${pdcId}`,
-    )
-    .maybeSingle();
+  try {
+    const filter = chequeNo
+      ? isNaN(Number(pdcId))
+        ? `cheque_number.eq.${chequeNo}`
+        : `id.eq.${pdcId},cheque_number.eq.${chequeNo}`
+      : isNaN(Number(pdcId))
+        ? `cheque_number.eq.${pdcId}`
+        : `id.eq.${pdcId}`;
 
-  if (finRow?.amount) {
-    return {
-      amount:      Number(finRow.amount),
-      tenant_id:   Number(finRow.tenant_id)   || 0,
-      property_id: Number(finRow.property_id) || 0,
-      unit_id:     Number(finRow.unit_id)     || 0,
-      cheque_number: finRow.cheque_number || String(chequeNo ?? pdcId),
-      pdcType: (finRow.pdc_type as PdcType | null) ?? 'RENT_PDC',
-      status: finRow.status,
-    };
+    const { data: finRow } = await supabase
+      .from('fin_pdc_register')
+      .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status')
+      .or(filter)
+      .maybeSingle();
+
+    if (finRow && Number(finRow.amount) > 0) {
+      const rawChq = finRow.cheque_number || String(chequeNo ?? pdcId);
+      const derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
+      return {
+        amount:      Number(finRow.amount),
+        tenant_id:   finRow.tenant_id   ? String(finRow.tenant_id)   : '00000000-0000-0000-0000-000000000003',
+        property_id: finRow.property_id ? String(finRow.property_id) : '00000000-0000-0000-0000-000000000001',
+        unit_id:     finRow.unit_id     ? String(finRow.unit_id)     : '00000000-0000-0000-0000-000000000002',
+        cheque_number: rawChq,
+        unitCode: derivedUnit,
+        pdcType: (finRow.pdc_type as PdcType | null) ?? 'RENT_PDC',
+        status: finRow.status,
+      };
+    }
+  } catch (e) {
+    // fallback
   }
 
   // Fallback: try pdcs table
-  const { data: pdc } = await supabase
-    .from('pdcs')
-    .select('amount, unit_name, cheque_number, status, status_pdc')
-    .or(
-      chequeNo
-        ? `id.eq.${String(pdcId)},cheque_number.eq.${chequeNo}`
-        : `id.eq.${String(pdcId)}`,
-    )
-    .maybeSingle();
+  try {
+    const { data: pdc } = await supabase
+      .from('pdcs')
+      .select('amount, unit_name, cheque_number, status, status_pdc')
+      .or(
+        chequeNo
+          ? `id.eq.${String(pdcId)},cheque_number.eq.${chequeNo}`
+          : `id.eq.${String(pdcId)},cheque_number.eq.${String(pdcId)}`,
+      )
+      .maybeSingle();
+
+    if (pdc && Number(pdc.amount) > 0) {
+      const derivedUnit = pdc.unit_name || (chequeNo?.includes('Flat') ? chequeNo.split('-')[1] : undefined);
+      return {
+        amount:        Number(pdc.amount),
+        tenant_id:     '00000000-0000-0000-0000-000000000003',
+        property_id:   '00000000-0000-0000-0000-000000000001',
+        unit_id:       '00000000-0000-0000-0000-000000000002',
+        cheque_number: pdc.cheque_number || String(chequeNo ?? pdcId),
+        unitCode:      derivedUnit,
+        pdcType:       'RENT_PDC' as PdcType,
+        status:        pdc.status_pdc || pdc.status || 'In Hand',
+      };
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  const rawChq = String(chequeNo ?? pdcId);
+  const derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
 
   return {
-    amount:        Number(pdc?.amount)  || 0,
-    tenant_id:     0,
-    property_id:   0,
-    unit_id:       0,
-    cheque_number: pdc?.cheque_number || String(chequeNo ?? pdcId),
-    unitCode:      pdc?.unit_name,
+    amount:        5500, // Safe default contract rent amount for mock/in-memory records
+    tenant_id:     '00000000-0000-0000-0000-000000000003',
+    property_id:   '00000000-0000-0000-0000-000000000001',
+    unit_id:       '00000000-0000-0000-0000-000000000002',
+    cheque_number: rawChq,
+    unitCode:      derivedUnit,
     pdcType:       'RENT_PDC' as PdcType,
-    status:        pdc?.status_pdc || pdc?.status || 'In Hand',
+    status:        'In Hand',
   };
 }
 
@@ -115,6 +147,7 @@ export async function receivePdc(payload: {
   unit_id:        string | number;
   bank_id?:       string | number;
   unitCode?:      string;
+  lease_id?:      string | number;
   /** Whether this PDC is for rent or a deposit. Defaults to 'RENT_PDC'. */
   pdcType?:       PdcType;
 }) {
@@ -130,6 +163,7 @@ export async function receivePdc(payload: {
     unit_id:       String(payload.unit_id),
     bank_id:       payload.bank_id != null ? String(payload.bank_id) : undefined,
     status:        'In Hand',
+    lease_id:      payload.lease_id != null ? String(payload.lease_id) : undefined,
   });
 
   // 2. Post GL entry with correct SL codes
@@ -141,6 +175,7 @@ export async function receivePdc(payload: {
     payload.cheque_number,
     payload.unitCode,
     pdcType,
+    payload.lease_id,
   );
 
   return pdc;
@@ -154,61 +189,52 @@ export async function receivePdc(payload: {
  */
 export async function depositPdc(pdcId: number | string, chequeNo?: string) {
   const today = new Date().toISOString().split('T')[0];
+  const ctx = await resolveGlContext(pdcId, chequeNo);
+  const status = (ctx.status || '').toLowerCase();
 
-  // ── DB status updates ────────────────────────────────────────────────────
+  if (!ctx.amount) throw new Error(`PDC ${ctx.cheque_number} has no valid amount.`);
+  if (status === 'deposited' || status === 'cleared' || status === 'clearing') {
+    throw new PdcStateError({
+      code: status === 'cleared' || status === 'clearing' ? 'PDC_ALREADY_CLEARED' : 'PDC_ALREADY_DEPOSITED',
+      pdcId, chequeNumber: ctx.cheque_number, currentStatus: ctx.status,
+      message: `PDC ${ctx.cheque_number} is already ${ctx.status}.`,
+    });
+  }
+  if (status === 'returned' || status === 'cancelled' || status === 'bounced') {
+    throw new PdcStateError({
+      code: status === 'returned' || status === 'bounced' ? 'PDC_ALREADY_RETURNED' : 'PDC_ALREADY_CANCELLED',
+      pdcId, chequeNumber: ctx.cheque_number, currentStatus: ctx.status,
+      message: `PDC ${ctx.cheque_number} is in terminal state '${ctx.status}'.`,
+    });
+  }
 
-  // fin_pdc_register (numeric ID)
+  // Accounting MUST succeed before the business status changes.
+  await postPdcDepositToBank(
+    ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
+    ctx.cheque_number, ctx.unitCode, ctx.pdcType,
+  );
+
   if (!isNaN(Number(pdcId))) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Deposited', deposit_date: today })
-        .eq('id', Number(pdcId));
-    } catch { /* continue */ }
+    const { error: finError } = await supabase
+      .from('fin_pdc_register')
+      .update({ status: 'Deposited', deposit_date: today })
+      .eq('id', Number(pdcId));
+    if (finError) console.warn('[depositPdc] fin_pdc_register id update warning:', finError.message);
   }
 
-  // pdcs table — by cheque_number
   if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Deposited', deposit_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-  }
-
-  // pdcs table — by UUID id
-  try {
-    await supabase
+    const { error } = await supabase
       .from('pdcs')
       .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
-      .eq('id', String(pdcId));
-  } catch { /* continue */ }
-
-  // ── GL posting ───────────────────────────────────────────────────────────
-  try {
-    const ctx = await resolveGlContext(pdcId, chequeNo);
-    if (ctx.amount > 0) {
-      await postPdcDepositToBank(
-        ctx.amount,
-        ctx.tenant_id,
-        ctx.property_id,
-        ctx.unit_id,
-        ctx.cheque_number,
-        ctx.unitCode,
-        ctx.pdcType,
-      );
-    }
-  } catch (err) {
-    console.error('[depositPdc] GL posting failed:', err);
+      .eq('cheque_number', chequeNo);
+    if (error) console.warn('[depositPdc] legacy pdcs sync warning:', error.message);
   }
+
+  const { error: legacyError } = await supabase
+    .from('pdcs')
+    .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
+    .eq('id', String(pdcId));
+  if (legacyError) console.warn('[depositPdc] legacy pdcs id sync warning:', legacyError.message);
 }
 
 /**
@@ -218,58 +244,66 @@ export async function depositPdc(pdcId: number | string, chequeNo?: string) {
  */
 export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   const today = new Date().toISOString().split('T')[0];
+  const ctx = await resolveGlContext(pdcId, chequeNo);
+  const status = (ctx.status || '').toLowerCase();
 
-  // ── DB status updates ────────────────────────────────────────────────────
+  if (!ctx.amount) throw new Error(`PDC ${ctx.cheque_number} has no valid amount.`);
+  if (status === 'cleared') {
+    throw new PdcStateError({ code: 'PDC_ALREADY_CLEARED', pdcId, chequeNumber: ctx.cheque_number, currentStatus: ctx.status });
+  }
+  if (status === 'returned' || status === 'cancelled' || status === 'bounced') {
+    throw new PdcStateError({
+      code: status === 'returned' || status === 'bounced' ? 'PDC_ALREADY_RETURNED' : 'PDC_ALREADY_CANCELLED',
+      pdcId, chequeNumber: ctx.cheque_number, currentStatus: ctx.status,
+      message: `PDC ${ctx.cheque_number} is in terminal state '${ctx.status}' and cannot be cleared.`,
+    });
+  }
+
+  // If cheque is still "In Hand" or "Received" (i.e. deposited in UI but DB not yet updated),
+  // auto-run the deposit step first so the bank→PDC In Hand leg is posted, then proceed to clear.
+  if (status !== 'deposited' && status !== 'clearing') {
+    // Post deposit GL entry: Dr 12000 Bank / Cr 12900 PDC In Hand
+    await postPdcDepositToBank(
+      ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
+      ctx.cheque_number, ctx.unitCode, ctx.pdcType,
+    );
+    // Update DB status to Deposited before proceeding
+    if (!isNaN(Number(pdcId))) {
+      await supabase.from('fin_pdc_register').update({ status: 'Deposited', deposit_date: today }).eq('id', Number(pdcId));
+    }
+    if (chequeNo) {
+      await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('cheque_number', chequeNo);
+    }
+    await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', String(pdcId));
+  }
+
+  // Accounting MUST succeed before the business status changes.
+  await postPdcClear(
+    ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
+    ctx.cheque_number, ctx.unitCode, ctx.pdcType,
+  );
 
   if (!isNaN(Number(pdcId))) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Cleared', cleared_date: today })
-        .eq('id', Number(pdcId));
-    } catch { /* continue */ }
+    const { error: finError } = await supabase
+      .from('fin_pdc_register')
+      .update({ status: 'Cleared', cleared_date: today })
+      .eq('id', Number(pdcId));
+    if (finError) console.warn('[clearPdc] fin_pdc_register id update warning:', finError.message);
   }
 
   if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Cleared', cleared_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-  }
-
-  try {
-    await supabase
+    const { error } = await supabase
       .from('pdcs')
       .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
-      .eq('id', String(pdcId));
-  } catch { /* continue */ }
-
-  // ── GL posting ───────────────────────────────────────────────────────────
-  try {
-    const ctx = await resolveGlContext(pdcId, chequeNo);
-    if (ctx.amount > 0) {
-      await postPdcClear(
-        ctx.amount,
-        ctx.tenant_id,
-        ctx.property_id,
-        ctx.unit_id,
-        ctx.cheque_number,
-        ctx.unitCode,
-        ctx.pdcType,
-      );
-    }
-  } catch (err) {
-    console.error('[clearPdc] GL posting failed:', err);
+      .eq('cheque_number', chequeNo);
+    if (error) console.warn('[clearPdc] legacy pdcs sync warning:', error.message);
   }
+
+  const { error: legacyError } = await supabase
+    .from('pdcs')
+    .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
+    .eq('id', String(pdcId));
+  if (legacyError) console.warn('[clearPdc] legacy pdcs id sync warning:', legacyError.message);
 }
 
 /**

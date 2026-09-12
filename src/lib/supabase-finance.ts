@@ -28,6 +28,14 @@ export type FinVendor = {
   phone?: string;
   tax_number?: string;
   status: 'Active' | 'Inactive';
+  vendor_type?: string;
+  payment_terms?: string;
+  settlement_mode?: string;
+  currency?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  notes?: string;
 };
 
 export type FinCustomer = {
@@ -137,6 +145,7 @@ export type FinPdcRegister = {
   tenant_id?: string;
   property_id?: string;
   unit_id?: string;
+  lease_id?: string;
   status: string;
   deposit_date?: string;
   cleared_date?: string;
@@ -169,6 +178,9 @@ export type FinDeposit = {
   lease_id?: string;
   status: string;
   receipt_ref?: string;
+  deduction_amount?: number;
+  refund_amount?: number;
+  settled_at?: string;
 };
 
 export type FinPayrollSync = {

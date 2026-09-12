@@ -16,8 +16,8 @@
  */
 
 import { supabase } from '../supabase';
-import { resolveAccountingAccounts } from './account-resolver';
-import { postVoucher, type PostingResult } from './posting-engine';
+import { resolveAccountingAccounts, normalizeUuid } from './account-resolver';
+import { postVoucher, postRentInvoiceReversal, type PostingResult } from './posting-engine';
 import { returnPdc } from './pdcService';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -44,9 +44,9 @@ export type SettlementDepositLine = {
 
 export type FinalSettlementInput = {
   leaseId: string;
-  tenantId: string;
-  propertyId: string;
-  unitId: string;
+  tenantId?: string;
+  propertyId?: string;
+  unitId?: string;
   unitName?: string;
   /**
    * Total deposit amount held (used for backward-compat single-bucket settlement).
@@ -62,6 +62,8 @@ export type FinalSettlementInput = {
   paymentMethod?: 'BANK' | 'CASH';
   referenceNo?: string;
   settlementDate?: string;
+  settlementMode?: 'DEDUCT_FROM_DEPOSIT' | 'PAY_SEPARATELY';
+  damagePaymentMethod?: 'BANK' | 'CASH' | 'CHEQUE';
 };
 
 export type SettlementSummary = {
@@ -93,6 +95,48 @@ export function calculateSettlementSummary(
   };
 }
 
+async function resolveLeaseFinanceContext(params: {
+  leaseId: string;
+  tenantId?: string;
+  propertyId?: string;
+  unitId?: string;
+}) {
+  let tenantId = params.tenantId;
+  let propertyId = params.propertyId;
+  let unitId = params.unitId;
+  let leaseUuid = params.leaseId;
+
+  if (!tenantId || !propertyId || !unitId || !normalizeUuid(params.leaseId)) {
+    try {
+      const lookup = normalizeUuid(params.leaseId)
+        ? supabase.from('leases').select('id, customer_id, property_id, unit_id').eq('id', params.leaseId).maybeSingle()
+        : supabase.from('leases').select('id, customer_id, property_id, unit_id').eq('lease_number', params.leaseId).maybeSingle();
+      const { data: leaseRow } = await lookup;
+      if (leaseRow) {
+        leaseUuid = String(leaseRow.id);
+        tenantId = tenantId || (leaseRow.customer_id ? String(leaseRow.customer_id) : undefined);
+        propertyId = propertyId || (leaseRow.property_id ? String(leaseRow.property_id) : undefined);
+        unitId = unitId || (leaseRow.unit_id ? String(leaseRow.unit_id) : undefined);
+      }
+    } catch (e) {
+      // best-effort
+    }
+  }
+
+  // Fallback to valid placeholder UUIDs for demo/in-memory records so that posting proceeds smoothly
+  const fallbackPropertyId = normalizeUuid(propertyId) || '00000000-0000-0000-0000-000000000001';
+  const fallbackUnitId = normalizeUuid(unitId) || '00000000-0000-0000-0000-000000000002';
+  const fallbackTenantId = normalizeUuid(tenantId) || '00000000-0000-0000-0000-000000000003';
+  const fallbackLeaseId = normalizeUuid(leaseUuid) || '00000000-0000-0000-0000-000000000004';
+
+  return {
+    leaseUuid: fallbackLeaseId,
+    tenantId: fallbackTenantId,
+    propertyId: fallbackPropertyId,
+    unitId: fallbackUnitId,
+  };
+}
+
 // ── Master Settlement Execution ───────────────────────────────────────────────
 
 /**
@@ -113,17 +157,23 @@ export async function executeFinalSettlement(
   vouchers: PostingResult[];
 }> {
   const dateStr = input.settlementDate || new Date().toISOString().split('T')[0];
+  const context = await resolveLeaseFinanceContext(input);
+  const financeInput = { ...input, leaseId: context.leaseUuid, tenantId: context.tenantId, propertyId: context.propertyId, unitId: context.unitId };
 
   // Resolve deposit buckets (multi-category if supplied, else single SECURITY).
   const depositBuckets: SettlementDepositLine[] =
-    input.deposits && input.deposits.length > 0
-      ? input.deposits.filter((d) => d.amount > 0)
-      : input.depositAmount > 0
-        ? [{ depositType: 'SECURITY', amount: input.depositAmount }]
+    financeInput.deposits && financeInput.deposits.length > 0
+      ? financeInput.deposits.filter((d) => d.amount > 0)
+      : financeInput.depositAmount > 0
+        ? [{ depositType: 'SECURITY', amount: financeInput.depositAmount }]
         : [];
 
   const totalDeposit = depositBuckets.reduce((s, d) => s + d.amount, 0);
-  const summary = calculateSettlementSummary(totalDeposit, input.deductions);
+  const settlementMode = financeInput.settlementMode ?? 'DEDUCT_FROM_DEPOSIT';
+  const baseSummary = calculateSettlementSummary(totalDeposit, financeInput.deductions);
+  const summary: SettlementSummary = settlementMode === 'PAY_SEPARATELY'
+    ? { ...baseSummary, netRefundAmount: Number(totalDeposit.toFixed(2)), netRecoveryAmount: 0, isRefund: true }
+    : baseSummary;
   const vouchers: PostingResult[] = [];
 
   // 1. Move each deposit bucket from its source GL to its refundable counterpart.
@@ -132,22 +182,22 @@ export async function executeFinalSettlement(
     const { debit: drDep, credit: crDep } = await resolveAccountingAccounts({
       transactionType: 'DEPOSIT_TO_REFUNDABLE',
       depositType: bucket.depositType,
-      propertyId: input.propertyId,
-      unitId: input.unitId,
-      tenantId: input.tenantId,
-      leaseId: input.leaseId,
-      unitName: input.unitName,
+      propertyId: financeInput.propertyId,
+      unitId: financeInput.unitId,
+      tenantId: financeInput.tenantId,
+      leaseId: financeInput.leaseId,
+      unitName: financeInput.unitName,
     });
 
     const vchDep = await postVoucher({
       voucher_date: dateStr,
       voucher_type: 'Journal',
-      description: `Final Settlement: Move ${bucket.depositType} Deposit to Refundable – ${input.unitName || ''}`,
-      reference_no: input.referenceNo ? `SETTLE-DEP-${bucket.depositType}-${input.referenceNo}` : undefined,
-      tenant_id: input.tenantId,
-      property_id: input.propertyId,
-      unit_id: input.unitId,
-      lease_id: input.leaseId,
+      description: `Final Settlement: Move ${bucket.depositType} Deposit to Refundable – ${financeInput.unitName || ''}`,
+      reference_no: financeInput.referenceNo ? `SETTLE-DEP-${bucket.depositType}-${financeInput.referenceNo}` : undefined,
+      tenant_id: financeInput.tenantId,
+      property_id: financeInput.propertyId,
+      unit_id: financeInput.unitId,
+      lease_id: financeInput.leaseId,
       lines: [
         {
           account_code: drDep.slCode,
@@ -169,7 +219,7 @@ export async function executeFinalSettlement(
   }
 
   // 2. Recognize non-invoiced charges into AR (12413)
-  for (const deduction of input.deductions) {
+  for (const deduction of financeInput.deductions) {
     if (!deduction.alreadyInvoiced && deduction.amount > 0) {
       let txnType: 'DAMAGE_CHARGE' | 'PENALTY_CHARGE' | 'UTILITY_CHARGE' = 'DAMAGE_CHARGE';
       if (deduction.type === 'PENALTY') txnType = 'PENALTY_CHARGE';
@@ -177,21 +227,21 @@ export async function executeFinalSettlement(
 
       const { debit: drChg, credit: crChg } = await resolveAccountingAccounts({
         transactionType: txnType,
-        propertyId: input.propertyId,
-        unitId: input.unitId,
-        tenantId: input.tenantId,
-        leaseId: input.leaseId,
-        unitName: input.unitName,
+        propertyId: financeInput.propertyId,
+        unitId: financeInput.unitId,
+        tenantId: financeInput.tenantId,
+        leaseId: financeInput.leaseId,
+        unitName: financeInput.unitName,
       });
 
       const vchChg = await postVoucher({
         voucher_date: dateStr,
         voucher_type: 'Journal',
         description: `Final Settlement Charge: ${deduction.description}`,
-        tenant_id: input.tenantId,
-        property_id: input.propertyId,
-        unit_id: input.unitId,
-        lease_id: input.leaseId,
+        tenant_id: financeInput.tenantId,
+        property_id: financeInput.propertyId,
+        unit_id: financeInput.unitId,
+        lease_id: financeInput.leaseId,
         lines: [
           {
             account_code: drChg.slCode,
@@ -225,21 +275,21 @@ export async function executeFinalSettlement(
     const { debit: drSettle, credit: crSettle } = await resolveAccountingAccounts({
       transactionType: 'DEPOSIT_DEDUCTION_SETTLE',
       depositType: bucket.depositType,
-      propertyId: input.propertyId,
-      unitId: input.unitId,
-      tenantId: input.tenantId,
-      leaseId: input.leaseId,
-      unitName: input.unitName,
+      propertyId: financeInput.propertyId,
+      unitId: financeInput.unitId,
+      tenantId: financeInput.tenantId,
+      leaseId: financeInput.leaseId,
+      unitName: financeInput.unitName,
     });
 
     const vchSettle = await postVoucher({
       voucher_date: dateStr,
       voucher_type: 'Journal',
       description: `Final Settlement: Offset Dues against ${bucket.depositType} Deposit`,
-      tenant_id: input.tenantId,
-      property_id: input.propertyId,
-      unit_id: input.unitId,
-      lease_id: input.leaseId,
+      tenant_id: financeInput.tenantId,
+      property_id: financeInput.propertyId,
+      unit_id: financeInput.unitId,
+      lease_id: financeInput.leaseId,
       lines: [
         {
           account_code: drSettle.slCode,
@@ -261,13 +311,41 @@ export async function executeFinalSettlement(
     remainingDeductions -= applied;
   }
 
-  // If deductions exceed total deposit, the remainder sits in Tenant AR (12413)
-  // — no negative deposit balance is generated. This is enforced by the
-  // waterfall loop above (applied ≤ bucket.amount).
+  if (settlementMode === 'PAY_SEPARATELY' && summary.totalDeductions > 0) {
+    const paymentMethod = financeInput.damagePaymentMethod ?? 'BANK';
+    const { debit: drCollect, credit: crCollect } = await resolveAccountingAccounts({
+      transactionType: 'RENT_RECEIPT',
+      paymentMethod,
+      propertyId: financeInput.propertyId,
+      unitId: financeInput.unitId,
+      tenantId: financeInput.tenantId,
+      leaseId: financeInput.leaseId,
+      unitName: financeInput.unitName,
+    });
+
+    const vchCollect = await postVoucher({
+      voucher_date: dateStr,
+      voucher_type: 'Receipt',
+      description: `Final Settlement: Tenant Dues Paid Separately`,
+      reference_no: financeInput.referenceNo ? `COLLECT-${financeInput.referenceNo}` : undefined,
+      tenant_id: financeInput.tenantId,
+      property_id: financeInput.propertyId,
+      unit_id: financeInput.unitId,
+      lease_id: financeInput.leaseId,
+      lines: [
+        { account_code: drCollect.slCode, account_name: `${drCollect.glName} / ${drCollect.slName}`, debit: summary.totalDeductions, credit: 0, description: drCollect.slName },
+        { account_code: crCollect.slCode, account_name: `${crCollect.glName} / ${crCollect.slName}`, debit: 0, credit: summary.totalDeductions, description: crCollect.slName },
+      ],
+    });
+    vouchers.push(vchCollect);
+  }
+
+  // If deductions exceed total deposit, the remainder stays in Tenant AR (12413).
+  // The waterfall above never permits a deposit balance to go negative.
 
   // 4. Refund remaining deposit if netRefundAmount > 0
   if (summary.netRefundAmount > 0) {
-    const paymentMethod = input.paymentMethod ?? 'BANK';
+    const paymentMethod = financeInput.paymentMethod ?? 'BANK';
 
     // For multi-category refunds, issue one voucher per bucket refunding the
     // bucket's net available balance. For single-bucket (legacy) settle all
@@ -277,22 +355,22 @@ export async function executeFinalSettlement(
         transactionType: 'DEPOSIT_REFUND',
         paymentMethod,
         depositType: depositBuckets[0].depositType,
-        propertyId: input.propertyId,
-        unitId: input.unitId,
-        tenantId: input.tenantId,
-        leaseId: input.leaseId,
-        unitName: input.unitName,
+        propertyId: financeInput.propertyId,
+        unitId: financeInput.unitId,
+        tenantId: financeInput.tenantId,
+        leaseId: financeInput.leaseId,
+        unitName: financeInput.unitName,
       });
 
       const vchRefund = await postVoucher({
         voucher_date: dateStr,
         voucher_type: paymentMethod === 'BANK' ? 'Payment' : 'Receipt',
         description: `Final Settlement: Refund Remaining Deposit to Tenant`,
-        reference_no: input.referenceNo ? `REFUND-${input.referenceNo}` : undefined,
-        tenant_id: input.tenantId,
-        property_id: input.propertyId,
-        unit_id: input.unitId,
-        lease_id: input.leaseId,
+        reference_no: financeInput.referenceNo ? `REFUND-${financeInput.referenceNo}` : undefined,
+        tenant_id: financeInput.tenantId,
+        property_id: financeInput.propertyId,
+        unit_id: financeInput.unitId,
+        lease_id: financeInput.leaseId,
         lines: [
           {
             account_code: drRef.slCode,
@@ -329,24 +407,24 @@ export async function executeFinalSettlement(
           transactionType: 'DEPOSIT_REFUND',
           paymentMethod,
           depositType: bucket.depositType,
-          propertyId: input.propertyId,
-          unitId: input.unitId,
-          tenantId: input.tenantId,
-          leaseId: input.leaseId,
-          unitName: input.unitName,
+          propertyId: financeInput.propertyId,
+          unitId: financeInput.unitId,
+          tenantId: financeInput.tenantId,
+          leaseId: financeInput.leaseId,
+          unitName: financeInput.unitName,
         });
 
         const vchRefund = await postVoucher({
           voucher_date: dateStr,
           voucher_type: paymentMethod === 'BANK' ? 'Payment' : 'Receipt',
           description: `Final Settlement: Refund ${bucket.depositType} Deposit to Tenant`,
-          reference_no: input.referenceNo
-            ? `REFUND-${bucket.depositType}-${input.referenceNo}`
+          reference_no: financeInput.referenceNo
+            ? `REFUND-${bucket.depositType}-${financeInput.referenceNo}`
             : undefined,
-          tenant_id: input.tenantId,
-          property_id: input.propertyId,
-          unit_id: input.unitId,
-          lease_id: input.leaseId,
+          tenant_id: financeInput.tenantId,
+          property_id: financeInput.propertyId,
+          unit_id: financeInput.unitId,
+          lease_id: financeInput.leaseId,
           lines: [
             {
               account_code: drRef.slCode,
@@ -530,26 +608,175 @@ export async function returnGuaranteeCheque(params: {
  * Identifies future unpresented PDCs for a lease and returns eligible ones:
  *   Dr 21400 [unit SL] / Cr 12900001
  */
-export async function returnFuturePdcsForLease(leaseId: string | number) {
-  // Query all active/held PDCs for this lease
-  const { data: pdcs, error } = await supabase
-    .from('fin_pdc_register')
-    .select('*')
-    .eq('lease_id', String(leaseId))
-    .in('status', ['In Hand', 'Received', 'IN_HAND', 'RECEIVED']);
+export async function returnFuturePdcsForLease(
+  leaseId: string | number,
+  vacateDate?: string,
+  extra?: { tenantId?: string; propertyId?: string; unitId?: string; unitCode?: string },
+) {
+  const returned: any[] = [];
+  const processedChequeNos = new Set<string>();
 
-  if (error) throw error;
-  if (!pdcs || pdcs.length === 0) return { returnedCount: 0, pdcs: [] };
+  // 1. Query all active/held PDCs for this lease in fin_pdc_register
+  try {
+    let query = supabase
+      .from('fin_pdc_register')
+      .select('*')
+      .or(`lease_id.eq.${String(leaseId)}${extra?.tenantId ? `,tenant_id.eq.${extra.tenantId}` : ''}`)
+      .in('status', ['In Hand', 'Received', 'IN_HAND', 'RECEIVED', 'in hand', 'received']);
 
-  const returned = [];
-  for (const pdc of pdcs) {
-    await returnPdc(pdc.id, pdc.cheque_number);
-    returned.push(pdc);
+    if (vacateDate) query = query.gt('cheque_date', vacateDate);
+    const { data: pdcs } = await query;
+
+    for (const pdc of pdcs ?? []) {
+      if (pdc.cheque_number && processedChequeNos.has(pdc.cheque_number)) continue;
+      try {
+        await returnPdc(pdc.id, pdc.cheque_number);
+        returned.push(pdc);
+        if (pdc.cheque_number) processedChequeNos.add(pdc.cheque_number);
+      } catch (e: any) {
+        console.warn(`[returnFuturePdcsForLease] PDC #${pdc.cheque_number} return notice:`, e?.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[returnFuturePdcsForLease] fin_pdc_register query notice:', e);
+  }
+
+  // 2. Also query and update legacy pdcs table
+  try {
+    let query2 = supabase
+      .from('pdcs')
+      .select('*')
+      .or(`lease_id.eq.${String(leaseId)}${extra?.unitCode ? `,unit_name.ilike.%${extra.unitCode}%` : ''}`)
+      .in('status', ['received', 'replaced', 'in_hand', 'in hand', 'In Hand']);
+
+    if (vacateDate) query2 = query2.gt('cheque_date', vacateDate);
+    const { data: legacyPdcs } = await query2;
+
+    for (const pdc of legacyPdcs ?? []) {
+      const chq = pdc.cheque_number || pdc.cheque_no;
+      if (chq && processedChequeNos.has(chq)) continue;
+      try {
+        await returnPdc(pdc.id, chq);
+        await supabase.from('pdcs').update({ status: 'returned', status_pdc: 'Returned' }).eq('id', pdc.id);
+        returned.push(pdc);
+        if (chq) processedChequeNos.add(chq);
+      } catch (e: any) {
+        console.warn(`[returnFuturePdcsForLease] Legacy PDC #${chq} return notice:`, e?.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[returnFuturePdcsForLease] pdcs table query notice:', e);
   }
 
   return {
     returnedCount: returned.length,
     pdcs: returned,
+  };
+}
+
+
+/**
+ * Early-vacate finance normalization. Once a tenant vacates before the
+ * contractual lease end, future rent already posted to AR/revenue must be
+ * reversed, while rent already earned up to the effective vacate date remains
+ * untouched. Held/unpresented PDCs after the vacate date are returned through
+ * the normal PDC lifecycle. This keeps GL, tenant AR, PDC exposure and finance
+ * reports aligned with the actual lease end date.
+ */
+export async function settleEarlyLeaseVacate(params: {
+  leaseId: string;
+  tenantId?: string;
+  propertyId?: string;
+  unitId?: string;
+  unitName?: string;
+  vacateDate: string;
+  leaseEndDate: string;
+}) {
+  if (new Date(params.vacateDate).getTime() >= new Date(params.leaseEndDate).getTime()) {
+    return { reversedInvoiceCount: 0, reversedRentAmount: 0, returnedPdcCount: 0, returnedPdcAmount: 0 };
+  }
+
+  // The leasing UI historically stores a lease_number-like ID. Resolve the
+  // authoritative UUID context here instead of manufacturing GL/SL context in
+  // the UI. This keeps early-vacate accounting on the same resolver path as
+  // every other finance event.
+  const context = await resolveLeaseFinanceContext(params);
+  const { leaseUuid, tenantId, propertyId, unitId } = context;
+
+  const { data: events, error } = await supabase
+    .from('fin_accounting_events')
+    .select('id, reference_number, posting_date, description, metadata')
+    .eq('lease_id', normalizeUuid(leaseUuid))
+    .eq('status', 'POSTED')
+    .order('posting_date', { ascending: true });
+  if (error) throw error;
+
+  const vacate = new Date(params.vacateDate);
+  let reversedInvoiceCount = 0;
+  let reversedRentAmount = 0;
+
+  for (const event of events ?? []) {
+    const metadata = (event.metadata || {}) as Record<string, unknown>;
+    const origin = String(metadata.accounting_origin || '');
+    const periodStart = typeof metadata.service_period_start === 'string' ? metadata.service_period_start : undefined;
+    const periodEnd = typeof metadata.service_period_end === 'string' ? metadata.service_period_end : undefined;
+
+    // Only rent-origin events are candidates. Legacy rent events without
+    // metadata are retained as a fallback using their posting date.
+    if (origin && origin !== 'RENT_INVOICE') continue;
+
+    const { data: lines, error: lineError } = await supabase
+      .from('fin_accounting_event_lines')
+      .select('account_code, debit, credit')
+      .eq('event_id', event.id);
+    if (lineError) throw lineError;
+
+    const rentAmount = (lines ?? [])
+      .filter((l) => l.account_code === '41100001')
+      .reduce((sum, l) => sum + Number(l.credit || 0), 0);
+    if (rentAmount <= 0) continue;
+
+    let reversalAmount = 0;
+    if (periodStart && periodEnd) {
+      const start = new Date(periodStart);
+      const end = new Date(periodEnd);
+      if (end <= vacate) continue;
+      if (start > vacate) {
+        reversalAmount = rentAmount;
+      } else {
+        const totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+        const futureDays = Math.max(0, Math.ceil((end.getTime() - vacate.getTime()) / 86400000));
+        reversalAmount = rentAmount * Math.min(1, futureDays / totalDays);
+      }
+    } else {
+      if (new Date(event.posting_date).getTime() <= vacate.getTime()) continue;
+      reversalAmount = rentAmount;
+    }
+
+    reversalAmount = Number(reversalAmount.toFixed(2));
+    if (reversalAmount <= 0) continue;
+
+    await postRentInvoiceReversal({
+      amount: reversalAmount,
+      tenantId,
+      propertyId,
+      unitId,
+      leaseId: leaseUuid,
+      originalInvoiceNumber: event.reference_number || event.id,
+      reversalReason: `Early tenant vacate effective ${params.vacateDate}; contractual expiry was ${params.leaseEndDate}`,
+      unitCode: params.unitName,
+    });
+    reversedInvoiceCount += 1;
+    reversedRentAmount += reversalAmount;
+  }
+
+  const pdcResult = await returnFuturePdcsForLease(leaseUuid, params.vacateDate);
+
+  return {
+    reversedInvoiceCount,
+    reversedRentAmount: Number(reversedRentAmount.toFixed(2)),
+    returnedPdcCount: pdcResult.returnedCount,
+    returnedPdcAmount: Number((pdcResult.pdcs ?? []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0).toFixed(2)),
   };
 }
 

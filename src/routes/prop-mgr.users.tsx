@@ -1,5 +1,10 @@
+import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { UsersModule } from "@/components/users-module";
+import { ModuleSuspense } from "@/components/module-suspense";
+
+const UsersModule = lazy(() =>
+  import("@/components/users-module").then((m) => ({ default: m.UsersModule }))
+);
 
 export const Route = createFileRoute("/prop-mgr/users")({
   head: () => ({ meta: [{ title: "Users - Property Manager" }] }),
@@ -7,5 +12,9 @@ export const Route = createFileRoute("/prop-mgr/users")({
 });
 
 function HostUsers() {
-  return <UsersModule role="prop-mgr" />;
+  return (
+    <ModuleSuspense>
+      <UsersModule role="prop-mgr" />
+    </ModuleSuspense>
+  );
 }

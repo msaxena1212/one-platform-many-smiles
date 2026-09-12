@@ -1,5 +1,10 @@
+import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { HrmsModule } from "@/components/hrms-module";
+import { ModuleSuspense } from "@/components/module-suspense";
+
+const HrmsModule = lazy(() =>
+  import("@/components/hrms-module").then((m) => ({ default: m.HrmsModule }))
+);
 
 export const Route = createFileRoute("/admin/hrms")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -10,5 +15,9 @@ export const Route = createFileRoute("/admin/hrms")({
 });
 
 function AdminHRMSPage() {
-  return <HrmsModule role="admin" />;
+  return (
+    <ModuleSuspense>
+      <HrmsModule role="admin" />
+    </ModuleSuspense>
+  );
 }

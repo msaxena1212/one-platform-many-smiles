@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Scale, Plus, CheckCircle2, Receipt, Landmark, Banknote } from "lucide-react";
+import { Scale, Plus, CheckCircle2, Receipt, Landmark, Banknote, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
@@ -20,6 +20,7 @@ export function ReceivablesLegal() {
   const { leases } = useAppData();
   const { legalReceivables, addLegalEscalation, recoverLegalReceivable } = useFinanceStore();
   const [page, setPage] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Receipt Modal State
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -62,26 +63,32 @@ export function ReceivablesLegal() {
     }
   }
 
-  function submitEscalate() {
+  async function submitEscalate() {
     if (!escalateForm.tenant_name || !escalateForm.amount) {
       toast.error("Please enter tenant name and amount");
       return;
     }
     const amt = parseFloat(escalateForm.amount) || 0;
-
-    addLegalEscalation({
-      legal_case_id: escalateForm.legal_case_id,
-      tenant_name: escalateForm.tenant_name,
-      property_name: escalateForm.property_name || "Old Salata - Residence No:23",
-      unit_ref: escalateForm.unit_ref || "Unit",
-      original_amount: amt,
-      outstanding_balance: amt,
-      escalation_date: new Date().toISOString().split("T")[0],
-      reason: escalateForm.reason,
-      status: escalateForm.status,
-    });
-
-    setOpenEscalate(false);
+    setIsSubmitting(true);
+    try {
+      addLegalEscalation({
+        legal_case_id: escalateForm.legal_case_id,
+        tenant_name: escalateForm.tenant_name,
+        property_name: escalateForm.property_name || "Old Salata - Residence No:23",
+        unit_ref: escalateForm.unit_ref || "Unit",
+        original_amount: amt,
+        outstanding_balance: amt,
+        escalation_date: new Date().toISOString().split("T")[0],
+        reason: escalateForm.reason,
+        status: escalateForm.status,
+      });
+      await new Promise(r => setTimeout(r, 300));
+      setOpenEscalate(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to escalate receivable");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function openRecoveryModal(rec: any) {
@@ -99,7 +106,7 @@ export function ReceivablesLegal() {
     setOpenRecover(true);
   }
 
-  function submitRecover() {
+  async function submitRecover() {
     if (!recoverTarget) return;
     const amt = parseFloat(recoverAmount) || 0;
     if (amt <= 0 || amt > recoverTarget.outstanding_balance) {
@@ -114,68 +121,76 @@ export function ReceivablesLegal() {
     const tenantName = recoverTarget.tenant_name || "Valued Tenant";
     const effectiveRef = paymentMethod === "Bank Transfer" ? (transactionNo || bankRef) : paymentMethod === "Cheque" ? (chequeNo || bankRef) : bankRef;
 
-    // 1. Post to finance-store with complete mode of payment, custom dates, and GL/SL mapping
-    recoverLegalReceivable(
-      caseId,
-      amt,
-      effectiveRef,
-      paymentMethod,
-      propName,
-      unitName,
-      tenantName,
-      {
+    setIsSubmitting(true);
+    try {
+      // 1. Post to finance-store with complete mode of payment, custom dates, and GL/SL mapping
+      recoverLegalReceivable(
+        caseId,
+        amt,
+        effectiveRef,
+        paymentMethod,
+        propName,
+        unitName,
+        tenantName,
+        {
+          date: todayStr,
+          transactionNo: transactionNo || effectiveRef,
+          chequeNo: chequeNo || effectiveRef,
+          chequeBank,
+          maturityDate: chequeMaturityDate,
+        }
+      );
+
+      // 2. Generate Official Receipt for the tenant
+      const drCode = paymentMethod === "Cash" ? "12100" : "12000";
+      const drAccount = paymentMethod === "Cash"
+        ? "12100 - Cash in Hand / Till"
+        : paymentMethod === "Cheque"
+        ? `12000 - Bank Operating Account (${chequeBank})`
+        : "12000 - Bank Operating Account";
+
+      const legalReceipt: TenantReceiptDetails = {
+        receiptNo: effectiveRef || `REC-LGL-${Date.now().toString().slice(-4)}`,
+        acknowledgementNo: `ACK-LGL-${caseId}`,
         date: todayStr,
-        transactionNo: transactionNo || effectiveRef,
-        chequeNo: chequeNo || effectiveRef,
-        chequeBank,
-        maturityDate: chequeMaturityDate,
-      }
-    );
+        tenantName: tenantName,
+        propertyName: propName,
+        unitRef: unitName,
+        leaseStartDate: todayStr,
+        leaseEndDate: todayStr,
+        monthlyRent: amt,
+        totalContractRent: recoverTarget.original_amount || amt,
+        depositAmount: 0,
+        depositMode: paymentMethod,
+        pdcCount: paymentMethod === "Cheque" ? 1 : 0,
+        pdcs: paymentMethod === "Cheque" ? [{
+          chequeNo: chequeNo || effectiveRef,
+          bank: chequeBank,
+          date: chequeMaturityDate,
+          amount: amt,
+        }] : [],
+        vouchers: [{
+          receiptNo: `RV-LGL-${Date.now().toString().slice(-4)}`,
+          name: `Legal Recovery Settlement — Case #${caseId} (${paymentMethod})`,
+          amount: amt,
+          method: paymentMethod,
+          debit: drAccount,
+          credit: "12411 - Legal Receivables (Defaulted)",
+        }],
+        totalCollected: amt,
+        cashierName: "Legal & Collections Department",
+        notes: `OFFICIAL SETTLEMENT & RECOVERY RECEIPT: Received QAR ${amt.toLocaleString()} via ${paymentMethod} (Ref/Tx: ${effectiveRef}${paymentMethod === 'Cheque' ? ` | Bank: ${chequeBank} | Maturity: ${chequeMaturityDate}` : ''}) against Legal Case #${caseId}. Status: ${amt >= recoverTarget.outstanding_balance ? 'Fully Recovered' : 'Partially Recovered'}. General Ledger & Receivables updated.`,
+      };
 
-    // 2. Generate Official Receipt for the tenant
-    const drCode = paymentMethod === "Cash" ? "12100" : "12000";
-    const drAccount = paymentMethod === "Cash"
-      ? "12100 - Cash in Hand / Till"
-      : paymentMethod === "Cheque"
-      ? `12000 - Bank Operating Account (${chequeBank})`
-      : "12000 - Bank Operating Account";
-
-    const legalReceipt: TenantReceiptDetails = {
-      receiptNo: effectiveRef || `REC-LGL-${Date.now().toString().slice(-4)}`,
-      acknowledgementNo: `ACK-LGL-${caseId}`,
-      date: todayStr,
-      tenantName: tenantName,
-      propertyName: propName,
-      unitRef: unitName,
-      leaseStartDate: todayStr,
-      leaseEndDate: todayStr,
-      monthlyRent: amt,
-      totalContractRent: recoverTarget.original_amount || amt,
-      depositAmount: 0,
-      depositMode: paymentMethod,
-      pdcCount: paymentMethod === "Cheque" ? 1 : 0,
-      pdcs: paymentMethod === "Cheque" ? [{
-        chequeNo: chequeNo || effectiveRef,
-        bank: chequeBank,
-        date: chequeMaturityDate,
-        amount: amt,
-      }] : [],
-      vouchers: [{
-        receiptNo: `RV-LGL-${Date.now().toString().slice(-4)}`,
-        name: `Legal Recovery Settlement — Case #${caseId} (${paymentMethod})`,
-        amount: amt,
-        method: paymentMethod,
-        debit: drAccount,
-        credit: "12411 - Legal Receivables (Defaulted)",
-      }],
-      totalCollected: amt,
-      cashierName: "Legal & Collections Department",
-      notes: `OFFICIAL SETTLEMENT & RECOVERY RECEIPT: Received QAR ${amt.toLocaleString()} via ${paymentMethod} (Ref/Tx: ${effectiveRef}${paymentMethod === 'Cheque' ? ` | Bank: ${chequeBank} | Maturity: ${chequeMaturityDate}` : ''}) against Legal Case #${caseId}. Status: ${amt >= recoverTarget.outstanding_balance ? 'Fully Recovered' : 'Partially Recovered'}. General Ledger & Receivables updated.`,
-    };
-
-    setReceiptData(legalReceipt);
-    setReceiptOpen(true);
-    setOpenRecover(false);
+      await new Promise(r => setTimeout(r, 350));
+      setReceiptData(legalReceipt);
+      setReceiptOpen(true);
+      setOpenRecover(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to post recovery");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleViewReceipt(rec: any) {
@@ -450,9 +465,10 @@ export function ReceivablesLegal() {
             </div>
           </div>
           <DialogFooter className="border-t pt-3">
-            <Button variant="outline" onClick={() => setOpenEscalate(false)}>Cancel</Button>
-            <Button onClick={submitEscalate} className="bg-orange-600 hover:bg-orange-700">
-              Confirm & Post Escalation
+            <Button variant="outline" onClick={() => setOpenEscalate(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button onClick={submitEscalate} disabled={isSubmitting} className="bg-orange-600 hover:bg-orange-700 gap-1.5">
+              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {isSubmitting ? "Syncing DB & Escalating..." : "Confirm & Post Escalation"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -644,9 +660,10 @@ export function ReceivablesLegal() {
             </div>
           )}
           <DialogFooter className="border-t pt-3">
-            <Button variant="outline" onClick={() => setOpenRecover(false)}>Cancel</Button>
-            <Button onClick={submitRecover} className="bg-emerald-600 hover:bg-emerald-700">
-              Confirm Receipt & Post Journal
+            <Button variant="outline" onClick={() => setOpenRecover(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button onClick={submitRecover} disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5">
+              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {isSubmitting ? "Syncing DB & Recovering..." : "Confirm Receipt & Post Journal"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { createAccountingEvent } from "@/lib/finance/accounting-event-engine";
 
 // ── Types ─────────────────────────────────────────────────────────────
 export interface HrmsCompany {
@@ -165,6 +166,8 @@ export interface HrmsExpenseClaim {
   expense_date: string;
   amount: number;
   title: string;
+  category?: string;
+  claim_number?: string;
   description?: string;
   receipt_url?: string;
   status: 'Pending' | 'Approved' | 'Reimbursed' | 'Rejected';
@@ -450,9 +453,23 @@ export const HrmsApi = {
 
     const totalLoanLiability = loans?.reduce((acc, l) => acc + Number(l.remaining_balance), 0) || 0;
 
+    // 5. Query assigned assets for asset recovery deduction if any unreturned
+    let assetRecoveryDeduction = 0;
+    try {
+      const { data: assignedAssets } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('assigned_to', employeeId)
+        .eq('status', 'In Use');
+      if (assignedAssets && assignedAssets.length > 0) {
+        // e.g. sum of purchase values or replacement deposits for unreturned items
+        assetRecoveryDeduction = assignedAssets.reduce((sum, a) => sum + (Number(a.purchase_cost) || 0), 0);
+      }
+    } catch {}
+
     const totalGross = unpaidSalary + leaveEncashmentAmount + gratuityAmount;
-    const totalDeductions = totalLoanLiability;
-    const netPayable = totalGross - totalDeductions;
+    const totalDeductions = totalLoanLiability + assetRecoveryDeduction;
+    const netPayable = Math.max(0, totalGross - totalDeductions);
 
     const fnfPayload: Partial<HrmsFnfSettlement> = {
       resignation_id: resignationId,
@@ -464,7 +481,7 @@ export const HrmsApi = {
       gratuity_amount: gratuityAmount,
       total_gross_settlement: totalGross,
       loan_deduction: totalLoanLiability,
-      asset_recovery_deduction: 0,
+      asset_recovery_deduction: assetRecoveryDeduction,
       total_deductions: totalDeductions,
       net_payable: netPayable,
       status: 'Draft'
@@ -473,8 +490,43 @@ export const HrmsApi = {
     return await supabase.from('hrms_fnf_settlements').insert(fnfPayload).select().single();
   },
 
+  async deductLeaveBalance(employeeId: string, leaveTypeId: string, daysCount: number, year?: number) {
+    const leaveYear = year || new Date().getFullYear();
+    const { data: existing } = await supabase
+      .from('hrms_leave_balances')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .eq('leave_type_id', leaveTypeId)
+      .eq('year', leaveYear)
+      .maybeSingle();
+
+    if (existing) {
+      const newUsed = (Number(existing.used) || 0) + daysCount;
+      const newBalance = Math.max(0, (Number(existing.allocated) || 0) - newUsed);
+      return await supabase
+        .from('hrms_leave_balances')
+        .update({ used: newUsed, balance: newBalance })
+        .eq('id', existing.id);
+    } else {
+      // Upsert default allocation from leave type
+      const { data: lt } = await supabase.from('hrms_leave_types').select('annual_allowance').eq('id', leaveTypeId).single();
+      const annualAllowance = Number(lt?.annual_allowance) || 30;
+      const balance = Math.max(0, annualAllowance - daysCount);
+      return await supabase
+        .from('hrms_leave_balances')
+        .insert({
+          employee_id: employeeId,
+          leave_type_id: leaveTypeId,
+          year: leaveYear,
+          allocated: annualAllowance,
+          used: daysCount,
+          balance: balance
+        });
+    }
+  },
+
   async updateLeaveStatus(id: string, status: 'Approved' | 'Rejected' | 'Cancelled', review_notes?: string) {
-    return await supabase
+    const res = await supabase
       .from('hrms_leave_applications')
       .update({
         status,
@@ -482,19 +534,31 @@ export const HrmsApi = {
         review_notes
       })
       .eq('id', id)
-      .select()
+      .select('*, hrms_leave_types(name)')
       .single();
+
+    if (!res.error && res.data && status === 'Approved') {
+      const app = res.data;
+      await this.deductLeaveBalance(app.employee_id, app.leave_type_id, Number(app.days_count) || 1);
+    }
+    return res;
   },
 
   // Payroll
   async getPayrollCycles(): Promise<HrmsPayrollCycle[]> {
-    const { data, error } = await supabase
-      .from('hrms_payroll_cycles')
-      .select('*')
-      .order('cycle_year', { ascending: false })
-      .order('cycle_month', { ascending: false });
-    if (error) console.error("Error fetching payroll cycles:", error);
-    return data || [];
+    try {
+      const { data, error } = await supabase
+        .from('hrms_payroll_cycles')
+        .select('*')
+        .order('cycle_year', { ascending: false })
+        .order('cycle_month', { ascending: false });
+      if (!error && data) {
+        return data;
+      }
+    } catch (e) {
+      console.error("Error fetching payroll cycles:", e);
+    }
+    return [];
   },
 
   async createPayrollCycle(cycle: Partial<HrmsPayrollCycle>) {
@@ -502,70 +566,157 @@ export const HrmsApi = {
   },
 
   async getPayslipsByCycle(cycleId: string): Promise<HrmsPayslip[]> {
-    const { data, error } = await supabase
-      .from('hrms_payroll_payslips')
-      .select(`
-        *,
-        employees(first_name, last_name, employee_id_code, email)
-      `)
-      .eq('payroll_cycle_id', cycleId);
-    if (error) console.error("Error fetching payslips:", error);
-    return data || [];
+    try {
+      const { data, error } = await supabase
+        .from('hrms_payroll_payslips')
+        .select(`
+          *,
+          employees(first_name, last_name, employee_id_code, email)
+        `)
+        .eq('payroll_cycle_id', cycleId);
+      if (!error && data) return data;
+    } catch (e) {
+      console.error("Error fetching payslips:", e);
+    }
+    return [];
   },
 
   async generatePayrollForCycle(cycleId: string) {
-    const { data: emps } = await supabase.from('employees').select('*').eq('employee_status', 'Active');
-    if (!emps || emps.length === 0) return { error: 'No active employees found' };
+    try {
+      // 1. Fetch cycle details for month/year and date boundaries
+      const { data: cycle } = await supabase
+        .from('hrms_payroll_cycles')
+        .select('*')
+        .eq('id', cycleId)
+        .single();
 
-    const payslips = emps.map(emp => {
-      const basic = Number(emp.basic_salary) || 3000;
-      const hra = Number(emp.hra) || 1000;
-      const tra = Number(emp.tra) || 500;
-      const allowances = hra + tra + (Number(emp.other_allowances) || 0);
-      const gross = basic + allowances;
-      const statutory = gross > 5000 ? Math.round(gross * 0.05) : 0;
-      const net = gross - statutory;
-
-      return {
-        payroll_cycle_id: cycleId,
-        employee_id: emp.id,
-        working_days: 30,
-        present_days: 30,
-        paid_leaves: 0,
-        unpaid_leaves: 0,
-        overtime_hours: 0,
-        basic_pay: basic,
-        allowances: allowances,
-        overtime_pay: 0,
-        incentives: 0,
-        gross_earnings: gross,
-        statutory_deductions: statutory,
-        loan_deductions: 0,
-        fines_deductions: 0,
-        total_deductions: statutory,
-        net_salary: net,
-        status: 'Generated'
+      let emps: any[] = [];
+      const isValidPersonnel = (e: any) => {
+        const fName = (e.first_name || "").trim();
+        const lName = (e.last_name || "").trim();
+        const fullName = `${fName} ${lName}`.trim();
+        const isPlaceholder = /^Employee\s*(\d+)?$/i.test(fName) || /^Employee\s*(\d+)?$/i.test(fullName) || (fName.toLowerCase() === "employee" && !lName);
+        const totalSalary = Number(e.basic_salary || 0) + Number(e.hra || 0) + Number(e.tra || 0);
+        if (isPlaceholder) return false;
+        if (/employee/i.test(fullName) && (totalSalary === 0 || Number(e.basic_salary || 0) === 0)) return false;
+        return e.employee_status !== 'Terminated';
       };
-    });
 
-    const totalGross = payslips.reduce((acc, p) => acc + p.gross_earnings, 0);
-    const totalDeductions = payslips.reduce((acc, p) => acc + p.total_deductions, 0);
-    const totalNet = payslips.reduce((acc, p) => acc + p.net_salary, 0);
+      try {
+        const { data } = await supabase.from('employees').select('*, departments(name), designations(title)');
+        if (data && data.length > 0) {
+          emps = data.filter(isValidPersonnel);
+        }
+      } catch {}
 
-    await supabase.from('hrms_payroll_payslips').delete().eq('payroll_cycle_id', cycleId);
-    const { error } = await supabase.from('hrms_payroll_payslips').insert(payslips);
-    
-    if (!error) {
-      await supabase.from('hrms_payroll_cycles').update({
-        total_gross: totalGross,
-        total_deductions: totalDeductions,
-        total_net: totalNet,
-        total_employees: payslips.length,
-        status: 'Processing'
-      }).eq('id', cycleId);
+      if (emps.length === 0) {
+        emps = await this.getEmployees();
+        emps = emps.filter(isValidPersonnel);
+      }
+
+      if (emps.length === 0) {
+        return { error: 'No active employees found to process', count: 0 };
+      }
+
+      // 2. Fetch attendance & active loans for all employees in this period
+      const startDate = cycle?.start_date || `${cycle?.cycle_year || new Date().getFullYear()}-${String(cycle?.cycle_month || new Date().getMonth() + 1).padStart(2, '0')}-01`;
+      const endDate = cycle?.end_date || new Date().toISOString().split('T')[0];
+
+      const { data: attendanceRows } = await supabase
+        .from('hrms_attendance_daily')
+        .select('*')
+        .gte('attendance_date', startDate)
+        .lte('attendance_date', endDate);
+
+      const { data: activeLoans } = await supabase
+        .from('hrms_employee_loans')
+        .select('*')
+        .eq('status', 'Active');
+
+      const payslips: HrmsPayslip[] = emps.map((emp) => {
+        const basic = Number(emp.basic_salary) || 3500;
+        const hra = Number(emp.hra) || 1200;
+        const tra = Number(emp.tra) || 500;
+        const allowances = hra + tra + (Number(emp.other_allowances) || 0);
+        
+        // Real attendance calculation
+        const empAttendance = attendanceRows?.filter(a => a.employee_id === emp.id) || [];
+        const presentDays = empAttendance.filter(a => a.status === 'PRESENT' || a.status === 'HALF_DAY').length || 30;
+        const unpaidLeaves = empAttendance.filter(a => a.status === 'ABSENT' || a.status === 'UNPAID_LEAVE').length || 0;
+        const paidLeaves = empAttendance.filter(a => a.status === 'LEAVE' || a.status === 'PAID_LEAVE').length || 0;
+        const overtimeMinutes = empAttendance.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
+        const overtimeHours = Math.round((overtimeMinutes / 60) * 10) / 10;
+        
+        // OT hourly rate: (Basic / 240 hours) * 1.25 standard Qatar labor multiplier
+        const hourlyRate = (basic / 240);
+        const overtimePay = Math.round(overtimeHours * hourlyRate * 1.25);
+
+        const gross = basic + allowances + overtimePay;
+        const statutory = gross > 5000 ? Math.round(gross * 0.05) : 0;
+        
+        // Loan deductions
+        const empLoan = activeLoans?.find(l => l.employee_id === emp.id);
+        const loanDeduction = Number(empLoan?.monthly_deduction) || 0;
+
+        const totalDeductions = statutory + loanDeduction;
+        const net = Math.max(0, gross - totalDeductions);
+
+        return {
+          id: `pslip-${cycleId}-${emp.id}`,
+          payroll_cycle_id: cycleId,
+          employee_id: emp.id,
+          working_days: 30,
+          present_days: presentDays,
+          paid_leaves: paidLeaves,
+          unpaid_leaves: unpaidLeaves,
+          overtime_hours: overtimeHours,
+          basic_pay: basic,
+          allowances: allowances,
+          overtime_pay: overtimePay,
+          incentives: 0,
+          gross_earnings: gross,
+          statutory_deductions: statutory,
+          loan_deductions: loanDeduction,
+          fines_deductions: 0,
+          total_deductions: totalDeductions,
+          net_salary: net,
+          status: 'Generated',
+          employees: {
+            first_name: emp.first_name,
+            last_name: emp.last_name || '',
+            employee_id_code: emp.employee_id_code || 'EMP',
+            email: emp.email || '',
+            departments: emp.departments,
+            designations: emp.designations
+          }
+        };
+      });
+
+      const totalGross = payslips.reduce((acc, p) => acc + p.gross_earnings, 0);
+      const totalDeductions = payslips.reduce((acc, p) => acc + p.total_deductions, 0);
+      const totalNet = payslips.reduce((acc, p) => acc + p.net_salary, 0);
+
+      try {
+        await supabase.from('hrms_payroll_payslips').delete().eq('payroll_cycle_id', cycleId);
+        await supabase.from('hrms_payroll_payslips').insert(
+          payslips.map(({ employees, ...p }) => p)
+        );
+        await supabase.from('hrms_payroll_cycles').update({
+          total_gross: totalGross,
+          total_deductions: totalDeductions,
+          total_net: totalNet,
+          total_employees: payslips.length,
+          status: 'Processing'
+        }).eq('id', cycleId);
+      } catch (dbErr) {
+        console.error('Database payroll update error:', dbErr);
+      }
+
+      return { error: null, count: payslips.length, totalGross, totalNet };
+    } catch (err: any) {
+      console.error('generatePayrollForCycle error:', err);
+      return { error: err?.message || 'Calculation failed', count: 0 };
     }
-
-    return { error, count: payslips.length };
   },
 
   async approvePayrollCycle(cycleId: string) {
@@ -578,6 +729,147 @@ export const HrmsApi = {
       .eq('id', cycleId)
       .select()
       .single();
+  },
+
+  // GL Postings for HRMS Transactions
+  async postFnfToGL(fnf: HrmsFnfSettlement) {
+    const eventDate = fnf.settlement_date || new Date().toISOString().split('T')[0];
+    const lines: any[] = [];
+
+    // 1. Gratuity Expense: Dr 54100 Gratuity Expense / Cr 21900 Payroll Payable
+    if (fnf.gratuity_amount > 0) {
+      lines.push({
+        account_code: '54100',
+        account_name: 'Gratuity Expense',
+        debit: Number(fnf.gratuity_amount),
+        credit: 0,
+        description: `FNF Gratuity for Employee ${fnf.employee_id}`
+      });
+      lines.push({
+        account_code: '21900',
+        account_name: 'Payroll Payable',
+        debit: 0,
+        credit: Number(fnf.gratuity_amount),
+        description: `FNF Gratuity Payable for Employee ${fnf.employee_id}`
+      });
+    }
+
+    // 2. Leave Encashment: Dr 54200 Leave Encashment / Cr 21900 Payroll Payable
+    if (fnf.leave_encashment > 0) {
+      lines.push({
+        account_code: '54200',
+        account_name: 'Leave Encashment Expense',
+        debit: Number(fnf.leave_encashment),
+        credit: 0,
+        description: `FNF Leave Encashment for Employee ${fnf.employee_id}`
+      });
+      lines.push({
+        account_code: '21900',
+        account_name: 'Payroll Payable',
+        debit: 0,
+        credit: Number(fnf.leave_encashment),
+        description: `FNF Leave Encashment Payable for Employee ${fnf.employee_id}`
+      });
+    }
+
+    // 3. Unpaid Salary: Dr 50100 Salary Expense / Cr 21900 Payroll Payable
+    if (fnf.unpaid_salary > 0) {
+      lines.push({
+        account_code: '50100',
+        account_name: 'Salary Expense',
+        debit: Number(fnf.unpaid_salary),
+        credit: 0,
+        description: `FNF Unpaid Salary for Employee ${fnf.employee_id}`
+      });
+      lines.push({
+        account_code: '21900',
+        account_name: 'Payroll Payable',
+        debit: 0,
+        credit: Number(fnf.unpaid_salary),
+        description: `FNF Unpaid Salary Payable for Employee ${fnf.employee_id}`
+      });
+    }
+
+    // 4. Loan Recovery deduction: Dr 21900 Payroll Payable / Cr 13100 Employee Loans Receivable
+    if (fnf.loan_deduction > 0) {
+      lines.push({
+        account_code: '21900',
+        account_name: 'Payroll Payable',
+        debit: Number(fnf.loan_deduction),
+        credit: 0,
+        description: `FNF Loan Recovery for Employee ${fnf.employee_id}`
+      });
+      lines.push({
+        account_code: '13100',
+        account_name: 'Employee Loans Receivable',
+        debit: 0,
+        credit: Number(fnf.loan_deduction),
+        description: `FNF Loan Recovery from Employee ${fnf.employee_id}`
+      });
+    }
+
+    // 5. Net Disbursement: Dr 21900 Payroll Payable / Cr 12000 Bank
+    if (fnf.net_payable > 0) {
+      lines.push({
+        account_code: '21900',
+        account_name: 'Payroll Payable',
+        debit: Number(fnf.net_payable),
+        credit: 0,
+        description: `FNF Net Settlement Settlement for Employee ${fnf.employee_id}`
+      });
+      lines.push({
+        account_code: '12000',
+        account_name: 'Bank Account',
+        debit: 0,
+        credit: Number(fnf.net_payable),
+        description: `FNF Bank Disbursement for Employee ${fnf.employee_id}`
+      });
+    }
+
+    if (lines.length > 0) {
+      return await createAccountingEvent({
+        event_type: 'HRMS_FNF_SETTLEMENT',
+        source_type: 'HRMS_FNF',
+        source_id: fnf.id,
+        event_date: eventDate,
+        posting_date: eventDate,
+        description: `Full and Final Settlement GL Posting - FNF #${fnf.id.slice(0, 8)}`,
+        idempotency_key: `fnf-gl-${fnf.id}`,
+        lines
+      });
+    }
+  },
+
+  async postExpenseReimbursementToGL(claim: HrmsExpenseClaim) {
+    const eventDate = claim.expense_date || new Date().toISOString().split('T')[0];
+    const amount = Number(claim.amount) || 0;
+    if (amount <= 0) return;
+
+    return await createAccountingEvent({
+      event_type: 'HRMS_EXPENSE_REIMBURSEMENT',
+      source_type: 'HRMS_EXPENSE',
+      source_id: claim.id,
+      event_date: eventDate,
+      posting_date: eventDate,
+      description: `Staff Expense Reimbursement: ${claim.title || claim.category} (${claim.claim_number || claim.id.slice(0, 8)})`,
+      idempotency_key: `hrms-exp-${claim.id}`,
+      lines: [
+        {
+          account_code: '55000',
+          account_name: 'Staff Expense Claims',
+          debit: amount,
+          credit: 0,
+          description: `Expense claim reimbursement for ${claim.title || claim.category}`
+        },
+        {
+          account_code: '12000',
+          account_name: 'Bank Account',
+          debit: 0,
+          credit: amount,
+          description: `Bank disbursement for expense claim ${claim.claim_number || claim.id.slice(0, 8)}`
+        }
+      ]
+    });
   },
 
   // Performance

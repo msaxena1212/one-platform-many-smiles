@@ -243,11 +243,12 @@ export const securitySettlementMasters = [
 ];
 
 export const voucherDocumentMasters = [
-  { label: 'Receipts Voucher - Rent', value: 'receipt_rent', description: 'Dr PDC/Cash/Bank, Cr Customer or rent receivable.' },
-  { label: 'Receipts Voucher - Deposit', value: 'receipt_deposit', description: 'Dr Cash/Bank, Cr Security Deposit Liability.' },
-  { label: 'Deposit Voucher - PDC', value: 'deposit_pdc', description: 'Dr Bank, Cr PDC In Hand; update customer PDC receivable.' },
-  { label: 'Cheque Returned Voucher', value: 'cheque_returned', description: 'Reverse bank deposit and reopen receivable/PDC.' },
-  { label: 'Rental Income Doc', value: 'rental_income_doc', description: 'Recognize rental income by period, single or batch.' },
+  { label: 'Receipts Voucher - Rent', value: 'receipt_rent', description: 'Dr PDC In Hand, Cr Customer(PDC)-Unit Account.' },
+  { label: 'Receipts Voucher - Deposit', value: 'receipt_deposit', description: 'Dr Cash In Hand, Cr Deposit-Customer-Unit Account.' },
+  { label: 'Deposit Voucher - PDC', value: 'deposit_pdc', description: 'Dr Bank Account, Cr PDC In Hand / Dr Customer(PDC)-Unit Account, Cr Receivable-Unit Account.' },
+  { label: 'Deposit Voucher - Cash', value: 'deposit_cash', description: 'Dr Bank Account, Cr Cash In Hand.' },
+  { label: 'Cheque Returned Voucher', value: 'cheque_returned', description: 'Dr PDC In Hand, Cr Bank Account / Dr Receivable-Unit Account, Cr Customer(PDC)-Unit Account.' },
+  { label: 'Revenue Generation (Single or Batch)', value: 'rental_income_doc', description: 'Dr Receivable-Unit Account, Cr Rental Income.' },
   { label: 'Payment Voucher', value: 'payment_voucher', description: 'Vendor, owner distribution or tenant refund payment.' },
   { label: 'Tenant Settlement Voucher', value: 'tenant_settlement', description: 'Apply deductions and compute refundable balance.' },
 ];
