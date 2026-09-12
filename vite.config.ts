@@ -31,9 +31,6 @@ export default defineConfig({
             if (id.includes("node_modules/@supabase") || id.includes("node_modules/supabase")) {
               return "vendor-supabase";
             }
-            if (id.includes("node_modules/@tanstack")) {
-              return "vendor-tanstack";
-            }
             if (
               id.includes("node_modules/react-hook-form") ||
               id.includes("node_modules/zod") ||
@@ -69,9 +66,11 @@ export default defineConfig({
       },
     },
   },
+  // Use Nitro's Vercel preset so the deployment exposes the SSR handler
+  // instead of generating a Cloudflare worker that Vercel cannot route to.
+  nitro: { preset: "vercel" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
 });
