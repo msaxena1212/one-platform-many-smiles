@@ -5,7 +5,7 @@ import { getLandingRouteForRole } from "@/lib/console-config";
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
     if (typeof window === "undefined") {
-      return;
+      throw redirect({ to: "/auth" });
     }
     try {
       const profile = await getCurrentProfile();
