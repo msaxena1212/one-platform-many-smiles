@@ -313,6 +313,7 @@ export function PdcManagement() {
     chequeDate: string;
     period: string;
     amount: string;
+    file?: File;
   };
 
   const [addPdcOpen, setAddPdcOpen] = useState(false);
@@ -320,6 +321,7 @@ export function PdcManagement() {
   const [collectionType, setCollectionType] = useState<"PDC" | "Security Deposit" | "Other Amount">("PDC");
   const [otherCollectionAmount, setOtherCollectionAmount] = useState("");
   const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
+  const [batchPdcFile, setBatchPdcFile] = useState<File | null>(null);
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
   const [addPdcRows, setAddPdcRows] = useState<AddPdcRow[]>([
     {
@@ -1880,6 +1882,23 @@ export function PdcManagement() {
                   </Select>
                 </div>
 
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Lease Start Date</Label>
+                    <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.startDate || ""} readOnly />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Lease End Date</Label>
+                    <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.endDate || ""} readOnly />
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-1 border-t pt-3">
+                  <Label className="text-[11px] font-semibold">All PDCs File (Optional)</Label>
+                  <Input className="h-8 text-xs bg-background" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" onChange={event => setBatchPdcFile(event.target.files?.[0] || null)} />
+                  {batchPdcFile && <p className="text-[10px] text-muted-foreground">Attached: {batchPdcFile.name}</p>}
+                </div>
+
                 {/* Quick Auto-Schedule Generator */}
                 <div className="border rounded-md p-2 bg-background/80 space-y-1.5">
                   <div className="flex justify-between items-center text-[10px] font-bold text-muted-foreground uppercase">
@@ -1982,6 +2001,7 @@ export function PdcManagement() {
                       <th className="py-2 px-2.5 text-left w-32">Maturity Date <span className="text-destructive">*</span></th>
                       <th className="py-2 px-2.5 text-left">Period</th>
                       <th className="py-2 px-2.5 text-right w-28">Amount (QAR) <span className="text-destructive">*</span></th>
+                      <th className="py-2 px-2.5 text-left w-36">PDC File (Optional)</th>
                       <th className="py-2 px-1 text-center w-10"></th>
                     </tr>
                   </thead>
@@ -1999,6 +2019,18 @@ export function PdcManagement() {
                               setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, chequeNo: val } : r));
                             }}
                           />
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <Input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            className="h-7 text-[10px] w-36"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, file } : r));
+                            }}
+                          />
+                          {row.file && <span className="block max-w-36 truncate text-[9px] text-muted-foreground">{row.file.name}</span>}
                         </td>
                         <td className="py-1.5 px-2">
                           <Input
