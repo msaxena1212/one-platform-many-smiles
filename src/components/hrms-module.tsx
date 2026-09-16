@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import {
   Users, Building2, Briefcase, Calendar, Clock, DollarSign, Award,
   Receipt, ShieldCheck, LogOut, Megaphone, HelpCircle, Plus, Search,
   Filter, Download, CheckCircle2, XCircle, AlertTriangle, Eye, RefreshCw,
   FileText, ArrowRight, UserCheck, ChevronRight, Settings, Trash2, Edit3, Send,
-  GitBranch, MapPin, Printer
+  GitBranch, MapPin, Printer, FileSpreadsheet, Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -114,6 +115,9 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   // Modals
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState<boolean>(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<any | null>(null);
+  const [bulkEmployeeOpen, setBulkEmployeeOpen] = useState<boolean>(false);
+  const [bulkEmployeeData, setBulkEmployeeData] = useState<string>("");
+  const [bulkEmployeeLoading, setBulkEmployeeLoading] = useState<boolean>(false);
   const [showAddLeaveModal, setShowAddLeaveModal] = useState<boolean>(false);
   const [showAddExpenseModal, setShowAddExpenseModal] = useState<boolean>(false);
   const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
@@ -360,6 +364,94 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
       toast.success("Employee successfully onboarded!");
       setShowAddEmployeeModal(false);
       loadAllHRMSData();
+    }
+  };
+
+  const downloadEmployeeCsvTemplate = () => {
+    const headers = ["FirstName", "LastName", "Email", "Mobile", "EmpCode", "Department", "Designation", "BasicSalary", "HRA", "TRA", "Gender", "Nationality", "BankName", "IBAN", "JoiningDate"];
+    const rows = [
+      ["Ahmad", "Al-Thani", "ahmad@example.com", "+97455112233", "EMP-101", departments[0]?.name || "Operations", designations[0]?.title || "Property Manager", "12000", "3000", "1000", "Male", "Qatari", "QNB", "QA55QNBA00000000123456", "2026-01-01"],
+      ["Fatima", "Mansoor", "fatima@example.com", "+97455223344", "EMP-102", departments[0]?.name || "Finance", designations[0]?.title || "Senior Accountant", "10500", "2500", "800", "Female", "Qatari", "CBQ", "QA55CBQA00000000987654", "2026-02-15"]
+    ];
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `employee_import_template_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Employee CSV template downloaded");
+  };
+
+  const handleBulkEmployeeImport = async () => {
+    if (!bulkEmployeeData.trim()) {
+      toast.error("Please provide CSV content to import");
+      return;
+    }
+    setBulkEmployeeLoading(true);
+    try {
+      const lines = bulkEmployeeData.trim().split("\n").filter(l => l.trim().length > 0);
+      if (lines.length <= 1) {
+        toast.error("CSV contains no data rows");
+        setBulkEmployeeLoading(false);
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const line of dataRows) {
+        const parts = line.split(",").map(p => p.trim());
+        if (!parts[0] || !parts[1] || !parts[2]) {
+          failCount++;
+          continue;
+        }
+        const [
+          firstName, lastName, email, mobile, empCode, deptName, desigName,
+          basicSalary, hra, tra, gender, nationality, bankName, iban, joiningDate
+        ] = parts;
+
+        const matchedDept = departments.find(d => d.name.toLowerCase() === (deptName || "").toLowerCase()) || departments[0];
+        const matchedDesig = designations.find(d => d.title.toLowerCase() === (desigName || "").toLowerCase()) || designations[0];
+
+        const payload = {
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          mobile_number: mobile || "",
+          employee_id_code: empCode || `EMP-${String(employees.length + successCount + 1).padStart(3, "0")}`,
+          department_id: matchedDept?.id || null,
+          designation_id: matchedDesig?.id || null,
+          basic_salary: Number(basicSalary) || 5000,
+          hra: Number(hra) || 0,
+          tra: Number(tra) || 0,
+          gender: gender || "Male",
+          nationality: nationality || "Qatari",
+          employee_status: "Active",
+          bank_name: bankName || "Qatar National Bank",
+          iban: iban || "",
+          date_of_joining: joiningDate || new Date().toISOString().split("T")[0]
+        };
+
+        const { error } = await HrmsApi.createEmployee(payload);
+        if (error) {
+          console.error("Bulk employee insert error:", error);
+          failCount++;
+        } else {
+          successCount++;
+        }
+      }
+
+      toast.success(`Bulk Employee Ingestion Complete: ${successCount} created, ${failCount} failed.`);
+      setBulkEmployeeOpen(false);
+      setBulkEmployeeData("");
+      loadAllHRMSData();
+    } catch (err: any) {
+      toast.error("Bulk import failed: " + err.message);
+    } finally {
+      setBulkEmployeeLoading(false);
     }
   };
 
@@ -892,6 +984,9 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                   className="pl-9"
                 />
               </div>
+              <Button variant="outline" onClick={() => setBulkEmployeeOpen(true)} className="gap-2 shrink-0">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Bulk Import
+              </Button>
               <Button onClick={() => setShowAddEmployeeModal(true)} className="gap-2 shrink-0">
                 <Plus className="h-4 w-4" /> Add Employee
               </Button>
@@ -1964,6 +2059,20 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
           loadAllHRMSData();
         }}
       />
+
+      {/* Bulk Employee Import Modal (Admin) */}
+      <Dialog open={bulkEmployeeOpen} onOpenChange={setBulkEmployeeOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="employee"
+            title="HRMS Workforce: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for employee profiles, salaries, designations, and departments."
+            onCompleted={() => {
+              loadHrmsData();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Record Attendance Modal (Interactive with Auto-Hours & Status Engine) */}
       <Dialog open={showRecordAttendanceModal} onOpenChange={setShowRecordAttendanceModal}>

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import {
   AlertTriangle,
   Bath,
@@ -18,7 +20,11 @@ import {
   Users,
   X,
   Zap,
+  FileUp,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -580,6 +586,79 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     return { ...prop, total: propUnits.length, occupied: propOccupied };
   });
 
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [bulkSelectedProp, setBulkSelectedProp] = useState("");
+  const [csvText, setCsvText] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const downloadCsvTemplate = () => {
+    const headers = "UnitNumber,Floor,UnitType,Bedrooms,Bathrooms,AreaSqFt,MarketRentMonthly,ElectricityMeterNo,WaterMeterNo";
+    const sample = "101,1,1 BHK Apartment,1,1,750,5500,ELEC-998811,WTR-112233\n102,1,2 BHK Apartment,2,2,1100,7500,ELEC-998812,WTR-112234\n201,2,Studio,0,1,500,4000,ELEC-998813,WTR-112235";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_units_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("CSV Unit Template downloaded!");
+  };
+
+  const handleBulkImport = async () => {
+    if (!bulkSelectedProp) {
+      toast.error("Please select a target property for the units.");
+      return;
+    }
+    if (!csvText.trim()) {
+      toast.error("Please paste CSV data or upload a file.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const lines = csvText.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 unit data row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let successCount = 0;
+      for (const row of dataRows) {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) continue;
+        const [unitRef, floor, unitType, beds, baths, area, rent, elec, wtr] = cols;
+        await createUnit({
+          property_id: bulkSelectedProp,
+          unit_ref: unitRef,
+          unit_name: `${unitRef}`,
+          floor: floor || "1",
+          unit_type: unitType || "Apartment",
+          unit_category: "Residential",
+          furnishing_type: "Unfurnished",
+          rent: Number(rent) || 5000,
+          market_rent: Number(rent) || 5000,
+          status: "Available",
+          lease_status: "Vacant",
+          electricity_meter_no: elec || undefined,
+          water_meter_no: wtr || undefined,
+          no_of_bedrooms: Number(beds) || 1,
+          no_of_bathrooms: Number(baths) || 1,
+          unit_area: Number(area) || 800,
+          unit_area_uom: "sqft",
+        });
+        successCount++;
+      }
+      toast.success(`Successfully bulk imported ${successCount} units!`);
+      setBulkImportOpen(false);
+      setCsvText("");
+      await load();
+    } catch (err: any) {
+      toast.error("Failed bulk unit import: " + err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -590,19 +669,42 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           </p>
         </div>
         {role !== "owner" && (
-          <Button
-            onClick={() => {
-              setForm(EMPTY_FORM);
-              setRooms([makeRoomEntry("Bedroom")]);
-              setStep(1);
-              setOpen(true);
-            }}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" /> Add Unit
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkImportOpen(true)}
+              className="gap-2"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+            </Button>
+            <Button
+              onClick={() => {
+                setForm(EMPTY_FORM);
+                setRooms([makeRoomEntry("Bedroom")]);
+                setStep(1);
+                setOpen(true);
+              }}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" /> Add Unit
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Bulk Unit Import Dialog */}
+      <Dialog open={bulkImportOpen} onOpenChange={setBulkImportOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="unit"
+            title="Unit Master: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for apartments, commercial units, and villas."
+            onCompleted={() => {
+              load();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

@@ -28,6 +28,7 @@ import {
   PlusCircle,
   FileCheck,
   TrendingUp,
+  TrendingDown,
   Database,
   ClipboardList,
   UserCheck,
@@ -51,6 +52,7 @@ import {
   Lock,
   RefreshCw,
   GitBranch,
+  FileSpreadsheet,
 } from "lucide-react";
 import type { NavGroup, NavItem, NavModule } from "@/components/app-shell";
 import type { Profile } from "@/lib/supabase";
@@ -339,6 +341,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-amber-500/10",
             items: [
               { to: "/prop-mgr/assets", search: { tab: "registry" }, label: "Asset Registry", icon: <Package className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/assets", search: { tab: "depreciation" }, label: "Asset Depreciation", icon: <TrendingDown className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/assets", search: { tab: "allocation" }, label: "Asset Allocation", icon: <ArrowLeftRight className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/assets", search: { tab: "warranty" }, label: "Asset Warranty", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/assets", search: { tab: "maintenance" }, label: "Asset Maintenance", icon: <Wrench className="h-3.5 w-3.5" /> },
@@ -543,16 +546,16 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-emerald-500",
             bg: "bg-emerald-500/10",
             items: [
-              { to: "/leasing/create", search: { tab: "customers" }, label: "Customer Master", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "reservations" }, label: "Reservations", icon: <Lock className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "documents" }, label: "Documents", icon: <FileText className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "agreement" }, label: "Agreement Terms", icon: <FileSignature className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "signatures" }, label: "Signatures", icon: <FileCheck className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "keys" }, label: "Keys & Check-In", icon: <Key className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "vouchers" }, label: "Vouchers", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "renewals" }, label: "Renewals", icon: <RefreshCw className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "checkout" }, label: "Checkout", icon: <LogOut className="h-3.5 w-3.5" /> },
-              { to: "/leasing/create", search: { tab: "audit" }, label: "Audit Flow", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "customers" }, label: "Customer Master", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "reservations" }, label: "Reservations", icon: <Lock className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "documents" }, label: "Documents", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "agreement" }, label: "Agreement Terms", icon: <FileSignature className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "signatures" }, label: "Signatures", icon: <FileCheck className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "keys" }, label: "Keys & Check-In", icon: <Key className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "vouchers" }, label: "Vouchers", icon: <Receipt className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "renewals" }, label: "Renewals", icon: <RefreshCw className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "checkout" }, label: "Checkout", icon: <LogOut className="h-3.5 w-3.5" /> },
+              { to: "/admin/leases", search: { tab: "audit" }, label: "Audit Flow", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
               { to: "/admin/leases", label: "All Leases", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },
@@ -666,6 +669,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-amber-500/10",
             items: [
               { to: "/admin/assets", search: { tab: "registry" }, label: "Asset Registry", icon: <Package className="h-3.5 w-3.5" /> },
+              { to: "/admin/assets", search: { tab: "depreciation" }, label: "Asset Depreciation", icon: <TrendingDown className="h-3.5 w-3.5" /> },
               { to: "/admin/assets", search: { tab: "allocation" }, label: "Asset Allocation", icon: <ArrowLeftRight className="h-3.5 w-3.5" /> },
               { to: "/admin/assets", search: { tab: "warranty" }, label: "Asset Warranty", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
               { to: "/admin/assets", search: { tab: "maintenance" }, label: "Asset Maintenance", icon: <Wrench className="h-3.5 w-3.5" /> },
@@ -760,9 +764,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-violet-500/10",
             items: [
               { to: "/admin/vendors", search: { tab: "master" }, label: "Vendor Master", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/vendors", search: { tab: "contacts" }, label: "Contacts", icon: <Phone className="h-3.5 w-3.5" /> },
-              { to: "/admin/vendors", search: { tab: "qualification" }, label: "Qualification", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-              { to: "/admin/vendors", search: { tab: "bank_details" }, label: "Bank Details", icon: <Landmark className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -885,12 +886,15 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             ],
           },
           {
-            group: "Admin",
+            group: "Admin & Operations",
             icon: <ShieldCheck className="h-3.5 w-3.5" />,
             color: "text-rose-500",
             bg: "bg-rose-500/10",
             items: [
-              { to: "/admin/audit-logs", label: "Audit Logs", icon: <FileText className="h-3.5 w-3.5" /> },
+              { to: "/admin/imports", label: "Excel Bulk Import", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
+              { to: "/admin/notifications", label: "Notification Center", icon: <Bell className="h-3.5 w-3.5" /> },
+              { to: "/admin/audit-logs", search: { tab: "audit-trail" }, label: "System Audit Trail", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+              { to: "/admin/audit-logs", search: { tab: "engagement-analytics" }, label: "Notification Engagement Analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
             ],
           },
           {
@@ -899,8 +903,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-violet-500",
             bg: "bg-violet-500/10",
             items: [
-              { to: "/admin/permissions", search: { tab: "matrix" }, label: "Role Permissions", icon: <ShieldAlert className="h-3.5 w-3.5" /> },
-              { to: "/admin/permissions", search: { tab: "workflows" }, label: "Approval Workflows", icon: <GitBranch className="h-3.5 w-3.5" /> },
+              { to: "/admin/permissions", label: "Permissions & RBAC", icon: <ShieldAlert className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -920,8 +923,10 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/admin/masters", title: "Masters & Config" },
       { match: "/admin/users", title: "Users" },
       { match: "/admin/hrms", title: "HRMS" },
-      { match: "/admin/audit-logs", title: "Audit Logs" },
-      { match: "/admin/permissions", title: "Role Permissions & Workflows" },
+      { match: "/admin/imports", title: "Excel Import & Bulk Management Engine" },
+      { match: "/admin/notifications", title: "Notification Center" },
+      { match: "/admin/audit-logs", title: "System Audit Trail & Notification Analytics" },
+      { match: "/admin/permissions", title: "Role Permissions & RBAC Matrix" },
     ],
   },
   // ── Super Admin Console ───────────────────────────────────────────────────
@@ -950,7 +955,9 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/super-admin", label: "Platform Overview", icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
               { to: "/super-admin/analytics", label: "Platform Analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+              { to: "/super-admin/health", label: "Health & Telemetry", icon: <Activity className="h-3.5 w-3.5" /> },
               { to: "/super-admin/config", label: "Global Config", icon: <Globe className="h-3.5 w-3.5" /> },
+              { to: "/super-admin/alerts", label: "In-App & Alerts", icon: <Bell className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -970,6 +977,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/super-admin/tenants", label: "Tenant Management", icon: <Building2 className="h-3.5 w-3.5" /> },
               { to: "/super-admin/billing", label: "Billing & Plans", icon: <CreditCard className="h-3.5 w-3.5" /> },
+              { to: "/super-admin/invoices", label: "Platform Invoices", icon: <Receipt className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -989,8 +997,16 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/super-admin/users", label: "User Management", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/super-admin/permissions", label: "Permissions & RBAC", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-              { to: "/super-admin/security", label: "Security & Audit", icon: <AlertTriangle className="h-3.5 w-3.5" /> },
-              { to: "/super-admin/notifications", label: "Notifications", icon: <Bell className="h-3.5 w-3.5" /> },
+            ],
+          },
+          {
+            group: "Governance & Audit",
+            icon: <FileText className="h-3.5 w-3.5" />,
+            color: "text-indigo-500",
+            bg: "bg-indigo-500/10",
+            items: [
+              { to: "/super-admin/security", search: { tab: "audit-trail" }, label: "System Audit Trail", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+              { to: "/super-admin/security", search: { tab: "engagement-analytics" }, label: "Notification Engagement Analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -1002,10 +1018,12 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/super-admin/users", title: "User Management" },
       { match: "/super-admin/permissions", title: "Permissions & RBAC" },
       { match: "/super-admin/billing", title: "Billing & Plans" },
+      { match: "/super-admin/invoices", title: "Platform Subscription Invoices" },
       { match: "/super-admin/analytics", title: "Platform Analytics" },
+      { match: "/super-admin/health", title: "Platform Health & Microservices Telemetry" },
       { match: "/super-admin/config", title: "Global Configuration" },
-      { match: "/super-admin/security", title: "Security & Audit" },
-      { match: "/super-admin/notifications", title: "Notifications" },
+      { match: "/super-admin/alerts", title: "In-App & Alerts Governance" },
+      { match: "/super-admin/security", title: "System Audit Trail & Notification Analytics" },
     ],
   },
 

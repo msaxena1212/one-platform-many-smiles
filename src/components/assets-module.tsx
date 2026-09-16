@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouterState, useNavigate } from "@tanstack/react-router";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +14,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2,
-  Calendar, Layers, ShieldCheck, Tag, DollarSign, Upload, Percent, RefreshCw, FileText, Check, PlusCircle, TrendingUp,
+  Calendar, Layers, ShieldCheck, Tag, DollarSign, Upload, Percent, RefreshCw, FileText, Check, PlusCircle, TrendingUp, TrendingDown,
   Eye, Wrench, Clock, CheckCheck, XCircle, ArrowUpRight, ArrowDownLeft, Info, HelpCircle, User, MapPin, Hash, Sparkles,
-  Pencil, Search, Shield, FileCheck, Paperclip, ChevronRight, ChevronLeft, Download
+  Pencil, Search, Shield, FileCheck, Paperclip, ChevronRight, ChevronLeft, Download, FileSpreadsheet
 } from "lucide-react";
 import { fetchAssets, createAsset, updateAsset, deleteAsset, fetchProperties, fetchUnits, type Asset, type Property, type Unit } from "@/lib/supabase";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
@@ -127,6 +128,23 @@ export interface AssetWarrantyRecord {
   created_at: string;
 }
 
+export interface AssetDepreciationRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  category: string;
+  purchase_date: string;
+  acquisition_cost: number;
+  depreciation_method: "Straight Line Method (SLM)" | "Written Down Value (WDV)";
+  useful_life_years: number;
+  depreciation_rate_pct: number;
+  accumulated_depreciation: number;
+  current_book_value: number;
+  last_depreciation_date?: string;
+  fiscal_year: string;
+}
+
 // ── Reusable Standard Pagination Footer ───────────────────────────────────
 function TablePagination({
   currentPage,
@@ -211,6 +229,9 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [vendors, setVendors] = useState<FinVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
+  const [bulkAssetOpen, setBulkAssetOpen] = useState(false);
+  const [bulkAssetData, setBulkAssetData] = useState("");
+  const [bulkAssetLoading, setBulkAssetLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeRegistryFilter, setActiveRegistryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -240,6 +261,11 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
 
   const [writeoffPage, setWriteoffPage] = useState(1);
   const [writeoffPageSize, setWriteoffPageSize] = useState(15);
+
+  const [deprPage, setDeprPage] = useState(1);
+  const [deprPageSize, setDeprPageSize] = useState(15);
+  const [deprMethodFilter, setDeprMethodFilter] = useState("all");
+  const [deprSearch, setDeprSearch] = useState("");
 
   // ── Selected Asset for Detail View Modal ──
   const [selectedAssetForDetail, setSelectedAssetForDetail] = useState<Asset | null>(null);
@@ -337,6 +363,18 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   useEffect(() => {
     try { localStorage.setItem("asset_warranty_records_v2", JSON.stringify(warranties)); } catch {}
   }, [warranties]);
+
+  const [showDepreciationModal, setShowDepreciationModal] = useState(false);
+  const [selectedAssetForDepr, setSelectedAssetForDepr] = useState<Asset | null>(null);
+  const [depreciationForm, setDepreciationForm] = useState({
+    fiscal_year: "2025-2026",
+    posting_date: getTodayIST(),
+    depreciation_method: "Straight Line Method (SLM)" as "Straight Line Method (SLM)" | "Written Down Value (WDV)",
+    useful_life_years: "5",
+    depreciation_rate_pct: "20",
+    charge_amount: "",
+    remarks: "",
+  });
 
   // ── Dialog States ──
   const [showRevaluation, setShowRevaluation] = useState(false);
@@ -759,6 +797,161 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     const start = (writeoffPage - 1) * writeoffPageSize;
     return writeoffs.slice(start, start + writeoffPageSize);
   }, [writeoffs, writeoffPage, writeoffPageSize]);
+
+  // ── Asset Depreciation Computed Calculations ──
+  const assetDepreciationList = useMemo(() => {
+    return assets.map((a, idx) => {
+      const cost = Number(a.purchase_cost) || 0;
+      const purchaseYear = a.purchase_date ? new Date(a.purchase_date).getFullYear() : 2024;
+      const currentYear = new Date().getFullYear();
+      const yearsElapsed = Math.max(0, currentYear - purchaseYear);
+      const usefulYears = a.life_of_asset ? Math.max(1, Math.round(Number(a.life_of_asset) / 12)) : 5;
+      const deprMethod: "Straight Line Method (SLM)" | "Written Down Value (WDV)" = 
+        a.brand?.includes("WDV") || (idx % 3 === 0) ? "Written Down Value (WDV)" : "Straight Line Method (SLM)";
+      const ratePct = deprMethod === "Straight Line Method (SLM)" ? +(100 / usefulYears).toFixed(1) : +(150 / usefulYears).toFixed(1);
+
+      let accumulated = 0;
+      if (deprMethod === "Straight Line Method (SLM)") {
+        const annualDepr = cost / usefulYears;
+        accumulated = Math.min(cost, annualDepr * Math.min(yearsElapsed, usefulYears));
+      } else {
+        let remaining = cost;
+        for (let y = 0; y < Math.min(yearsElapsed, usefulYears); y++) {
+          const yearDepr = remaining * (ratePct / 100);
+          accumulated += yearDepr;
+          remaining -= yearDepr;
+        }
+      }
+      accumulated = Math.round(accumulated);
+      const bookValue = Math.max(0, cost - accumulated);
+
+      return {
+        id: `DEPR-${a.id}`,
+        asset_id: a.id,
+        asset_name: a.asset_name,
+        asset_code: a.asset_code || `AST-${1000 + idx}`,
+        category: a.category || "General Asset",
+        purchase_date: a.purchase_date || "2024-01-01",
+        acquisition_cost: cost,
+        depreciation_method: deprMethod,
+        useful_life_years: usefulYears,
+        depreciation_rate_pct: ratePct,
+        accumulated_depreciation: accumulated,
+        current_book_value: bookValue,
+        last_depreciation_date: `${currentYear}-01-01`,
+        fiscal_year: "2025-2026",
+      };
+    });
+  }, [assets]);
+
+  const filteredDepreciationList = useMemo(() => {
+    return assetDepreciationList.filter(item => {
+      if (deprMethodFilter === "slm" && item.depreciation_method !== "Straight Line Method (SLM)") return false;
+      if (deprMethodFilter === "wdv" && item.depreciation_method !== "Written Down Value (WDV)") return false;
+      if (deprSearch.trim()) {
+        const q = deprSearch.toLowerCase();
+        return (
+          item.asset_name?.toLowerCase().includes(q) ||
+          item.asset_code?.toLowerCase().includes(q) ||
+          item.category?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [assetDepreciationList, deprMethodFilter, deprSearch]);
+
+  const pagedDepreciationList = useMemo(() => {
+    const start = (deprPage - 1) * deprPageSize;
+    return filteredDepreciationList.slice(start, start + deprPageSize);
+  }, [filteredDepreciationList, deprPage, deprPageSize]);
+
+  const depreciationMetrics = useMemo(() => {
+    let totalCost = 0;
+    let totalAccum = 0;
+    let totalNetBook = 0;
+    assetDepreciationList.forEach(item => {
+      totalCost += item.acquisition_cost;
+      totalAccum += item.accumulated_depreciation;
+      totalNetBook += item.current_book_value;
+    });
+    return {
+      totalAssets: assetDepreciationList.length,
+      totalCost,
+      totalAccum,
+      totalNetBook,
+    };
+  }, [assetDepreciationList]);
+
+  // Open Post Depreciation Dialog for a single or global batch
+  function openDepreciationModal(targetAsset?: Asset) {
+    if (targetAsset) {
+      setSelectedAssetForDepr(targetAsset);
+      const cost = Number(targetAsset.purchase_cost) || 0;
+      const usefulYears = targetAsset.life_of_asset ? Math.max(1, Math.round(Number(targetAsset.life_of_asset) / 12)) : 5;
+      const isWdv = targetAsset.brand?.includes("WDV");
+      const deprMethod: "Straight Line Method (SLM)" | "Written Down Value (WDV)" = isWdv ? "Written Down Value (WDV)" : "Straight Line Method (SLM)";
+      const ratePct = isWdv ? (150 / usefulYears) : (100 / usefulYears);
+      const annualCharge = Math.round(cost * (ratePct / 100));
+
+      setDepreciationForm({
+        fiscal_year: "2025-2026",
+        posting_date: getTodayIST(),
+        depreciation_method: deprMethod,
+        useful_life_years: String(usefulYears),
+        depreciation_rate_pct: String(ratePct),
+        charge_amount: String(annualCharge),
+        remarks: `Annual Depreciation Charge FY 2025-26 for ${targetAsset.asset_name} (${targetAsset.asset_code || ""})`,
+      });
+    } else {
+      setSelectedAssetForDepr(null);
+      setDepreciationForm({
+        fiscal_year: "2025-2026",
+        posting_date: getTodayIST(),
+        depreciation_method: "Straight Line Method (SLM)",
+        useful_life_years: "5",
+        depreciation_rate_pct: "20",
+        charge_amount: String(Math.round(depreciationMetrics.totalCost * 0.15)),
+        remarks: "Portfolio-wide Periodic Depreciation Run for FY 2025-2026",
+      });
+    }
+    setShowDepreciationModal(true);
+  }
+
+  // Handle Post Depreciation Run to General Ledger
+  function handlePostDepreciation() {
+    const charge = Number(depreciationForm.charge_amount) || 0;
+    if (charge <= 0) {
+      toast.error("Please enter a valid depreciation charge amount.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const jeNumber = `JE-DEPR-${Date.now().toString().slice(-6)}`;
+      addJournalEntry({
+        je_no: jeNumber,
+        posting_date: depreciationForm.posting_date || getTodayIST(),
+        reference: selectedAssetForDepr ? (selectedAssetForDepr.asset_code || selectedAssetForDepr.id) : "PORTFOLIO-BATCH",
+        narration: depreciationForm.remarks || `Depreciation Expense: ${selectedAssetForDepr ? selectedAssetForDepr.asset_name : "Portfolio Batch"} (FY ${depreciationForm.fiscal_year})`,
+        dr_account: "Depreciation Expense on Fixed Assets",
+        dr_code: "54100001",
+        cr_account: "Accumulated Depreciation - Fixed Assets",
+        cr_code: "12400001",
+        amount: charge,
+      });
+
+      toast.success(
+        selectedAssetForDepr
+          ? `Depreciation of QAR ${charge.toLocaleString()} posted to GL for ${selectedAssetForDepr.asset_name} (${jeNumber}).`
+          : `Batch depreciation of QAR ${charge.toLocaleString()} posted to GL (${jeNumber}).`
+      );
+      setShowDepreciationModal(false);
+    } catch (err: any) {
+      toast.error(`Depreciation posting failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   // ── Open Edit Asset Modal ──
   function openEditAssetModal(a: Asset) {
@@ -1404,6 +1597,93 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     }
   }
 
+  const downloadAssetCsvTemplate = () => {
+    const headers = ["AssetName", "Category", "AssetTag", "SerialNumber", "AcquisitionCost", "PurchaseDate", "UsefulLifeYears", "DepreciationMethod", "Supplier", "AssetCondition", "Description"];
+    const rows = [
+      ["Carrier 2.5 Ton Split AC", "HVAC", "AST-HVAC-001", "CR-8829102", "3800", "2026-01-15", "7", "Straight Line Method (SLM)", "Mannai Trading", "Brand New", "Master Bedroom High-Wall AC"],
+      ["LG Double-Door Refrigerator 600L", "Appliances", "AST-APP-002", "LG-RF-7721", "4500", "2026-02-01", "5", "Straight Line Method (SLM)", "LG Electronics Qatar", "Good", "Kitchen Main Refrigerator"]
+    ];
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `asset_import_template_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Asset CSV template downloaded");
+  };
+
+  const handleBulkAssetImport = async () => {
+    if (!bulkAssetData.trim()) {
+      toast.error("Please provide CSV content to import");
+      return;
+    }
+    setBulkAssetLoading(true);
+    try {
+      const lines = bulkAssetData.trim().split("\n").filter(l => l.trim().length > 0);
+      if (lines.length <= 1) {
+        toast.error("CSV contains no data rows");
+        setBulkAssetLoading(false);
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const line of dataRows) {
+        const parts = line.split(",").map(p => p.trim());
+        if (!parts[0] || !parts[4]) {
+          failCount++;
+          continue;
+        }
+        const [
+          assetName, category, assetTag, serialNumber,
+          acquisitionCost, purchaseDate, usefulLife, depMethod,
+          supplier, condition, desc
+        ] = parts;
+
+        const code = assetTag || `AST-${String(assets.length + successCount + 1).padStart(4, "0")}`;
+        const costNum = parseFloat(acquisitionCost) || 0;
+
+        const payload: any = {
+          asset_name: assetName,
+          category: category || "Furniture",
+          asset_code: code,
+          serial_number: serialNumber || "",
+          purchase_cost: costNum,
+          purchase_date: purchaseDate || getTodayIST(),
+          commission_date: purchaseDate || getTodayIST(),
+          life_of_asset: usefulLife ? String(Number(usefulLife) * 12) : "60",
+          brand: depMethod || "Straight Line Method (SLM)",
+          supplier: supplier || "",
+          asset_condition: condition || "Good",
+          description: desc || "",
+          asset_status: "Available",
+          current_value: costNum,
+          created_at: new Date().toISOString()
+        };
+
+        const res = await createAsset(payload);
+        if (res) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+
+      toast.success(`Bulk Asset Ingestion Complete: ${successCount} created, ${failCount} failed.`);
+      setBulkAssetOpen(false);
+      setBulkAssetData("");
+      await load();
+    } catch (err: any) {
+      toast.error("Bulk asset import failed: " + err.message);
+    } finally {
+      setBulkAssetLoading(false);
+    }
+  };
+
   // ── Asset Revaluation Handler ──
   async function handleCreateRevaluation() {
     if (!revalForm.asset_id || !revalForm.new_value) {
@@ -1653,6 +1933,12 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
 
   const pageHeaderInfo = useMemo(() => {
     switch (moduleTab) {
+      case "depreciation":
+        return {
+          title: "Asset Depreciation & Book Valuation",
+          desc: "Calculate and monitor depreciation schedules (SLM & WDV), accumulated depreciation, and post journal entries to GL.",
+          badge: `${depreciationMetrics.totalAssets} Active Assets`,
+        };
       case "allocation":
         return {
           title: "Asset Allocation & Movement",
@@ -1696,7 +1982,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
           badge: `${assetCounts.total} Total Tracked`,
         };
     }
-  }, [moduleTab, assetCounts, warrantyCounts.total, revaluations.length, sells.length, writeoffs.length]);
+  }, [moduleTab, assetCounts, warrantyCounts.total, revaluations.length, sells.length, writeoffs.length, depreciationMetrics.totalAssets]);
 
   return (
     <div className="space-y-6">
@@ -1719,8 +2005,19 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
           </Button>
 
           {moduleTab === "registry" && (
-            <Button size="sm" onClick={() => { setStepperStep(1); setShowNew(true); }} className="gap-1.5 text-xs bg-primary hover:bg-primary/90 text-white shadow-sm">
-              <Plus className="h-3.5 w-3.5" /> Add Asset
+            <>
+              <Button variant="outline" size="sm" onClick={() => setBulkAssetOpen(true)} className="gap-1.5 text-xs">
+                <FileSpreadsheet className="h-3.5 w-3.5 text-primary" /> Bulk Import
+              </Button>
+              <Button size="sm" onClick={() => { setStepperStep(1); setShowNew(true); }} className="gap-1.5 text-xs bg-primary hover:bg-primary/90 text-white shadow-sm">
+                <Plus className="h-3.5 w-3.5" /> Add Asset
+              </Button>
+            </>
+          )}
+
+          {moduleTab === "depreciation" && (
+            <Button size="sm" onClick={() => openDepreciationModal()} className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> Run Depreciation Batch
             </Button>
           )}
 
@@ -2004,6 +2301,161 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                       pageSize={registryPageSize}
                       onPageChange={setRegistryPage}
                       onPageSizeChange={(sz) => { setRegistryPageSize(sz); setRegistryPage(1); }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Tabs>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE: ASSET DEPRECIATION & VALUATION ─────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "depreciation" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Total Acquisition Cost</CardTitle>
+                <DollarSign className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-foreground font-mono">QAR {depreciationMetrics.totalCost.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Gross historical asset value</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Accumulated Depreciation</CardTitle>
+                <TrendingDown className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-amber-600 font-mono">QAR {depreciationMetrics.totalAccum.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Total depreciation charged to date</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Net Carrying (Book) Value</CardTitle>
+                <ShieldCheck className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">QAR {depreciationMetrics.totalNetBook.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Current balance sheet asset value</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Depreciated Portfolio</CardTitle>
+                <Package className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-blue-600 font-mono">{depreciationMetrics.totalAssets} Units</div>
+                <p className="text-[10px] text-muted-foreground">SLM &amp; WDV amortization models</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <Tabs defaultValue="all" value={deprMethodFilter} onValueChange={v => { setDeprMethodFilter(v); setDeprPage(1); }}>
+              <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-b">
+                <TabsList className="grid grid-cols-3 h-9 w-full md:w-auto">
+                  <TabsTrigger value="all" className="text-xs">All Methods ({assetDepreciationList.length})</TabsTrigger>
+                  <TabsTrigger value="slm" className="text-xs">Straight Line (SLM)</TabsTrigger>
+                  <TabsTrigger value="wdv" className="text-xs">Written Down Value (WDV)</TabsTrigger>
+                </TabsList>
+
+                <div className="relative w-full md:w-80">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search asset, tag, category..."
+                    className="pl-8 h-9 text-xs"
+                    value={deprSearch}
+                    onChange={e => { setDeprSearch(e.target.value); setDeprPage(1); }}
+                  />
+                </div>
+              </div>
+
+              <CardContent className="p-0">
+                {filteredDepreciationList.length === 0 ? (
+                  <div className="text-center py-14 text-muted-foreground">
+                    <TrendingDown className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No depreciation records found</p>
+                    <p className="text-xs text-muted-foreground mt-1">Try clearing filters or checking asset acquisition dates.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b bg-muted/40 font-bold">
+                            <th className="h-9 px-3 text-left">Asset Details</th>
+                            <th className="h-9 px-2.5 text-left">Category</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Acquisition</th>
+                            <th className="h-9 px-2.5 text-center">Method &amp; Rate</th>
+                            <th className="h-9 px-3 text-right">Cost (QAR)</th>
+                            <th className="h-9 px-3 text-right">Accum. Depr (QAR)</th>
+                            <th className="h-9 px-3 text-right">Net Book Value (QAR)</th>
+                            <th className="h-9 px-3 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {pagedDepreciationList.map(item => {
+                            const originalAsset = assets.find(a => a.id === item.asset_id);
+                            return (
+                              <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-semibold text-foreground">{item.asset_name}</div>
+                                  <div className="text-[11px] font-mono text-muted-foreground">{item.asset_code}</div>
+                                </td>
+                                <td className="p-2.5">
+                                  <Badge variant="outline" className="text-[10px] font-medium">{item.category}</Badge>
+                                </td>
+                                <td className="p-2 text-center whitespace-nowrap font-mono text-muted-foreground">
+                                  {formatDDMMMYYYY(item.purchase_date)}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <Badge variant="outline" className={`text-[10px] font-mono ${item.depreciation_method.includes("SLM") ? "bg-blue-500/10 text-blue-600 border-blue-500/30" : "bg-purple-500/10 text-purple-600 border-purple-500/30"}`}>
+                                    {item.depreciation_method.includes("SLM") ? "SLM" : "WDV"} ({item.depreciation_rate_pct}% / {item.useful_life_years}y)
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-right font-mono font-medium">
+                                  {item.acquisition_cost.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right font-mono text-amber-600 font-semibold">
+                                  {item.accumulated_depreciation.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right font-mono text-emerald-600 font-bold">
+                                  {item.current_book_value.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                                    onClick={() => originalAsset && openDepreciationModal(originalAsset)}
+                                  >
+                                    <TrendingUp className="h-3 w-3" /> Post GL Run
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <TablePagination
+                      currentPage={deprPage}
+                      totalItems={filteredDepreciationList.length}
+                      pageSize={deprPageSize}
+                      onPageChange={setDeprPage}
+                      onPageSizeChange={sz => { setDeprPageSize(sz); setDeprPage(1); }}
                     />
                   </div>
                 )}
@@ -4923,6 +5375,109 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
             <Button variant="outline" size="sm" onClick={() => setShowWriteoff(false)}>Cancel</Button>
             <Button size="sm" disabled={saving} onClick={handleCreateWriteoff} className="bg-red-600 hover:bg-red-700 text-white min-w-[120px]">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Approve &amp; Write Off
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: BULK ASSET IMPORT ─────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={bulkAssetOpen} onOpenChange={setBulkAssetOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="asset"
+            title="Fixed Assets: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for HVAC, equipment, machinery, and fixtures."
+            onCompleted={() => {
+              load();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: POST ASSET DEPRECIATION TO GENERAL LEDGER ─────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showDepreciationModal} onOpenChange={setShowDepreciationModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-amber-500" />
+              {selectedAssetForDepr ? `Post Depreciation: ${selectedAssetForDepr.asset_name}` : "Portfolio Periodic Depreciation Run"}
+            </DialogTitle>
+            <DialogDescription>
+              Record periodic depreciation amortization charge and automatically post journal entry debiting Depreciation Expense (54100001) and crediting Accumulated Depreciation (12400001).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Fiscal Year *</Label>
+                <Select
+                  value={depreciationForm.fiscal_year}
+                  onValueChange={v => setDepreciationForm(f => ({ ...f, fiscal_year: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2024-2025">FY 2024-2025</SelectItem>
+                    <SelectItem value="2025-2026">FY 2025-2026</SelectItem>
+                    <SelectItem value="2026-2027">FY 2026-2027</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">GL Posting Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={depreciationForm.posting_date}
+                  onChange={e => setDepreciationForm(f => ({ ...f, posting_date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Depreciation Method</Label>
+                <Select
+                  value={depreciationForm.depreciation_method}
+                  onValueChange={(v: any) => setDepreciationForm(f => ({ ...f, depreciation_method: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Straight Line Method (SLM)">Straight Line Method (SLM)</SelectItem>
+                    <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Depreciation Charge (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-bold text-amber-600"
+                  placeholder="0.00"
+                  value={depreciationForm.charge_amount}
+                  onChange={e => setDepreciationForm(f => ({ ...f, charge_amount: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Journal Narration / Audit Memo</Label>
+              <Textarea
+                className="text-xs h-18"
+                placeholder="Narration for General Ledger journal entry..."
+                value={depreciationForm.remarks}
+                onChange={e => setDepreciationForm(f => ({ ...f, remarks: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowDepreciationModal(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handlePostDepreciation} className="bg-amber-600 hover:bg-amber-700 text-white min-w-[130px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Post GL Journal Entry
             </Button>
           </DialogFooter>
         </DialogContent>

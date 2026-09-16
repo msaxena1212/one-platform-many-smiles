@@ -101,7 +101,6 @@ export interface PmsVoucher {
   credit: string;
   amount: number;
   status: VoucherStatus;
-  /** Settlement details — populated when status is "settled" */
   settlement_deductions?: number;
   settlement_refund?: number;
   settlement_date?: string;
@@ -203,10 +202,7 @@ export interface PmsAppData {
   auditEvents: PmsAuditEvent[];
 }
 
-const STORAGE_KEY = "zyno-pms-app-data-fresh-v9";
-const STORAGE_VERSION = 9;
-
-const SEED_DATA: PmsAppData = {
+const EMPTY_DATA: PmsAppData = {
   units: [],
   customers: [],
   reservations: [],
@@ -218,40 +214,6 @@ const SEED_DATA: PmsAppData = {
   checkIns: [],
   auditEvents: [],
 };
-
-
-type PersistedAppData = PmsAppData & { _version: number };
-
-function normalizeStoredData(raw: unknown): PmsAppData | null {
-  if (!raw || typeof raw !== "object") return null;
-  const data = raw as Partial<PersistedAppData>;
-  if (data._version !== STORAGE_VERSION) return null;
-
-  return {
-    units: Array.isArray(data.units) ? data.units : SEED_DATA.units,
-    customers: Array.isArray(data.customers) ? data.customers : SEED_DATA.customers,
-    reservations: Array.isArray(data.reservations) ? data.reservations : SEED_DATA.reservations,
-    leases: Array.isArray(data.leases) ? data.leases : SEED_DATA.leases,
-    pdcs: Array.isArray(data.pdcs) ? data.pdcs : SEED_DATA.pdcs,
-    vouchers: Array.isArray(data.vouchers) ? data.vouchers : SEED_DATA.vouchers,
-    keyNotices: Array.isArray(data.keyNotices) ? data.keyNotices : SEED_DATA.keyNotices,
-    handovers: Array.isArray(data.handovers) ? data.handovers : SEED_DATA.handovers,
-    checkIns: Array.isArray(data.checkIns) ? data.checkIns : SEED_DATA.checkIns,
-    auditEvents: Array.isArray(data.auditEvents) ? data.auditEvents : SEED_DATA.auditEvents,
-  };
-}
-
-function readInitialData(): PmsAppData {
-  if (typeof window === "undefined") return SEED_DATA;
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return SEED_DATA;
-    return normalizeStoredData(JSON.parse(raw)) ?? SEED_DATA;
-  } catch {
-    return SEED_DATA;
-  }
-}
 
 interface AppDataContextValue extends PmsAppData {
   setUnits: (fn: (prev: PmsUnit[]) => PmsUnit[]) => void;
@@ -265,130 +227,157 @@ interface AppDataContextValue extends PmsAppData {
   setCheckIns: (fn: (prev: PmsCheckIn[]) => PmsCheckIn[]) => void;
   setAuditEvents: (fn: (prev: PmsAuditEvent[]) => PmsAuditEvent[]) => void;
   syncing: boolean;
+  refetchData: () => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const [appData, setAppData] = useState<PmsAppData>(readInitialData);
+  const [appData, setAppData] = useState<PmsAppData>(EMPTY_DATA);
   const [syncing, setSyncing] = useState(true);
 
-  // BroadcastChannel: enables zero-latency cross-tab sync within the same origin.
-  const bcRef = useRef<BroadcastChannel | null>(null);
+  const fetchDirectFromDatabase = useCallback(async () => {
+    setSyncing(true);
+    try {
+      // Fetch concurrently from PostgreSQL tables
+      const [
+        unitsRes,
+        customersRes,
+        leasesRes,
+        pdcsRes,
+        reservationsRes,
+        vouchersRes,
+        handoversRes,
+        inspectionsRes,
+      ] = await Promise.all([
+        supabase.from("units").select("id, unit_number, status, rent_amount, property_id, properties(title)").limit(200),
+        supabase.from("customer_masters").select("id, full_name, customer_type, qatar_id, passport_no, commercial_registration_no, mobile, email, verification_status").limit(200),
+        supabase.from("leases").select("*, properties(title), units(unit_number), customers:customer_id(full_name)").limit(200),
+        supabase.from("fin_pdc_register").select("*").limit(300),
+        supabase.from("reservations").select("*").limit(100),
+        supabase.from("fin_vouchers").select("*").limit(200),
+        supabase.from("key_handovers").select("*").limit(100),
+        supabase.from("inspection_reports").select("*").limit(100),
+      ]);
 
-  useEffect(() => {
-    setAppData(readInitialData());
-    setSyncing(false);
+      const mappedUnits: PmsUnit[] = (unitsRes.data || []).map((u: any) => ({
+        id: u.id,
+        property: u.properties?.title || "Property",
+        unit: u.unit_number || "Unit",
+        status: (u.status as UnitStatus) || "Available",
+        rent: Number(u.rent_amount || 0),
+      }));
 
-    // Open a shared BroadcastChannel so all tabs instantly share state mutations.
-    if (typeof BroadcastChannel !== "undefined") {
-      const bc = new BroadcastChannel("zyno-pms-sync");
-      bcRef.current = bc;
-      bc.onmessage = (event) => {
-        if (event.data?.type === "STATE_UPDATE" && event.data?.payload) {
-          const next = normalizeStoredData(event.data.payload);
-          if (next) setAppData(next);
-        }
-      };
-      return () => { bc.close(); };
+      const mappedCustomers: PmsCustomer[] = (customersRes.data || []).map((c: any) => ({
+        id: c.id,
+        name: c.full_name || "Customer",
+        type: c.customer_type === "Company" ? "company" : "individual",
+        qatarId: c.qatar_id || "",
+        passport: c.passport_no || "",
+        crNumber: c.commercial_registration_no || "",
+        mobile: c.mobile || "",
+        email: c.email || "",
+        status: "active",
+      }));
+
+      const mappedLeases: PmsLease[] = (leasesRes.data || []).map((l: any) => ({
+        id: l.lease_number || l.id,
+        customerId: l.customer_id || "",
+        reservationId: l.id || "",
+        property: l.properties?.title || "Property",
+        unit: l.units?.unit_number || l.unit_ref || "Unit",
+        tenantName: l.customers?.full_name || l.tenant_name || "Tenant",
+        startDate: l.commencement_date || "",
+        endDate: l.expiry_date || "",
+        monthlyRent: Number(l.rental_amount || 0),
+        securityDeposit: Number(l.security_deposit || 0),
+        pdcCount: Number(l.number_of_pdc || 0),
+        paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
+        gracePeriodDays: Number(l.grace_period_days || 7),
+        penalties: `${l.late_penalty_percentage || 0}%`,
+        maintenanceResponsibility: l.maintenance_responsibility || "Landlord",
+        utilityResponsibility: l.utility_responsibility || "Tenant",
+        parkingDetails: l.parking_details || "",
+        specialConditions: l.special_conditions || "",
+        noticePeriodDays: Number(l.notice_period_days || 30),
+        status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
+        collectionCompleted: true,
+      }));
+
+      const mappedPdcs: PmsPdc[] = (pdcsRes.data || []).map((p: any) => ({
+        id: p.id,
+        leaseId: p.lease_id || "",
+        chequeNo: p.cheque_number || "",
+        bank: p.bank_name || "QNB",
+        date: p.cheque_date || "",
+        amount: Number(p.amount || 0),
+        status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
+        payerName: p.drawer_name || p.tenant_name,
+      }));
+
+      const mappedReservations: PmsReservation[] = (reservationsRes.data || []).map((r: any) => ({
+        id: r.id,
+        property: "Property",
+        unit: r.unit_id || "",
+        tenantName: r.prospect_name || "Prospect",
+        startDate: r.expected_start_date || "",
+        validUntil: r.reservation_validity || "",
+        rent: Number(r.proposed_rental_amount || 0),
+        status: (r.status?.toLowerCase() as any) || "reserved",
+        remarks: r.special_conditions,
+      }));
+
+      const mappedVouchers: PmsVoucher[] = (vouchersRes.data || []).map((v: any) => ({
+        id: v.id,
+        leaseId: v.party_id || "",
+        name: v.narration || v.voucher_no,
+        receiptNo: v.voucher_no,
+        debit: "Bank",
+        credit: "Receivable",
+        amount: Number(v.total_amount || 0),
+        status: (v.status as VoucherStatus) || "posted",
+      }));
+
+      const mappedHandovers: PmsHandover[] = (handoversRes.data || []).map((h: any) => ({
+        id: h.id,
+        leaseId: h.lease_id,
+        handoverAt: h.handover_date,
+        keys: (h.keys_issued || []).length || 2,
+        accessCards: (h.access_cards_issued || []).length || 1,
+        parkingRemotes: (h.parking_remotes || []).length || 1,
+        acknowledged: true,
+      }));
+
+      const mappedCheckIns: PmsCheckIn[] = (inspectionsRes.data || []).map((i: any) => ({
+        id: i.id,
+        leaseId: i.lease_id,
+        date: i.inspection_date,
+        condition: typeof i.unit_condition === "string" ? i.unit_condition : "Good",
+        photos: (i.photos || []).length,
+      }));
+
+      setAppData({
+        units: mappedUnits,
+        customers: mappedCustomers,
+        leases: mappedLeases,
+        pdcs: mappedPdcs,
+        reservations: mappedReservations,
+        vouchers: mappedVouchers,
+        keyNotices: [],
+        handovers: mappedHandovers,
+        checkIns: mappedCheckIns,
+        auditEvents: [],
+      });
+    } catch (err) {
+      console.error("Failed to load initial data from Supabase:", err);
+    } finally {
+      setSyncing(false);
     }
   }, []);
 
-  // Track the previous appData so we can diff before syncing to Supabase.
-  const prevAppDataRef = useRef<PmsAppData | null>(null);
-  // Timer ref for debouncing Supabase writes.
-  const supabaseSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Build a stable sync function that diffs and only writes changed records.
-  const syncChangedRecordsToSupabase = useCallback((current: PmsAppData, prev: PmsAppData | null) => {
-    const now = new Date().toISOString();
-
-    // ── Lease status sync ─────────────────────────────────────────────────
-    const prevLeaseMap = new Map((prev?.leases ?? []).map(l => [l.id, l.status]));
-    const changedLeases = current.leases.filter(
-      l => l.status && l.status !== prevLeaseMap.get(l.id)
-    );
-    changedLeases.forEach(lease => {
-      supabase
-        .from("leases")
-        .update({ lease_status: lease.status, updated_at: now })
-        .eq("lease_number", lease.id)
-        .then(({ error }) => {
-          if (error && error.code !== "PGRST116") {
-            // PGRST116 = no rows matched — safe to ignore for seed data.
-            console.warn("[AppData] lease sync warn:", error.message);
-          }
-        });
-    });
-
-    // ── PDC status sync ───────────────────────────────────────────────────
-    const prevPdcMap = new Map((prev?.pdcs ?? []).map(p => [p.chequeNo, p.status]));
-    const changedPdcs = current.pdcs.filter(
-      p => p.status && p.chequeNo && p.status !== prevPdcMap.get(p.chequeNo)
-    );
-    changedPdcs.forEach(pdc => {
-      const normalizedStatus =
-        pdc.status === "deposited"    ? "Deposited"    :
-        pdc.status === "cleared"      ? "Cleared"      :
-        pdc.status === "bounced"      ? "Returned"     :
-        pdc.status === "returned"     ? "Returned"     :
-        pdc.status === "replaced"     ? "Replaced"     :
-        pdc.status === "cancelled"    ? "Cancelled"    :
-        pdc.status === "partial_cash" || (pdc.status as string) === "Partial Cash"
-          ? "Partial Cash"
-          : "In Hand";
-      supabase
-        .from("fin_pdc_register")
-        .update({ status: normalizedStatus, updated_at: now })
-        .eq("cheque_number", pdc.chequeNo)
-        .then(
-          ({ error }) => {
-            if (error && error.code !== "PGRST116" && error.code !== "42P01") {
-              // Ignore non-blocking sync notices.
-            }
-          },
-          () => {}
-        );
-    });
-  }, []);
-
-  // Persist to localStorage AND broadcast to other tabs on every change.
-  // Supabase writes are debounced by 2 s and only fire for actually-changed records.
   useEffect(() => {
-    if (typeof window === "undefined" || syncing) return;
-    const payload: PersistedAppData = { ...appData, _version: STORAGE_VERSION };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-
-    // Broadcast to other tabs via BroadcastChannel (faster than storage events).
-    bcRef.current?.postMessage({ type: "STATE_UPDATE", payload });
-
-    // ── Debounced Supabase write-through (best-effort) ────────────────────
-    // Cancel any pending sync timer from a rapid previous change.
-    if (supabaseSyncTimerRef.current) clearTimeout(supabaseSyncTimerRef.current);
-
-    const snapshot = prevAppDataRef.current;
-    supabaseSyncTimerRef.current = setTimeout(() => {
-      syncChangedRecordsToSupabase(appData, snapshot);
-      prevAppDataRef.current = appData;
-    }, 2000);
-  }, [appData, syncing, syncChangedRecordsToSupabase]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
-      try {
-        const next = normalizeStoredData(JSON.parse(event.newValue));
-        if (next) setAppData(next);
-      } catch {
-        // Ignore malformed storage updates from outside the app.
-      }
-    };
-
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+    fetchDirectFromDatabase();
+  }, [fetchDirectFromDatabase]);
 
   function makeUpdater<K extends keyof PmsAppData>(key: K) {
     return (fn: (prev: PmsAppData[K]) => PmsAppData[K]) => {
@@ -410,8 +399,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setCheckIns: makeUpdater("checkIns"),
       setAuditEvents: makeUpdater("auditEvents"),
       syncing,
+      refetchData: fetchDirectFromDatabase,
     }),
-    [appData, syncing],
+    [appData, syncing, fetchDirectFromDatabase],
   );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

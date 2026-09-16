@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/pdc-clearing",
+      "schedule": "5 21 * * *"
+    },
+    {
+      "path": "/api/billing-recurring",
+      "schedule": "15 21 * * *"
+    },
+    {
+      "path": "/api/asset-depreciation",
+      "schedule": "30 21 * * *"
+    }
+  ]
+}

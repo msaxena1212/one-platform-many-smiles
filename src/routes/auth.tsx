@@ -9,16 +9,11 @@ import { getLandingRouteForRole } from "@/lib/console-config";
 import { clearDemoSession, setDemoSession, findDemoUserByEmail, getDemoSession } from "@/lib/demo-auth";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Loader2, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+import { Loader2, Mail, Lock, User, Eye, EyeOff, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   beforeLoad: async () => {
-    // If user is already logged in as a demo user or supabase user, forward to their dashboard
-    const demo = getDemoSession();
-    if (demo?.role) {
-      const landing = getLandingRouteForRole(demo.role);
-      throw redirect({ to: landing as any });
-    }
+    // Check if user already has an active Supabase session
     try {
       const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
@@ -34,6 +29,13 @@ export const Route = createFileRoute("/auth")({
     } catch (err: any) {
       if (err && (err instanceof Response || err.isRedirect || err.to || err.statusCode)) throw err;
     }
+
+    // Check demo session
+    const demo = getDemoSession();
+    if (demo?.role) {
+      const landing = getLandingRouteForRole(demo.role);
+      throw redirect({ to: landing as any });
+    }
   },
   component: AuthPage,
 });
@@ -45,6 +47,7 @@ function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<"GUEST" | "HOST">("GUEST");
   const [loading, setLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -82,20 +85,40 @@ function AuthPage() {
       toast.success("Successfully signed in");
       
       // Route based on role
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', data.user.id)
-        .single();
+        .maybeSingle();
         
-      if (profileError) {
-         toast.error(`Profile Error: ${profileError.message}`);
-         return;
-      }
-        
-      navigate({ to: getLandingRouteForRole(profile?.role) as any });
+      const userRole = profile?.role || (data.user.user_metadata?.role as any) || "GUEST";
+      navigate({ to: getLandingRouteForRole(userRole) as any });
     } catch (error: any) {
       toast.error(`Auth Error: ${error.message || JSON.stringify(error)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      clearDemoSession();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+
+      if (error) throw error;
+
+      setOtpSent(true);
+      toast.success("Magic sign-in link has been sent to your email!");
+    } catch (error: any) {
+      toast.error(`OTP Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -119,7 +142,6 @@ function AuthPage() {
       if (error) throw error;
       
       toast.success("Successfully signed up! You can now log in.");
-      // Automatically switch to sign-in tab after successful sign-up
       document.getElementById('tab-login')?.click();
     } catch (error: any) {
       toast.error(error.message);
@@ -153,37 +175,38 @@ function AuthPage() {
               Manage your properties with ease
             </h1>
             <p className="text-lg text-muted-foreground">
-              ZYNO is the complete end-to-end property management system for landlords, agents, and tenants.
+              ZYNO is the complete enterprise property management and ERP system for landlords, agents, and tenants.
             </p>
             <div className="grid grid-cols-2 gap-4 pt-4">
               <div className="space-y-2">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-5 w-5 text-primary" />
+                  <span className="font-bold text-primary">1</span>
                 </div>
-                <h3 className="font-medium">For Tenants</h3>
-                <p className="text-sm text-muted-foreground">Book properties, pay rent, and track maintenance.</p>
+                <h3 className="font-medium text-sm">Leasing & Contracts</h3>
+                <p className="text-xs text-muted-foreground">Complete lifecycle from reservation to check-out.</p>
               </div>
               <div className="space-y-2">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Lock className="h-5 w-5 text-primary" />
+                  <span className="font-bold text-primary">2</span>
                 </div>
-                <h3 className="font-medium">For Hosts</h3>
-                <p className="text-sm text-muted-foreground">Manage leases, track PDCs, and handle operations.</p>
+                <h3 className="font-medium text-sm">Finance & PDCs</h3>
+                <p className="text-xs text-muted-foreground">Double-entry accounting, PDC clearing & receipts.</p>
               </div>
             </div>
           </div>
 
-          <Card className="w-full max-w-md mx-auto shadow-xl border-border/50">
+          <Card className="w-full shadow-lg border-border/60">
             <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl font-bold text-center">Welcome back</CardTitle>
-              <CardDescription className="text-center">
-                Sign in to your account or create a new one
+              <CardTitle className="text-2xl font-bold tracking-tight">Welcome to ZYNO</CardTitle>
+              <CardDescription>
+                Sign in with your enterprise account, OTP magic link, or register
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="login" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 mb-6">
-                  <TabsTrigger id="tab-login" value="login">Login</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-3 mb-6">
+                  <TabsTrigger id="tab-login" value="login">Password</TabsTrigger>
+                  <TabsTrigger value="otp">Magic Link</TabsTrigger>
                   <TabsTrigger value="register">Register</TabsTrigger>
                 </TabsList>
                 
@@ -235,6 +258,42 @@ function AuthPage() {
                     </Button>
                   </form>
                 </TabsContent>
+
+                <TabsContent value="otp" className="space-y-4">
+                  {otpSent ? (
+                    <div className="text-center py-6 space-y-3">
+                      <Sparkles className="h-10 w-10 text-primary mx-auto" />
+                      <h3 className="font-semibold text-lg">Check your email</h3>
+                      <p className="text-sm text-muted-foreground">
+                        We sent a magic sign-in link to <span className="font-medium text-foreground">{email}</span>. Click the link in your email to log in instantly.
+                      </p>
+                      <Button variant="outline" size="sm" onClick={() => setOtpSent(false)} className="mt-2">
+                        Use different email
+                      </Button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSendOtp} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="otp-email">Email Address</Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Input 
+                            id="otp-email" 
+                            type="email" 
+                            placeholder="name@example.com" 
+                            className="pl-9"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <Button type="submit" className="w-full h-11" disabled={loading}>
+                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Send Magic Sign-in Link"}
+                      </Button>
+                    </form>
+                  )}
+                </TabsContent>
                 
                 <TabsContent value="register" className="space-y-4">
                   <form onSubmit={handleSignUp} className="space-y-4">
@@ -280,7 +339,7 @@ function AuthPage() {
                           required
                           minLength={6}
                         />
-                         <button 
+                        <button 
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
                           className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
@@ -331,7 +390,7 @@ function AuthPage() {
                     <span className="w-full border-t border-border" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">Demo Accounts</span>
+                    <span className="bg-card px-2 text-muted-foreground">Demo Testing Accounts</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

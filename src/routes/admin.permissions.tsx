@@ -1,20 +1,15 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PermissionsManager } from "@/components/PermissionsManager";
 import { supabase } from "@/lib/supabase";
 import { resolveTenantContextId } from "@/lib/tenant-context";
 
 export const Route = createFileRoute("/admin/permissions")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    tab: typeof search.tab === "string" ? search.tab : "matrix",
-  }),
   component: AdminPermissions,
 });
 
 function AdminPermissions() {
   const [tenantContextId, setTenantContextId] = useState<string | null>(null);
-  const search = useSearch({ from: "/admin/permissions" });
-  const activeTab = search.tab === "workflows" ? "workflows" : "matrix";
 
   useEffect(() => {
     let mounted = true;
@@ -45,16 +40,14 @@ function AdminPermissions() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {activeTab === "workflows" ? "Approval Workflows" : "Role Permissions & Access Matrix"}
+            Role Permissions & Access Matrix
           </h1>
           <p className="text-muted-foreground">
-            {activeTab === "workflows"
-              ? "Configure automated 1-to-4 layer approval chains across Leasing, Finance, Assets, Procurement, Vendor Management, Operations, Maintenance & HRMS."
-              : "Manage granular module access for your organization's staff roles."}
+            Manage granular module access for your organization's staff roles.
           </p>
         </div>
       </div>
-      <PermissionsManager key={activeTab} targetTenantId={tenantContextId} initialView={activeTab} />
+      <PermissionsManager targetTenantId={tenantContextId} />
     </div>
   );
 }

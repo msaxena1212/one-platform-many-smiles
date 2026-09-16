@@ -16,7 +16,8 @@ import {
   Phone, Mail, CreditCard, Star, CheckCircle2, AlertTriangle,
   FileText, Shield, ShieldCheck, Banknote, TrendingUp, BarChart3, Activity,
   ChevronRight, Info, CheckCheck, Clock, DollarSign,
-  Upload, History, ShoppingBag, Eye, FileUp, Paperclip, FileCheck, Layers
+  Upload, History, ShoppingBag, Eye, FileUp, Paperclip, FileCheck, Layers,
+  FileSpreadsheet, Download, Loader2
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
@@ -152,6 +153,9 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
 
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [editVendor, setEditVendor] = useState<FinVendor | null>(null);
+  const [bulkVendorOpen, setBulkVendorOpen] = useState(false);
+  const [bulkVendorData, setBulkVendorData] = useState("");
+  const [bulkVendorLoading, setBulkVendorLoading] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
   const [showQualModal, setShowQualModal] = useState(false);
@@ -358,6 +362,104 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
       await loadAll();
     } catch (e: any) { toast.error(e.message); }
   }
+
+  const downloadVendorCsvTemplate = () => {
+    const headers = ["VendorCode", "VendorName", "VendorType", "ContactPerson", "Email", "Phone", "TaxNumber", "Address", "City", "Country", "PaymentTerms", "BankName", "IBAN", "Status"];
+    const rows = [
+      ["VND-8801", "Gulf Facilities LLC", "Supplier", "Ahmed Hassan", "ahmed@gulffacil.qa", "+97455001122", "10001234567890003", "Building 12, C Ring Rd", "Doha", "Qatar", "Net 30 Days", "Qatar National Bank", "QA55QNBA00000000123456", "Active"],
+      ["VND-8802", "Mannai Trading Co", "Contractor", "Fatima Al-Nasr", "procurement@mannai.qa", "+97444567890", "20001234567890004", "Salwa Industrial Area", "Doha", "Qatar", "Net 45 Days", "Commercial Bank of Qatar", "QA55CBQA00000000987654", "Active"]
+    ];
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `vendor_import_template_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Vendor CSV template downloaded");
+  };
+
+  const handleBulkVendorImport = async () => {
+    if (!bulkVendorData.trim()) {
+      toast.error("Please provide CSV content to import");
+      return;
+    }
+    setBulkVendorLoading(true);
+    try {
+      const lines = bulkVendorData.trim().split("\n").filter(l => l.trim().length > 0);
+      if (lines.length <= 1) {
+        toast.error("CSV contains no data rows");
+        setBulkVendorLoading(false);
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const line of dataRows) {
+        const parts = line.split(",").map(p => p.trim());
+        if (!parts[0] || !parts[1]) {
+          failCount++;
+          continue;
+        }
+        const [
+          vendorCode, vendorName, vendorType, contactPerson,
+          email, phone, taxNumber, address, city, country,
+          paymentTerms, bankName, iban, status
+        ] = parts;
+
+        const payload: any = {
+          code: vendorCode || `VND-${String(Date.now()).slice(-4)}`,
+          name: vendorName,
+          vendor_type: vendorType || "Supplier",
+          contact_person: contactPerson || null,
+          email: email || null,
+          phone: phone || null,
+          tax_number: taxNumber || null,
+          address: address || null,
+          city: city || "Doha",
+          country: country || "Qatar",
+          payment_terms: paymentTerms || "Net 30 Days",
+          settlement_mode: "Bank Wire / Electronic Transfer (QNB)",
+          currency: "QAR",
+          status: (status as any) || "Active",
+          notes: null
+        };
+
+        const { data: createdVendor, error } = await supabase.from("fin_vendors").insert(payload).select().single();
+        if (error) {
+          console.error("Bulk vendor insert error:", error);
+          failCount++;
+        } else {
+          // Auto-create bank details if IBAN provided
+          if (iban && createdVendor) {
+            try {
+              await supabase.from("vendor_bank_details").insert({
+                vendor_id: createdVendor.id,
+                bank_name: bankName || "Qatar National Bank",
+                account_name: vendorName,
+                account_number: "",
+                iban: iban,
+                currency: "QAR"
+              });
+            } catch {}
+          }
+          successCount++;
+        }
+      }
+
+      toast.success(`Bulk Vendor Ingestion Complete: ${successCount} created, ${failCount} failed.`);
+      setBulkVendorOpen(false);
+      setBulkVendorData("");
+      await loadAll();
+    } catch (err: any) {
+      toast.error("Bulk vendor import failed: " + err.message);
+    } finally {
+      setBulkVendorLoading(false);
+    }
+  };
 
   // ── AP Invoice ─────────────────────────────────────────────────────────────
     function openPaymentReceipt(inv: any) {
@@ -615,7 +717,14 @@ async function handleSaveInvoice() {
             <Button variant="outline" size="sm" onClick={loadAll} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </Button>
-            {activeTab === "master" && <Button size="sm" onClick={openNewVendor}><Plus className="mr-2 h-4 w-4" /> New Vendor</Button>}
+            {activeTab === "master" && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setBulkVendorOpen(true)} className="gap-1.5">
+                  <FileSpreadsheet className="h-4 w-4 text-primary" /> Bulk Import
+                </Button>
+                <Button size="sm" onClick={openNewVendor}><Plus className="mr-2 h-4 w-4" /> New Vendor</Button>
+              </>
+            )}
             {activeTab === "advances" && (
               <Button 
                 size="sm" 
@@ -2330,6 +2439,64 @@ async function handleSaveInvoice() {
                 </Button>
               )}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL: BULK VENDOR IMPORT ──────────────────────────────────────────── */}
+      <Dialog open={bulkVendorOpen} onOpenChange={setBulkVendorOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-primary" />
+              Bulk Vendor Roster Ingestion (CSV / Excel)
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to register multiple vendor accounts with master data, bank details, and qualification flags in a single operation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/40">
+              <div className="text-sm">
+                <p className="font-semibold text-foreground">Standard Vendor Master Template</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Columns: VendorCode, VendorName, VendorType, ContactPerson, Email, Phone, TaxNumber, Address, City, Country, PaymentTerms, BankName, IBAN, Status</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadVendorCsvTemplate} className="gap-2 shrink-0">
+                <Download className="h-4 w-4" /> Template
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Select CSV Document</Label>
+              <Input
+                type="file"
+                accept=".csv, text/csv, application/vnd.ms-excel"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (evt) => {
+                    setBulkVendorData(evt.target?.result as string || "");
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Or Paste Raw CSV Lines</Label>
+              <Textarea
+                value={bulkVendorData}
+                onChange={(e) => setBulkVendorData(e.target.value)}
+                placeholder={`VendorCode,VendorName,VendorType,ContactPerson,Email,Phone,TaxNumber,Address,City,Country,PaymentTerms,BankName,IBAN,Status\nVND-8801,Gulf Facilities LLC,Supplier,Ahmed Hassan,ahmed@gulffacil.qa,+97455001122,10001234567890003,Building 12 C Ring Rd,Doha,Qatar,Net 30 Days,Qatar National Bank,QA55QNBA00000000123456,Active`}
+                className="font-mono text-xs h-32"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkVendorOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkVendorImport} disabled={bulkVendorLoading || !bulkVendorData.trim()} className="gap-2">
+              {bulkVendorLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import Vendors
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

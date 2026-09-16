@@ -4,9 +4,11 @@ import { LogOut, ChevronRight } from "lucide-react";
 import { type ReactNode, useState, useEffect } from "react";
 
 import { clearDemoSession } from "@/lib/demo-auth";
+import { getImpersonationSession, stopImpersonation } from "@/lib/impersonation";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { InAppNotificationBell } from "@/components/in-app-notification-bell";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,28 +108,58 @@ export function AppShell({
     return pathOk;
   }
 
+  const [impersonation, setImpersonation] = useState<any>(null);
+
+  useEffect(() => {
+    setImpersonation(getImpersonationSession());
+  }, [pathname]);
+
+  function handleExitImpersonation() {
+    stopImpersonation();
+    navigate({ to: "/super-admin/tenants" as any });
+  }
+
   // ════════════════════════════════════════════════════════════════════════════
   // 3-Layer nav (navModules) – single-column accordion
   // ════════════════════════════════════════════════════════════════════════════
   if (navModules) {
     return (
-      <div className="flex h-screen overflow-hidden">
-        <NavModulesSidebar
-          navModules={navModules}
-          consoleLabel={consoleLabel}
-          profile={profile}
-          isItemActive={isItemActive}
-          pathname={pathname}
-          searchParams={searchParams}
-          onSignOut={handleSignOut}
-        />
-        {/* ── Main content ─────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
-          {/* Top bar */}
-          <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm gap-3">
-            <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
-          </header>
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      <div className="flex flex-col h-screen overflow-hidden">
+        {impersonation && impersonation.isImpersonating && (
+          <div className="bg-amber-500 text-slate-950 px-4 py-1.5 flex items-center justify-between text-xs font-semibold z-50 shrink-0 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-600 animate-ping" />
+              <span>SUPPORT IMPERSONATION MODE: Viewing console as Tenant Admin for <strong>"{impersonation.tenantName}"</strong> ({impersonation.tenantKey})</span>
+            </div>
+            <button
+              onClick={handleExitImpersonation}
+              className="px-2.5 py-0.5 rounded bg-slate-950 text-white text-[11px] font-bold hover:bg-slate-800 transition-all flex items-center gap-1 shadow-sm"
+            >
+              Exit Impersonation → Return to Super Admin
+            </button>
+          </div>
+        )}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <NavModulesSidebar
+            navModules={navModules}
+            consoleLabel={consoleLabel}
+            profile={profile}
+            isItemActive={isItemActive}
+            pathname={pathname}
+            searchParams={searchParams}
+            onSignOut={handleSignOut}
+          />
+          {/* ── Main content ─────────────────────────────────── */}
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
+            {/* Top bar */}
+            <header className="h-12 border-b flex items-center justify-between px-6 shrink-0 bg-background/95 backdrop-blur-sm gap-3">
+              <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
+              <div className="flex items-center gap-2">
+                <InAppNotificationBell />
+              </div>
+            </header>
+            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+          </div>
         </div>
       </div>
     );
@@ -259,26 +291,33 @@ function NavModulesSidebar({
   // ── Exclusive accordion toggles ─────────────────────────────────────────
 
   function toggleModule(mi: number) {
-    const isAlreadyOpen = openMods.has(mi);
-    if (isAlreadyOpen) {
-      // Collapse this module
-      setOpenMods(new Set());
-    } else {
-      // Open this module ONLY, collapse all others
-      setOpenMods(new Set([mi]));
-      // Auto-expand first sub-group if none previously open
-      setOpenGrps((prev) => ({
-        ...prev,
-        [mi]: prev[mi]?.size ? prev[mi] : new Set([0]),
-      }));
-    }
+    setOpenMods((prev) => {
+      const next = new Set(prev);
+      if (next.has(mi)) {
+        next.delete(mi);
+      } else {
+        next.add(mi);
+        // Auto-expand first sub-group if none open in this module
+        setOpenGrps((gPrev) => {
+          if (!gPrev[mi] || gPrev[mi].size === 0) {
+            return { ...gPrev, [mi]: new Set([0]) };
+          }
+          return gPrev;
+        });
+      }
+      return next;
+    });
   }
 
   function toggleGroup(mi: number, gi: number) {
     setOpenGrps((prev) => {
-      const isAlreadyOpen = prev[mi]?.has(gi);
-      // Exclusive: only one sub-group open at a time per module
-      return { ...prev, [mi]: isAlreadyOpen ? new Set() : new Set([gi]) };
+      const current = new Set(prev[mi] ?? []);
+      if (current.has(gi)) {
+        current.delete(gi);
+      } else {
+        current.add(gi);
+      }
+      return { ...prev, [mi]: current };
     });
   }
 

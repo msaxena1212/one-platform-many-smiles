@@ -16,8 +16,28 @@ type CurrentProfile = {
   tenantContextId?: string | null;
 };
 
+import { getImpersonationSession } from "@/lib/impersonation";
+
 export async function getCurrentProfile(): Promise<CurrentProfile | null> {
-  // 1. Demo session takes priority — synchronous localStorage read, 0 network latency
+  // During SSR (server-side rendering), window is not available
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  // 0. High-Priority: Super Admin Support Impersonation Session
+  const imp = getImpersonationSession();
+  if (imp && imp.isImpersonating) {
+    return {
+      id: "impersonated-admin-session",
+      role: "PROP_MGR",
+      full_name: `${imp.adminName} (Impersonated by Super Admin)`,
+      tenant_id: imp.tenantId,
+      tenant_key: imp.tenantKey,
+      tenantContextId: imp.tenantId,
+    };
+  }
+
+  // 1. Secondary/Testing: Active Demo Session in localStorage
   const demoSession = getDemoSession();
   if (demoSession) {
     return {
@@ -27,42 +47,41 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
     } as CurrentProfile;
   }
 
-  // During SSR (server-side rendering), window and localStorage are not available.
-  // Return null without throwing redirect to avoid kicking user to /auth on page refresh.
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  // 2. Real Supabase session — wrap in try/catch so network errors don't crash
+  // 2. Primary: Real Supabase Auth Session
   try {
     const { data: authData } = await supabase.auth.getSession();
-    const session = authData.session;
+    const session = authData?.session;
 
-    if (!session?.user) {
-      throw redirect({ to: "/auth" });
+    if (session?.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (profile?.role) {
+        const currentProfile = profile as CurrentProfile;
+        currentProfile.tenantContextId = resolveTenantContextId(currentProfile, session.user);
+        return currentProfile;
+      }
+
+      // If user exists in auth but no profile row yet, construct fallback from metadata
+      const userMeta = session.user.user_metadata || {};
+      const userRole = (userMeta.role as AppRole) || "GUEST";
+      return {
+        id: session.user.id,
+        role: userRole,
+        full_name: userMeta.full_name || session.user.email?.split("@")[0] || "User",
+        tenantContextId: userMeta.tenant_id || null,
+      };
     }
-
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", session.user.id)
-      .single();
-
-    if (error || !profile?.role) {
-      throw redirect({ to: "/auth" });
-    }
-
-    const currentProfile = profile as CurrentProfile;
-    currentProfile.tenantContextId = resolveTenantContextId(currentProfile, session.user);
-    return currentProfile;
   } catch (err: any) {
-    // If it's a TanStack redirect, rethrow it
     if (err && (err instanceof Response || err.isRedirect || err.to || err.statusCode)) {
       throw err;
     }
-    // Network/unexpected error — redirect to auth
-    throw redirect({ to: "/auth" });
   }
+
+  throw redirect({ to: "/auth" });
 }
 
 /** Checks role access with static fast-path to prevent UI lag */
@@ -72,7 +91,6 @@ async function checkAccessWithTimeout(
   tenantId: string | null,
   timeoutMs = 800
 ): Promise<boolean> {
-  // 1. Instant check for known role/console bindings
   const ownLanding = String(getLandingRouteForRole(role));
   const consolePrefix = `/${consoleKey}`;
   if (
@@ -92,7 +110,6 @@ async function checkAccessWithTimeout(
 }
 
 export async function requireConsoleAccess(consoleKey: ConsoleKey) {
-  // Skip auth redirect during SSR on server so client-side hydration can inspect session
   if (typeof window === "undefined") {
     return null;
   }
@@ -102,22 +119,13 @@ export async function requireConsoleAccess(consoleKey: ConsoleKey) {
     throw redirect({ to: "/auth" });
   }
 
-  // Fast check: if this role is directly authorized for this console
-  let allowed = await checkAccessWithTimeout(
-    consoleKey,
-    profile.role,
-    profile.tenantContextId ?? null
-  );
+  const tenantId = profile.tenantContextId ?? null;
+  const isAllowed = await checkAccessWithTimeout(consoleKey, profile.role, tenantId);
 
-  if (!allowed) {
-    const ownLanding = String(getLandingRouteForRole(profile.role));
-    const consolePrefix = `/${consoleKey}`;
-    if (ownLanding === "/auth" || ownLanding.startsWith(consolePrefix)) {
-      return profile;
-    }
-    throw redirect({ to: ownLanding as any });
+  if (!isAllowed) {
+    const fallbackLanding = getLandingRouteForRole(profile.role);
+    throw redirect({ to: fallbackLanding as any });
   }
 
   return profile;
 }
-

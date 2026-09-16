@@ -7,6 +7,9 @@ const ProcurementModule = lazy(() =>
 );
 
 export const Route = createFileRoute("/admin/procurement")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "requests",
+  }),
   head: () => ({ meta: [{ title: "Procurement - Admin" }] }),
   component: AdminProcurement,
 });

@@ -7,6 +7,9 @@ const MastersModule = lazy(() =>
 );
 
 export const Route = createFileRoute("/admin/masters")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "asset_category",
+  }),
   head: () => ({ meta: [{ title: "Masters - Admin" }] }),
   component: AdminMasters,
 });

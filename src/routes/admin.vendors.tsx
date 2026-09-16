@@ -7,6 +7,9 @@ const VendorModule = lazy(() =>
 );
 
 export const Route = createFileRoute("/admin/vendors")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "master",
+  }),
   head: () => ({ meta: [{ title: "Vendors - Admin" }] }),
   component: AdminVendors,
 });

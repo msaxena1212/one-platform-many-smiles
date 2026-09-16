@@ -1,10 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, Users, Home, AlertCircle, Clock, CheckCircle } from "lucide-react";
-import { properties, units, leases, tickets } from "@/lib/mock-data";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/dashboard")({
-  component: AdminDashboard,
+  component: () => <Navigate to="/admin" replace />,
 });
 
 function AdminDashboard() {

@@ -22,7 +22,6 @@ export const RBAC_MODULES = [
   "Performance & KPA",
   "Reports & Analytics",
   "User Management",
-  "Approval Workflows",
 ] as const;
 
 export type RbacModule = (typeof RBAC_MODULES)[number];
@@ -238,7 +237,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": true,
     "Reports & Analytics": true,
     "User Management": true,
-    "Approval Workflows": true,
   },
   ADMIN: {
     "Tenant Mgmt": false,
@@ -258,7 +256,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": true,
     "Reports & Analytics": true,
     "User Management": true,
-    "Approval Workflows": true,
   },
   HOST: {
     "Tenant Mgmt": false,
@@ -278,7 +275,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": false,
   },
   PROP_MGR: {
     "Tenant Mgmt": false,
@@ -298,7 +294,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": true,
   },
   LEASING: {
     "Tenant Mgmt": false,
@@ -318,7 +313,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": false,
   },
   FINANCE: {
     "Tenant Mgmt": false,
@@ -338,7 +332,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": true,
   },
   CASHIER: {
     "Tenant Mgmt": false,
@@ -358,7 +351,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": false,
     "User Management": false,
-    "Approval Workflows": false,
   },
   MAINTENANCE: {
     "Tenant Mgmt": false,
@@ -378,7 +370,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": false,
     "User Management": false,
-    "Approval Workflows": false,
   },
   TENANT: {
     "Tenant Mgmt": false,
@@ -398,7 +389,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": false,
     "User Management": false,
-    "Approval Workflows": false,
   },
   GUEST: {
     "Tenant Mgmt": false,
@@ -418,7 +408,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": false,
     "User Management": false,
-    "Approval Workflows": false,
   },
   SALES: {
     "Tenant Mgmt": false,
@@ -438,7 +427,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": false,
   },
   OWNER: {
     "Tenant Mgmt": false,
@@ -458,7 +446,6 @@ export const DEFAULT_ROLE_ACCESS: Record<AppRole, Record<RbacModule, boolean>> =
     "Performance & KPA": false,
     "Reports & Analytics": true,
     "User Management": false,
-    "Approval Workflows": false,
   },
 };
 
@@ -471,8 +458,8 @@ type RolePermissionRow = {
 
 const CONSOLE_MODULE_RULES: Record<ConsoleKey, { anyOf?: RbacModule[]; allowedRoles?: AppRole[] }> = {
   portal: { allowedRoles: ["TENANT", "GUEST", "SUPER_ADMIN", "ADMIN"] },
-  "prop-mgr": { allowedRoles: ["PROP_MGR", "HOST", "SUPER_ADMIN", "ADMIN"], anyOf: ["Property CRUD", "Unit Mgmt", "Lease Creation", "Maintenance Tickets", "Reports & Analytics", "Approval Workflows"] },
-  admin: { allowedRoles: ["ADMIN", "SUPER_ADMIN"], anyOf: ["Property CRUD", "Unit Mgmt", "Lease Creation", "Payment Collection", "Receipt Generation", "Finance & GL", "HRMS", "User Management", "Approval Workflows"] },
+  "prop-mgr": { allowedRoles: ["PROP_MGR", "HOST", "SUPER_ADMIN", "ADMIN"], anyOf: ["Property CRUD", "Unit Mgmt", "Lease Creation", "Maintenance Tickets", "Reports & Analytics"] },
+  admin: { allowedRoles: ["ADMIN", "SUPER_ADMIN"], anyOf: ["Property CRUD", "Unit Mgmt", "Lease Creation", "Payment Collection", "Receipt Generation", "Finance & GL", "HRMS", "User Management"] },
   "super-admin": { allowedRoles: ["SUPER_ADMIN"] },
   leasing: { allowedRoles: ["LEASING", "SUPER_ADMIN", "ADMIN", "PROP_MGR"], anyOf: ["Lease Creation", "Reports & Analytics"] },
   finance: { allowedRoles: ["FINANCE", "SUPER_ADMIN", "ADMIN", "PROP_MGR", "CASHIER"], anyOf: ["Payment Collection", "Receipt Generation", "Finance & GL", "Reports & Analytics"] },

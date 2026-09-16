@@ -1,5 +1,6 @@
-import { useRouterState, useNavigate } from "@tanstack/react-router";
+import { useRouterState, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ import {
   FileCheck,
   FileCheck2,
   FileSignature,
-  FileText,
+  FileSpreadsheet,
   Key,
   KeyRound,
   Loader2,
@@ -53,6 +54,8 @@ import {
   Users,
   Wallet,
   XCircle,
+  FileUp,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -436,15 +439,22 @@ function getVoucherAccounts(name: string, unit: string, method?: string) {
   return { debit: dr, credit: `Customer(PDC)-${cleanUnit}` };
 }
 
-function LeasingPage() {
+function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const routerState = useRouterState();
   const navigate = useNavigate();
+  const currentPath = routerState.location.pathname;
   const searchParams = new URLSearchParams(routerState.location.searchStr);
   const activeTab = searchParams.get("tab") || "customers";
 
   const handleTabChange = (val: string) => {
+    const targetRoute = currentPath.startsWith("/admin") 
+      ? "/admin/leases" 
+      : currentPath.startsWith("/leasing") 
+        ? "/leasing/create" 
+        : "/prop-mgr/leasing";
+
     navigate({
-      to: "/prop-mgr/leasing",
+      to: targetRoute as any,
       search: { tab: val } as any,
     });
   };
@@ -639,6 +649,250 @@ function LeasingPage() {
   const [viewCustomerData, setViewCustomerData] = useState<Customer | null>(null);
   const [editCustomerOpen, setEditCustomerOpen] = useState(false);
   const [editCustomerData, setEditCustomerData] = useState<Customer | null>(null);
+
+  // ── Bulk Importer States ───────────────────────────────────────
+  const [bulkCustomerOpen, setBulkCustomerOpen] = useState(false);
+  const [bulkCustomerCsv, setBulkCustomerCsv] = useState("");
+  const [bulkLeaseOpen, setBulkLeaseOpen] = useState(false);
+  const [bulkLeaseCsv, setBulkLeaseCsv] = useState("");
+  const [bulkPdcOpen, setBulkPdcOpen] = useState(false);
+  const [bulkPdcCsv, setBulkPdcCsv] = useState("");
+  const [bulkDepositOpen, setBulkDepositOpen] = useState(false);
+  const [bulkDepositCsv, setBulkDepositCsv] = useState("");
+  const [bulkLeasingImporting, setBulkLeasingImporting] = useState(false);
+
+  const downloadCustomerTemplate = () => {
+    const headers = "CustomerName,CustomerType,QatarId,Passport,CrNumber,Mobile,Email,Status";
+    const sample = "Nasser Al-Kuwari,individual,29063401928,,+974 5511 2233,nasser@example.qa,active\nAl Mana Trading W.L.L.,company,,,CR-QAT-88192,+974 4433 2211,leasing@almana.qa,active";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_customers_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Customer CSV Template downloaded!");
+  };
+
+  const handleBulkCustomerImport = () => {
+    if (!bulkCustomerCsv.trim()) {
+      toast.error("Please paste CSV data.");
+      return;
+    }
+    setBulkLeasingImporting(true);
+    try {
+      const lines = bulkCustomerCsv.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 customer row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      const newItems: Customer[] = [];
+      dataRows.forEach((row, idx) => {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) return;
+        const [name, ctype, qid, passport, cr, mob, em, st] = cols;
+        newItems.push({
+          id: `c-bulk-${Date.now()}-${idx}`,
+          name,
+          type: (ctype?.toLowerCase() === "company" ? "company" : "individual") as Customer["type"],
+          qatarId: qid || "",
+          passport: passport || "",
+          crNumber: cr || "",
+          mobile: mob || "+974 5500 0000",
+          email: em || "tenant@example.qa",
+          status: (st || "active") as CustomerStatus,
+        });
+      });
+      setCustomers(prev => [...newItems, ...prev]);
+      toast.success(`Successfully imported ${newItems.length} customers!`);
+      setBulkCustomerOpen(false);
+      setBulkCustomerCsv("");
+    } catch (e: any) {
+      toast.error("Failed customer import: " + e.message);
+    } finally {
+      setBulkLeasingImporting(false);
+    }
+  };
+
+  const downloadLeaseTemplate = () => {
+    const headers = "TenantName,Property,Unit,StartDate,EndDate,MonthlyRent,SecurityDeposit,PdcCount,PaymentFrequency";
+    const sample = "Nasser Al-Kuwari,Al Sadd Commercial Tower,Unit 101,2026-01-01,2026-12-31,6500,6500,12,monthly\nAl Mana Trading W.L.L.,Lusail Marina Residences,Unit 204,2026-02-01,2027-01-31,8000,8000,12,monthly";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_leases_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Lease CSV Template downloaded!");
+  };
+
+  const handleBulkLeaseImport = () => {
+    if (!bulkLeaseCsv.trim()) {
+      toast.error("Please paste CSV data.");
+      return;
+    }
+    setBulkLeasingImporting(true);
+    try {
+      const lines = bulkLeaseCsv.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 lease row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      const newItems: Lease[] = [];
+      dataRows.forEach((row, idx) => {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) return;
+        const [tenant, prop, unit, start, end, rent, dep, pdcCnt, freq] = cols;
+        const matchedCust = customers.find(c => c.name.toLowerCase() === tenant.toLowerCase());
+        newItems.push({
+          id: `L-BULK-${Date.now().toString().slice(-4)}-${idx + 1}`,
+          customerId: matchedCust ? matchedCust.id : `c-gen-${Date.now()}`,
+          reservationId: "",
+          property: prop || "Main Portfolio",
+          unit: unit || "101",
+          tenantName: tenant,
+          startDate: start || today.toISOString().split("T")[0],
+          endDate: end || addDays(today, 365),
+          monthlyRent: Number(rent) || 6000,
+          securityDeposit: Number(dep) || Number(rent) || 6000,
+          pdcCount: Number(pdcCnt) || 12,
+          paymentFrequency: (freq || "monthly") as Lease["paymentFrequency"],
+          gracePeriodDays: 5,
+          penalties: "Standard late penalties apply",
+          maintenanceResponsibility: "Property Manager for major repairs",
+          utilityResponsibility: "Tenant",
+          parkingDetails: "1 Covered Space",
+          specialConditions: "",
+          noticePeriodDays: 60,
+          status: "active",
+          collectionCompleted: true,
+        });
+      });
+      setLeases(prev => [...newItems, ...prev]);
+      toast.success(`Successfully imported ${newItems.length} leases!`);
+      setBulkLeaseOpen(false);
+      setBulkLeaseCsv("");
+    } catch (e: any) {
+      toast.error("Failed lease import: " + e.message);
+    } finally {
+      setBulkLeasingImporting(false);
+    }
+  };
+
+  const downloadPdcTemplate = () => {
+    const headers = "LeaseId,ChequeNumber,BankName,MaturityDate,Amount,PayerName";
+    const sample = "L-1001,PDC-889901,Qatar National Bank (QNB),2026-03-01,6500,Nasser Al-Kuwari\nL-1001,PDC-889902,Qatar National Bank (QNB),2026-04-01,6500,Nasser Al-Kuwari";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_pdcs_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("PDC CSV Template downloaded!");
+  };
+
+  const handleBulkPdcImport = () => {
+    if (!bulkPdcCsv.trim()) {
+      toast.error("Please paste CSV data.");
+      return;
+    }
+    setBulkLeasingImporting(true);
+    try {
+      const lines = bulkPdcCsv.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 PDC row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      const newItems: Pdc[] = [];
+      dataRows.forEach((row, idx) => {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) return;
+        const [leaseId, chqNo, bank, mDate, amt, payer] = cols;
+        newItems.push({
+          id: `pdc-bulk-${Date.now()}-${idx}`,
+          leaseId: leaseId || leases[0]?.id || "L-1001",
+          chequeNo: chqNo || `CHQ-${Math.floor(100000 + Math.random() * 900000)}`,
+          bank: bank || "QNB",
+          date: mDate || today.toISOString().split("T")[0],
+          amount: Number(amt) || 5000,
+          payerName: payer || "Tenant Customer",
+          status: "received",
+        });
+      });
+      setPdcs(prev => [...newItems, ...prev]);
+      toast.success(`Successfully imported ${newItems.length} PDC cheques!`);
+      setBulkPdcOpen(false);
+      setBulkPdcCsv("");
+    } catch (e: any) {
+      toast.error("Failed PDC import: " + e.message);
+    } finally {
+      setBulkLeasingImporting(false);
+    }
+  };
+
+  const downloadDepositTemplate = () => {
+    const headers = "LeaseId,ReceiptNumber,DepositType,Amount,PaymentMethod,BankOrReference,Remarks";
+    const sample = "L-1001,RV-DEP-991,Security Deposit,6500,Bank Transfer,TRF-QNB-998811,Standard 1-month deposit\nL-1002,RV-DEP-992,Kahramaa Utility Deposit,2000,Cash,Vault-01,Utility deposit";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_deposits_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Deposit CSV Template downloaded!");
+  };
+
+  const handleBulkDepositImport = () => {
+    if (!bulkDepositCsv.trim()) {
+      toast.error("Please paste CSV data.");
+      return;
+    }
+    setBulkLeasingImporting(true);
+    try {
+      const lines = bulkDepositCsv.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 deposit row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      const newItems: Voucher[] = [];
+      dataRows.forEach((row, idx) => {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) return;
+        const [leaseId, rcptNo, depType, amt, method, ref, rem] = cols;
+        newItems.push({
+          id: `v-dep-${Date.now()}-${idx}`,
+          leaseId: leaseId || leases[0]?.id || "L-1001",
+          name: `Receipts Voucher - ${depType || "Security Deposit"}`,
+          receiptNo: rcptNo || `RV-DEP-${Math.floor(1000 + Math.random() * 9000)}`,
+          method: method || "Bank Transfer",
+          period: rem || "Security Deposit Guarantee",
+          debit: method === "Cash" ? "Cash In Hand" : "Bank Operating Account",
+          credit: "Security Deposit Liability (21500)",
+          amount: Number(amt) || 5000,
+          status: "posted",
+        });
+      });
+      setVouchers(prev => [...newItems, ...prev]);
+      toast.success(`Successfully recorded ${newItems.length} deposit vouchers!`);
+      setBulkDepositOpen(false);
+      setBulkDepositCsv("");
+    } catch (e: any) {
+      toast.error("Failed deposit import: " + e.message);
+    } finally {
+      setBulkLeasingImporting(false);
+    }
+  };
 
   // ── Dialog States ──────────────────────────────────────────────
   const [createLeaseOpen, setCreateLeaseOpen] = useState(false);
@@ -6665,9 +6919,18 @@ function LeasingPage() {
               <h2 className="text-2xl font-bold tracking-tight">Customer Master</h2>
               <p className="text-muted-foreground">Manage individual & corporate tenants, KYC verification, duplicate checks and contacts.</p>
             </div>
-            <Button onClick={() => setCreateCustomerOpen(true)}>
-              <UserPlus className="mr-2 h-4 w-4" /> Add Customer
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setBulkCustomerOpen(true)}
+                className="gap-2"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+              </Button>
+              <Button onClick={() => setCreateCustomerOpen(true)}>
+                <UserPlus className="mr-2 h-4 w-4" /> Add Customer
+              </Button>
+            </div>
           </div>
           <div className="grid gap-4 md:grid-cols-4">
             <Metric label="Total Customers" value={customers.length} icon={<Users className="h-4 w-4 text-emerald-600" />} description="Active tenant profiles" />
@@ -6722,9 +6985,18 @@ function LeasingPage() {
               <h2 className="text-2xl font-bold tracking-tight">Lease Agreement Terms</h2>
               <p className="text-muted-foreground">Configure payment schedules, PDC terms, maintenance responsibilities and notice periods.</p>
             </div>
-            <Button onClick={() => setCreateLeaseOpen(true)}>
-              <FileSignature className="mr-2 h-4 w-4" /> Create Lease
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setBulkLeaseOpen(true)}
+                className="gap-2"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+              </Button>
+              <Button onClick={() => setCreateLeaseOpen(true)}>
+                <FileSignature className="mr-2 h-4 w-4" /> Create Lease
+              </Button>
+            </div>
           </div>
           <div className="grid gap-4 md:grid-cols-4">
             <Metric label="Total Agreements" value={leases.length} icon={<FileSignature className="h-4 w-4 text-emerald-600" />} description="All contract records" />
@@ -6776,9 +7048,17 @@ function LeasingPage() {
               <h2 className="text-2xl font-bold tracking-tight">Leasing Vouchers & Receipts</h2>
               <p className="text-muted-foreground">Rent receipts, security deposit liabilities, PDC clearances, and settlement documents synced to Finance.</p>
             </div>
-            <Button onClick={() => { setAddVoucherForm(f => ({ ...f, leaseId: leases[0]?.id || "" })); setAddVoucherOpen(true); }}>
-              <Banknote className="mr-2 h-4 w-4" /> + Add Voucher
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setBulkPdcOpen(true)} className="gap-2">
+                <FileUp className="h-4 w-4 text-primary" /> Bulk PDCs
+              </Button>
+              <Button variant="outline" onClick={() => setBulkDepositOpen(true)} className="gap-2">
+                <FileUp className="h-4 w-4 text-primary" /> Bulk Deposits
+              </Button>
+              <Button onClick={() => { setAddVoucherForm(f => ({ ...f, leaseId: leases[0]?.id || "" })); setAddVoucherOpen(true); }}>
+                <Banknote className="mr-2 h-4 w-4" /> + Add Voucher
+              </Button>
+            </div>
           </div>
           <div className="grid gap-4 md:grid-cols-4">
             <Metric label="Total Vouchers" value={vouchers.length} icon={<Receipt className="h-4 w-4 text-blue-600" />} description="All leasing accounting records" />
@@ -7739,6 +8019,150 @@ function LeasingPage() {
         data={receiptModalData}
         secondaryData={receiptModalSecondaryData}
       />
+
+      {/* Bulk Customer Import Modal */}
+      <Dialog open={bulkCustomerOpen} onOpenChange={setBulkCustomerOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="customer"
+            title="Customer Master: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for individual tenants, corporate clients, and KYC data."
+            onCompleted={() => {
+              loadCustomers();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Lease Import Modal */}
+      <Dialog open={bulkLeaseOpen} onOpenChange={setBulkLeaseOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="lease"
+            title="Lease Agreements: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for tenancy contracts, payment terms, and schedules."
+            onCompleted={() => {
+              loadLeases();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk PDC Import Modal */}
+      <Dialog open={bulkPdcOpen} onOpenChange={setBulkPdcOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-primary" />
+              Bulk Post-Dated Cheques (PDC) Ingestion
+            </DialogTitle>
+            <DialogDescription>
+              Upload PDC register records mapped to leases, bank names, cheque serial numbers, and maturity dates.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/40">
+              <div className="text-sm">
+                <p className="font-semibold text-foreground">Standard PDC Registry Template</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Columns: LeaseId, ChequeNumber, BankName, MaturityDate, Amount, PayerName</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadPdcTemplate} className="gap-2 shrink-0">
+                <Download className="h-4 w-4" /> Template
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Select CSV Document</Label>
+              <Input
+                type="file"
+                accept=".csv, text/csv, application/vnd.ms-excel"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (evt) => {
+                    setBulkPdcCsv(evt.target?.result as string || "");
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Or Paste Raw CSV Lines</Label>
+              <Textarea
+                value={bulkPdcCsv}
+                onChange={(e) => setBulkPdcCsv(e.target.value)}
+                placeholder={`LeaseId,ChequeNumber,BankName,MaturityDate,Amount,PayerName\nL-1001,PDC-889901,Qatar National Bank (QNB),2026-03-01,6500,Nasser Al-Kuwari`}
+                className="font-mono text-xs h-32"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkPdcOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkPdcImport} disabled={bulkLeasingImporting || !bulkPdcCsv.trim()} className="gap-2">
+              {bulkLeasingImporting && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import PDCs
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Security Deposit Import Modal */}
+      <Dialog open={bulkDepositOpen} onOpenChange={setBulkDepositOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-primary" />
+              Bulk Lease Deposit Vouchers Ingestion
+            </DialogTitle>
+            <DialogDescription>
+              Upload refundable security deposits and advance holding fee vouchers linked to leases.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/40">
+              <div className="text-sm">
+                <p className="font-semibold text-foreground">Standard Deposit Voucher Template</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Columns: LeaseId, ReceiptNumber, DepositType, Amount, PaymentMethod, BankOrReference, Remarks</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadDepositTemplate} className="gap-2 shrink-0">
+                <Download className="h-4 w-4" /> Template
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Select CSV Document</Label>
+              <Input
+                type="file"
+                accept=".csv, text/csv, application/vnd.ms-excel"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (evt) => {
+                    setBulkDepositCsv(evt.target?.result as string || "");
+                  };
+                  reader.readAsText(file);
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Or Paste Raw CSV Lines</Label>
+              <Textarea
+                value={bulkDepositCsv}
+                onChange={(e) => setBulkDepositCsv(e.target.value)}
+                placeholder={`LeaseId,ReceiptNumber,DepositType,Amount,PaymentMethod,BankOrReference,Remarks\nL-1001,RV-DEP-991,Security Deposit,6500,Bank Transfer,TRF-QNB-998811,Standard 1-month deposit`}
+                className="font-mono text-xs h-32"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDepositOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkDepositImport} disabled={bulkLeasingImporting || !bulkDepositCsv.trim()} className="gap-2">
+              {bulkLeasingImporting && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import Deposits
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -36,9 +36,12 @@ import { Route as SuperAdminTenantsRouteImport } from './routes/super-admin.tena
 import { Route as SuperAdminSecurityRouteImport } from './routes/super-admin.security'
 import { Route as SuperAdminPermissionsRouteImport } from './routes/super-admin.permissions'
 import { Route as SuperAdminNotificationsRouteImport } from './routes/super-admin.notifications'
+import { Route as SuperAdminInvoicesRouteImport } from './routes/super-admin.invoices'
+import { Route as SuperAdminHealthRouteImport } from './routes/super-admin.health'
 import { Route as SuperAdminConfigRouteImport } from './routes/super-admin.config'
 import { Route as SuperAdminBillingRouteImport } from './routes/super-admin.billing'
 import { Route as SuperAdminAnalyticsRouteImport } from './routes/super-admin.analytics'
+import { Route as SuperAdminAlertsRouteImport } from './routes/super-admin.alerts'
 import { Route as SalesReservationsRouteImport } from './routes/sales.reservations'
 import { Route as SalesListingsRouteImport } from './routes/sales.listings'
 import { Route as SalesContractsRouteImport } from './routes/sales.contracts'
@@ -51,6 +54,7 @@ import { Route as PropMgrProcurementRouteImport } from './routes/prop-mgr.procur
 import { Route as PropMgrMaintenanceRouteImport } from './routes/prop-mgr.maintenance'
 import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
 import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
+import { Route as PropMgrImportsRouteImport } from './routes/prop-mgr.imports'
 import { Route as PropMgrFinanceRouteImport } from './routes/prop-mgr.finance'
 import { Route as PropMgrAssetsRouteImport } from './routes/prop-mgr.assets'
 import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approvals'
@@ -81,9 +85,11 @@ import { Route as AdminUnitsRouteImport } from './routes/admin.units'
 import { Route as AdminPropertiesRouteImport } from './routes/admin.properties'
 import { Route as AdminProcurementRouteImport } from './routes/admin.procurement'
 import { Route as AdminPermissionsRouteImport } from './routes/admin.permissions'
+import { Route as AdminNotificationsRouteImport } from './routes/admin.notifications'
 import { Route as AdminMastersRouteImport } from './routes/admin.masters'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
+import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminHrmsRouteImport } from './routes/admin.hrms'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
@@ -232,6 +238,16 @@ const SuperAdminNotificationsRoute = SuperAdminNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => SuperAdminRoute,
 } as any)
+const SuperAdminInvoicesRoute = SuperAdminInvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
+  getParentRoute: () => SuperAdminRoute,
+} as any)
+const SuperAdminHealthRoute = SuperAdminHealthRouteImport.update({
+  id: '/health',
+  path: '/health',
+  getParentRoute: () => SuperAdminRoute,
+} as any)
 const SuperAdminConfigRoute = SuperAdminConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -245,6 +261,11 @@ const SuperAdminBillingRoute = SuperAdminBillingRouteImport.update({
 const SuperAdminAnalyticsRoute = SuperAdminAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
+  getParentRoute: () => SuperAdminRoute,
+} as any)
+const SuperAdminAlertsRoute = SuperAdminAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => SuperAdminRoute,
 } as any)
 const SalesReservationsRoute = SalesReservationsRouteImport.update({
@@ -305,6 +326,11 @@ const PropMgrLeasingRoute = PropMgrLeasingRouteImport.update({
 const PropMgrLeasesRoute = PropMgrLeasesRouteImport.update({
   id: '/leases',
   path: '/leases',
+  getParentRoute: () => PropMgrRoute,
+} as any)
+const PropMgrImportsRoute = PropMgrImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
   getParentRoute: () => PropMgrRoute,
 } as any)
 const PropMgrFinanceRoute = PropMgrFinanceRouteImport.update({
@@ -457,6 +483,11 @@ const AdminPermissionsRoute = AdminPermissionsRouteImport.update({
   path: '/permissions',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminMastersRoute = AdminMastersRouteImport.update({
   id: '/masters',
   path: '/masters',
@@ -470,6 +501,11 @@ const AdminMaintenanceRoute = AdminMaintenanceRouteImport.update({
 const AdminLeasesRoute = AdminLeasesRouteImport.update({
   id: '/leases',
   path: '/leases',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminImportsRoute = AdminImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminHrmsRoute = AdminHrmsRouteImport.update({
@@ -553,9 +589,11 @@ export interface FileRoutesByFullPath {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
@@ -586,6 +624,7 @@ export interface FileRoutesByFullPath {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -598,9 +637,12 @@ export interface FileRoutesByFullPath {
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
   '/sales/reservations': typeof SalesReservationsRoute
+  '/super-admin/alerts': typeof SuperAdminAlertsRoute
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/health': typeof SuperAdminHealthRoute
+  '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
   '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
@@ -634,9 +676,11 @@ export interface FileRoutesByTo {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
@@ -667,6 +711,7 @@ export interface FileRoutesByTo {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -679,9 +724,12 @@ export interface FileRoutesByTo {
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
   '/sales/reservations': typeof SalesReservationsRoute
+  '/super-admin/alerts': typeof SuperAdminAlertsRoute
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/health': typeof SuperAdminHealthRoute
+  '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
   '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
@@ -724,9 +772,11 @@ export interface FileRoutesById {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/permissions': typeof AdminPermissionsRoute
   '/admin/procurement': typeof AdminProcurementRoute
   '/admin/properties': typeof AdminPropertiesRoute
@@ -757,6 +807,7 @@ export interface FileRoutesById {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -769,9 +820,12 @@ export interface FileRoutesById {
   '/sales/contracts': typeof SalesContractsRoute
   '/sales/listings': typeof SalesListingsRoute
   '/sales/reservations': typeof SalesReservationsRoute
+  '/super-admin/alerts': typeof SuperAdminAlertsRoute
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/health': typeof SuperAdminHealthRoute
+  '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
   '/super-admin/permissions': typeof SuperAdminPermissionsRoute
   '/super-admin/security': typeof SuperAdminSecurityRoute
@@ -815,9 +869,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/notifications'
     | '/admin/permissions'
     | '/admin/procurement'
     | '/admin/properties'
@@ -848,6 +904,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -860,9 +917,12 @@ export interface FileRouteTypes {
     | '/sales/contracts'
     | '/sales/listings'
     | '/sales/reservations'
+    | '/super-admin/alerts'
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/health'
+    | '/super-admin/invoices'
     | '/super-admin/notifications'
     | '/super-admin/permissions'
     | '/super-admin/security'
@@ -896,9 +956,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/notifications'
     | '/admin/permissions'
     | '/admin/procurement'
     | '/admin/properties'
@@ -929,6 +991,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -941,9 +1004,12 @@ export interface FileRouteTypes {
     | '/sales/contracts'
     | '/sales/listings'
     | '/sales/reservations'
+    | '/super-admin/alerts'
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/health'
+    | '/super-admin/invoices'
     | '/super-admin/notifications'
     | '/super-admin/permissions'
     | '/super-admin/security'
@@ -985,9 +1051,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
+    | '/admin/notifications'
     | '/admin/permissions'
     | '/admin/procurement'
     | '/admin/properties'
@@ -1018,6 +1086,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -1030,9 +1099,12 @@ export interface FileRouteTypes {
     | '/sales/contracts'
     | '/sales/listings'
     | '/sales/reservations'
+    | '/super-admin/alerts'
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/health'
+    | '/super-admin/invoices'
     | '/super-admin/notifications'
     | '/super-admin/permissions'
     | '/super-admin/security'
@@ -1264,6 +1336,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuperAdminNotificationsRouteImport
       parentRoute: typeof SuperAdminRoute
     }
+    '/super-admin/invoices': {
+      id: '/super-admin/invoices'
+      path: '/invoices'
+      fullPath: '/super-admin/invoices'
+      preLoaderRoute: typeof SuperAdminInvoicesRouteImport
+      parentRoute: typeof SuperAdminRoute
+    }
+    '/super-admin/health': {
+      id: '/super-admin/health'
+      path: '/health'
+      fullPath: '/super-admin/health'
+      preLoaderRoute: typeof SuperAdminHealthRouteImport
+      parentRoute: typeof SuperAdminRoute
+    }
     '/super-admin/config': {
       id: '/super-admin/config'
       path: '/config'
@@ -1283,6 +1369,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/super-admin/analytics'
       preLoaderRoute: typeof SuperAdminAnalyticsRouteImport
+      parentRoute: typeof SuperAdminRoute
+    }
+    '/super-admin/alerts': {
+      id: '/super-admin/alerts'
+      path: '/alerts'
+      fullPath: '/super-admin/alerts'
+      preLoaderRoute: typeof SuperAdminAlertsRouteImport
       parentRoute: typeof SuperAdminRoute
     }
     '/sales/reservations': {
@@ -1367,6 +1460,13 @@ declare module '@tanstack/react-router' {
       path: '/leases'
       fullPath: '/prop-mgr/leases'
       preLoaderRoute: typeof PropMgrLeasesRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
+    '/prop-mgr/imports': {
+      id: '/prop-mgr/imports'
+      path: '/imports'
+      fullPath: '/prop-mgr/imports'
+      preLoaderRoute: typeof PropMgrImportsRouteImport
       parentRoute: typeof PropMgrRoute
     }
     '/prop-mgr/finance': {
@@ -1579,6 +1679,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPermissionsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/notifications': {
+      id: '/admin/notifications'
+      path: '/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AdminNotificationsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/masters': {
       id: '/admin/masters'
       path: '/masters'
@@ -1598,6 +1705,13 @@ declare module '@tanstack/react-router' {
       path: '/leases'
       fullPath: '/admin/leases'
       preLoaderRoute: typeof AdminLeasesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/imports': {
+      id: '/admin/imports'
+      path: '/imports'
+      fullPath: '/admin/imports'
+      preLoaderRoute: typeof AdminImportsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/hrms': {
@@ -1705,9 +1819,11 @@ interface AdminRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminHrmsRoute: typeof AdminHrmsRoute
+  AdminImportsRoute: typeof AdminImportsRoute
   AdminLeasesRoute: typeof AdminLeasesRouteWithChildren
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminMastersRoute: typeof AdminMastersRoute
+  AdminNotificationsRoute: typeof AdminNotificationsRoute
   AdminPermissionsRoute: typeof AdminPermissionsRoute
   AdminProcurementRoute: typeof AdminProcurementRoute
   AdminPropertiesRoute: typeof AdminPropertiesRoute
@@ -1724,9 +1840,11 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminDashboardRoute: AdminDashboardRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminHrmsRoute: AdminHrmsRoute,
+  AdminImportsRoute: AdminImportsRoute,
   AdminLeasesRoute: AdminLeasesRouteWithChildren,
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminMastersRoute: AdminMastersRoute,
+  AdminNotificationsRoute: AdminNotificationsRoute,
   AdminPermissionsRoute: AdminPermissionsRoute,
   AdminProcurementRoute: AdminProcurementRoute,
   AdminPropertiesRoute: AdminPropertiesRoute,
@@ -1875,6 +1993,7 @@ interface PropMgrRouteChildren {
   PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
   PropMgrAssetsRoute: typeof PropMgrAssetsRoute
   PropMgrFinanceRoute: typeof PropMgrFinanceRoute
+  PropMgrImportsRoute: typeof PropMgrImportsRoute
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
   PropMgrLeasingRoute: typeof PropMgrLeasingRoute
   PropMgrMaintenanceRoute: typeof PropMgrMaintenanceRoute
@@ -1891,6 +2010,7 @@ const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrApprovalsRoute: PropMgrApprovalsRoute,
   PropMgrAssetsRoute: PropMgrAssetsRoute,
   PropMgrFinanceRoute: PropMgrFinanceRoute,
+  PropMgrImportsRoute: PropMgrImportsRoute,
   PropMgrLeasesRoute: PropMgrLeasesRoute,
   PropMgrLeasingRoute: PropMgrLeasingRoute,
   PropMgrMaintenanceRoute: PropMgrMaintenanceRoute,
@@ -1923,9 +2043,12 @@ const SalesRouteChildren: SalesRouteChildren = {
 const SalesRouteWithChildren = SalesRoute._addFileChildren(SalesRouteChildren)
 
 interface SuperAdminRouteChildren {
+  SuperAdminAlertsRoute: typeof SuperAdminAlertsRoute
   SuperAdminAnalyticsRoute: typeof SuperAdminAnalyticsRoute
   SuperAdminBillingRoute: typeof SuperAdminBillingRoute
   SuperAdminConfigRoute: typeof SuperAdminConfigRoute
+  SuperAdminHealthRoute: typeof SuperAdminHealthRoute
+  SuperAdminInvoicesRoute: typeof SuperAdminInvoicesRoute
   SuperAdminNotificationsRoute: typeof SuperAdminNotificationsRoute
   SuperAdminPermissionsRoute: typeof SuperAdminPermissionsRoute
   SuperAdminSecurityRoute: typeof SuperAdminSecurityRoute
@@ -1935,9 +2058,12 @@ interface SuperAdminRouteChildren {
 }
 
 const SuperAdminRouteChildren: SuperAdminRouteChildren = {
+  SuperAdminAlertsRoute: SuperAdminAlertsRoute,
   SuperAdminAnalyticsRoute: SuperAdminAnalyticsRoute,
   SuperAdminBillingRoute: SuperAdminBillingRoute,
   SuperAdminConfigRoute: SuperAdminConfigRoute,
+  SuperAdminHealthRoute: SuperAdminHealthRoute,
+  SuperAdminInvoicesRoute: SuperAdminInvoicesRoute,
   SuperAdminNotificationsRoute: SuperAdminNotificationsRoute,
   SuperAdminPermissionsRoute: SuperAdminPermissionsRoute,
   SuperAdminSecurityRoute: SuperAdminSecurityRoute,

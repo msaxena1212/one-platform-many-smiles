@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
+import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -312,9 +314,78 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
     currentPage * ITEMS_PER_PAGE
   );
 
+  const [bulkPropOpen, setBulkPropOpen] = useState(false);
+  const [bulkCsvText, setBulkCsvText] = useState("");
+  const [bulkImporting, setBulkImporting] = useState(false);
+
+  const downloadPropertyCsvTemplate = () => {
+    const headers = "PropertyTitle,PropertyType,Address,City,Country,TotalUnits,CostCenterCode,CostCenterName,PropertyCategory,OwnershipType";
+    const sample = "Al Sadd Commercial Tower,Commercial Office,Al Sadd Main Road,Doha,Qatar,48,CC-PROP-1001,Al Sadd Tower Center,Commercial,Company Owned\nLusail Marina Residences,Residential Tower,Lusail Marina Promenade,Lusail,Qatar,120,CC-PROP-1002,Lusail Marina Center,Residential,Third Party Managed";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_properties_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Property CSV Template downloaded!");
+  };
+
+  const handleBulkPropertyImport = async () => {
+    if (!bulkCsvText.trim()) {
+      toast.error("Please paste CSV data or upload a file.");
+      return;
+    }
+    setBulkImporting(true);
+    try {
+      const lines = bulkCsvText.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 property row.");
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let count = 0;
+      for (const row of dataRows) {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) continue;
+        const [title, ptype, addr, city, country, unitsCount, ccCode, ccName, pcat, ownType] = cols;
+        const genCode = `PROP-${Math.floor(100000 + Math.random() * 900000)}`;
+        await createProperty(
+          buildPropertyPayload({
+            title,
+            propertyType: ptype || "Apartment",
+            address: addr || "Doha, Qatar",
+            city: city || "Doha",
+            country: country || "Qatar",
+            basePricePerNight: 0,
+            cleaningFee: 0,
+            isActive: true,
+            propertyCode: genCode,
+            costCenterCode: ccCode || `CC-${genCode}`,
+            costCenterName: ccName || `${title} Cost Center`,
+            propertyCategory: pcat || "Residential",
+            ownershipType: ownType || "Owned",
+            noOfUnits: unitsCount || "10",
+            totalUnits: unitsCount || "10",
+          })
+        );
+        count++;
+      }
+      toast.success(`Successfully imported ${count} properties!`);
+      setBulkPropOpen(false);
+      setBulkCsvText("");
+      await loadProperties();
+    } catch (err: any) {
+      toast.error("Bulk Property Import failed: " + err.message);
+    } finally {
+      setBulkImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Properties</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -323,19 +394,42 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
         </div>
         <div className="flex gap-2">
           {role !== "owner" && (
-            <Button
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={() => {
-                setForm(EMPTY_FORM);
-                setStep(1);
-                setCreateOpen(true);
-              }}
-            >
-              + New property
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBulkPropOpen(true)}
+                className="gap-2"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+              </Button>
+              <Button
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setStep(1);
+                  setCreateOpen(true);
+                }}
+              >
+                + New property
+              </Button>
+            </>
           )}
         </div>
       </div>
+
+      {/* Bulk Property Import Modal */}
+      <Dialog open={bulkPropOpen} onOpenChange={setBulkPropOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+          <ExcelImportEmbedded
+            module="property"
+            title="Property Master: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for master properties, buildings, and cost centers."
+            onCompleted={() => {
+              load();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-border">
         <CardContent className="p-0">

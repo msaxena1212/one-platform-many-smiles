@@ -7,6 +7,9 @@ const MaintenanceModule = lazy(() =>
 );
 
 export const Route = createFileRoute("/admin/maintenance")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "tickets",
+  }),
   head: () => ({ meta: [{ title: "Maintenance - Admin" }] }),
   component: AdminMaintenance,
 });

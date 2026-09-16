@@ -2,19 +2,20 @@ import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { ModuleSuspense } from "@/components/module-suspense";
 
-const LeasesModule = lazy(() =>
-  import("@/components/leases-module").then((m) => ({ default: m.LeasesModule }))
-);
+const LeasingPage = lazy(() => import("@/components/leasing-module"));
 
 export const Route = createFileRoute("/admin/leases")({
-  head: () => ({ meta: [{ title: "Leases - Admin" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "agreement",
+  }),
+  head: () => ({ meta: [{ title: "Leasing - Admin" }] }),
   component: AdminLeases,
 });
 
 function AdminLeases() {
   return (
     <ModuleSuspense>
-      <LeasesModule role="admin" />
+      <LeasingPage role="admin" />
     </ModuleSuspense>
   );
 }
