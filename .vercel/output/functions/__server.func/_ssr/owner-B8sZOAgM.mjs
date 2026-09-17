@@ -1,5 +1,5 @@
 import { c as require_jsx_runtime } from "../_libs/@radix-ui/react-arrow+[...].mjs";
-import { $t as CircleCheck, Bt as DollarSign, gn as Building2, kt as FileText } from "../_libs/lucide-react.mjs";
+import { Ot as FileText, Qt as CircleCheck, hn as Building2, zt as DollarSign } from "../_libs/lucide-react.mjs";
 import { f as Outlet } from "../_libs/@tanstack/react-router+[...].mjs";
 import { t as AppShell } from "./app-shell-BTlCDuJd.mjs";
 //#region node_modules/.nitro/vite/services/ssr/assets/owner-B8sZOAgM.js

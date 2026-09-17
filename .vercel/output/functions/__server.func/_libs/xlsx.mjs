@@ -25812,6 +25812,26 @@ function writeSync(wb, opts) {
 		default: throw new Error("Unrecognized bookType |" + o.bookType + "|");
 	}
 }
+function resolve_book_type(o) {
+	if (o.bookType) return;
+	var _BT = {
+		"xls": "biff8",
+		"htm": "html",
+		"slk": "sylk",
+		"socialcalc": "eth",
+		"Sh33tJS": "WTF"
+	};
+	var ext = o.file.slice(o.file.lastIndexOf(".")).toLowerCase();
+	if (ext.match(/^\.[a-z]+$/)) o.bookType = ext.slice(1);
+	o.bookType = _BT[o.bookType] || o.bookType;
+}
+function writeFileSync(wb, filename, opts) {
+	var o = opts || {};
+	o.type = "file";
+	o.file = filename;
+	resolve_book_type(o);
+	return writeSync(wb, o);
+}
 function make_json_row(sheet, r, R, cols, header, hdr, dense, o) {
 	var rr = encode_row(R);
 	var defval = o.defval, raw = o.raw || !Object.prototype.hasOwnProperty.call(o, "raw");
@@ -26265,4 +26285,4 @@ var utils = {
 };
 XLSX.version;
 //#endregion
-export { utils as n, writeSync as r, readSync as t };
+export { writeSync as i, utils as n, writeFileSync as r, readSync as t };

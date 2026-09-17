@@ -1,5 +1,13 @@
 import { supabase, type Lease } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue
+} from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
 export const LEASE_COLUMNS: ColumnDefinition[] = [
@@ -40,7 +48,7 @@ export const leaseAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Lease Number / Ref'] ?? row['Lease Number'] ?? row['lease_number'] ?? row['Contract No.'] ?? row['contract_no'] ?? '';
+    const raw = getCellValue(row, 'Lease Number / Ref', 'Lease Number', 'lease_number', 'Contract No.', 'Contract No', 'contract_no', 'Lease No') ?? '';
     return String(raw).trim();
   },
 
@@ -127,7 +135,7 @@ export const leaseAdapter: EntityImportAdapter = {
     for (const col of LEASE_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({

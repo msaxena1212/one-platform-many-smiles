@@ -24,7 +24,32 @@ export function getImportBatchHistory(): ImportBatch[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed: ImportBatch[] = JSON.parse(raw);
+    return parsed.map((batch) => {
+      const total = batch.summary?.totalRows ?? (batch as any).totalRecords ?? batch.records?.length ?? 0;
+      const success = batch.summary?.successRows ?? (batch as any).successRecords ?? 0;
+      let failed = batch.summary?.failedRows ?? (batch as any).failedRecords ?? 0;
+      if (batch.status === 'FAILED' && success === 0 && failed === 0 && total > 0) {
+        failed = total;
+      }
+      return {
+        ...batch,
+        summary: {
+          totalRows: total,
+          validRows: batch.summary?.validRows ?? success,
+          errorRows: batch.summary?.errorRows ?? (total - success),
+          warningRows: batch.summary?.warningRows ?? 0,
+          recordsToCreate: batch.summary?.recordsToCreate ?? 0,
+          recordsToUpdate: batch.summary?.recordsToUpdate ?? 0,
+          recordsToDelete: batch.summary?.recordsToDelete ?? 0,
+          noChangeRows: batch.summary?.noChangeRows ?? 0,
+          blockedRows: batch.summary?.blockedRows ?? 0,
+          skippedRows: batch.summary?.skippedRows ?? 0,
+          successRows: success,
+          failedRows: failed,
+        },
+      };
+    });
   } catch {
     return [];
   }

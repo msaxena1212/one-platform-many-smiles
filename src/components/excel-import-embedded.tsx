@@ -104,6 +104,12 @@ export function ExcelImportEmbedded({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Always reset to upload view whenever module or defaultOperation changes
+  useEffect(() => {
+    setSelectedOperation(defaultOperation);
+    resetUploadState();
+  }, [module, defaultOperation]);
+
   useEffect(() => {
     setHistoryBatches(getImportBatchHistory().filter(b => b.module === module));
   }, [currentStep, module]);
@@ -159,20 +165,30 @@ export function ExcelImportEmbedded({
       toast.loading("Analyzing and validating Excel file...", { id: "parsing-toast" });
       
       const buffer = await file.arrayBuffer();
-      const currentUser = getCurrentProfile();
-      const userEmail = currentUser?.email || "admin@pms-system.qa";
+      let currentUser = { id: "admin-user", name: "Admin User", email: "admin@stayhub.qa" };
+      try {
+        const prof = await getCurrentProfile();
+        if (prof) {
+          currentUser = { id: prof.id, name: prof.full_name || "Admin User", email: (prof as any).email || "admin@stayhub.qa" };
+        }
+      } catch {
+        // fallback
+      }
       
       const batch = await ExcelImportEngine.parseAndValidate(
         buffer,
         file.name,
         module,
         selectedOperation,
-        userEmail
+        currentUser
       );
 
       setCurrentBatch(batch);
       setCurrentStep("preview");
-      toast.success(`Validated ${batch.totalRecords} rows: ${batch.validRecords} Valid, ${batch.warningRecords} Warnings, ${batch.errorRecords} Errors`, { id: "parsing-toast" });
+      toast.success(
+        `Validated ${batch.summary.totalRows} rows: ${batch.summary.validRows} ready, ${batch.summary.errorRows} errors.`,
+        { id: "parsing-toast" }
+      );
     } catch (err: any) {
       toast.error(`Import parsing failed: ${err.message || "Unknown error"}`, { id: "parsing-toast" });
       resetUploadState();
@@ -195,30 +211,36 @@ export function ExcelImportEmbedded({
       setCurrentStep("processing");
       setProcessingProgress({
         processed: 0,
-        total: currentBatch.totalRecords,
+        total: currentBatch.summary.totalRows,
         success: 0,
         failed: 0,
       });
 
-      const currentUser = getCurrentProfile();
-      const userEmail = currentUser?.email || "admin@pms-system.qa";
+      let currentUser = { id: "admin-user", name: "Admin User" };
+      try {
+        const prof = await getCurrentProfile();
+        if (prof) currentUser = { id: prof.id, name: prof.full_name || "Admin User" };
+      } catch {
+        // fallback
+      }
 
-      const finalBatch = await ExcelImportEngine.executeBatch(
+      const finalBatch = await ExcelImportEngine.commitBatch(
         currentBatch,
-        userEmail,
-        (progress) => {
+        currentUser,
+        (processed, total, success, failed) => {
           setProcessingProgress({
-            processed: progress.processed,
-            total: progress.total,
-            success: progress.success,
-            failed: progress.failed,
+            processed,
+            total,
+            success,
+            failed,
           });
         }
       );
 
-      setCurrentBatch(finalBatch);
+      setCurrentBatch({ ...finalBatch });
       setCurrentStep("results");
-      toast.success(`Import operation complete! ${finalBatch.successRecords} Succeeded, ${finalBatch.failedRecords} Failed.`);
+      setHistoryBatches(getImportBatchHistory().filter(b => b.module === module));
+      toast.success(`Import operation complete! ${finalBatch.summary.successRows} Succeeded, ${finalBatch.summary.failedRows} Failed.`);
       if (onCompleted) {
         onCompleted();
       }
@@ -231,14 +253,25 @@ export function ExcelImportEmbedded({
   };
 
   // Download Result Excel
-  const handleDownloadResults = async () => {
+  const handleDownloadResults = () => {
     if (!currentBatch) return;
     try {
-      const buffer = await ResultExcelGenerator.generateResultWorkbook(currentBatch);
-      ResultExcelGenerator.downloadResultFile(currentBatch, buffer);
+      const buffer = ResultExcelGenerator.generateResultWorkbook(currentBatch);
+      ResultExcelGenerator.triggerDownload(buffer, `${currentBatch.batchIdentifier}_Result_Report.xlsx`);
       toast.success("Detailed execution result workbook downloaded.");
     } catch (err: any) {
       toast.error(`Failed to generate results file: ${err.message}`);
+    }
+  };
+
+  const handleDownloadFailedRecords = () => {
+    if (!currentBatch) return;
+    try {
+      const buffer = ResultExcelGenerator.generateFailedRecordsWorkbook(currentBatch);
+      ResultExcelGenerator.triggerDownload(buffer, `${currentBatch.batchIdentifier}_Failed_Records.xlsx`);
+      toast.success("Failed records workbook downloaded.");
+    } catch (err: any) {
+      toast.error(`Failed to generate failed records file: ${err.message}`);
     }
   };
 
@@ -246,12 +279,16 @@ export function ExcelImportEmbedded({
   const filteredRecords = useMemo(() => {
     if (!currentBatch) return [];
     return currentBatch.records.filter((rec) => {
-      if (previewTab !== "ALL" && rec.status !== previewTab) return false;
+      if (previewTab === "READY" && rec.status !== "READY") return false;
+      if (previewTab === "NO_CHANGE" && rec.status !== "NO_CHANGE") return false;
+      if (previewTab === "WARNING" && rec.status !== "WARNING") return false;
+      if (previewTab === "ERRORS" && rec.status !== "ERROR" && rec.status !== "BLOCKED") return false;
       if (!previewSearch.trim()) return true;
       const search = previewSearch.toLowerCase();
       return (
-        rec.identifier.toLowerCase().includes(search) ||
-        Object.values(rec.parsedData).some((val) => String(val).toLowerCase().includes(search)) ||
+        rec.recordKey.toLowerCase().includes(search) ||
+        (rec.recordName && rec.recordName.toLowerCase().includes(search)) ||
+        Object.values(rec.rawRowData || {}).some((val) => String(val).toLowerCase().includes(search)) ||
         rec.errors.some((e) => e.message.toLowerCase().includes(search))
       );
     });
@@ -391,67 +428,77 @@ export function ExcelImportEmbedded({
 
       {/* STEP 2: VALIDATION PREVIEW & DRILL-DOWN */}
       {currentStep === "preview" && currentBatch && (
-        <div className="space-y-6">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Card className="border-border/60">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Total Rows</p>
-                  <p className="text-xl font-bold">{currentBatch.totalRecords}</p>
-                </div>
-                <FileText className="h-6 w-6 text-muted-foreground/60" />
-              </CardContent>
-            </Card>
+        <div className="space-y-4">
+          {/* Summary Metric Pills */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-muted/40 rounded-lg border border-border/60">
+            <div className="flex items-center gap-3">
+              <div className="text-center px-2">
+                <p className="text-[10px] uppercase text-muted-foreground font-semibold">Total</p>
+                <p className="font-mono font-bold text-sm text-foreground">{currentBatch.summary.totalRows}</p>
+              </div>
+              <div className="w-px h-6 bg-border/60" />
+              <div className="text-center px-2">
+                <p className="text-[10px] uppercase text-emerald-600 font-semibold">Ready</p>
+                <p className="font-mono font-bold text-sm text-emerald-600">{currentBatch.summary.validRows}</p>
+              </div>
+              {selectedOperation === "UPDATE" && (
+                <>
+                  <div className="w-px h-6 bg-border/60" />
+                  <div className="text-center px-2">
+                    <p className="text-[10px] uppercase text-blue-600 font-semibold">No-op</p>
+                    <p className="font-mono font-bold text-sm text-blue-600">{currentBatch.summary.noChangeRows}</p>
+                  </div>
+                </>
+              )}
+              <div className="w-px h-6 bg-border/60" />
+              <div className="text-center px-2">
+                <p className="text-[10px] uppercase text-amber-600 font-semibold">Warn</p>
+                <p className="font-mono font-bold text-sm text-amber-600">{currentBatch.summary.warningRows}</p>
+              </div>
+              <div className="w-px h-6 bg-border/60" />
+              <div className="text-center px-2">
+                <p className="text-[10px] uppercase text-rose-600 font-semibold">Errors</p>
+                <p className="font-mono font-bold text-sm text-rose-600">{currentBatch.summary.errorRows + currentBatch.summary.blockedRows}</p>
+              </div>
+            </div>
 
-            <Card className="border-border/60 border-l-4 border-l-emerald-500">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Valid (Ready)</p>
-                  <p className="text-xl font-bold text-emerald-600">{currentBatch.validRecords}</p>
-                </div>
-                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 border-l-4 border-l-amber-500">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Warnings</p>
-                  <p className="text-xl font-bold text-amber-600">{currentBatch.warningRecords}</p>
-                </div>
-                <AlertTriangle className="h-6 w-6 text-amber-500" />
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 border-l-4 border-l-destructive">
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Errors (Blocked)</p>
-                  <p className="text-xl font-bold text-destructive">{currentBatch.errorRecords}</p>
-                </div>
-                <XCircle className="h-6 w-6 text-destructive" />
-              </CardContent>
-            </Card>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={resetUploadState} className="h-8 text-xs">
+                Upload Another
+              </Button>
+              {currentBatch.summary.validRows > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleExecuteImport}
+                  disabled={isConfirming || (selectedOperation === "DELETE" && !deleteConfirmed)}
+                  className={`h-8 text-xs font-semibold gap-1.5 ${
+                    selectedOperation === "DELETE"
+                      ? "bg-rose-600 hover:bg-rose-700 text-white"
+                      : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  }`}
+                >
+                  {isConfirming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                  Execute Commit ({currentBatch.summary.validRows})
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Delete Danger Warning */}
           {selectedOperation === "DELETE" && (
-            <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive space-y-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <AlertCircle className="h-4 w-4" /> Permanent Bulk Deletion Safety Check
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span>Destructive deletion: verified rows will be permanently deleted from database.</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                You are about to delete records from <span className="font-semibold text-foreground uppercase">{module}</span>. Any records with active foreign references (e.g. occupied units, active leases, assigned assets) will be strictly BLOCKED to prevent cascade data corruption.
-              </p>
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center space-x-2">
                 <Checkbox
                   id="confirm-delete"
                   checked={deleteConfirmed}
                   onCheckedChange={(c) => setDeleteConfirmed(!!c)}
                 />
-                <Label htmlFor="confirm-delete" className="text-xs font-semibold cursor-pointer text-foreground">
-                  I understand this action permanently deletes valid records and cannot be undone.
+                <Label htmlFor="confirm-delete" className="text-xs font-bold cursor-pointer">
+                  I Confirm Deletion
                 </Label>
               </div>
             </div>
@@ -459,113 +506,121 @@ export function ExcelImportEmbedded({
 
           {/* Preview Table Section */}
           <Card className="border-border/60">
-            <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <CardTitle className="text-sm font-semibold">Pre-Execution Validation Grid</CardTitle>
-                <CardDescription className="text-xs">
-                  Review validated records, field diffs, foreign key links, and rule violations.
-                </CardDescription>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="relative w-48 sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search preview rows..."
-                    value={previewSearch}
-                    onChange={(e) => setPreviewSearch(e.target.value)}
-                    className="pl-8 h-8 text-xs"
-                  />
-                </div>
-              </div>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4 max-w-sm h-8">
-                  <TabsTrigger value="ALL" className="text-xs">All ({currentBatch.totalRecords})</TabsTrigger>
-                  <TabsTrigger value="VALID" className="text-xs text-emerald-600">Valid ({currentBatch.validRecords})</TabsTrigger>
-                  <TabsTrigger value="WARNING" className="text-xs text-amber-600">Warnings ({currentBatch.warningRecords})</TabsTrigger>
-                  <TabsTrigger value="ERROR" className="text-xs text-destructive">Errors ({currentBatch.errorRecords})</TabsTrigger>
+            <CardHeader className="py-2.5 px-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b bg-muted/20">
+              <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full sm:w-auto">
+                <TabsList className="grid grid-cols-4 sm:flex h-7 bg-muted/80 p-0.5">
+                  <TabsTrigger value="ALL" className="text-[11px] h-6 px-2.5">All ({currentBatch.summary.totalRows})</TabsTrigger>
+                  <TabsTrigger value="READY" className="text-[11px] h-6 px-2.5 text-emerald-600 font-semibold">Ready ({currentBatch.summary.validRows})</TabsTrigger>
+                  {selectedOperation === "UPDATE" && (
+                    <TabsTrigger value="NO_CHANGE" className="text-[11px] h-6 px-2.5 text-blue-600">No Change ({currentBatch.summary.noChangeRows})</TabsTrigger>
+                  )}
+                  <TabsTrigger value="ERRORS" className="text-[11px] h-6 px-2.5 text-rose-600 font-semibold">Errors ({currentBatch.summary.errorRows + currentBatch.summary.blockedRows})</TabsTrigger>
                 </TabsList>
               </Tabs>
 
-              <div className="rounded-md border overflow-x-auto">
+              <div className="relative w-full sm:w-60">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search key, record, error..."
+                  value={previewSearch}
+                  onChange={(e) => setPreviewSearch(e.target.value)}
+                  className="pl-8 h-7 text-xs"
+                />
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              <div className="rounded-b-md overflow-x-auto max-h-96">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-xs z-10">
                     <TableRow className="bg-muted/40 text-xs">
-                      <TableHead className="w-16">Row #</TableHead>
-                      <TableHead className="w-32">Status</TableHead>
-                      <TableHead>Identifier / Key</TableHead>
-                      <TableHead>Operation / Summary</TableHead>
-                      <TableHead>Validation Feedback</TableHead>
-                      <TableHead className="text-right w-20">Inspect</TableHead>
+                      <TableHead className="w-12 text-[11px]">#</TableHead>
+                      <TableHead className="text-[11px]">Record Key</TableHead>
+                      <TableHead className="text-[11px]">Name / Label</TableHead>
+                      {selectedOperation === "UPDATE" && <TableHead className="text-[11px]">Mutations</TableHead>}
+                      {selectedOperation === "DELETE" && <TableHead className="text-[11px]">Dependencies</TableHead>}
+                      <TableHead className="text-[11px]">Status</TableHead>
+                      <TableHead className="text-[11px]">Diagnostics</TableHead>
+                      <TableHead className="text-right text-[11px]">Inspect</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredRecords.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-xs text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center py-8 text-xs text-muted-foreground">
                           No records match current filter.
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredRecords.slice(0, 50).map((record) => (
-                        <TableRow key={record.rowIndex}>
-                          <TableCell className="font-mono text-xs font-medium">{record.rowIndex}</TableCell>
+                        <TableRow key={record.excelRowNumber} className="hover:bg-muted/30">
+                          <TableCell className="font-mono text-[11px] text-muted-foreground">{record.excelRowNumber}</TableCell>
+                          <TableCell className="font-mono font-semibold text-xs text-foreground">{record.recordKey}</TableCell>
+                          <TableCell className="text-xs max-w-[180px] truncate text-muted-foreground">{record.recordName || "—"}</TableCell>
+                          
+                          {selectedOperation === "UPDATE" && (
+                            <TableCell>
+                              {record.changes.length > 0 ? (
+                                <Badge variant="secondary" className="font-mono text-[10px] px-1.5 py-0">
+                                  {record.changes.length} field{record.changes.length > 1 ? "s" : ""}
+                                </Badge>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground">Unmodified</span>
+                              )}
+                            </TableCell>
+                          )}
+
+                          {selectedOperation === "DELETE" && (
+                            <TableCell>
+                              {record.dependencies.length > 0 ? (
+                                <div className="flex gap-1 flex-wrap">
+                                  {record.dependencies.map((d, i) => (
+                                    <Badge key={i} variant={d.result === "Blocked" ? "destructive" : "outline"} className="text-[9px] px-1 py-0">
+                                      {d.dependency}: {d.count}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-emerald-600 font-medium">Clean</span>
+                              )}
+                            </TableCell>
+                          )}
+
                           <TableCell>
                             <Badge
-                              variant={
-                                record.status === "VALID"
-                                  ? "outline"
-                                  : record.status === "WARNING"
-                                  ? "secondary"
-                                  : "destructive"
-                              }
                               className={`text-[10px] ${
-                                record.status === "VALID" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
+                                record.status === "READY"
+                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                  : record.status === "NO_CHANGE"
+                                  ? "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                                  : record.status === "WARNING"
+                                  ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                                  : "bg-rose-500/10 text-rose-600 border-rose-500/30"
                               }`}
+                              variant="outline"
                             >
                               {record.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-mono text-xs font-semibold">
-                            {record.identifier || "—"}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {selectedOperation === "UPDATE" ? (
-                              <span className="text-muted-foreground">
-                                {record.changes.length} field(s) modified
-                              </span>
-                            ) : selectedOperation === "DELETE" ? (
-                              <span className="text-muted-foreground">
-                                {record.dependencies.length} dependency check(s)
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">New master record</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs max-w-xs truncate">
+
+                          <TableCell className="text-xs max-w-[220px] truncate text-muted-foreground">
                             {record.errors.length > 0 ? (
-                              <span className="text-destructive font-medium">
-                                {record.errors.map((e) => e.message).join("; ")}
-                              </span>
+                              <span className="text-rose-600 font-medium">{record.errors[0].message}</span>
                             ) : record.warnings.length > 0 ? (
-                              <span className="text-amber-600 font-medium">
-                                {record.warnings.map((w) => w.message).join("; ")}
-                              </span>
+                              <span className="text-amber-600">{record.warnings[0].message}</span>
                             ) : (
                               <span className="text-emerald-600 flex items-center gap-1">
-                                <CheckCircle2 className="h-3 w-3" /> Ready for processing
+                                <CheckCircle2 className="h-3 w-3" /> Ready
                               </span>
                             )}
                           </TableCell>
+
                           <TableCell className="text-right">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => setInspectRecord(record)}
-                              className="h-7 w-7 p-0"
+                              className="h-6 px-2 text-[11px]"
                             >
                               <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                             </Button>
@@ -578,38 +633,10 @@ export function ExcelImportEmbedded({
               </div>
 
               {filteredRecords.length > 50 && (
-                <p className="text-xs text-muted-foreground text-center">
+                <p className="text-xs text-muted-foreground text-center py-2 border-t">
                   Showing first 50 of {filteredRecords.length} records.
                 </p>
               )}
-
-              {/* Bottom Action Footer */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
-                <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
-                  Discard & Re-upload
-                </Button>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={handleExecuteImport}
-                    disabled={
-                      isConfirming ||
-                      (currentBatch.validRecords === 0 && currentBatch.warningRecords === 0) ||
-                      (selectedOperation === "DELETE" && !deleteConfirmed)
-                    }
-                    className={`text-xs gap-2 ${
-                      selectedOperation === "DELETE" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""
-                    }`}
-                  >
-                    {isConfirming ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                    )}
-                    Execute {selectedOperation} Batch ({currentBatch.validRecords + currentBatch.warningRecords} Records)
-                  </Button>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -639,7 +666,7 @@ export function ExcelImportEmbedded({
               />
             </div>
             <p className="text-xs font-mono text-muted-foreground">
-              {processingProgress.processed} / {processingProgress.total} Records Processed
+              {processingProgress.processed} / {processingProgress.total} Records Processed ({processingProgress.success} Success, {processingProgress.failed} Failed)
             </p>
           </CardContent>
         </Card>
@@ -648,42 +675,60 @@ export function ExcelImportEmbedded({
       {/* STEP 4: FINAL RESULTS & DOWNLOAD */}
       {currentStep === "results" && currentBatch && (
         <Card className="border-border/60">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                <FileCheck className="h-6 w-6" />
+          <CardHeader className="text-center py-4 border-b bg-muted/20">
+            <div className="mx-auto p-2 bg-emerald-500/10 text-emerald-600 rounded-full w-10 h-10 flex items-center justify-center mb-1">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-base font-bold">Import Execution Finished</CardTitle>
+            <CardDescription className="text-xs font-mono">
+              Batch #{currentBatch.batchIdentifier} completed for {module.toUpperCase()} ({selectedOperation}).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-5 space-y-4">
+            <div className="grid grid-cols-3 gap-3 text-center p-3 bg-muted/40 rounded-lg border border-border/40">
+              <div>
+                <p className="text-[11px] text-muted-foreground font-medium">Successfully Processed</p>
+                <p className="text-xl font-bold text-emerald-600 font-mono mt-0.5">{currentBatch.summary.successRows}</p>
               </div>
               <div>
-                <CardTitle className="text-base font-bold">Import Execution Finished</CardTitle>
-                <CardDescription className="text-xs">
-                  Batch <span className="font-mono">{currentBatch.id}</span> completed for {module.toUpperCase()} ({selectedOperation}).
-                </CardDescription>
+                <p className="text-[11px] text-muted-foreground font-medium">Failed Rows</p>
+                <p className="text-xl font-bold text-rose-600 font-mono mt-0.5">{currentBatch.summary.failedRows}</p>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="p-4 rounded-lg bg-muted/40 border text-center">
-                <p className="text-xs text-muted-foreground">Total Ingested</p>
-                <p className="text-2xl font-bold">{currentBatch.totalRecords}</p>
-              </div>
-              <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
-                <p className="text-xs text-emerald-600 font-medium">Successfully Committed</p>
-                <p className="text-2xl font-bold text-emerald-700">{currentBatch.successRecords}</p>
-              </div>
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-center">
-                <p className="text-xs text-destructive font-medium">Failed / Skipped</p>
-                <p className="text-2xl font-bold text-destructive">{currentBatch.failedRecords}</p>
+              <div>
+                <p className="text-[11px] text-muted-foreground font-medium">No Change (Skipped)</p>
+                <p className="text-xl font-bold text-blue-600 font-mono mt-0.5">{currentBatch.summary.noChangeRows}</p>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
+            <div className="space-y-2">
+              <h4 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">Download Outcome Reports</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button variant="outline" onClick={handleDownloadResults} className="justify-start gap-2 h-auto py-2.5 text-xs">
+                  <Download className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <div className="text-left truncate">
+                    <p className="font-semibold text-xs">Full Result Report (.xlsx)</p>
+                    <p className="text-[10px] text-muted-foreground">6 audit & reconciliation sheets</p>
+                  </div>
+                </Button>
+
+                {currentBatch.summary.failedRows > 0 && (
+                  <Button variant="outline" onClick={handleDownloadFailedRecords} className="justify-start gap-2 h-auto py-2.5 text-xs border-rose-200 hover:bg-rose-500/10">
+                    <Download className="h-4 w-4 text-rose-600 shrink-0" />
+                    <div className="text-left truncate">
+                      <p className="font-semibold text-xs text-rose-600">Failed Records (.xlsx)</p>
+                      <p className="text-[10px] text-muted-foreground">Pre-annotated error reasons</p>
+                    </div>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t">
               <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
                 Import Another File
               </Button>
-
-              <Button onClick={handleDownloadResults} className="text-xs gap-2">
-                <Download className="h-3.5 w-3.5" /> Download Result Report (.xlsx)
+              <Button variant="ghost" size="sm" onClick={() => setCurrentStep("history")} className="text-xs gap-1.5">
+                <Clock className="h-3.5 w-3.5" /> View Audit History
               </Button>
             </div>
           </CardContent>
@@ -693,50 +738,104 @@ export function ExcelImportEmbedded({
       {/* STEP 5: HISTORY TAB */}
       {currentStep === "history" && (
         <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold">Audit Logs & Execution History ({module.toUpperCase()})</CardTitle>
-            <CardDescription className="text-xs">
-              Complete historical record of all bulk operations performed on {module} master data.
-            </CardDescription>
+          <CardHeader className="py-3 px-4 flex flex-row items-center justify-between border-b bg-muted/20">
+            <div>
+              <CardTitle className="text-sm font-semibold">Audit Logs & Execution History ({module.toUpperCase()})</CardTitle>
+              <CardDescription className="text-xs">
+                Complete historical record of all bulk operations performed on {module} master data.
+              </CardDescription>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
+              Back to Upload
+            </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {historyBatches.length === 0 ? (
               <div className="text-center py-12 text-xs text-muted-foreground">
                 No past execution batches recorded for {module}.
               </div>
             ) : (
-              <div className="rounded-md border overflow-x-auto">
+              <div className="rounded-b-md border-t overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 text-xs">
-                      <TableHead>Batch ID</TableHead>
-                      <TableHead>Operation</TableHead>
-                      <TableHead>File Name</TableHead>
-                      <TableHead>Executed By</TableHead>
-                      <TableHead>Records</TableHead>
-                      <TableHead>Date / Time</TableHead>
+                    <TableRow className="bg-muted/40 text-[11px]">
+                      <TableHead className="py-2 px-2.5 font-semibold">Batch ID</TableHead>
+                      <TableHead className="py-2 px-2 font-semibold">Action</TableHead>
+                      <TableHead className="py-2 px-2.5 font-semibold">File Name</TableHead>
+                      <TableHead className="py-2 px-2 font-semibold">User</TableHead>
+                      <TableHead className="py-2 px-2 text-center font-semibold">Total Rows</TableHead>
+                      <TableHead className="py-2 px-2 text-center font-semibold text-emerald-600">Committed</TableHead>
+                      <TableHead className="py-2 px-2 text-center font-semibold text-rose-600">Errors</TableHead>
+                      <TableHead className="py-2 px-2 font-semibold">Status</TableHead>
+                      <TableHead className="py-2 px-2.5 font-semibold">Date & Time</TableHead>
+                      <TableHead className="py-2 px-2 text-right font-semibold">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {historyBatches.map((batch) => (
-                      <TableRow key={batch.id}>
-                        <TableCell className="font-mono text-xs font-semibold">{batch.id}</TableCell>
-                        <TableCell>
-                          <Badge variant={batch.operation === "DELETE" ? "destructive" : "outline"} className="text-[10px]">
-                            {batch.operation}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs truncate max-w-xs">{batch.fileName}</TableCell>
-                        <TableCell className="text-xs font-mono">{batch.createdBy}</TableCell>
-                        <TableCell className="text-xs">
-                          <span className="text-emerald-600 font-semibold">{batch.successRecords} OK</span>
-                          {batch.failedRecords > 0 && <span className="text-destructive ml-1">({batch.failedRecords} Fail)</span>}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {new Date(batch.createdAt).toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {historyBatches.map((batch) => {
+                      const totalRows = batch.summary?.totalRows ?? (batch as any).totalRecords ?? batch.records?.length ?? 0;
+                      const successRows = batch.summary?.successRows ?? (batch as any).successRecords ?? 0;
+                      const failedRows = batch.summary?.failedRows ?? (batch as any).failedRecords ?? (batch.status === "FAILED" && successRows === 0 ? totalRows : 0);
+                      const displayDate = batch.uploadedAt
+                        ? new Date(batch.uploadedAt).toLocaleString()
+                        : (batch as any).createdAt
+                        ? new Date((batch as any).createdAt).toLocaleString()
+                        : "Recent";
+
+                      return (
+                        <TableRow key={batch.id} className="hover:bg-muted/40 text-xs">
+                          <TableCell className="py-2 px-2.5 font-mono text-[11px] font-bold">{batch.batchIdentifier || batch.id.slice(0, 8)}</TableCell>
+                          <TableCell className="py-2 px-2">
+                            <Badge variant={batch.operation === "DELETE" ? "destructive" : "outline"} className="text-[9px] font-bold uppercase px-1.5 py-0">
+                              {batch.operation}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-2.5 text-[11px] truncate max-w-[150px] font-mono" title={batch.fileName}>{batch.fileName}</TableCell>
+                          <TableCell className="py-2 px-2 text-[11px] font-mono text-muted-foreground truncate max-w-[100px]">{batch.uploadedBy?.name || (batch as any).createdBy || "Admin"}</TableCell>
+                          <TableCell className="py-2 px-2 text-center font-mono font-semibold text-[11px]">{totalRows}</TableCell>
+                          <TableCell className="py-2 px-2 text-center font-mono text-emerald-600 font-bold text-[11px]">{successRows}</TableCell>
+                          <TableCell className="py-2 px-2 text-center font-mono text-rose-600 font-bold text-[11px]">{failedRows}</TableCell>
+                          <TableCell className="py-2 px-2">
+                            <Badge
+                              variant={batch.status === "COMPLETED" ? "outline" : batch.status === "FAILED" ? "destructive" : "secondary"}
+                              className={`text-[9px] font-bold px-1.5 py-0 ${
+                                batch.status === "COMPLETED" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
+                              }`}
+                            >
+                              {batch.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-2.5 text-[11px] text-muted-foreground whitespace-nowrap">
+                            {displayDate}
+                          </TableCell>
+                          <TableCell className="py-2 px-2 text-right space-x-1 whitespace-nowrap">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[11px] font-semibold"
+                              onClick={() => {
+                                setCurrentBatch(batch);
+                                setCurrentStep("preview");
+                              }}
+                            >
+                              <Eye className="h-3 w-3 mr-1 text-primary" /> View
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              title="Download Result Excel Report"
+                              onClick={() => {
+                                const data = ResultExcelGenerator.generateResultWorkbook(batch);
+                                ResultExcelGenerator.triggerDownload(data, `${batch.batchIdentifier}_Result_Report.xlsx`);
+                              }}
+                            >
+                              <Download className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -750,8 +849,16 @@ export function ExcelImportEmbedded({
         <Dialog open={!!inspectRecord} onOpenChange={(open) => !open && setInspectRecord(null)}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-sm font-bold">
-                <Eye className="h-4 w-4 text-primary" /> Row {inspectRecord.rowIndex}: {inspectRecord.identifier}
+              <DialogTitle className="flex items-center justify-between text-sm font-bold">
+                <span className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-primary" /> Row {inspectRecord.excelRowNumber}: {inspectRecord.recordKey}
+                </span>
+                <Badge
+                  variant={inspectRecord.status === "READY" ? "outline" : inspectRecord.status === "WARNING" ? "secondary" : "destructive"}
+                  className="text-xs"
+                >
+                  {inspectRecord.status}
+                </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs">
                 Detailed field breakdown, validation rules, and difference mapping.
@@ -759,25 +866,17 @@ export function ExcelImportEmbedded({
             </DialogHeader>
 
             <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
-              {/* Status Badge & Messages */}
-              <div className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
-                <div>
-                  <p className="text-xs font-semibold text-foreground">Record Status</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {inspectRecord.errors.length > 0
-                      ? inspectRecord.errors.map(e => e.message).join(", ")
-                      : inspectRecord.warnings.length > 0
-                      ? inspectRecord.warnings.map(w => w.message).join(", ")
-                      : "Passed all validation tests"}
+              {/* Errors/Warnings */}
+              {inspectRecord.errors.length > 0 && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <XCircle className="h-4 w-4 text-rose-600" /> Validation Errors:
                   </p>
+                  {inspectRecord.errors.map((e, idx) => (
+                    <p key={idx} className="ml-5 font-mono">[{e.code}] {e.message} {e.resolution && `— ${e.resolution}`}</p>
+                  ))}
                 </div>
-                <Badge
-                  variant={inspectRecord.status === "VALID" ? "outline" : inspectRecord.status === "WARNING" ? "secondary" : "destructive"}
-                  className="text-xs"
-                >
-                  {inspectRecord.status}
-                </Badge>
-              </div>
+              )}
 
               {/* Changes Table for UPDATE */}
               {selectedOperation === "UPDATE" && (

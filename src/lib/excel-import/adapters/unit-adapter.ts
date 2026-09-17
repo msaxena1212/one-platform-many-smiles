@@ -1,5 +1,13 @@
 import { supabase, type Unit } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue
+} from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
 export const UNIT_COLUMNS: ColumnDefinition[] = [
@@ -59,8 +67,8 @@ export const unitAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const unitCode = String(row['Unit Code / No.'] ?? row['Unit Code'] ?? row['unit_code'] ?? row['Unit code'] ?? '').trim();
-    const propCode = String(row['Property Code'] ?? row['property_code'] ?? '').trim();
+    const unitCode = String(getCellValue(row, 'Unit Code / No.', 'Unit Code', 'unit_code', 'Unit code', 'Unit No') ?? '').trim();
+    const propCode = String(getCellValue(row, 'Property Code', 'property_code', 'Property code') ?? '').trim();
     if (!unitCode && !propCode) return '';
     return propCode ? `${propCode}::${unitCode}` : unitCode;
   },
@@ -101,8 +109,8 @@ export const unitAdapter: EntityImportAdapter = {
     const dependencies: DependencyCheckItem[] = [];
     const normalized: Record<string, any> = {};
 
-    const rawUnitCode = String(row['Unit Code / No.'] ?? row['Unit Code'] ?? row['unit_code'] ?? '').trim();
-    const rawPropCode = String(row['Property Code'] ?? row['property_code'] ?? '').trim();
+    const rawUnitCode = String(getCellValue(row, 'Unit Code / No.', 'Unit Code', 'unit_code', 'Unit code', 'Unit No') ?? '').trim();
+    const rawPropCode = String(getCellValue(row, 'Property Code', 'property_code', 'Property code') ?? '').trim();
 
     if (!rawUnitCode) {
       errors.push({
@@ -202,7 +210,7 @@ export const unitAdapter: EntityImportAdapter = {
     for (const col of UNIT_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
         const strVal = String(cellValue).trim();
@@ -403,4 +411,25 @@ export const unitAdapter: EntityImportAdapter = {
       }
 
       if (operation === 'DELETE') {
-        const existing = re
+        const existing = record.originalDbData;
+        if (!existing?.id) throw new Error('Target unit record ID not found');
+
+        const { error } = await supabase.from('units').update({ status: 'Archived', updated_at: new Date().toISOString() }).eq('id', existing.id);
+        if (error) throw error;
+
+        return {
+          success: true,
+          resultText: `Unit "${unitCode}" archived.`,
+        };
+      }
+
+      return { success: false, resultText: 'Unsupported operation' };
+    } catch (err: any) {
+      return {
+        success: false,
+        resultText: 'Failed to process unit record',
+        error: err?.message || 'Database error occurred',
+      };
+    }
+  },
+};

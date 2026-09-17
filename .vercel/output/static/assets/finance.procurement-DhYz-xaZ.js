@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-n5LQ9ujS.js";import{ProcurementModule as t}from"./procurement-module-DT3CEMZE.js";var n=e(),r=()=>(0,n.jsx)(t,{role:`admin`});export{r as component};

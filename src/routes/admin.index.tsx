@@ -53,9 +53,6 @@ function AdminDashboard() {
             return pTime >= startOfMonth ? sum + Number(p.amount || 0) : sum;
           }, 0);
         }
-        if (mtdTotal === 0) {
-          mtdTotal = (leaseCount || 4) * 6500; // Estimated monthly run rate if payments table empty
-        }
 
         setProperties(props);
         setRecentTickets(ticketsData || []);

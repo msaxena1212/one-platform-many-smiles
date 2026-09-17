@@ -108,8 +108,10 @@ export async function generateTemplateWorkbook(module: ImportModule, operation: 
   ];
   XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
 
-  // 3. Master Dropdowns Sheet (if any allowed values exist)
+  // 3. Master Dropdowns Sheet (Dynamically populated from Master Configurations)
   const masterSheetData: any[][] = [['Master Category', 'Allowed Value']];
+  
+  // Add direct column allowedValues
   for (const col of columns) {
     if (Array.isArray(col.allowedValues) && col.allowedValues.length > 0) {
       for (const val of col.allowedValues) {
@@ -118,9 +120,27 @@ export async function generateTemplateWorkbook(module: ImportModule, operation: 
     }
   }
 
+  // Also include all system configured dynamic masters
+  const allMasterKeys: (keyof typeof masterOptions)[] = [
+    'propertyTypes', 'propertyCategories', 'ownershipTypes', 'propertyStatuses',
+    'unitTypes', 'unitUsages', 'viewTypes', 'furnishingTypes', 'unitStatuses', 'leaseStatuses', 'rentFrequencies', 'maintenanceResponsibilities', 'securityDepositTypes',
+    'genders', 'departments', 'designations', 'employmentTypes', 'workLocations', 'employeeStatuses',
+    'assetCategories', 'assetSubcategories', 'assetOwnershipTypes', 'assetConditions', 'assetStatuses',
+  ];
+
+  for (const key of allMasterKeys) {
+    const list = masterOptions[key];
+    if (Array.isArray(list) && list.length > 0) {
+      const categoryTitle = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+      for (const val of list) {
+        masterSheetData.push([categoryTitle, val]);
+      }
+    }
+  }
+
   if (masterSheetData.length > 1) {
     const wsMasters = XLSX.utils.aoa_to_sheet(masterSheetData);
-    wsMasters['!cols'] = [{ wch: 30 }, { wch: 40 }];
+    wsMasters['!cols'] = [{ wch: 35 }, { wch: 45 }];
     XLSX.utils.book_append_sheet(wb, wsMasters, 'Master_Values');
   }
 

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
-import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet } from "lucide-react";
+import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { buildPropertyPayload } from "@/lib/property-master";
 import { getDemoSession } from "@/lib/demo-auth";
 import {
@@ -47,45 +49,81 @@ interface PropertiesModuleProps {
 }
 
 type PropertyFormState = {
+  property_code: string;
   title: string;
   description: string;
   property_type: string;
-  address: string;
-  city: string;
-  state: string;
-  zip_code: string;
-  country: string;
-  cost_center_code: string;
-  cost_center_name: string;
   property_category: string;
   ownership_type: string;
+  country: string;
+  city: string;
+  area_zone: string;
+  street_building_name: string;
+  plot_building_no: string;
+  title_deed_no: string;
+  municipality_ref_no: string;
+  owner_landlord: string;
+  property_manager: string;
+  no_of_floors: string;
   no_of_units: string;
   total_units: string;
+  total_built_up_area_sqm: string;
+  common_area_sqm: string;
+  parking_count: string;
+  no_of_elevators: string;
+  completion_date: string;
+  handover_date: string;
+  property_status: string;
+  documents_received: boolean;
+  remarks: string;
+  cost_center_code: string;
+  cost_center_name: string;
+  address: string;
+  state: string;
+  zip_code: string;
 };
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
 
 const EMPTY_FORM: PropertyFormState = {
+  property_code: "",
   title: "",
   description: "",
-  property_type: "apartment",
-  address: "",
-  city: "",
-  state: "",
-  zip_code: "",
+  property_type: "Residential",
+  property_category: "Building",
+  ownership_type: "Leased",
   country: "Qatar",
+  city: "Doha",
+  area_zone: "",
+  street_building_name: "",
+  plot_building_no: "",
+  title_deed_no: "",
+  municipality_ref_no: "",
+  owner_landlord: "",
+  property_manager: "",
+  no_of_floors: "1",
+  no_of_units: "1",
+  total_units: "1",
+  total_built_up_area_sqm: "",
+  common_area_sqm: "",
+  parking_count: "0",
+  no_of_elevators: "0",
+  completion_date: "",
+  handover_date: "",
+  property_status: "Active",
+  documents_received: false,
+  remarks: "",
   cost_center_code: "",
   cost_center_name: "",
-  property_category: "",
-  ownership_type: "",
-  no_of_units: "",
-  total_units: "",
+  address: "",
+  state: "",
+  zip_code: "",
 };
 
 const STEPS = [
   { id: 1, name: "Identity & Location" },
-  { id: 2, name: "Configuration" },
-  { id: 3, name: "Cost Center & Categories" },
+  { id: 2, name: "Specifications & Structure" },
+  { id: 3, name: "Amenities & Facilities" },
   { id: 4, name: "Photos" },
 ];
 
@@ -99,6 +137,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
     Record<string, { units: number; occupancy: string }>
   >({});
   const [form, setForm] = useState<PropertyFormState>(EMPTY_FORM);
+  const [amenitiesList, setAmenitiesList] = useState<string[]>([""]);
+  const [otherAmenities, setOtherAmenities] = useState<string>("");
   const [customPropertyType, setCustomPropertyType] = useState("");
   const [images, setImages] = useState<ImageFile[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -225,47 +265,69 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
         throw new Error("You must be logged in to create a property.");
       }
 
-      const generatedPropertyCode = `PROP-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
+      const finalPropertyCode = form.property_code.trim() || `PROP-${Math.floor(100000 + Math.random() * 900000)}`;
+      const propCostCenterCode = form.cost_center_code.trim() || `CC-${finalPropertyCode.replace(/[^A-Za-z0-9]/g, '')}`;
+      const propCostCenterName = form.cost_center_name.trim() || `${form.title.trim()} Cost Center`;
 
-      const propCostCenterCode = form.cost_center_code || `CC-PROP-${Math.floor(1000 + Math.random() * 9000)}`;
-      const propCostCenterName = form.cost_center_name || `${form.title} Cost Center`;
+      const cleanAmenities = amenitiesList.map((a) => a.trim()).filter(Boolean);
+      if (cleanAmenities.length === 0) {
+        toast.error("At least one Amenity / Facility is mandatory.");
+        setCreating(false);
+        return;
+      }
+
+      const streetAddress = form.street_building_name || form.address || `${finalPropertyCode} Street`;
 
       const newProperty = await createProperty(
         buildPropertyPayload({
           hostId, // undefined for demo users → host_id omitted (null in DB)
-          title: form.title,
+          title: form.title.trim(),
           description: form.description || null,
           propertyType: form.property_type === "Other" ? customPropertyType : form.property_type,
-          address: form.address,
-          city: form.city,
-          state: form.state || undefined,
+          address: streetAddress,
+          city: form.city.trim(),
+          state: form.state || form.area_zone || undefined,
           zipCode: form.zip_code || undefined,
-          country: form.country,
+          country: form.country.trim(),
           basePricePerNight: 0,
           cleaningFee: 0,
-          isActive: true,
-          propertyCode: generatedPropertyCode,
+          isActive: form.property_status.toLowerCase() === "active",
+          propertyCode: finalPropertyCode,
           costCenterCode: propCostCenterCode,
           costCenterName: propCostCenterName,
           propertyCategory: form.property_category,
           ownershipType: form.ownership_type,
-          noOfUnits: form.no_of_units || form.total_units,
-          totalUnits: form.total_units || form.no_of_units,
+          areaZone: form.area_zone.trim(),
+          streetBuildingName: form.street_building_name.trim(),
+          plotBuildingNo: form.plot_building_no.trim() || undefined,
+          titleDeedNo: form.title_deed_no.trim() || undefined,
+          municipalityRefNo: form.municipality_ref_no.trim() || undefined,
+          ownerLandlord: form.owner_landlord.trim(),
+          propertyManager: form.property_manager.trim(),
+          noOfFloors: Number(form.no_of_floors) || 1,
+          noOfUnits: Number(form.no_of_units) || 1,
+          totalUnits: Number(form.total_units || form.no_of_units) || 1,
+          totalBuiltUpAreaSqm: form.total_built_up_area_sqm ? Number(form.total_built_up_area_sqm) : undefined,
+          commonAreaSqm: form.common_area_sqm ? Number(form.common_area_sqm) : undefined,
+          parkingCount: Number(form.parking_count) || 0,
+          noOfElevators: Number(form.no_of_elevators) || 0,
+          completionDate: form.completion_date || undefined,
+          handoverDate: form.handover_date || undefined,
+          propertyStatus: form.property_status,
+          documentsReceived: Boolean(form.documents_received),
+          remarks: form.remarks || undefined,
+          amenityFields: cleanAmenities,
+          otherAmenitiesFacilities: otherAmenities.trim() || undefined,
         }) as Omit<Property, "id" | "created_at" | "property_images">,
       );
 
       if (newProperty) {
         try {
-          const finalCcCode = `CC-PROP-${newProperty.id.slice(0, 8).toUpperCase()}`;
           await supabase.from('fin_cost_centers').upsert({
-            code: finalCcCode,
-            name: `${form.title} Cost Center`,
-            manager: 'Property Manager',
+            code: propCostCenterCode,
+            name: propCostCenterName,
+            manager: form.property_manager || 'Property Manager',
           }, { onConflict: 'code' });
-          await supabase.from('properties').update({
-            cost_center_code: finalCcCode,
-            cost_center_name: `${form.title} Cost Center`,
-          } as any).eq('id', newProperty.id);
         } catch (ccErr) {
           console.warn("Auto-create property cost center skipped/failed:", ccErr);
         }
@@ -284,6 +346,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       setCreateOpen(false);
       setForm(EMPTY_FORM);
+      setAmenitiesList([""]);
+      setOtherAmenities("");
       setCustomPropertyType("");
       setImages([]);
       setStep(1);
@@ -419,13 +483,13 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       {/* Bulk Property Import Modal */}
       <Dialog open={bulkPropOpen} onOpenChange={setBulkPropOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="property"
             title="Property Master: Excel Bulk Import & Management"
             description="Production-grade Excel CREATE, UPDATE, and DELETE engine for master properties, buildings, and cost centers."
             onCompleted={() => {
-              load();
+              loadProperties();
             }}
           />
         </DialogContent>
@@ -515,12 +579,12 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                         </td>
                         <td className="px-6 py-4 text-right flex justify-end gap-2">
                           <Button asChild variant="ghost" size="sm">
-                            <Link to={basePath + "/manage/$id"} params={{ id: prop.id }}>
+                            <Link to={basePath + "/manage/$id"} params={{ id: prop.id }} search={{ mode: 'view' } as any}>
                               View
                             </Link>
                           </Button>
                           <Button asChild variant="outline" size="sm">
-                            <Link to={basePath + "/manage/$id"} params={{ id: prop.id }}>
+                            <Link to={basePath + "/manage/$id"} params={{ id: prop.id }} search={{ mode: 'edit' } as any}>
                               Edit
                             </Link>
                           </Button>
@@ -569,222 +633,523 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
       </Card>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Property</DialogTitle>
-          </DialogHeader>
-
-          {/* Stepper Header */}
-          <div className="mb-4 mt-2 flex items-center justify-center">
-            {STEPS.map((s, i) => (
-              <div key={s.id} className="flex items-center">
-                <div className={stepperButtonClass(s)}>
-                  {step > s.id ? <Check className="h-4 w-4" /> : s.id}
-                </div>
-                {i < STEPS.length - 1 && <div className={connectorClass(i)} />}
-              </div>
-            ))}
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          {/* Header with gradient and icon */}
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold">Register New Property</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Set up building identity, location, configuration units, and media assets.
+              </DialogDescription>
+            </div>
           </div>
-          <p className="mb-4 text-center text-sm font-medium text-muted-foreground">
-            Step {step} of {STEPS.length}: {STEPS[step - 1].name}
-          </p>
 
-          <div className="py-2">
+          {/* Stepper Navigation */}
+          <div className="px-6 pt-3 pb-2 bg-muted/20 border-b">
+            <div className="flex items-center justify-between">
+              {STEPS.map((s, i) => {
+                const isActive = step === s.id;
+                const isPassed = step > s.id;
+                return (
+                  <div key={s.id} className="flex items-center flex-1 last:flex-none">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={
+                          "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all " +
+                          (isActive
+                            ? "bg-primary text-primary-foreground shadow-sm ring-4 ring-primary/15"
+                            : isPassed
+                            ? "bg-primary/20 text-primary font-semibold"
+                            : "bg-muted text-muted-foreground")
+                        }
+                      >
+                        {isPassed ? <Check className="h-3.5 w-3.5" /> : s.id}
+                      </div>
+                      <span
+                        className={
+                          "text-xs hidden sm:inline-block " +
+                          (isActive ? "font-bold text-foreground" : isPassed ? "font-medium text-foreground/80" : "text-muted-foreground")
+                        }
+                      >
+                        {s.name}
+                      </span>
+                    </div>
+                    {i < STEPS.length - 1 && (
+                      <div
+                        className={
+                          "h-0.5 flex-1 mx-3 rounded-full transition-all " +
+                          (step > i + 1 ? "bg-primary" : "bg-border")
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Form Content Body */}
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
             {/* Step 1: Identity & Location */}
             {step === 1 && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 space-y-2">
-                  <Label>Property Name *</Label>
-                  <Input
-                    value={form.title}
-                    onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                    placeholder="Residence / Building name"
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    value={form.description}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, description: e.target.value }))
-                    }
-                    placeholder="Short property description"
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label>Address *</Label>
-                  <Input
-                    value={form.address}
-                    onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>City *</Label>
-                  <Input
-                    value={form.city}
-                    onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>State / Zone</Label>
-                  <Input
-                    value={form.state}
-                    onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Zip Code</Label>
-                  <Input
-                    value={form.zip_code}
-                    onChange={(e) => setForm((prev) => ({ ...prev, zip_code: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Country</Label>
-                  <Input
-                    value={form.country}
-                    onChange={(e) => setForm((prev) => ({ ...prev, country: e.target.value }))}
-                  />
-                </div>
-              </div>
-            )}
+              <div className="space-y-4">
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-primary" /> Property Identity &amp; Classification
+                  </span>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Property Code *</Label>
+                        <Input
+                          value={form.property_code}
+                          onChange={(e) => setForm((prev) => ({ ...prev, property_code: e.target.value }))}
+                          placeholder="e.g. PROP-001 (Auto if blank)"
+                          className="bg-background font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5 col-span-2">
+                        <Label className="text-xs font-semibold">Property / Building Name *</Label>
+                        <Input
+                          value={form.title}
+                          onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                          placeholder="e.g. Al Sadd Commercial Tower / Lusail Marina Residences"
+                          className="bg-background font-medium"
+                        />
+                      </div>
+                    </div>
 
-            {/* Step 2: Configuration */}
-            {step === 2 && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Property Type</Label>
-                  <Select
-                    value={form.property_type}
-                    onValueChange={(val) => {
-                      setForm((prev) => ({ ...prev, property_type: val }));
-                      if (val !== "Other") setCustomPropertyType("");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {propTypeOptions.length > 0 ? (
-                        propTypeOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <>
-                          <SelectItem value="apartment">Apartment</SelectItem>
-                          <SelectItem value="villa">Villa</SelectItem>
-                          <SelectItem value="office">Office</SelectItem>
-                          <SelectItem value="building">Building</SelectItem>
-                          <SelectItem value="retail">Retail</SelectItem>
-                          <SelectItem value="warehouse">Warehouse</SelectItem>
-                        </>
-                      )}
-                      <SelectItem value="Other">Other (Add new)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {form.property_type === "Other" && (
-                    <div className="mt-1">
-                      <Input
-                        placeholder="Enter custom type..."
-                        value={customPropertyType}
-                        onChange={(e) => setCustomPropertyType(e.target.value)}
-                        className="h-8 text-xs"
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Property Type *</Label>
+                        <SearchableSelect
+                          options={[
+                            ...propTypeOptions.map((opt) => ({ label: opt.label, value: opt.id })),
+                            { label: 'Other (Add new)', value: 'Other' },
+                          ]}
+                          value={form.property_type}
+                          onValueChange={(val) => {
+                            setForm((prev) => ({ ...prev, property_type: val }));
+                            if (val !== "Other") setCustomPropertyType("");
+                          }}
+                          placeholder="Search property type..."
+                        />
+                        {form.property_type === "Other" && (
+                          <div className="mt-1">
+                            <Input
+                              value={customPropertyType}
+                              onChange={(e) => setCustomPropertyType(e.target.value)}
+                              placeholder="Enter custom type..."
+                              className="bg-background text-xs h-8"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Property Category</Label>
+                        <SearchableSelect
+                          options={propCategoryOptions.length > 0
+                            ? propCategoryOptions.map((opt) => ({ label: opt.label, value: opt.id }))
+                            : [
+                                { label: 'Building', value: 'Building' },
+                                { label: 'Residential', value: 'Residential' },
+                                { label: 'Commercial', value: 'Commercial' },
+                                { label: 'Mixed Use', value: 'Mixed Use' },
+                                { label: 'Retail', value: 'Retail' },
+                                { label: 'Industrial', value: 'Industrial' },
+                              ]
+                          }
+                          value={form.property_category}
+                          onValueChange={(val) => setForm((prev) => ({ ...prev, property_category: val }))}
+                          placeholder="Search category..."
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Ownership Type</Label>
+                        <SearchableSelect
+                          options={ownershipOptions.length > 0
+                            ? ownershipOptions.map((opt) => ({ label: opt.label, value: opt.id }))
+                            : [
+                                { label: 'Freehold', value: 'Freehold' },
+                                { label: 'Leasehold', value: 'Leasehold' },
+                                { label: 'Leased', value: 'Leased' },
+                                { label: 'Company Owned', value: 'Company Owned' },
+                                { label: 'Joint Ownership', value: 'Joint Ownership' },
+                              ]
+                          }
+                          value={form.ownership_type}
+                          onValueChange={(val) => setForm((prev) => ({ ...prev, ownership_type: val }))}
+                          placeholder="Search ownership type..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Owner / Landlord Name</Label>
+                        <Input
+                          value={form.owner_landlord}
+                          onChange={(e) => setForm((prev) => ({ ...prev, owner_landlord: e.target.value }))}
+                          placeholder="e.g. Sheikh Hassan Al-Thani"
+                          className="bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Property Manager *</Label>
+                        <Input
+                          value={form.property_manager}
+                          onChange={(e) => setForm((prev) => ({ ...prev, property_manager: e.target.value }))}
+                          placeholder="e.g. Jithin Abdul Latheef"
+                          className="bg-background"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Description</Label>
+                      <Textarea
+                        value={form.description}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, description: e.target.value }))
+                        }
+                        placeholder="Brief overview of the property, surrounding area, and building amenities..."
+                        className="bg-background text-xs resize-none"
+                        rows={2}
                       />
                     </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>Total Units</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.total_units || form.no_of_units}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        total_units: e.target.value,
-                        no_of_units: e.target.value,
-                      }))
-                    }
-                    placeholder="e.g. 10"
-                  />
+                  </div>
                 </div>
 
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Location &amp; Qatar Address
+                  </span>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Country *</Label>
+                        <Input
+                          value={form.country}
+                          onChange={(e) => setForm((prev) => ({ ...prev, country: e.target.value }))}
+                          className="bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">City / Municipality *</Label>
+                        <Input
+                          value={form.city}
+                          onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))}
+                          placeholder="e.g. Doha / Lusail / Al Wakrah"
+                          className="bg-background"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Area / Zone *</Label>
+                        <Input
+                          value={form.area_zone}
+                          onChange={(e) => setForm((prev) => ({ ...prev, area_zone: e.target.value }))}
+                          placeholder="e.g. Zone 18 / Old Salata / West Bay"
+                          className="bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Street / Building Name *</Label>
+                        <Input
+                          value={form.street_building_name}
+                          onChange={(e) => setForm((prev) => ({ ...prev, street_building_name: e.target.value, address: e.target.value }))}
+                          placeholder="e.g. Street 840 / Al Sadd Tower"
+                          className="bg-background"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Plot / Building No.</Label>
+                        <Input
+                          value={form.plot_building_no}
+                          onChange={(e) => setForm((prev) => ({ ...prev, plot_building_no: e.target.value }))}
+                          placeholder="e.g. Bldg 23 / Plot 45"
+                          className="bg-background"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Title Deed / Reg. No.</Label>
+                        <Input
+                          value={form.title_deed_no}
+                          onChange={(e) => setForm((prev) => ({ ...prev, title_deed_no: e.target.value }))}
+                          placeholder="e.g. TD-998822"
+                          className="bg-background font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Municipality / Bldg Ref No.</Label>
+                        <Input
+                          value={form.municipality_ref_no}
+                          onChange={(e) => setForm((prev) => ({ ...prev, municipality_ref_no: e.target.value }))}
+                          placeholder="e.g. MUN-44012"
+                          className="bg-background font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Step 3: Cost Center & Categories */}
-            {step === 3 && (
-              <div className="grid grid-cols-2 gap-4">
-{/* Cost Center fields removed as per new logic */}
-                <div className="space-y-2">
-                  <Label>Property Category</Label>
-                  <Select
-                    value={form.property_category}
-                    onValueChange={(val) =>
-                      setForm((prev) => ({ ...prev, property_category: val }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {propCategoryOptions.length > 0 ? (
-                        propCategoryOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <>
-                          <SelectItem value="Residential">Residential</SelectItem>
-                          <SelectItem value="Commercial">Commercial</SelectItem>
-                          <SelectItem value="Mixed Use">Mixed Use</SelectItem>
-                          <SelectItem value="Retail">Retail</SelectItem>
-                          <SelectItem value="Industrial">Industrial</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+            {/* Step 2: Specifications & Structure */}
+            {step === 2 && (
+              <div className="space-y-4">
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-primary" /> Structure &amp; Capacity
+                  </span>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">No. of Floors *</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={form.no_of_floors}
+                        onChange={(e) => setForm((prev) => ({ ...prev, no_of_floors: e.target.value }))}
+                        placeholder="e.g. 8"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">No. of Units *</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={form.no_of_units}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            no_of_units: e.target.value,
+                            total_units: e.target.value,
+                          }))
+                        }
+                        placeholder="e.g. 44"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Parking Count</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.parking_count}
+                        onChange={(e) => setForm((prev) => ({ ...prev, parking_count: e.target.value }))}
+                        placeholder="e.g. 12"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">No of Elevator</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.no_of_elevators}
+                        onChange={(e) => setForm((prev) => ({ ...prev, no_of_elevators: e.target.value }))}
+                        placeholder="e.g. 2"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Total Built-up Area (Sqm)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.total_built_up_area_sqm}
+                        onChange={(e) => setForm((prev) => ({ ...prev, total_built_up_area_sqm: e.target.value }))}
+                        placeholder="e.g. 4500"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Common Area (Sqm)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.common_area_sqm}
+                        onChange={(e) => setForm((prev) => ({ ...prev, common_area_sqm: e.target.value }))}
+                        placeholder="e.g. 600"
+                        className="bg-background font-mono"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Ownership Type</Label>
-                  <Select
-                    value={form.ownership_type}
-                    onValueChange={(val) =>
-                      setForm((prev) => ({ ...prev, ownership_type: val }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Ownership" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ownershipOptions.length > 0 ? (
-                        ownershipOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <>
-                          <SelectItem value="Freehold">Freehold</SelectItem>
-                          <SelectItem value="Leasehold">Leasehold</SelectItem>
-                          <SelectItem value="Company Owned">Company Owned</SelectItem>
-                          <SelectItem value="Joint Ownership">Joint Ownership</SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
+
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Key Dates, Compliance &amp; Status
+                  </span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Completion Date</Label>
+                      <Input
+                        type="date"
+                        value={form.completion_date}
+                        onChange={(e) => setForm((prev) => ({ ...prev, completion_date: e.target.value }))}
+                        className="bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Handover Date</Label>
+                      <Input
+                        type="date"
+                        value={form.handover_date}
+                        onChange={(e) => setForm((prev) => ({ ...prev, handover_date: e.target.value }))}
+                        className="bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold">Property Status</Label>
+                      <Select
+                        value={form.property_status}
+                        onValueChange={(val) => setForm((prev) => ({ ...prev, property_status: val }))}
+                      >
+                        <SelectTrigger className="bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Under Construction">Under Construction</SelectItem>
+                          <SelectItem value="Under Maintenance">Under Maintenance</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 items-center pt-1">
+                    <div className="flex items-center space-x-2 pt-4">
+                      <input
+                        type="checkbox"
+                        id="docs_received"
+                        checked={form.documents_received}
+                        onChange={(e) => setForm((prev) => ({ ...prev, documents_received: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                      />
+                      <Label htmlFor="docs_received" className="text-xs font-semibold cursor-pointer">
+                        Documents Received?
+                      </Label>
+                    </div>
+                    <div className="space-y-1.5 col-span-2">
+                      <Label className="text-xs font-semibold">Remarks</Label>
+                      <Input
+                        value={form.remarks}
+                        onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
+                        placeholder="e.g. Standard residential building under prime management"
+                        className="bg-background text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Amenities & Facilities */}
+            {step === 3 && (
+              <div className="space-y-4">
+                <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" /> Amenities &amp; Facilities
+                    </span>
+                    {amenitiesList.length < 5 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs border-primary/40 text-primary hover:bg-primary/10"
+                        onClick={() => {
+                          if (amenitiesList.length < 5) {
+                            setAmenitiesList([...amenitiesList, ""]);
+                          }
+                        }}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add Amenity ({amenitiesList.length}/5)
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {amenitiesList.map((amenity, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-[11px] font-medium text-muted-foreground">
+                            Amenity / Facility {idx + 1} {idx === 0 && <span className="text-destructive font-bold">*</span>}
+                          </Label>
+                          <Input
+                            value={amenity}
+                            onChange={(e) => {
+                              const updated = [...amenitiesList];
+                              updated[idx] = e.target.value;
+                              setAmenitiesList(updated);
+                            }}
+                            placeholder={
+                              idx === 0
+                                ? "e.g. Swimming Pool / Fitness Gym (Required)"
+                                : idx === 1
+                                ? "e.g. 24/7 Security & Concierge"
+                                : idx === 2
+                                ? "e.g. Underground Parking"
+                                : idx === 3
+                                ? "e.g. High-Speed Elevators"
+                                : "e.g. Rooftop Garden"
+                            }
+                            className="bg-background text-xs h-9"
+                          />
+                        </div>
+                        {amenitiesList.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 w-9 p-0 mt-5 text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const updated = amenitiesList.filter((_, i) => i !== idx);
+                              setAmenitiesList(updated.length > 0 ? updated : [""]);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+
+                    <div className="space-y-1 pt-1 border-t border-border/40">
+                      <Label className="text-[11px] font-medium text-muted-foreground">
+                        Other Amenities / Facilities
+                      </Label>
+                      <Input
+                        value={otherAmenities}
+                        onChange={(e) => setOtherAmenities(e.target.value)}
+                        placeholder="e.g. Sauna, Jacuzzi, Squash Court, EV Charging Stations..."
+                        className="bg-background text-xs h-9"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             {/* Step 4: Photos */}
             {step === 4 && (
-              <div className="space-y-4">
-                <Label>Property Images</Label>
+              <div className="rounded-xl border bg-muted/20 p-4 space-y-3.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <PlusCircle className="h-3.5 w-3.5 text-primary" /> Property Gallery &amp; Floor Plans
+                </span>
                 <ImageUploader 
                   images={images} 
                   onChange={setImages} 
@@ -794,32 +1159,75 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             )}
           </div>
 
-          <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+          {/* Dialog Footer */}
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-between gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleBack} disabled={step === 1 || creating}>
-                <ChevronLeft className="mr-2 h-4 w-4" /> Back
+              <Button variant="outline" size="sm" onClick={handleBack} disabled={step === 1 || creating}>
+                <ChevronLeft className="mr-1.5 h-4 w-4" /> Back
               </Button>
               {step < STEPS.length ? (
                 <Button
+                  size="sm"
                   onClick={handleNext}
-                  disabled={step === 1 && (!form.title || !form.address || !form.city)}
+                  disabled={
+                    (step === 1 && (
+                      !form.title.trim() ||
+                      !form.property_code.trim() ||
+                      !form.property_type.trim() ||
+                      !form.property_category.trim() ||
+                      !form.ownership_type.trim() ||
+                      !form.country.trim() ||
+                      !form.city.trim() ||
+                      !form.area_zone.trim() ||
+                      !form.street_building_name.trim() ||
+                      !form.owner_landlord.trim() ||
+                      !form.property_manager.trim()
+                    )) ||
+                    (step === 2 && (
+                      !form.no_of_floors.trim() ||
+                      !form.no_of_units.trim() ||
+                      !form.parking_count.trim() ||
+                      !form.no_of_elevators.trim()
+                    )) ||
+                    (step === 3 && !amenitiesList.some((a) => a.trim().length > 0))
+                  }
                 >
-                  Next <ChevronRight className="ml-2 h-4 w-4" />
+                  Next <ChevronRight className="ml-1.5 h-4 w-4" />
                 </Button>
               ) : (
                 <Button
+                  size="sm"
                   onClick={handleCreateProperty}
-                  disabled={creating || !form.title || !form.address || !form.city}
+                  disabled={
+                    creating ||
+                    !form.title.trim() ||
+                    !form.property_code.trim() ||
+                    !form.property_type.trim() ||
+                    !form.property_category.trim() ||
+                    !form.ownership_type.trim() ||
+                    !form.country.trim() ||
+                    !form.city.trim() ||
+                    !form.area_zone.trim() ||
+                    !form.street_building_name.trim() ||
+                    !form.owner_landlord.trim() ||
+                    !form.property_manager.trim() ||
+                    !form.no_of_floors.trim() ||
+                    !form.no_of_units.trim() ||
+                    !form.parking_count.trim() ||
+                    !form.no_of_elevators.trim() ||
+                    !amenitiesList.some((a) => a.trim().length > 0)
+                  }
+                  className="shadow-sm"
                 >
-                  {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Building2 className="mr-2 h-4 w-4" />}
                   Save Property
                 </Button>
               )}
             </div>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

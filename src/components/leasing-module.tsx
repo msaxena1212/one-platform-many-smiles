@@ -1,6 +1,7 @@
 import { useRouterState, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
+import { BulkPdcDepositModal } from "@/components/leasing/bulk-pdc-deposit-modal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { useAppData } from "@/lib/app-data-context";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
+import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import {
   AlertCircle,
   BadgeCheck,
@@ -1549,10 +1551,25 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     });
   }
 
-  function isCustomerDuplicate(form: Omit<Customer, "id" | "status">) {
+  const nationalityOptions = useMemo(() => {
+    return DynamicMastersService.getMasterStringOptions("nationality").map((name) => ({
+      label: name,
+      value: name,
+    }));
+  }, []);
+
+  const professionOptions = useMemo(() => {
+    return DynamicMastersService.getMasterStringOptions("profession").map((name) => ({
+      label: name,
+      value: name,
+    }));
+  }, []);
+
+  function isCustomerDuplicate(form: Omit<Customer, "id" | "status">, excludeId?: string) {
     // Check each unique identifier field independently against the same field in existing records
     // This prevents false positives caused by short coincidental value matches across different fields
     return customers.some((customer) => {
+      if (excludeId && customer.id === excludeId) return false;
       if (form.qatarId && customer.qatarId && form.qatarId.trim().toLowerCase() === customer.qatarId.trim().toLowerCase()) return true;
       if (form.passport && customer.passport && form.passport.trim().toLowerCase() === customer.passport.trim().toLowerCase()) return true;
       if (form.crNumber && customer.crNumber && form.crNumber.trim().toLowerCase() === customer.crNumber.trim().toLowerCase()) return true;
@@ -1562,9 +1579,29 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     });
   }
 
+  function validateCustomerIdentifiers(form: typeof customerForm): string | null {
+    if (form.type === "individual") {
+      const qid = form.qatarId?.trim();
+      if (qid && !/^\d{11}$/.test(qid)) {
+        return "Qatar ID (QID) must be exactly 11 numeric digits.";
+      }
+      const passport = form.passport?.trim();
+      if (passport && !/^[A-Za-z0-9]{9}$/.test(passport)) {
+        return "Passport Number must be exactly 9 alphanumeric characters.";
+      }
+    }
+    return null;
+  }
+
   function createCustomer() {
     if (!customerForm.name.trim()) {
       alert("Please enter a customer name before saving.");
+      return;
+    }
+
+    const valErr = validateCustomerIdentifiers(customerForm);
+    if (valErr) {
+      alert(valErr);
       return;
     }
 
@@ -3407,19 +3444,58 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               {customerForm.type === "individual" ? (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Qatar ID (QID)"><Input placeholder="28463400000" value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} className="bg-background" /></Field>
-                    <Field label="Passport Number"><Input placeholder="A0000000" value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Qatar ID (QID)">
+                      <Input
+                        placeholder="11 digits (e.g. 28463400000)"
+                        maxLength={11}
+                        value={customerForm.qatarId}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value.replace(/\D/g, '') }))}
+                        className="bg-background font-mono"
+                      />
+                    </Field>
+                    <Field label="Passport Number">
+                      <Input
+                        placeholder="9 characters (e.g. A12345678)"
+                        maxLength={9}
+                        value={customerForm.passport}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                        className="bg-background font-mono uppercase"
+                      />
+                    </Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Nationality"><Input placeholder="e.g. Qatari, British" value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} className="bg-background" /></Field>
-                    <Field label="Emergency Contact"><Input placeholder="+974 5555 1234" value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Nationality">
+                      <SearchableSelect
+                        options={nationalityOptions}
+                        value={customerForm.nationality}
+                        onValueChange={(val) => setCustomerForm((form) => ({ ...form, nationality: val }))}
+                        placeholder="Search & Select Nationality..."
+                        emptyText="No matching nationality found."
+                      />
+                    </Field>
+                    <Field label="Emergency Contact">
+                      <Input
+                        placeholder="+974 5555 1234"
+                        value={customerForm.emergencyContact}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))}
+                        className="bg-background"
+                      />
+                    </Field>
                   </div>
-                  <Field label="Employer / Profession"><Input placeholder="Company / Position" value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                  <Field label="Profession">
+                    <SearchableSelect
+                      options={professionOptions}
+                      value={customerForm.employerInfo}
+                      onValueChange={(val) => setCustomerForm((form) => ({ ...form, employerInfo: val }))}
+                      placeholder="Search & Select Profession..."
+                      emptyText="No matching profession found."
+                    />
+                  </Field>
                 </>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Commercial Registration (CR)"><Input placeholder="12345/00" value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Commercial Registration (CR)"><Input placeholder="12345/00" value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background font-mono" /></Field>
                     <Field label="Authorized Signatory"><Input placeholder="Managing Director / POA" value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} className="bg-background" /></Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -3498,7 +3574,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Mobile</span><strong className="text-foreground">{viewCustomerData.mobile || "—"}</strong></div>
                   <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Email</span><strong className="text-foreground truncate block">{viewCustomerData.email || "—"}</strong></div>
                   <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Emergency</span><strong className="text-foreground">{viewCustomerData.emergencyContact || "—"}</strong></div>
-                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Employer / Signatory</span><strong className="text-foreground truncate block">{viewCustomerData.employerInfo || viewCustomerData.authorizedSignatory || "—"}</strong></div>
+                  <div className="p-2.5 rounded-lg bg-background border"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Profession / Signatory</span><strong className="text-foreground truncate block">{viewCustomerData.employerInfo || viewCustomerData.authorizedSignatory || "—"}</strong></div>
                 </div>
                 {viewCustomerData.permanentAddress && (
                   <div className="p-2.5 rounded-lg bg-background border text-xs"><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Permanent Address</span>{viewCustomerData.permanentAddress}</div>
@@ -3544,19 +3620,58 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               {customerForm.type === "individual" ? (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Qatar ID"><Input value={customerForm.qatarId} onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value }))} className="bg-background" /></Field>
-                    <Field label="Passport"><Input value={customerForm.passport} onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Qatar ID (QID)">
+                      <Input
+                        placeholder="11 digits (e.g. 28463400000)"
+                        maxLength={11}
+                        value={customerForm.qatarId}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, qatarId: event.target.value.replace(/\D/g, '') }))}
+                        className="bg-background font-mono"
+                      />
+                    </Field>
+                    <Field label="Passport Number">
+                      <Input
+                        placeholder="9 characters (e.g. A12345678)"
+                        maxLength={9}
+                        value={customerForm.passport}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, passport: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                        className="bg-background font-mono uppercase"
+                      />
+                    </Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Nationality"><Input value={customerForm.nationality} onChange={(event) => setCustomerForm((form) => ({ ...form, nationality: event.target.value }))} className="bg-background" /></Field>
-                    <Field label="Emergency Contact"><Input value={customerForm.emergencyContact} onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Nationality">
+                      <SearchableSelect
+                        options={nationalityOptions}
+                        value={customerForm.nationality}
+                        onValueChange={(val) => setCustomerForm((form) => ({ ...form, nationality: val }))}
+                        placeholder="Search & Select Nationality..."
+                        emptyText="No matching nationality found."
+                      />
+                    </Field>
+                    <Field label="Emergency Contact">
+                      <Input
+                        placeholder="+974 5555 1234"
+                        value={customerForm.emergencyContact}
+                        onChange={(event) => setCustomerForm((form) => ({ ...form, emergencyContact: event.target.value }))}
+                        className="bg-background"
+                      />
+                    </Field>
                   </div>
-                  <Field label="Employer / Profession"><Input value={customerForm.employerInfo} onChange={(event) => setCustomerForm((form) => ({ ...form, employerInfo: event.target.value }))} className="bg-background" /></Field>
+                  <Field label="Profession">
+                    <SearchableSelect
+                      options={professionOptions}
+                      value={customerForm.employerInfo}
+                      onValueChange={(val) => setCustomerForm((form) => ({ ...form, employerInfo: val }))}
+                      placeholder="Search & Select Profession..."
+                      emptyText="No matching profession found."
+                    />
+                  </Field>
                 </>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background" /></Field>
+                    <Field label="Commercial Registration"><Input value={customerForm.crNumber} onChange={(event) => setCustomerForm((form) => ({ ...form, crNumber: event.target.value }))} className="bg-background font-mono" /></Field>
                     <Field label="Authorized Signatory"><Input value={customerForm.authorizedSignatory} onChange={(event) => setCustomerForm((form) => ({ ...form, authorizedSignatory: event.target.value }))} className="bg-background" /></Field>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -3584,6 +3699,15 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             <Button variant="outline" size="sm" onClick={() => setEditCustomerOpen(false)}>Cancel</Button>
             <Button size="sm" className="shadow-sm" onClick={() => {
               if (editCustomerData) {
+                const valErr = validateCustomerIdentifiers(customerForm);
+                if (valErr) {
+                  alert(valErr);
+                  return;
+                }
+                if (isCustomerDuplicate(customerForm, editCustomerData.id)) {
+                  alert("Another customer already has this Qatar ID, Passport, CR Number, Mobile, or Email.");
+                  return;
+                }
                 setCustomers(prev => prev.map(c => c.id === editCustomerData.id ? { ...c, ...customerForm } : c));
                 toast.success("Customer profile updated successfully.");
                 setEditCustomerOpen(false);
@@ -8022,7 +8146,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       {/* Bulk Customer Import Modal */}
       <Dialog open={bulkCustomerOpen} onOpenChange={setBulkCustomerOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="customer"
             title="Customer Master: Excel Bulk Import & Management"
@@ -8036,7 +8160,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       {/* Bulk Lease Import Modal */}
       <Dialog open={bulkLeaseOpen} onOpenChange={setBulkLeaseOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="lease"
             title="Lease Agreements: Excel Bulk Import & Management"
@@ -8048,121 +8172,50 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         </DialogContent>
       </Dialog>
 
-      {/* Bulk PDC Import Modal */}
-      <Dialog open={bulkPdcOpen} onOpenChange={setBulkPdcOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-primary" />
-              Bulk Post-Dated Cheques (PDC) Ingestion
-            </DialogTitle>
-            <DialogDescription>
-              Upload PDC register records mapped to leases, bank names, cheque serial numbers, and maturity dates.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-3">
-            <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/40">
-              <div className="text-sm">
-                <p className="font-semibold text-foreground">Standard PDC Registry Template</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Columns: LeaseId, ChequeNumber, BankName, MaturityDate, Amount, PayerName</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={downloadPdcTemplate} className="gap-2 shrink-0">
-                <Download className="h-4 w-4" /> Template
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label>Select CSV Document</Label>
-              <Input
-                type="file"
-                accept=".csv, text/csv, application/vnd.ms-excel"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = (evt) => {
-                    setBulkPdcCsv(evt.target?.result as string || "");
-                  };
-                  reader.readAsText(file);
-                }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Or Paste Raw CSV Lines</Label>
-              <Textarea
-                value={bulkPdcCsv}
-                onChange={(e) => setBulkPdcCsv(e.target.value)}
-                placeholder={`LeaseId,ChequeNumber,BankName,MaturityDate,Amount,PayerName\nL-1001,PDC-889901,Qatar National Bank (QNB),2026-03-01,6500,Nasser Al-Kuwari`}
-                className="font-mono text-xs h-32"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkPdcOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkPdcImport} disabled={bulkLeasingImporting || !bulkPdcCsv.trim()} className="gap-2">
-              {bulkLeasingImporting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Import PDCs
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Enhanced Bulk PDC Management Studio Modal */}
+      <BulkPdcDepositModal
+        open={bulkPdcOpen}
+        onOpenChange={setBulkPdcOpen}
+        type="PDC"
+        existingLeases={leases}
+        onSuccess={(items) => {
+          const newPdcs: Pdc[] = items.map((item, idx) => ({
+            id: `pdc-bulk-${Date.now()}-${idx}`,
+            leaseId: leases.find(l => l.tenantName === item.tenantName || l.unit === item.unitName)?.id || leases[0]?.id || "L-1001",
+            chequeNo: item.chequeNumber || `CHQ-${Math.floor(100000 + Math.random() * 900000)}`,
+            bank: item.bank || "Doha Bank",
+            date: item.maturityDate || today.toISOString().split("T")[0],
+            amount: Number(item.amount) || 4700,
+            payerName: item.tenantName || "Tenant",
+            status: "received",
+            period: `${item.rentFromDate} to ${item.rentToDate}`,
+          }));
+          setPdcs((prev) => [...newPdcs, ...prev]);
+        }}
+      />
 
-      {/* Bulk Security Deposit Import Modal */}
-      <Dialog open={bulkDepositOpen} onOpenChange={setBulkDepositOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5 text-primary" />
-              Bulk Lease Deposit Vouchers Ingestion
-            </DialogTitle>
-            <DialogDescription>
-              Upload refundable security deposits and advance holding fee vouchers linked to leases.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-3">
-            <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/40">
-              <div className="text-sm">
-                <p className="font-semibold text-foreground">Standard Deposit Voucher Template</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Columns: LeaseId, ReceiptNumber, DepositType, Amount, PaymentMethod, BankOrReference, Remarks</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={downloadDepositTemplate} className="gap-2 shrink-0">
-                <Download className="h-4 w-4" /> Template
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label>Select CSV Document</Label>
-              <Input
-                type="file"
-                accept=".csv, text/csv, application/vnd.ms-excel"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = (evt) => {
-                    setBulkDepositCsv(evt.target?.result as string || "");
-                  };
-                  reader.readAsText(file);
-                }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Or Paste Raw CSV Lines</Label>
-              <Textarea
-                value={bulkDepositCsv}
-                onChange={(e) => setBulkDepositCsv(e.target.value)}
-                placeholder={`LeaseId,ReceiptNumber,DepositType,Amount,PaymentMethod,BankOrReference,Remarks\nL-1001,RV-DEP-991,Security Deposit,6500,Bank Transfer,TRF-QNB-998811,Standard 1-month deposit`}
-                className="font-mono text-xs h-32"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkDepositOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkDepositImport} disabled={bulkLeasingImporting || !bulkDepositCsv.trim()} className="gap-2">
-              {bulkLeasingImporting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Import Deposits
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Enhanced Bulk Security & Utility Deposit Management Studio Modal */}
+      <BulkPdcDepositModal
+        open={bulkDepositOpen}
+        onOpenChange={setBulkDepositOpen}
+        type="DEPOSIT"
+        existingLeases={leases}
+        onSuccess={(items) => {
+          const newVouchers: Voucher[] = items.map((item, idx) => ({
+            id: `v-dep-${Date.now()}-${idx}`,
+            leaseId: leases.find(l => l.tenantName === item.tenantName || l.unit === item.unitName)?.id || leases[0]?.id || "L-1001",
+            name: `Receipts Voucher - ${item.depositType || "Security Deposit"}`,
+            receiptNo: item.receiptNumber || `RV-DEP-${Math.floor(1000 + Math.random() * 9000)}`,
+            method: item.paymentMethod || "Bank Transfer",
+            period: item.remarks || "Security Deposit Guarantee",
+            debit: item.paymentMethod === "Cash" ? "Cash In Hand" : "Bank Operating Account",
+            credit: "Security Deposit Liability (21500)",
+            amount: Number(item.amount) || 4700,
+            status: "posted",
+          }));
+          setVouchers((prev) => [...newVouchers, ...prev]);
+        }}
+      />
     </div>
   );
 }

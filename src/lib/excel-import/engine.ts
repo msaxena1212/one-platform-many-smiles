@@ -78,23 +78,20 @@ export class ExcelImportEngine {
     const templateCols = adapter.getTemplateColumns(operation);
     const firstRowKeys = Object.keys(rawRows[0] || {});
     
-    // Normalize header labels
-    const cleanHeaderMap = new Map<string, string>();
-    for (const k of firstRowKeys) {
-      const clean = k.replace(/\s*\*$/, '').trim().toLowerCase();
-      cleanHeaderMap.set(clean, k);
-    }
-
     // Check mandatory primary key column
     const pkCol = templateCols.find(c => c.key === adapter.primaryKeyField);
     if (pkCol) {
-      const cleanPk = pkCol.label.replace(/\s*\*$/, '').trim().toLowerCase();
-      if (!cleanHeaderMap.has(cleanPk)) {
-        // Also check if fallback column name exists
-        const fallbackExists = firstRowKeys.some(k => k.toLowerCase().includes(adapter.primaryKeyField.toLowerCase()));
-        if (!fallbackExists) {
-          throw new Error(`COLUMN_001: Required column "${pkCol.label}" is missing from the uploaded file.`);
-        }
+      // Test if resolveRecordKey is able to find a key or header matches
+      const canResolveSample = Boolean(adapter.resolveRecordKey(rawRows[0]));
+      const headerMatches = firstRowKeys.some(k => {
+        const cleanK = k.replace(/[\s*_/:().-]+/g, '').toLowerCase();
+        const cleanPk = pkCol.label.replace(/[\s*_/:().-]+/g, '').toLowerCase();
+        const cleanKey = pkCol.key.replace(/[\s*_/:().-]+/g, '').toLowerCase();
+        return cleanK.includes(cleanPk) || cleanPk.includes(cleanK) || cleanK.includes(cleanKey);
+      });
+
+      if (!canResolveSample && !headerMatches) {
+        throw new Error(`COLUMN_001: Required column "${pkCol.label}" is missing from the uploaded file.`);
       }
     }
 
@@ -158,11 +155,32 @@ export class ExcelImportEngine {
         readyCount++;
       }
 
+      const recordDisplayName = 
+        validationRes.normalized.asset_name ||
+        validationRes.normalized.title ||
+        validationRes.normalized.full_name ||
+        validationRes.normalized.employee_name ||
+        (validationRes.normalized.first_name ? `${validationRes.normalized.first_name} ${validationRes.normalized.last_name || ''}`.trim() : '') ||
+        validationRes.normalized.unit_name ||
+        existingRecord?.title || 
+        existingRecord?.full_name || 
+        existingRecord?.asset_name || 
+        (existingRecord?.first_name ? `${existingRecord.first_name} ${existingRecord.last_name || ''}`.trim() : '') ||
+        row['Asset Name'] ||
+        row['Asset Name *'] ||
+        row['Property Name'] ||
+        row['Property Name *'] ||
+        row['Full Name / Company Name'] ||
+        row['Full Name / Company Name *'] ||
+        row['Employee Name'] ||
+        row['Employee Name *'] ||
+        undefined;
+
       parsedRecords.push({
         excelRowNumber: rowNumber,
         recordKey: recordKey || `ROW-${rowNumber}`,
         recordId: existingRecord?.id,
-        recordName: existingRecord?.title || existingRecord?.full_name || existingRecord?.asset_name || existingRecord?.first_name ? `${existingRecord?.first_name} ${existingRecord?.last_name || ''}` : undefined,
+        recordName: recordDisplayName,
         rawRowData: row,
         normalizedData: validationRes.normalized,
         originalDbData: existingRecord,
@@ -192,7 +210,7 @@ export class ExcelImportEngine {
       blockedRows: blockedCount,
       skippedRows: 0,
       successRows: 0,
-      failedRows: 0,
+      failedRows: errorCount + blockedCount,
     };
 
     const batch: ImportBatch = {

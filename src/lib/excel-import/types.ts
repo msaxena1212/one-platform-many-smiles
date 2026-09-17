@@ -156,3 +156,53 @@ export interface EntityImportAdapter {
     error?: string;
   }>;
 }
+
+/**
+ * Normalizes a key or column header for comparison by removing whitespace, asterisks, punctuation, and converting to lowercase.
+ */
+export function normalizeColumnKey(str: string | undefined | null): string {
+  if (!str) return '';
+  return String(str).toLowerCase().replace(/[\s*_/:().-]+/g, '');
+}
+
+/**
+ * Robustly retrieves a value from a row object regardless of whether the header
+ * contains trailing asterisks (*), extra spaces, uppercase/lowercase, or slight label vs key differences.
+ */
+export function getCellValue(row: Record<string, any>, ...possibleKeys: (string | undefined)[]): any {
+  if (!row || typeof row !== 'object') return undefined;
+
+  // 1. Direct exact lookup
+  for (const k of possibleKeys) {
+    if (!k) continue;
+    if (k in row && row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+      return row[k];
+    }
+    // Also try with asterisk suffix or without asterisk suffix
+    const withAsterisk = `${k} *`;
+    if (withAsterisk in row && row[withAsterisk] !== undefined && row[withAsterisk] !== null && String(row[withAsterisk]).trim() !== '') {
+      return row[withAsterisk];
+    }
+    const withAsteriskNoSpace = `${k}*`;
+    if (withAsteriskNoSpace in row && row[withAsteriskNoSpace] !== undefined && row[withAsteriskNoSpace] !== null && String(row[withAsteriskNoSpace]).trim() !== '') {
+      return row[withAsteriskNoSpace];
+    }
+  }
+
+  // 2. Normalized fuzzy lookup over all row keys
+  const normalizedTargets = possibleKeys
+    .filter((k): k is string => Boolean(k))
+    .map(k => normalizeColumnKey(k));
+
+  for (const actualKey of Object.keys(row)) {
+    const normActual = normalizeColumnKey(actualKey);
+    if (normalizedTargets.includes(normActual)) {
+      const val = row[actualKey];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return val;
+      }
+    }
+  }
+
+  return undefined;
+}

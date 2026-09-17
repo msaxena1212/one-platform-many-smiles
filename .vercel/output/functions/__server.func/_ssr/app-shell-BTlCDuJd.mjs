@@ -2,7 +2,7 @@ import { i as __toESM } from "../_runtime.mjs";
 import { B as supabase } from "./supabase-DXZNSXc4.mjs";
 import { c as require_jsx_runtime } from "../_libs/@radix-ui/react-arrow+[...].mjs";
 import { u as require_react } from "../_libs/@floating-ui/react-dom+[...].mjs";
-import { $t as CircleCheck, Yt as CircleX, gt as Info, h as TriangleAlert, in as ChevronRight, ot as LogOut, rt as Megaphone, yn as Bell } from "../_libs/lucide-react.mjs";
+import { Jt as CircleX, Qt as CircleCheck, at as LogOut, h as TriangleAlert, ht as Info, nt as Megaphone, rn as ChevronRight, vn as Bell } from "../_libs/lucide-react.mjs";
 import { t as cn } from "./utils-C_uf36nf.mjs";
 import { t as Badge } from "./badge-D1Dupn2y.mjs";
 import { t as clearDemoSession } from "./demo-auth-Dw5zdnz8.mjs";

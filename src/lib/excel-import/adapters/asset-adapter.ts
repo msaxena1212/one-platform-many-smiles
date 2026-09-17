@@ -1,5 +1,13 @@
 import { supabase, type Asset } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue
+} from '../types';
 
 export const ASSET_COLUMNS: ColumnDefinition[] = [
   { key: 'asset_code', label: 'Asset ID', type: 'string', required: true, unique: true, immutable: true, sampleValue: 'AST-001', description: 'Unique asset identifier' },
@@ -24,6 +32,8 @@ export const ASSET_COLUMNS: ColumnDefinition[] = [
   { key: 'asset_condition', label: 'Asset Condition', type: 'enum', required: false, allowedValues: ['Fair', 'Good', 'Brand New', 'Needs Repair', 'Scrap / Disposed'], sampleValue: 'Fair' },
   { key: 'asset_status', label: 'Asset Status', type: 'enum', required: false, allowedValues: ['Available', 'In Use', 'Under Maintenance', 'Damaged', 'Disposed'], sampleValue: 'Available' },
   { key: 'life_of_asset', label: 'Life Of Asset', type: 'number', required: false, sampleValue: 5 },
+  { key: 'depreciation_method', label: 'Depreciation Method', type: 'enum', required: false, allowedValues: ['Straight Line (SLM)', 'Written Down Value (WDV)', 'None'], sampleValue: 'Straight Line (SLM)' },
+  { key: 'depreciation_rate', label: 'Depreciation Rate (%)', type: 'number', required: false, sampleValue: 20 },
   { key: 'opening_cost', label: 'Opening Cost', type: 'number', required: false, sampleValue: 1200 },
   { key: 'last_service_date', label: 'Last Service Date', type: 'date', required: false, sampleValue: '2025-06-01' },
   { key: 'addition_during_year', label: 'Addition during the year', type: 'number', required: false, sampleValue: 0 },
@@ -57,7 +67,7 @@ export const assetAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Asset ID / Code'] ?? row['Asset ID'] ?? row['Asset Code'] ?? row['asset_code'] ?? row['asset_id'] ?? '';
+    const raw = getCellValue(row, 'Asset ID / Code', 'Asset ID', 'Asset Code', 'asset_code', 'asset_id') ?? '';
     return String(raw).trim();
   },
 
@@ -145,7 +155,7 @@ export const assetAdapter: EntityImportAdapter = {
     for (const col of ASSET_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({
@@ -304,7 +314,7 @@ export const assetAdapter: EntityImportAdapter = {
       const assetCode = record.recordKey;
 
       if (operation === 'CREATE') {
-        const payload: Partial<Asset> = {
+        const payload: Record<string, any> = {
           asset_code: assetCode,
           asset_name: data.asset_name,
           category: data.category,
@@ -312,11 +322,13 @@ export const assetAdapter: EntityImportAdapter = {
           brand: data.brand,
           model: data.model,
           serial_number: data.serial_number,
-          ownership_type: data.ownership_type || 'Owned',
+          ownership_type: data.ownership_type || 'Company Owned',
           purchase_date: data.purchase_date,
           supplier: data.supplier,
           purchase_cost: data.purchase_cost || 0,
           warranty_expiry_date: data.warranty_expiry_date,
+          warranty_status: data.warranty_status,
+          department: data.department,
           assigned_property_id: data.assigned_property_id,
           assigned_property_code: data.assigned_property_code,
           assigned_unit_code: data.assigned_unit_code,
@@ -326,9 +338,20 @@ export const assetAdapter: EntityImportAdapter = {
           asset_condition: data.asset_condition || 'Good',
           asset_status: data.asset_status || 'Available',
           life_of_asset: data.life_of_asset,
+          depreciation_method: data.depreciation_method,
+          depreciation_rate: data.depreciation_rate,
           opening_cost: data.opening_cost,
           last_service_date: data.last_service_date,
+          addition_during_year: data.addition_during_year,
+          total_asset_value: data.total_asset_value,
+          disposal_value: data.disposal_value,
+          opening_accumulated_depreciation: data.opening_accumulated_depreciation,
+          current_year_depreciation: data.current_year_depreciation,
+          closing_accumulated_depreciation: data.closing_accumulated_depreciation,
+          net_book_value: data.net_book_value,
           next_service_date: data.next_service_date,
+          return_date: data.return_date,
+          disposal_date: data.disposal_date,
           remarks: data.remarks,
         };
 
@@ -338,4 +361,51 @@ export const assetAdapter: EntityImportAdapter = {
         return {
           success: true,
           createdId: created.id,
-          resultText: `Asset "$
+          resultText: `Asset "${assetCode}" created.`,
+        };
+      }
+
+      if (operation === 'UPDATE') {
+        const existing = record.originalDbData;
+        if (!existing?.id) throw new Error('Asset record ID not found');
+
+        const updatePayload: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        };
+
+        for (const change of record.changes) {
+          updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
+        }
+
+        const { error } = await supabase.from('assets').update(updatePayload).eq('id', existing.id);
+        if (error) throw error;
+
+        return {
+          success: true,
+          resultText: `Asset "${assetCode}" updated (${record.changes.length} fields).`,
+        };
+      }
+
+      if (operation === 'DELETE') {
+        const existing = record.originalDbData;
+        if (!existing?.id) throw new Error('Asset record ID not found');
+
+        const { error } = await supabase.from('assets').update({ asset_status: 'Disposed', updated_at: new Date().toISOString() }).eq('id', existing.id);
+        if (error) throw error;
+
+        return {
+          success: true,
+          resultText: `Asset "${assetCode}" marked as Disposed.`,
+        };
+      }
+
+      return { success: false, resultText: 'Unsupported operation' };
+    } catch (err: any) {
+      return {
+        success: false,
+        resultText: 'Failed to process asset record',
+        error: err?.message || 'Database error occurred',
+      };
+    }
+  },
+};

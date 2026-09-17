@@ -19,9 +19,11 @@ import {
   Pencil, Search, Shield, FileCheck, Paperclip, ChevronRight, ChevronLeft, Download, FileSpreadsheet
 } from "lucide-react";
 import { fetchAssets, createAsset, updateAsset, deleteAsset, fetchProperties, fetchUnits, type Asset, type Property, type Unit } from "@/lib/supabase";
+import { fetchAssetSubcategories, fetchAssetCategories, type AssetSubcategory, type AssetCategory } from "@/lib/supabase-masters";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { formatDDMMMYYYY, getTodayIST } from "@/lib/date-utils";
+import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import { toast } from "sonner";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
@@ -227,6 +229,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [vendors, setVendors] = useState<FinVendor[]>([]);
+  const [assetCategoriesList, setAssetCategoriesList] = useState<AssetCategory[]>([]);
+  const [assetSubcategoriesList, setAssetSubcategoriesList] = useState<AssetSubcategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [bulkAssetOpen, setBulkAssetOpen] = useState(false);
@@ -457,6 +461,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [form, setForm] = useState({
     asset_type: "Fixed Asset",
     category: "Furniture",
+    subcategory: "",
     item_name: "",
     commission_date: getTodayIST(),
     put_to_use_date: getTodayIST(),
@@ -586,16 +591,20 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [allAssets, allProps, allUnits, allVendors] = await Promise.all([
+      const [allAssets, allProps, allUnits, allVendors, allAssetCats, allAssetSubcats] = await Promise.all([
         fetchAssets(),
         fetchProperties(),
         fetchUnits(),
         FinVendorsApi.fetchAll().catch(() => []),
+        fetchAssetCategories().catch(() => []),
+        fetchAssetSubcategories().catch(() => []),
       ]);
       setAssets(allAssets);
       setProperties(allProps);
       setUnits(allUnits);
       setVendors(allVendors);
+      setAssetCategoriesList(allAssetCats);
+      setAssetSubcategoriesList(allAssetSubcats);
 
       // Auto-synthesize baseline warranties from assets if empty
       setWarranties(prev => {
@@ -1494,11 +1503,14 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       const newAsset = await createAsset({
         asset_name: form.item_name.trim(),
         category: form.category,
+        subcategory: form.subcategory.trim() || undefined,
         asset_code: tagCode,
         serial_number: form.serial_number.trim() || undefined,
         purchase_cost: acqAmount,
         purchase_date: form.commission_date,
         life_of_asset: usefulLifeMonths,
+        depreciation_method: form.depreciation_method,
+        depreciation_rate: form.depreciation_method === "None" ? 0 : Number(form.depreciation_rate) || 0,
         brand: form.depreciation_method,
         supplier: vendors.find(v => v.id === form.vendor_id)?.name || form.warranty_provider || undefined,
         asset_condition: "New",
@@ -4443,7 +4455,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
             {/* ── STEP 1: ASSET DETAILS & FINANCE GENERAL LEDGER ── */}
             {stepperStep === 1 && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Asset / Item Name *</Label>
                     <Input
@@ -4455,14 +4467,62 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Category *</Label>
-                    <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                    <Select
+                      value={form.category}
+                      onValueChange={v => {
+                        setForm(f => ({ ...f, category: v, subcategory: "" }));
+                      }}
+                    >
                       <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {["Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"].map(c => (
+                        {Array.from(
+                          new Set([
+                            ...assetCategoriesList.map(c => c.name),
+                            "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
+                          ])
+                        ).map(c => (
                           <SelectItem key={c} value={c}>{c}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">SubCategory</Label>
+                    {(() => {
+                      const matchedCat = assetCategoriesList.find(c => c.name.toLowerCase() === form.category.toLowerCase());
+                      const filteredSubcategories = matchedCat
+                        ? assetSubcategoriesList.filter(sc => sc.category_id === matchedCat.id)
+                        : assetSubcategoriesList;
+
+                      return (
+                        <Select
+                          value={form.subcategory || undefined}
+                          onValueChange={v => setForm(f => ({ ...f, subcategory: v }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-background">
+                            <SelectValue placeholder="Select subcategory..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filteredSubcategories.length > 0 ? (
+                              filteredSubcategories.map(sc => (
+                                <SelectItem key={sc.id} value={sc.name}>
+                                  {sc.name}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="General / Standard">General / Standard</SelectItem>
+                                <SelectItem value="Split AC">Split AC</SelectItem>
+                                <SelectItem value="Office Table">Office Table</SelectItem>
+                                <SelectItem value="Executive Chair">Executive Chair</SelectItem>
+                                <SelectItem value="Refrigerator">Refrigerator</SelectItem>
+                                <SelectItem value="Water Heater">Water Heater</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -4498,7 +4558,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Acquisition / Purchase Cost (QAR) *</Label>
                     <Input
@@ -4510,6 +4570,50 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     />
                   </div>
                   <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Depreciation Method</Label>
+                    <Select
+                      value={form.depreciation_method}
+                      onValueChange={v => {
+                        setForm(f => ({
+                          ...f,
+                          depreciation_method: v,
+                          depreciation_rate: v === "None" ? "0" : f.depreciation_rate === "0" ? "20" : f.depreciation_rate,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Straight Line Method (SLM)">Straight Line (SLM)</SelectItem>
+                        <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                        <SelectItem value="None">None / No Depreciation</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Depreciation Rate (%)</Label>
+                    <Input
+                      type="number"
+                      className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
+                      placeholder="e.g. 20"
+                      disabled={form.depreciation_method === "None"}
+                      value={form.depreciation_method === "None" ? "0" : form.depreciation_rate}
+                      onChange={e => setForm(f => ({ ...f, depreciation_rate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Useful Life (Years)</Label>
+                    <Input
+                      type="number"
+                      className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
+                      disabled={form.depreciation_method === "None"}
+                      value={form.useful_life_years}
+                      onChange={e => setForm(f => ({ ...f, useful_life_years: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
                     <Label className="text-xs font-semibold">Commission / Purchase Date</Label>
                     <Input
                       type="date"
@@ -4519,12 +4623,12 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-semibold">Useful Life (Years)</Label>
+                    <Label className="text-xs font-semibold">Put To Use Date</Label>
                     <Input
-                      type="number"
-                      className="h-8 text-xs font-mono"
-                      value={form.useful_life_years}
-                      onChange={e => setForm(f => ({ ...f, useful_life_years: e.target.value }))}
+                      type="date"
+                      className="h-8 text-xs"
+                      value={form.put_to_use_date}
+                      onChange={e => setForm(f => ({ ...f, put_to_use_date: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -4589,12 +4693,34 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs font-semibold">Warranty / Service Provider *</Label>
-                        <Input
-                          className="h-8 text-xs"
-                          placeholder="e.g. Al-Futtaim Technologies / LG Electronics"
+                        <Select
                           value={form.warranty_provider}
-                          onChange={e => setForm(f => ({ ...f, warranty_provider: e.target.value }))}
-                        />
+                          onValueChange={v => {
+                            const selectedVendor = vendors.find(vnd => vnd.name === v || vnd.id === v);
+                            setForm(f => ({
+                              ...f,
+                              warranty_provider: selectedVendor ? selectedVendor.name : v,
+                              warranty_support_email: selectedVendor?.email || f.warranty_support_email,
+                              warranty_support_phone: selectedVendor?.phone || f.warranty_support_phone,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-background">
+                            <SelectValue placeholder="Select warranty / service vendor..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vendors.map(vnd => (
+                              <SelectItem key={vnd.id} value={vnd.name}>
+                                {vnd.name} {vnd.vendor_type ? `(${vnd.vendor_type})` : ''}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="Al-Futtaim Technologies">Al-Futtaim Technologies</SelectItem>
+                            <SelectItem value="LG Electronics Gulf">LG Electronics Gulf</SelectItem>
+                            <SelectItem value="Daikin Air Conditioning">Daikin Air Conditioning</SelectItem>
+                            <SelectItem value="Otis Elevator Company">Otis Elevator Company</SelectItem>
+                            <SelectItem value="Schneider Electric QA">Schneider Electric QA</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
@@ -4689,24 +4815,35 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                       className="h-8 text-xs col-span-1 bg-background"
                       onChange={e => {
                         const f = e.target.files?.[0];
-                        if (f) setForm(prev => ({ ...prev, doc_input_file: f.name }));
+                        if (f) {
+                          setForm(prev => ({
+                            ...prev,
+                            doc_input_file: f.name,
+                            doc_input_name: prev.doc_input_name || f.name.replace(/\.[^/.]+$/, "")
+                          }));
+                        }
                       }}
                     />
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-8 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                      disabled={!form.doc_input_file}
+                      className={`h-8 text-xs gap-1 border-primary/30 ${!form.doc_input_file ? 'opacity-50 cursor-not-allowed' : 'text-primary hover:bg-primary/10'}`}
                       onClick={() => {
+                        if (!form.doc_input_file) {
+                          return toast.error("Please select a file to attach.");
+                        }
                         if (!form.doc_input_name.trim()) return toast.error("Please enter a document title.");
                         const docName = form.doc_input_name.trim();
-                        const fileName = form.doc_input_file || `${docName.replace(/\s+/g, "_")}.pdf`;
+                        const fileName = form.doc_input_file;
                         setForm(prev => ({
                           ...prev,
                           documents: [
                             ...prev.documents,
                             { id: `doc-${Date.now()}`, name: docName, file_name: fileName, upload_date: getTodayIST() }
                           ],
+                          doc_input_name: "",
                           doc_input_file: ""
                         }));
                         toast.success(`Document "${docName}" attached.`);
@@ -5384,7 +5521,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       {/* ── MODAL: BULK ASSET IMPORT ─────────────────────────────────────────── */}
       {/* ══════════════════════════════════════════════════════════════════════════ */}
       <Dialog open={bulkAssetOpen} onOpenChange={setBulkAssetOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="asset"
             title="Fixed Assets: Excel Bulk Import & Management"

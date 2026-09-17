@@ -1,34 +1,46 @@
 import { supabase } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue
+} from '../types';
 
 export const EMPLOYEE_COLUMNS: ColumnDefinition[] = [
-  { key: 'employee_id_code', label: 'Employee ID / Code', type: 'string', required: true, unique: true, immutable: true, sampleValue: 'EMP-001', description: 'Unique employee identification' },
-  { key: 'first_name', label: 'First Name', type: 'string', required: true, sampleValue: 'Ahmad' },
-  { key: 'last_name', label: 'Last Name', type: 'string', required: true, sampleValue: 'Al-Rashid' },
+  { key: 'employee_id_code', label: 'Employee ID', type: 'string', required: false, sampleValue: 'EMP-001', description: 'Unique employee identification' },
+  { key: 'employee_name', label: 'Employee Name', type: 'string', required: true, sampleValue: 'Jithin Abdul Latheef' },
   { key: 'gender', label: 'Gender', type: 'enum', required: false, allowedValues: ['Male', 'Female', 'Other'], sampleValue: 'Male' },
-  { key: 'nationality', label: 'Nationality', type: 'string', required: false, sampleValue: 'Qatari' },
-  { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: false, sampleValue: '1988-04-12' },
-  { key: 'mobile_number', label: 'Mobile Number', type: 'string', required: true, sampleValue: '97455019283' },
-  { key: 'email', label: 'Email Address', type: 'string', required: true, sampleValue: 'ahmad.rashid@company.qa' },
-  { key: 'department_name', label: 'Department Name', type: 'string', required: false, sampleValue: 'Property Management' },
-  { key: 'designation_title', label: 'Designation / Title', type: 'string', required: false, sampleValue: 'Property Manager' },
-  { key: 'reporting_manager_code', label: 'Reporting Manager ID', type: 'string', required: false, sampleValue: 'EMP-000' },
-  { key: 'date_of_joining', label: 'Date of Joining', type: 'date', required: false, sampleValue: '2021-03-01' },
-  { key: 'employment_type', label: 'Employment Type', type: 'enum', required: false, allowedValues: ['Full-Time', 'Part-Time', 'Contract', 'Probation'], sampleValue: 'Full-Time' },
-  { key: 'qid_passport_no', label: 'QID / Passport No.', type: 'string', required: false, sampleValue: '28863401923' },
-  { key: 'id_expiry_date', label: 'ID Expiry Date', type: 'date', required: false, sampleValue: '2027-04-12' },
-  { key: 'basic_salary', label: 'Basic Salary (QAR)', type: 'number', required: false, sampleValue: 12000 },
-  { key: 'hra', label: 'HRA (QAR)', type: 'number', required: false, sampleValue: 4000 },
-  { key: 'tra', label: 'TRA (QAR)', type: 'number', required: false, sampleValue: 2000 },
-  { key: 'other_allowances', label: 'Other Allowances (QAR)', type: 'number', required: false, sampleValue: 1000 },
-  { key: 'bank_name', label: 'Bank Name', type: 'string', required: false, sampleValue: 'Qatar National Bank (QNB)' },
-  { key: 'iban', label: 'IBAN', type: 'string', required: false, sampleValue: 'QA55QNBA0000000012345678901' },
-  { key: 'air_ticket', label: 'Air Ticket Allowance', type: 'string', required: false, sampleValue: 'Annual Economy Ticket' },
+  { key: 'nationality', label: 'Nationality', type: 'string', required: false, sampleValue: 'India' },
+  { key: 'date_of_birth', label: 'Date of Birth', type: 'date', required: false, sampleValue: '1988-09-06' },
+  { key: 'mobile_number', label: 'Mobile Number', type: 'string', required: false, sampleValue: '74053716' },
+  { key: 'email', label: 'Email', type: 'string', required: false, sampleValue: 'jithin@company.qa' },
+  { key: 'department', label: 'Department', type: 'string', required: false, sampleValue: 'Finance and Operations' },
+  { key: 'designation', label: 'Designation', type: 'string', required: false, sampleValue: 'General Manager' },
+  { key: 'reporting_manager', label: 'Reporting Manager', type: 'string', required: false, sampleValue: 'Board of Directors' },
+  { key: 'date_of_joining', label: 'Date of Joining', type: 'date', required: false, sampleValue: '2016-03-16' },
+  { key: 'employment_type', label: 'Employment Type', type: 'string', required: false, sampleValue: 'Full-Time' },
+  { key: 'qid_passport_no', label: 'QID / Passport No.', type: 'string', required: false, sampleValue: '28835629905' },
+  { key: 'id_expiry_date', label: 'ID Expiry Date', type: 'date', required: false, sampleValue: '2027-02-24' },
+  { key: 'basic_salary', label: 'Basic Salary', type: 'number', required: false, sampleValue: 11400 },
+  { key: 'hra', label: 'HRA', type: 'number', required: false, sampleValue: 0 },
+  { key: 'tra', label: 'TRA', type: 'number', required: false, sampleValue: 4000 },
+  { key: 'other_allowances', label: 'Other Allowances', type: 'number', required: false, sampleValue: 2100 },
+  { key: 'total_salary', label: 'Total Salary', type: 'number', required: false, sampleValue: 17500 },
+  { key: 'benefit_telephone', label: 'Other Benefit (Telephone/ Allowance)', type: 'string', required: false, sampleValue: 'Provided By Company' },
+  { key: 'benefit_accommodation', label: 'Other Benefit (Accomodation)', type: 'string', required: false, sampleValue: 'Provided By Company' },
+  { key: 'benefit_vehicle', label: 'Other Benefit (Vehicle)', type: 'string', required: false, sampleValue: 'Provided By Company' },
+  { key: 'bank_name', label: 'Bank Name', type: 'string', required: false, sampleValue: 'Commercial Bank' },
+  { key: 'iban', label: 'IBAN', type: 'string', required: false, sampleValue: 'QA45CBQA000000004700659515101' },
+  { key: 'air_ticket', label: 'Air Ticket', type: 'string', required: false, sampleValue: 'Yearly' },
+  { key: 'air_ticket_fare_cap', label: 'Air Ticket Fare CAP', type: 'number', required: false, sampleValue: 2500 },
   { key: 'employee_status', label: 'Employee Status', type: 'enum', required: false, allowedValues: ['Active', 'On Leave', 'Probation', 'Terminated', 'Resigned'], sampleValue: 'Active' },
-  { key: 'emergency_contact_name', label: 'Emergency Contact Name', type: 'string', required: false, sampleValue: 'Fatima Al-Rashid' },
-  { key: 'emergency_contact_relation', label: 'Emergency Contact Relation', type: 'string', required: false, sampleValue: 'Spouse' },
-  { key: 'emergency_contact_number', label: 'Emergency Contact Phone', type: 'string', required: false, sampleValue: '97455019284' },
-  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Senior PMS staff member' },
+  { key: 'emergency_contact_name', label: 'Emergency Contact Name', type: 'string', required: false, sampleValue: '' },
+  { key: 'relation_with_employee', label: 'Relation with Employee', type: 'string', required: false, sampleValue: '' },
+  { key: 'emergency_contact_no', label: 'Emergency Contact No.', type: 'string', required: false, sampleValue: '' },
+  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: '' },
 ];
 
 export const employeeAdapter: EntityImportAdapter = {
@@ -42,15 +54,14 @@ export const employeeAdapter: EntityImportAdapter = {
     if (operation === 'DELETE') {
       return [
         EMPLOYEE_COLUMNS.find(c => c.key === 'employee_id_code')!,
-        EMPLOYEE_COLUMNS.find(c => c.key === 'first_name')!,
-        EMPLOYEE_COLUMNS.find(c => c.key === 'last_name')!,
+        EMPLOYEE_COLUMNS.find(c => c.key === 'employee_name')!,
       ];
     }
     return EMPLOYEE_COLUMNS;
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Employee ID / Code'] ?? row['Employee ID'] ?? row['employee_id_code'] ?? row['Employee code'] ?? row['employee_id'] ?? '';
+    const raw = getCellValue(row, 'Employee ID', 'Employee ID / Code', 'employee_id_code', 'Employee code', 'employee_id', 'Employee Name', 'employee_name') ?? '';
     return String(raw).trim();
   },
 
@@ -138,7 +149,7 @@ export const employeeAdapter: EntityImportAdapter = {
     for (const col of EMPLOYEE_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({
@@ -187,7 +198,7 @@ export const employeeAdapter: EntityImportAdapter = {
     }
 
     // Department & Designation foreign resolution
-    const deptName = normalized['department_name'];
+    const deptName = normalized['department'];
     if (deptName && deptName !== '[NULL]') {
       try {
         const { data: dept } = await supabase
@@ -199,21 +210,13 @@ export const employeeAdapter: EntityImportAdapter = {
 
         if (dept) {
           normalized.department_id = dept.id;
-        } else {
-          warnings.push({
-            row: context.rowNumber,
-            field: 'Department Name',
-            code: 'REF_001',
-            message: `Department "${deptName}" not found in HRMS master.`,
-            severity: 'WARNING',
-          });
         }
       } catch {
-        // silent warning
+        // silent
       }
     }
 
-    const desigTitle = normalized['designation_title'];
+    const desigTitle = normalized['designation'];
     if (desigTitle && desigTitle !== '[NULL]') {
       try {
         const { data: desig } = await supabase
@@ -225,17 +228,9 @@ export const employeeAdapter: EntityImportAdapter = {
 
         if (desig) {
           normalized.designation_id = desig.id;
-        } else {
-          warnings.push({
-            row: context.rowNumber,
-            field: 'Designation / Title',
-            code: 'REF_001',
-            message: `Designation "${desigTitle}" not found in HRMS master.`,
-            severity: 'WARNING',
-          });
         }
       } catch {
-        // silent warning
+        // silent
       }
     }
 
@@ -310,18 +305,36 @@ export const employeeAdapter: EntityImportAdapter = {
       const data = record.normalizedData;
       const empCode = record.recordKey;
 
+      // Handle splitting of full name for backwards-compatibility with first_name/last_name columns
+      let firstName = data.employee_name || '';
+      let lastName = '';
+      if (data.employee_name) {
+        const parts = String(data.employee_name).trim().split(' ');
+        if (parts.length > 1) {
+          firstName = parts[0];
+          lastName = parts.slice(1).join(' ');
+        } else {
+          firstName = parts[0];
+          lastName = '';
+        }
+      }
+
       if (operation === 'CREATE') {
         const payload: Record<string, any> = {
-          employee_id_code: empCode,
-          first_name: data.first_name,
-          last_name: data.last_name,
+          employee_id_code: data.employee_id_code || empCode,
+          employee_name: data.employee_name,
+          first_name: firstName,
+          last_name: lastName,
           gender: data.gender,
           nationality: data.nationality,
           date_of_birth: data.date_of_birth,
           mobile_number: data.mobile_number,
           email: data.email,
+          department: data.department,
           department_id: data.department_id,
+          designation: data.designation,
           designation_id: data.designation_id,
+          reporting_manager: data.reporting_manager,
           date_of_joining: data.date_of_joining,
           employment_type: data.employment_type || 'Full-Time',
           qid_passport_no: data.qid_passport_no,
@@ -330,13 +343,18 @@ export const employeeAdapter: EntityImportAdapter = {
           hra: data.hra || 0,
           tra: data.tra || 0,
           other_allowances: data.other_allowances || 0,
+          total_salary: data.total_salary || (Number(data.basic_salary || 0) + Number(data.hra || 0) + Number(data.tra || 0) + Number(data.other_allowances || 0)),
+          benefit_telephone: data.benefit_telephone,
+          benefit_accommodation: data.benefit_accommodation,
+          benefit_vehicle: data.benefit_vehicle,
           bank_name: data.bank_name,
           iban: data.iban,
           air_ticket: data.air_ticket,
+          air_ticket_fare_cap: data.air_ticket_fare_cap,
           employee_status: data.employee_status || 'Active',
           emergency_contact_name: data.emergency_contact_name,
-          emergency_contact_relation: data.emergency_contact_relation,
-          emergency_contact_number: data.emergency_contact_number,
+          relation_with_employee: data.relation_with_employee,
+          emergency_contact_no: data.emergency_contact_no,
           remarks: data.remarks,
         };
 

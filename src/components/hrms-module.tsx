@@ -2062,7 +2062,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
 
       {/* Bulk Employee Import Modal (Admin) */}
       <Dialog open={bulkEmployeeOpen} onOpenChange={setBulkEmployeeOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="employee"
             title="HRMS Workforce: Excel Bulk Import & Management"

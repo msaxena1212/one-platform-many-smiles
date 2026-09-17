@@ -694,7 +694,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
       {/* Bulk Unit Import Dialog */}
       <Dialog open={bulkImportOpen} onOpenChange={setBulkImportOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card">
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
           <ExcelImportEmbedded
             module="unit"
             title="Unit Master: Excel Bulk Import & Management"

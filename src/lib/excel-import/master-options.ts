@@ -1,17 +1,4 @@
-import { supabase } from '../supabase';
-import { referenceDropdowns } from '../reference-data';
-import {
-  fetchGenders,
-  fetchDepartments,
-  fetchDesignations,
-  fetchEmploymentTypes,
-  fetchWorkLocations,
-  fetchEmployeeStatuses,
-  fetchAssetCategories,
-  fetchAssetOwnershipTypes,
-  fetchAssetConditions,
-  fetchAssetStatuses,
-} from '../supabase-masters';
+import { DynamicMastersService } from '../dynamic-masters-service';
 
 export interface MasterOptionsCache {
   propertyTypes: string[];
@@ -19,6 +6,7 @@ export interface MasterOptionsCache {
   ownershipTypes: string[];
   propertyStatuses: string[];
   unitUsages: string[];
+  unitTypes: string[];
   viewTypes: string[];
   furnishingTypes: string[];
   unitStatuses: string[];
@@ -34,114 +22,42 @@ export interface MasterOptionsCache {
   workLocations: string[];
   employeeStatuses: string[];
   assetCategories: string[];
+  assetSubcategories: string[];
   assetOwnershipTypes: string[];
   assetConditions: string[];
   assetStatuses: string[];
   countries: string[];
+  securityDepositTypes: string[];
 }
 
-let cachedOptions: MasterOptionsCache | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 60000; // 1 minute cache
-
 export async function getMasterOptions(): Promise<MasterOptionsCache> {
-  const now = Date.now();
-  if (cachedOptions && now - lastFetchTime < CACHE_TTL_MS) {
-    return cachedOptions;
-  }
-
-  // Fallbacks from reference-data
-  const fallback: MasterOptionsCache = {
-    propertyTypes: referenceDropdowns.propertyTypes.map(p => p.value),
-    propertyCategories: referenceDropdowns.propertyCategories.map(p => p.value),
-    ownershipTypes: referenceDropdowns.ownershipTypes.map(p => p.value),
-    propertyStatuses: referenceDropdowns.propertyStatuses.map(p => p.value),
-    unitUsages: ['Residential', 'Commercial', 'Staff Accommodation', 'Storage', 'Retail'],
-    viewTypes: ['City View', 'Sea View', 'Garden View', 'Street View', 'Courtyard View', 'Open View'],
-    furnishingTypes: ['Unfurnished', 'Semi-Furnished', 'Fully Furnished'],
-    unitStatuses: referenceDropdowns.unitStatuses.map(p => p.value),
-    leaseStatuses: ['DRAFT', 'ACTIVE', 'EXPIRED', 'TERMINATED', 'CLOSED'],
-    rentFrequencies: referenceDropdowns.rentFrequencies.map(p => p.value),
-    maintenanceResponsibilities: ['Landlord', 'Tenant', 'Shared'],
+  return {
+    propertyTypes: DynamicMastersService.getMasterStringOptions('property_type'),
+    propertyCategories: DynamicMastersService.getMasterStringOptions('property_category'),
+    ownershipTypes: DynamicMastersService.getMasterStringOptions('ownership_type'),
+    propertyStatuses: DynamicMastersService.getMasterStringOptions('property_status'),
+    unitUsages: DynamicMastersService.getMasterStringOptions('unit_usage'),
+    unitTypes: DynamicMastersService.getMasterStringOptions('unit_type'),
+    viewTypes: DynamicMastersService.getMasterStringOptions('view_type'),
+    furnishingTypes: DynamicMastersService.getMasterStringOptions('furnishing'),
+    unitStatuses: DynamicMastersService.getMasterStringOptions('unit_status'),
+    leaseStatuses: DynamicMastersService.getMasterStringOptions('lease_status'),
+    rentFrequencies: DynamicMastersService.getMasterStringOptions('rent_frequency'),
+    maintenanceResponsibilities: DynamicMastersService.getMasterStringOptions('maintenance_responsibility'),
     customerTypes: ['Individual', 'Company'],
     verificationStatuses: ['Pending', 'Verified', 'Rejected', 'Additional Info Required'],
-    genders: ['Male', 'Female', 'Other'],
-    departments: ['Administration', 'Finance & Accounts', 'Leasing & Sales', 'Property Management', 'Operations & Maintenance', 'HR', 'Legal'],
-    designations: ['Property Manager', 'Leasing Executive', 'Finance Manager', 'Accountant', 'Cashier', 'Maintenance Supervisor', 'Technician', 'HR Officer', 'General Manager'],
-    employmentTypes: ['Full-Time', 'Part-Time', 'Contract', 'Probation', 'Temporary'],
-    workLocations: ['Doha HQ', 'Old Salata Office', 'Lusail Branch', 'On-Site Property'],
-    employeeStatuses: ['Active', 'On Leave', 'Probation', 'Terminated', 'Resigned'],
-    assetCategories: ['HVAC', 'Electrical', 'Plumbing', 'Furniture', 'Appliances', 'IT & Security', 'Vehicles', 'Elevator & Mechanical'],
-    assetOwnershipTypes: ['Owned', 'Leased', 'Customer Provided', 'Landlord Provided'],
-    assetConditions: ['Brand New', 'Good', 'Fair', 'Needs Repair', 'Scrap / Disposed'],
-    assetStatuses: ['Available', 'In Use', 'Under Maintenance', 'Damaged', 'Disposed'],
-    countries: ['Qatar', 'Saudi Arabia', 'United Arab Emirates', 'Kuwait', 'Bahrain', 'Oman'],
+    genders: DynamicMastersService.getMasterStringOptions('gender'),
+    departments: DynamicMastersService.getMasterStringOptions('department'),
+    designations: DynamicMastersService.getMasterStringOptions('designation'),
+    employmentTypes: DynamicMastersService.getMasterStringOptions('employment_type'),
+    workLocations: DynamicMastersService.getMasterStringOptions('work_location'),
+    employeeStatuses: DynamicMastersService.getMasterStringOptions('employee_status'),
+    assetCategories: DynamicMastersService.getMasterStringOptions('asset_category'),
+    assetSubcategories: DynamicMastersService.getMasterStringOptions('asset_subcategory'),
+    assetOwnershipTypes: DynamicMastersService.getMasterStringOptions('ownership_type'),
+    assetConditions: DynamicMastersService.getMasterStringOptions('asset_condition'),
+    assetStatuses: DynamicMastersService.getMasterStringOptions('asset_status'),
+    countries: DynamicMastersService.getMasterStringOptions('country'),
+    securityDepositTypes: DynamicMastersService.getMasterStringOptions('security_deposit_type'),
   };
-
-  try {
-    const [
-      genders,
-      depts,
-      desigs,
-      empTypes,
-      workLocs,
-      empStatuses,
-      assetCats,
-      assetOwnerTypes,
-      assetConds,
-      assetStats,
-    ] = await Promise.allSettled([
-      fetchGenders(),
-      fetchDepartments(),
-      fetchDesignations(),
-      fetchEmploymentTypes(),
-      fetchWorkLocations(),
-      fetchEmployeeStatuses(),
-      fetchAssetCategories(),
-      fetchAssetOwnershipTypes(),
-      fetchAssetConditions(),
-      fetchAssetStatuses(),
-    ]);
-
-    const extractNames = (result: PromiseSettledResult<any[]>, fallbackList: string[]) => {
-      if (result.status === 'fulfilled' && Array.isArray(result.value) && result.value.length > 0) {
-        return result.value.map(item => item.name || item.label || item.code || String(item)).filter(Boolean);
-      }
-      return fallbackList;
-    };
-
-    cachedOptions = {
-      propertyTypes: fallback.propertyTypes,
-      propertyCategories: fallback.propertyCategories,
-      ownershipTypes: fallback.ownershipTypes,
-      propertyStatuses: fallback.propertyStatuses,
-      unitUsages: fallback.unitUsages,
-      viewTypes: fallback.viewTypes,
-      furnishingTypes: fallback.furnishingTypes,
-      unitStatuses: fallback.unitStatuses,
-      leaseStatuses: fallback.leaseStatuses,
-      rentFrequencies: fallback.rentFrequencies,
-      maintenanceResponsibilities: fallback.maintenanceResponsibilities,
-      customerTypes: fallback.customerTypes,
-      verificationStatuses: fallback.verificationStatuses,
-      genders: extractNames(genders, fallback.genders),
-      departments: extractNames(depts, fallback.departments),
-      designations: extractNames(desigs, fallback.designations),
-      employmentTypes: extractNames(empTypes, fallback.employmentTypes),
-      workLocations: extractNames(workLocs, fallback.workLocations),
-      employeeStatuses: extractNames(empStatuses, fallback.employeeStatuses),
-      assetCategories: extractNames(assetCats, fallback.assetCategories),
-      assetOwnershipTypes: extractNames(assetOwnerTypes, fallback.assetOwnershipTypes),
-      assetConditions: extractNames(assetConds, fallback.assetConditions),
-      assetStatuses: extractNames(assetStats, fallback.assetStatuses),
-      countries: fallback.countries,
-    };
-
-    lastFetchTime = now;
-    return cachedOptions;
-  } catch {
-    cachedOptions = fallback;
-    lastFetchTime = now;
-    return cachedOptions;
-  }
 }

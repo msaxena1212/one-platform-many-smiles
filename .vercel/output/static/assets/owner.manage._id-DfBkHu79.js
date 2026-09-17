@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-n5LQ9ujS.js";import{n as t,r as n}from"./index-Dlv8_EoS.js";var r=e();function i(){let{id:e}=t.useParams();return(0,r.jsx)(n,{basePath:`/owner`,id:e})}export{i as component};

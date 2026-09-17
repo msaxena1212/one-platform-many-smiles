@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-n5LQ9ujS.js";import{FinanceModule as t}from"./finance-module-9kI9h6Qa.js";var n=e();function r(){return(0,n.jsx)(t,{role:`finance`})}export{r as component};

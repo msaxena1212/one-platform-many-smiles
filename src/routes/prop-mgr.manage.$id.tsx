@@ -3,11 +3,12 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
+import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench, Pencil } from "lucide-react";
 import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, updatePropertyImages, type Property } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
@@ -17,6 +18,9 @@ import { useJsApiLoader } from "@react-google-maps/api";
 
 export const Route = createFileRoute("/prop-mgr/manage/$id")({
   component: PropMgrManageProperty,
+  validateSearch: (search: Record<string, unknown>) => ({
+    mode: (search.mode as string) === 'edit' ? 'edit' : 'view',
+  }),
 });
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -133,17 +137,21 @@ function mapMockPropertyToManagedProperty(mockProperty: MockProperty): Property 
 
 function PropMgrManageProperty() {
   const { id } = Route.useParams();
-  return <ManagePropertyPage basePath="/prop-mgr" id={id} />;
+  const { mode } = Route.useSearch();
+  return <ManagePropertyPage basePath="/prop-mgr" id={id} mode={mode} />;
 }
 
 export function ManagePropertyPage({
   basePath,
   id,
+  mode = 'edit',
 }: {
   basePath: "/admin" | "/owner" | "/prop-mgr";
   id: string;
+  mode?: 'view' | 'edit';
 }) {
   const navigate = useNavigate();
+  const isViewMode = mode === 'view';
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -666,17 +674,30 @@ export function ManagePropertyPage({
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
             <Link to={`${basePath}/properties`}><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Edit Property</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {isViewMode ? 'View Property' : 'Edit Property'}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">{property.title} · {property.city}, {property.country}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
-            <Trash2 className="mr-2 h-4 w-4" /> Deactivate
-          </Button>
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {saving ? "Saving..." : "Save Changes"}
-          </Button>
+          {isViewMode ? (
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => navigate({ to: `${basePath}/manage/$id`, params: { id }, search: { mode: 'edit' } } as any)}
+            >
+              <Pencil className="mr-2 h-4 w-4" /> Edit Property
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" /> Deactivate
+              </Button>
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -694,7 +715,7 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
                   <Label>Listing Title</Label>
-                  <Input value={title} onChange={e => setTitle(e.target.value)} />
+                  <Input value={title} onChange={e => setTitle(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>Property Code</Label>
@@ -703,9 +724,10 @@ export function ManagePropertyPage({
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:cursor-not-allowed"
                     value={isActive ? "active" : "inactive"}
                     onChange={e => setIsActive(e.target.value === "active")}
+                    disabled={isViewMode}
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -735,7 +757,7 @@ export function ManagePropertyPage({
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-20" />
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-20" readOnly={isViewMode} disabled={isViewMode} />
               </div>
             </CardContent>
           </Card>
@@ -749,7 +771,8 @@ export function ManagePropertyPage({
               <ImageUploader 
                 images={images} 
                 onChange={setImages} 
-                categories={['Exterior', 'Interior', 'Floor Plan', 'Other']} 
+                categories={['Exterior', 'Interior', 'Floor Plan', 'Other']}
+                disabled={isViewMode}
               />
             </CardContent>
           </Card>
@@ -763,19 +786,17 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Property Type</Label>
-                  <Select value={propertyType} onValueChange={v => {
-                    setPropertyType(v);
-                    if (v !== "Other") setCustomPropertyType("");
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                    <SelectContent>
-                      {propTypeOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                      {propertyType && propertyType !== "Other" && !propTypeOptions.find(o => o.id === propertyType) && (
-                         <SelectItem value={propertyType} className="capitalize">{propertyType}</SelectItem>
-                      )}
-                      <SelectItem value="Other">Other (Add new)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={[
+                      ...propTypeOptions.map(u => ({ label: u.label, value: u.id })),
+                      ...(propertyType && propertyType !== "Other" && !propTypeOptions.find(o => o.id === propertyType) ? [{ label: propertyType, value: propertyType }] : []),
+                      { label: 'Other (Add new)', value: 'Other' },
+                    ]}
+                    value={propertyType}
+                    onValueChange={v => { setPropertyType(v); if (v !== "Other") setCustomPropertyType(""); }}
+                    placeholder="Search property type..."
+                    disabled={isViewMode}
+                  />
                   {propertyType === "Other" && (
                     <div className="mt-1 flex gap-2">
                       <Input placeholder="Enter custom type..." value={customPropertyType} onChange={e => setCustomPropertyType(e.target.value)} className="h-8 text-xs" />
@@ -784,21 +805,23 @@ export function ManagePropertyPage({
                 </div>
                 <div className="space-y-2">
                   <Label>Property Category</Label>
-                  <Select value={propertyCategory} onValueChange={v => setPropertyCategory(v)}>
-                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                    <SelectContent>
-                      {propCategoryOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={propCategoryOptions.map(u => ({ label: u.label, value: u.id }))}
+                    value={propertyCategory}
+                    onValueChange={v => setPropertyCategory(v)}
+                    placeholder="Search category..."
+                    disabled={isViewMode}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Ownership Type</Label>
-                  <Select value={ownershipType} onValueChange={v => setOwnershipType(v)}>
-                    <SelectTrigger><SelectValue placeholder="Select ownership" /></SelectTrigger>
-                    <SelectContent>
-                      {ownershipOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={ownershipOptions.map(u => ({ label: u.label, value: u.id }))}
+                    value={ownershipType}
+                    onValueChange={v => setOwnershipType(v)}
+                    placeholder="Search ownership type..."
+                    disabled={isViewMode}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -815,7 +838,10 @@ export function ManagePropertyPage({
                 <Input 
                   value={address} 
                   onChange={e => handleAddressSearch(e.target.value)} 
-                  onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
+                  onFocus={() => { if (!isViewMode && predictions.length > 0) setShowPredictions(true); }}
+                  readOnly={isViewMode}
+                  disabled={isViewMode}
+                  className={isViewMode ? 'bg-muted' : ''}
                 />
                 {showPredictions && (
                   <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-md shadow-lg overflow-hidden max-h-60 overflow-y-auto">
@@ -836,19 +862,19 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Country</Label>
-                  <Input value={country} onChange={e => setCountry(e.target.value)} />
+                  <Input value={country} onChange={e => setCountry(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>City</Label>
-                  <Input value={city} onChange={e => setCity(e.target.value)} />
+                  <Input value={city} onChange={e => setCity(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
-                  <Label>State / Province</Label>
-                  <Input value={state} onChange={e => setState(e.target.value)} />
+                  <Label>Area / Zone</Label>
+                  <Input value={state} onChange={e => setState(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>Zip / Postal Code</Label>
-                  <Input value={zipCode} onChange={e => setZipCode(e.target.value)} />
+                  <Input value={zipCode} onChange={e => setZipCode(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
               </div>
               {(city || country) && (

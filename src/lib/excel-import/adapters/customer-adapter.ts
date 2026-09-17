@@ -1,5 +1,13 @@
 import { supabase, type Customer } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue
+} from '../types';
 
 export const CUSTOMER_COLUMNS: ColumnDefinition[] = [
   { key: 'customer_identifier', label: 'Customer Identifier (QID / Passport / CR)', type: 'string', required: true, unique: true, immutable: true, sampleValue: '28463401923', description: 'Qatar ID, Passport No, or Commercial Registration' },
@@ -41,17 +49,19 @@ export const customerAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Customer Identifier (QID / Passport / CR)'] ?? 
-                row['Customer Identifier'] ?? 
-                row['Qatar ID'] ?? 
-                row['qatar_id'] ?? 
-                row['Commercial Registration (CR)'] ?? 
-                row['commercial_registration'] ?? 
-                row['Passport Number'] ?? 
-                row['passport_number'] ?? 
-                row['customer_identifier'] ?? 
-                row['ID'] ?? 
-                '';
+    const raw = getCellValue(
+      row,
+      'Customer Identifier (QID / Passport / CR)',
+      'Customer Identifier',
+      'Qatar ID',
+      'qatar_id',
+      'Commercial Registration (CR)',
+      'commercial_registration',
+      'Passport Number',
+      'passport_number',
+      'customer_identifier',
+      'ID'
+    ) ?? '';
     return String(raw).trim();
   },
 
@@ -144,7 +154,7 @@ export const customerAdapter: EntityImportAdapter = {
     for (const col of CUSTOMER_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({

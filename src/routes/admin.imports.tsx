@@ -281,89 +281,126 @@ export function AdminExcelImportPage() {
   }, [currentBatch, previewTab, previewSearch]);
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header & Main Nav Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <FileSpreadsheet className="h-8 w-8 text-primary" />
-            Excel Bulk Data Management
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Production-grade CREATE, UPDATE, and DELETE engine with schema validation, dependency guards & audit logging.
-          </p>
+    <div className="h-[calc(100vh-5.5rem)] flex flex-col gap-3 overflow-hidden">
+      {/* Header & Main Control Bar */}
+      <div className="flex items-center justify-between shrink-0 bg-card/60 backdrop-blur-md border rounded-xl px-4 py-2.5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-tr from-teal-600 via-emerald-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+            <FileSpreadsheet className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold tracking-tight text-foreground">Excel Bulk Data Studio</h1>
+              <Badge variant="outline" className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+                v2.4 Pro
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted-foreground">High-throughput bulk ingestion & reconciliation pipeline</p>
+          </div>
         </div>
+
+        {/* Step Progress Pill */}
+        <div className="hidden md:flex items-center gap-1 bg-muted/60 p-1 rounded-full border border-border/50 text-xs">
+          {[
+            { id: "upload", label: "1. Configure & Ingest" },
+            { id: "preview", label: "2. Verify & Reconcile" },
+            { id: "results", label: "3. Commit & Audit" },
+          ].map((s) => {
+            const isActive = currentStep === s.id || (s.id === "upload" && currentStep === "history") || (s.id === "preview" && currentStep === "processing");
+            return (
+              <span
+                key={s.id}
+                className={`px-3 py-1 rounded-full font-medium transition-all text-[11px] ${
+                  isActive
+                    ? "bg-background text-foreground font-semibold shadow-xs"
+                    : "text-muted-foreground/70"
+                }`}
+              >
+                {s.label}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {currentStep !== "upload" && (
-            <Button variant="outline" size="sm" onClick={resetUploadState} className="gap-1.5">
-              <RefreshCw className="h-4 w-4" /> New Import
+          {currentStep !== "upload" && currentStep !== "history" && (
+            <Button variant="ghost" size="sm" onClick={resetUploadState} className="h-8 text-xs gap-1">
+              <RefreshCw className="h-3.5 w-3.5" /> Start New
             </Button>
           )}
           <Button
             variant={currentStep === "history" ? "default" : "outline"}
             size="sm"
             onClick={() => setCurrentStep(currentStep === "history" ? "upload" : "history")}
-            className="gap-1.5"
+            className="h-8 text-xs gap-1.5 shadow-xs"
           >
-            <Clock className="h-4 w-4" /> Import History ({historyBatches.length})
+            <Clock className="h-3.5 w-3.5" /> History ({historyBatches.length})
           </Button>
         </div>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          VIEW 1: IMPORT HISTORY
+          VIEW 1: IMPORT HISTORY (Viewport fitted)
       ───────────────────────────────────────────────────────────────────────────── */}
       {currentStep === "history" && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="flex-1 flex flex-col min-h-0 border-border/70 overflow-hidden shadow-xs">
+          <CardHeader className="py-3 px-4 shrink-0 flex flex-row items-center justify-between border-b bg-muted/30">
             <div>
-              <CardTitle>Excel Import Lineage & History</CardTitle>
-              <CardDescription>Chronological log of all parsed, validated, and processed Excel batches.</CardDescription>
+              <CardTitle className="text-sm font-semibold">Excel Ingestion Lineage & Audit History</CardTitle>
+              <CardDescription className="text-xs">Immutable ledger of executed batch files, mutations, and generated outcome sheets.</CardDescription>
             </div>
+            <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
+              Back to Studio
+            </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0 flex-1 min-h-0 overflow-y-auto">
             {historyBatches.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Clock className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                <p>No import history records found.</p>
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-12">
+                <Clock className="h-10 w-10 mb-2 opacity-30 text-teal-600" />
+                <p className="text-xs">No import history batches found in persistent storage.</p>
               </div>
             ) : (
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Batch ID</TableHead>
-                      <TableHead>Module</TableHead>
-                      <TableHead>Operation</TableHead>
-                      <TableHead>File Name</TableHead>
-                      <TableHead>Uploaded By</TableHead>
-                      <TableHead>Upload Date</TableHead>
-                      <TableHead className="text-center">Total</TableHead>
-                      <TableHead className="text-center">Success</TableHead>
-                      <TableHead className="text-center">Failed</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyBatches.map((b) => (
-                      <TableRow key={b.id}>
-                        <TableCell className="font-mono font-medium text-xs">{b.batchIdentifier}</TableCell>
-                        <TableCell className="capitalize font-medium">{b.module}</TableCell>
+              <Table>
+                <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-xs z-10">
+                  <TableRow>
+                    <TableHead className="text-xs font-semibold">Batch ID</TableHead>
+                    <TableHead className="text-xs font-semibold">Module</TableHead>
+                    <TableHead className="text-xs font-semibold">Operation</TableHead>
+                    <TableHead className="text-xs font-semibold">File Name</TableHead>
+                    <TableHead className="text-xs font-semibold">Uploaded By</TableHead>
+                    <TableHead className="text-center text-xs font-semibold">Total Rows</TableHead>
+                    <TableHead className="text-center text-xs font-semibold text-emerald-600">Committed (OK)</TableHead>
+                    <TableHead className="text-center text-xs font-semibold text-rose-600">Errors / Failed</TableHead>
+                    <TableHead className="text-xs font-semibold">Status</TableHead>
+                    <TableHead className="text-xs font-semibold">Date & Time</TableHead>
+                    <TableHead className="text-right text-xs font-semibold">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyBatches.map((b) => {
+                    const totalRows = b.summary?.totalRows || b.records?.length || 0;
+                    const successRows = b.summary?.successRows || 0;
+                    const failedRows = b.summary?.failedRows || (b.status === "FAILED" && successRows === 0 ? totalRows : 0);
+                    const displayDate = b.uploadedAt ? new Date(b.uploadedAt).toLocaleString() : "Recent";
+                    
+                    return (
+                      <TableRow key={b.id} className="hover:bg-muted/40">
+                        <TableCell className="font-mono font-bold text-xs">{b.batchIdentifier || b.id.slice(0, 8)}</TableCell>
+                        <TableCell className="capitalize font-medium text-xs">{b.module}</TableCell>
                         <TableCell>
-                          <Badge variant={b.operation === "CREATE" ? "default" : b.operation === "UPDATE" ? "secondary" : "destructive"}>
+                          <Badge variant={b.operation === "CREATE" ? "default" : b.operation === "UPDATE" ? "secondary" : "destructive"} className="text-[10px] uppercase font-bold">
                             {b.operation}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-[180px] truncate text-xs">{b.fileName}</TableCell>
-                        <TableCell className="text-xs">{b.uploadedBy?.name || "Admin"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{new Date(b.uploadedAt).toLocaleString()}</TableCell>
-                        <TableCell className="text-center font-mono">{b.summary?.totalRows || b.records?.length || 0}</TableCell>
-                        <TableCell className="text-center font-mono text-emerald-600 font-bold">{b.summary?.successRows || 0}</TableCell>
-                        <TableCell className="text-center font-mono text-rose-600 font-bold">{b.summary?.failedRows || 0}</TableCell>
+                        <TableCell className="max-w-[170px] truncate text-xs font-mono" title={b.fileName}>{b.fileName}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{b.uploadedBy?.name || "Admin"}</TableCell>
+                        <TableCell className="text-center font-mono font-semibold text-xs">{totalRows}</TableCell>
+                        <TableCell className="text-center font-mono text-xs text-emerald-600 font-bold">{successRows}</TableCell>
+                        <TableCell className="text-center font-mono text-xs text-rose-600 font-bold">{failedRows}</TableCell>
                         <TableCell>
                           <Badge
-                            className={
+                            className={`text-[10px] font-bold ${
                               b.status === "COMPLETED"
                                 ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
                                 : b.status === "PARTIAL_SUCCESS"
@@ -371,57 +408,69 @@ export function AdminExcelImportPage() {
                                 : b.status === "FAILED"
                                 ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
                                 : "bg-blue-500/10 text-blue-600"
-                            }
+                            }`}
                             variant="outline"
                           >
                             {b.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right space-x-1">
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{displayDate}</TableCell>
+                        <TableCell className="text-right space-x-1 whitespace-nowrap">
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="h-7 px-2 text-xs font-semibold"
                             onClick={() => {
                               setCurrentBatch(b);
                               setCurrentStep("preview");
                             }}
                           >
-                            <Eye className="h-3.5 w-3.5 mr-1" /> View
+                            <Eye className="h-3.5 w-3.5 mr-1 text-primary" /> View Rows
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="h-7 w-7 p-0"
+                            title="Download Result Excel Report"
                             onClick={() => {
                               const data = ResultExcelGenerator.generateResultWorkbook(b);
-                              ResultExcelGenerator.triggerDownload(data, `${b.batchIdentifier}_Result.xlsx`);
+                              ResultExcelGenerator.triggerDownload(data, `${b.batchIdentifier}_Result_Report.xlsx`);
                             }}
                           >
-                            <Download className="h-3.5 w-3.5" />
+                            <Download className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          VIEW 2: LANDING & UPLOAD WORKFLOW (STEP 1)
+          VIEW 2: LANDING & UPLOAD WORKFLOW (STEP 1: Fit completely without page scroll)
       ───────────────────────────────────────────────────────────────────────────── */}
       {currentStep === "upload" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Module & Operation Selection */}
-          <div className="lg:col-span-1 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">1. Select Target Module</CardTitle>
-                <CardDescription>Choose the PMS entity to manage.</CardDescription>
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden">
+          {/* Left Column (5 Cols): Module Selection + Operation */}
+          <div className="lg:col-span-5 flex flex-col gap-3 min-h-0">
+            {/* Module Picker */}
+            <Card className="flex-1 flex flex-col min-h-0 border-border/70 overflow-hidden shadow-xs">
+              <CardHeader className="py-2.5 px-3.5 shrink-0 border-b bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <span className="h-5 w-5 rounded-full bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold text-[10px]">1</span>
+                    Target Entity Module
+                  </CardTitle>
+                  <Badge variant="outline" className="text-[10px] font-mono capitalize">
+                    {selectedModule}
+                  </Badge>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="p-2.5 flex-1 min-h-0 overflow-y-auto space-y-1.5">
                 {MODULES.map((m) => {
                   const Icon = m.icon;
                   const isSelected = selectedModule === m.key;
@@ -429,21 +478,21 @@ export function AdminExcelImportPage() {
                     <div
                       key={m.key}
                       onClick={() => handleModuleChange(m.key)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+                      className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center gap-3 ${
                         isSelected
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "hover:bg-muted/50 border-border"
+                          ? "border-teal-500 bg-teal-500/10 ring-1 ring-teal-500 text-teal-950 dark:text-teal-100 font-medium"
+                          : "hover:bg-muted/40 border-border/50 bg-card"
                       }`}
                     >
-                      <div className={`p-2 rounded-md ${isSelected ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                      <div className={`p-2 rounded-md shrink-0 ${isSelected ? "bg-teal-600 text-white shadow-xs" : "bg-muted text-muted-foreground"}`}>
                         <Icon className="h-4 w-4" />
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-sm">{m.label}</h4>
-                          {isSelected && <Badge variant="secondary" className="text-[10px]">Selected</Badge>}
+                          <h4 className="font-semibold text-xs leading-none">{m.label}</h4>
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{m.description}</p>
+                        <p className="text-[11px] text-muted-foreground truncate mt-1">{m.description}</p>
                       </div>
                     </div>
                   );
@@ -451,13 +500,16 @@ export function AdminExcelImportPage() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">2. Select Operation</CardTitle>
-                <CardDescription>Only one operation permitted per upload file.</CardDescription>
+            {/* Operation Type Switcher */}
+            <Card className="shrink-0 border-border/70 shadow-xs">
+              <CardHeader className="py-2 px-3.5 border-b bg-muted/20">
+                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span className="h-5 w-5 rounded-full bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold text-[10px]">2</span>
+                  Operation Pipeline
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-2 p-1 bg-muted rounded-lg">
+              <CardContent className="p-2.5 space-y-2">
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/70 rounded-lg">
                   {(["CREATE", "UPDATE", "DELETE"] as ImportOperation[]).map((op) => {
                     const isSelected = selectedOperation === op;
                     return (
@@ -465,13 +517,13 @@ export function AdminExcelImportPage() {
                         key={op}
                         type="button"
                         onClick={() => handleOperationChange(op)}
-                        className={`py-2 text-xs font-semibold rounded-md transition-all ${
+                        className={`py-1.5 text-xs font-bold rounded-md transition-all ${
                           isSelected
                             ? op === "CREATE"
-                              ? "bg-emerald-600 text-white shadow"
+                              ? "bg-emerald-600 text-white shadow-xs"
                               : op === "UPDATE"
-                              ? "bg-blue-600 text-white shadow"
-                              : "bg-rose-600 text-white shadow"
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "bg-rose-600 text-white shadow-xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -481,66 +533,72 @@ export function AdminExcelImportPage() {
                   })}
                 </div>
 
-                <div className="mt-4 p-3 bg-muted/40 rounded border text-xs space-y-1 text-muted-foreground">
+                <div className="p-2 bg-muted/40 rounded-md border border-border/40 text-[11px] text-muted-foreground">
                   {selectedOperation === "CREATE" && (
-                    <p>💡 <span className="font-semibold text-foreground">CREATE:</span> Adds new records. Duplicate keys in the file or existing in the DB will produce errors.</p>
+                    <p>✨ <strong className="text-foreground">CREATE:</strong> Adds new entries. Pre-checks uniqueness & relations.</p>
                   )}
                   {selectedOperation === "UPDATE" && (
-                    <p>💡 <span className="font-semibold text-foreground">UPDATE:</span> Patches existing records. Blank cells preserve current values. Type <code className="font-mono text-primary font-bold">[NULL]</code> to clear a field.</p>
+                    <p>🔄 <strong className="text-foreground">UPDATE:</strong> Patches records. Blanks keep existing data; <code className="font-mono text-primary font-bold">[NULL]</code> clears fields.</p>
                   )}
                   {selectedOperation === "DELETE" && (
-                    <p>⚠️ <span className="font-semibold text-rose-500">DELETE:</span> Soft-deletes or archives records. Active leases, finance items, or dependencies will block deletion.</p>
+                    <p>⚠️ <strong className="text-rose-600">DELETE:</strong> Safe archived removal. Active contracts/dependencies are protected.</p>
                   )}
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Right Column: Template Generator & File Dropzone */}
-          <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center justify-between">
-                  <span>3. Official Excel Template</span>
-                  <Badge variant="outline" className="uppercase font-mono text-xs">
-                    {selectedModule} • {selectedOperation}
-                  </Badge>
-                </CardTitle>
-                <CardDescription>
-                  Download the official structured template pre-populated with master dropdown values and sample instructions.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-muted/20 border rounded-lg m-6 mt-0">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-lg">
-                    <FileSpreadsheet className="h-8 w-8" />
+          {/* Right Column (7 Cols): Template & Dropzone + Diagnostic Bar */}
+          <div className="lg:col-span-7 flex flex-col gap-3 min-h-0">
+            {/* Step 3: Template Download Banner */}
+            <Card className="shrink-0 border-border/70 shadow-xs bg-gradient-to-r from-card via-card to-teal-500/5">
+              <CardContent className="p-3.5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 bg-emerald-500/10 text-emerald-600 rounded-lg shrink-0 border border-emerald-500/20">
+                    <FileSpreadsheet className="h-6 w-6" />
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-sm">
-                      {selectedModule.charAt(0).toUpperCase() + selectedModule.slice(1)}_{selectedOperation}_Template.xlsx
-                    </h4>
-                    <p className="text-xs text-muted-foreground">Contains required headers, field specifications & instruction sheet</p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-xs uppercase tracking-tight text-foreground truncate">
+                        {selectedModule}_{selectedOperation}_Template.xlsx
+                      </h4>
+                      <Badge variant="secondary" className="text-[9px] font-mono px-1 py-0">Masters Synced</Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">Pre-populated dropdown lists & strict headers</p>
                   </div>
                 </div>
-                <Button onClick={handleDownloadTemplate} disabled={isDownloadingTemplate} className="w-full sm:w-auto gap-2">
-                  {isDownloadingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadTemplate}
+                  disabled={isDownloadingTemplate}
+                  className="shrink-0 h-8 text-xs gap-1.5 border-emerald-600/30 hover:bg-emerald-500/10 hover:text-emerald-700"
+                >
+                  {isDownloadingTemplate ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   Download Template
                 </Button>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">4. Upload & Validate File</CardTitle>
-                <CardDescription>Upload completed .xlsx workbook. No database modification occurs during validation.</CardDescription>
+            {/* Step 4: Dropzone (Flex Expanded) */}
+            <Card className="flex-1 flex flex-col min-h-0 border-border/70 shadow-xs">
+              <CardHeader className="py-2 px-3.5 border-b bg-muted/20 shrink-0">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <span className="h-5 w-5 rounded-full bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold text-[10px]">3</span>
+                    Workbook Ingestion & Validation
+                  </CardTitle>
+                  <span className="text-[11px] text-muted-foreground">Supported format: .xlsx</span>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-3.5 flex-1 flex flex-col min-h-0 gap-3">
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
+                  className={`flex-1 border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 ${
                     fileToUpload
-                      ? "border-primary bg-primary/5"
-                      : "border-muted-foreground/30 hover:border-primary/60 hover:bg-muted/30"
+                      ? "border-teal-500 bg-teal-500/5 ring-2 ring-teal-500/20"
+                      : "border-border/80 hover:border-teal-500/60 hover:bg-muted/30"
                   }`}
                 >
                   <input
@@ -551,41 +609,47 @@ export function AdminExcelImportPage() {
                     className="hidden"
                   />
 
-                  <div className="p-4 bg-primary/10 text-primary rounded-full">
-                    <UploadCloud className="h-8 w-8" />
+                  <div className={`p-3 rounded-full ${fileToUpload ? "bg-teal-500 text-white shadow-md shadow-teal-500/20" : "bg-muted text-muted-foreground"}`}>
+                    <UploadCloud className="h-6 w-6" />
                   </div>
 
-                  <div>
+                  <div className="max-w-xs">
                     {fileToUpload ? (
                       <div>
-                        <p className="font-semibold text-sm text-primary">{fileToUpload.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {(fileToUpload.size / 1024).toFixed(1)} KB • Ready for validation
+                        <p className="font-bold text-xs text-foreground truncate">{fileToUpload.name}</p>
+                        <p className="text-[11px] text-teal-600 font-mono mt-0.5">
+                          {(fileToUpload.size / 1024).toFixed(1)} KB • Ready for schema verification
                         </p>
                       </div>
                     ) : (
                       <div>
-                        <p className="font-medium text-sm">Drag and drop your Excel file here, or click to browse</p>
-                        <p className="text-xs text-muted-foreground mt-1">Supports .xlsx workbooks up to 15MB</p>
+                        <p className="font-semibold text-xs text-foreground">Click to browse or drop .xlsx workbook here</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Strict schema pre-flight check without database writes</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2">
+                {/* Validation Trigger Footer */}
+                <div className="shrink-0 flex items-center justify-between gap-3 pt-1 border-t border-border/40">
+                  <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-teal-600 shrink-0" />
+                    <span>Dry-run verified against live master references</span>
+                  </div>
+
                   <Button
-                    size="lg"
+                    size="sm"
                     onClick={handleValidateAndPreview}
                     disabled={!fileToUpload || isParsing}
-                    className="gap-2 w-full sm:w-auto"
+                    className="h-9 px-4 text-xs font-semibold gap-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white shadow-sm shadow-teal-600/20"
                   >
                     {isParsing ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Validating File & DB References...
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Verifying File...
                       </>
                     ) : (
                       <>
-                        Validate & Preview Records <ArrowRight className="h-4 w-4" />
+                        Inspect & Reconcile <ArrowRight className="h-3.5 w-3.5" />
                       </>
                     )}
                   </Button>
@@ -597,229 +661,226 @@ export function AdminExcelImportPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          VIEW 3: PREVIEW & REVIEW SCREEN (STEP 2)
+          VIEW 3: PREVIEW & REVIEW SCREEN (STEP 2: Viewport Fitted)
       ───────────────────────────────────────────────────────────────────────────── */}
       {currentStep === "preview" && currentBatch && (
-        <div className="space-y-6">
-          {/* Top Batch Details Header */}
-          <div className="bg-card border rounded-lg p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="font-mono text-xs">{currentBatch.batchIdentifier}</Badge>
-                <Badge className={selectedOperation === "CREATE" ? "bg-emerald-600" : selectedOperation === "UPDATE" ? "bg-blue-600" : "bg-rose-600"}>
-                  {selectedOperation}
-                </Badge>
-                <Badge variant="secondary" className="capitalize font-semibold">{selectedModule}</Badge>
+        <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
+          {/* Top Batch Details Header & Quick Action Bar */}
+          <div className="bg-card/70 backdrop-blur-md border rounded-xl p-3 shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-xs">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 bg-primary/10 rounded-lg text-primary shrink-0">
+                <FileSpreadsheet className="h-5 w-5" />
               </div>
-              <h2 className="text-xl font-bold mt-2 flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-                {currentBatch.fileName}
-              </h2>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">{currentBatch.batchIdentifier}</Badge>
+                  <Badge className={`text-[10px] uppercase font-bold ${selectedOperation === "CREATE" ? "bg-emerald-600" : selectedOperation === "UPDATE" ? "bg-blue-600" : "bg-rose-600"}`}>
+                    {selectedOperation}
+                  </Badge>
+                  <Badge variant="secondary" className="capitalize text-[10px] font-semibold">{selectedModule}</Badge>
+                </div>
+                <h2 className="text-xs font-bold text-foreground truncate mt-0.5">
+                  {currentBatch.fileName}
+                </h2>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={resetUploadState}>
-                Upload Another File
+            {/* Quick Metrics Bar */}
+            <div className="flex items-center gap-1.5 bg-muted/50 p-1 rounded-lg border border-border/40 text-xs shrink-0">
+              <div className="px-2.5 py-0.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-semibold">Total</p>
+                <p className="font-mono font-bold text-xs">{currentBatch.summary.totalRows}</p>
+              </div>
+              <div className="w-px h-6 bg-border/60" />
+              <div className="px-2.5 py-0.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-emerald-600 font-semibold">Ready</p>
+                <p className="font-mono font-bold text-xs text-emerald-600">{currentBatch.summary.validRows}</p>
+              </div>
+              {selectedOperation === "UPDATE" && (
+                <>
+                  <div className="w-px h-6 bg-border/60" />
+                  <div className="px-2.5 py-0.5 text-center">
+                    <p className="text-[9px] uppercase tracking-wider text-blue-600 font-semibold">No-op</p>
+                    <p className="font-mono font-bold text-xs text-blue-600">{currentBatch.summary.noChangeRows}</p>
+                  </div>
+                </>
+              )}
+              <div className="w-px h-6 bg-border/60" />
+              <div className="px-2.5 py-0.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-amber-600 font-semibold">Warn</p>
+                <p className="font-mono font-bold text-xs text-amber-600">{currentBatch.summary.warningRows}</p>
+              </div>
+              <div className="w-px h-6 bg-border/60" />
+              <div className="px-2.5 py-0.5 text-center">
+                <p className="text-[9px] uppercase tracking-wider text-rose-600 font-semibold">Errors</p>
+                <p className="font-mono font-bold text-xs text-rose-600">{currentBatch.summary.errorRows + currentBatch.summary.blockedRows}</p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="outline" size="sm" onClick={resetUploadState} className="h-8 text-xs">
+                Upload Another
               </Button>
               {currentBatch.summary.validRows > 0 && (
                 <Button
-                  size="default"
+                  size="sm"
                   onClick={handleConfirmAndProcess}
                   disabled={isConfirming || (selectedOperation === "DELETE" && !deleteConfirmed)}
-                  className={selectedOperation === "DELETE" ? "bg-rose-600 hover:bg-rose-700 gap-2" : "bg-emerald-600 hover:bg-emerald-700 gap-2"}
+                  className={`h-8 text-xs font-semibold gap-1.5 shadow-xs ${
+                    selectedOperation === "DELETE"
+                      ? "bg-rose-600 hover:bg-rose-700 text-white"
+                      : "bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white"
+                  }`}
                 >
-                  <ShieldCheck className="h-4 w-4" />
-                  Confirm & Process {currentBatch.summary.validRows} Records
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Execute Commit ({currentBatch.summary.validRows})
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Metric Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-muted-foreground font-medium">Total Rows</p>
-                <h3 className="text-2xl font-bold mt-1 font-mono">{currentBatch.summary.totalRows}</h3>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-emerald-600 font-medium">Ready to Commit</p>
-                <h3 className="text-2xl font-bold mt-1 font-mono text-emerald-600">{currentBatch.summary.validRows}</h3>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-blue-600 font-medium">No Data Change</p>
-                <h3 className="text-2xl font-bold mt-1 font-mono text-blue-600">{currentBatch.summary.noChangeRows}</h3>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-amber-600 font-medium">Warnings</p>
-                <h3 className="text-2xl font-bold mt-1 font-mono text-amber-600">{currentBatch.summary.warningRows}</h3>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <p className="text-xs text-rose-600 font-medium">Errors / Blocked</p>
-                <h3 className="text-2xl font-bold mt-1 font-mono text-rose-600">{currentBatch.summary.errorRows + currentBatch.summary.blockedRows}</h3>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Delete Guard Acknowledgement Checkbox */}
+          {/* Delete Guard Acknowledgement (Inline Pill) */}
           {selectedOperation === "DELETE" && (
-            <Card className="border-rose-300 bg-rose-50/50 dark:bg-rose-950/20">
-              <CardContent className="p-4 flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-rose-600 mt-0.5 shrink-0" />
-                <div className="space-y-2 flex-1">
-                  <h4 className="font-semibold text-sm text-rose-900 dark:text-rose-200">Mandatory Deletion Confirmation</h4>
-                  <p className="text-xs text-rose-800 dark:text-rose-300">
-                    Deletion is destructive. Deactivated or soft-deleted records will no longer be active for new contracts or operations.
-                  </p>
-                  <div className="flex items-center space-x-2 pt-1">
-                    <Checkbox
-                      id="del-confirm"
-                      checked={deleteConfirmed}
-                      onCheckedChange={(c) => setDeleteConfirmed(Boolean(c))}
-                    />
-                    <label htmlFor="del-confirm" className="text-xs font-medium cursor-pointer">
-                      I understand that this operation will remove or archive the selected records according to PMS rules.
-                    </label>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 flex items-center justify-between text-xs shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                <span className="truncate">Destructive deletion safety lock: verified rows will be permanently deleted or archived.</span>
+              </div>
+              <div className="flex items-center space-x-2 shrink-0 ml-4">
+                <Checkbox
+                  id="del-confirm"
+                  checked={deleteConfirmed}
+                  onCheckedChange={(c) => setDeleteConfirmed(Boolean(c))}
+                />
+                <label htmlFor="del-confirm" className="text-[11px] font-bold cursor-pointer text-rose-900 dark:text-rose-200">
+                  I Confirm Deletion
+                </label>
+              </div>
+            </div>
           )}
 
-          {/* Records Table with Tabs & Search */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          {/* Records Data Grid with Tabs & Search */}
+          <Card className="flex-1 min-h-0 flex flex-col border-border/70 overflow-hidden shadow-xs">
+            <CardHeader className="py-2 px-3.5 shrink-0 border-b bg-muted/20">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full sm:w-auto">
-                  <TabsList className="grid grid-cols-5 w-full sm:w-auto">
-                    <TabsTrigger value="ALL">All ({currentBatch.summary.totalRows})</TabsTrigger>
-                    <TabsTrigger value="READY">Ready ({currentBatch.summary.validRows})</TabsTrigger>
+                  <TabsList className="grid grid-cols-4 sm:flex h-7 bg-muted/80 p-0.5">
+                    <TabsTrigger value="ALL" className="text-[11px] h-6 px-2.5">All ({currentBatch.summary.totalRows})</TabsTrigger>
+                    <TabsTrigger value="READY" className="text-[11px] h-6 px-2.5 text-emerald-600 font-semibold">Ready ({currentBatch.summary.validRows})</TabsTrigger>
                     {selectedOperation === "UPDATE" && (
-                      <TabsTrigger value="CHANGED">Changed</TabsTrigger>
+                      <TabsTrigger value="NO_CHANGE" className="text-[11px] h-6 px-2.5 text-blue-600">No Change ({currentBatch.summary.noChangeRows})</TabsTrigger>
                     )}
-                    {selectedOperation === "UPDATE" && (
-                      <TabsTrigger value="NO_CHANGE">No Change ({currentBatch.summary.noChangeRows})</TabsTrigger>
-                    )}
-                    <TabsTrigger value="ERRORS">Errors ({currentBatch.summary.errorRows + currentBatch.summary.blockedRows})</TabsTrigger>
+                    <TabsTrigger value="ERRORS" className="text-[11px] h-6 px-2.5 text-rose-600 font-semibold">Errors ({currentBatch.summary.errorRows + currentBatch.summary.blockedRows})</TabsTrigger>
                   </TabsList>
                 </Tabs>
 
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <div className="relative w-full sm:w-60">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="Search row, code, key..."
+                    placeholder="Search key, record, error..."
                     value={previewSearch}
                     onChange={(e) => setPreviewSearch(e.target.value)}
-                    className="pl-8 text-xs h-9"
+                    className="pl-7 text-xs h-7 bg-card"
                   />
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0 flex-1 min-h-0 overflow-y-auto">
               {filteredRecords.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">
-                  No records matching the selected filter.
+                <div className="h-full flex items-center justify-center py-12 text-muted-foreground text-xs">
+                  No records matching the selected filter criteria.
                 </div>
               ) : (
-                <div className="rounded-md border overflow-x-auto max-h-[500px]">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-card z-10">
-                      <TableRow>
-                        <TableHead className="w-16">Row</TableHead>
-                        <TableHead>Record Key / Identifier</TableHead>
-                        <TableHead>Name / Description</TableHead>
-                        {selectedOperation === "UPDATE" && <TableHead>Changes</TableHead>}
-                        {selectedOperation === "DELETE" && <TableHead>Dependencies</TableHead>}
-                        <TableHead>Validation Status</TableHead>
-                        <TableHead>Issues / Notes</TableHead>
-                        <TableHead className="text-right">Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredRecords.map((rec) => (
-                        <TableRow key={rec.excelRowNumber}>
-                          <TableCell className="font-mono text-xs">{rec.excelRowNumber}</TableCell>
-                          <TableCell className="font-mono font-semibold text-xs">{rec.recordKey}</TableCell>
-                          <TableCell className="text-xs max-w-[200px] truncate">{rec.recordName || "—"}</TableCell>
-                          
-                          {selectedOperation === "UPDATE" && (
-                            <TableCell>
-                              {rec.changes.length > 0 ? (
-                                <Badge variant="secondary" className="font-mono text-[11px]">
-                                  {rec.changes.length} field{rec.changes.length > 1 ? "s" : ""} changed
-                                </Badge>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">No changes</span>
-                              )}
-                            </TableCell>
-                          )}
-
-                          {selectedOperation === "DELETE" && (
-                            <TableCell>
-                              {rec.dependencies.length > 0 ? (
-                                <div className="flex gap-1">
-                                  {rec.dependencies.map((d, i) => (
-                                    <Badge key={i} variant={d.result === "Blocked" ? "destructive" : "outline"} className="text-[10px]">
-                                      {d.dependency}: {d.count}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : (
-                                <span className="text-xs text-emerald-600">Clean</span>
-                              )}
-                            </TableCell>
-                          )}
-
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-xs z-10">
+                    <TableRow className="border-b">
+                      <TableHead className="w-12 text-[11px]">#</TableHead>
+                      <TableHead className="text-[11px]">Record Key</TableHead>
+                      <TableHead className="text-[11px]">Name / Label</TableHead>
+                      {selectedOperation === "UPDATE" && <TableHead className="text-[11px]">Mutations</TableHead>}
+                      {selectedOperation === "DELETE" && <TableHead className="text-[11px]">Dependencies</TableHead>}
+                      <TableHead className="text-[11px]">Pre-flight Status</TableHead>
+                      <TableHead className="text-[11px]">Diagnostics</TableHead>
+                      <TableHead className="text-right text-[11px]">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRecords.map((rec) => (
+                      <TableRow key={rec.excelRowNumber} className="hover:bg-muted/30">
+                        <TableCell className="font-mono text-[11px] text-muted-foreground">{rec.excelRowNumber}</TableCell>
+                        <TableCell className="font-mono font-semibold text-xs text-foreground">{rec.recordKey}</TableCell>
+                        <TableCell className="text-xs max-w-[180px] truncate text-muted-foreground">{rec.recordName || "—"}</TableCell>
+                        
+                        {selectedOperation === "UPDATE" && (
                           <TableCell>
-                            <Badge
-                              className={
-                                rec.status === "READY"
-                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
-                                  : rec.status === "NO_CHANGE"
-                                  ? "bg-blue-500/10 text-blue-600 border-blue-500/30"
-                                  : rec.status === "WARNING"
-                                  ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                                  : "bg-rose-500/10 text-rose-600 border-rose-500/30"
-                              }
-                              variant="outline"
-                            >
-                              {rec.status}
-                            </Badge>
-                          </TableCell>
-
-                          <TableCell className="text-xs max-w-[250px] truncate text-muted-foreground">
-                            {rec.errors.length > 0 ? (
-                              <span className="text-rose-600 font-medium">{rec.errors[0].message}</span>
-                            ) : rec.warnings.length > 0 ? (
-                              <span className="text-amber-600">{rec.warnings[0].message}</span>
+                            {rec.changes.length > 0 ? (
+                              <Badge variant="secondary" className="font-mono text-[10px] px-1.5 py-0">
+                                {rec.changes.length} field{rec.changes.length > 1 ? "s" : ""}
+                              </Badge>
                             ) : (
-                              "—"
+                              <span className="text-[11px] text-muted-foreground">Unmodified</span>
                             )}
                           </TableCell>
+                        )}
 
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setInspectRecord(rec)}
-                              className="h-7 text-xs"
-                            >
-                              Inspect Details
-                            </Button>
+                        {selectedOperation === "DELETE" && (
+                          <TableCell>
+                            {rec.dependencies.length > 0 ? (
+                              <div className="flex gap-1 flex-wrap">
+                                {rec.dependencies.map((d, i) => (
+                                  <Badge key={i} variant={d.result === "Blocked" ? "destructive" : "outline"} className="text-[9px] px-1 py-0">
+                                    {d.dependency}: {d.count}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-emerald-600 font-medium">Clean</span>
+                            )}
                           </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                        )}
+
+                        <TableCell>
+                          <Badge
+                            className={`text-[10px] ${
+                              rec.status === "READY"
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                : rec.status === "NO_CHANGE"
+                                ? "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                                : rec.status === "WARNING"
+                                ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                                : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                            }`}
+                            variant="outline"
+                          >
+                            {rec.status}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell className="text-xs max-w-[220px] truncate text-muted-foreground">
+                          {rec.errors.length > 0 ? (
+                            <span className="text-rose-600 font-medium">{rec.errors[0].message}</span>
+                          ) : rec.warnings.length > 0 ? (
+                            <span className="text-amber-600">{rec.warnings[0].message}</span>
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setInspectRecord(rec)}
+                            className="h-6 px-2 text-[11px]"
+                          >
+                            Inspect
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
@@ -827,101 +888,103 @@ export function AdminExcelImportPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          VIEW 4: PROCESSING LIVE STATE (STEP 3)
+          VIEW 4: PROCESSING LIVE STATE (STEP 3: Compact Centered Card)
       ───────────────────────────────────────────────────────────────────────────── */}
       {currentStep === "processing" && (
-        <Card className="max-w-xl mx-auto my-12 text-center p-8">
-          <CardContent className="space-y-6">
-            <div className="p-4 bg-primary/10 text-primary rounded-full w-16 h-16 mx-auto flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold">Processing Excel Import</h3>
-              <p className="text-xs text-muted-foreground mt-1 font-mono">{currentBatch?.batchIdentifier}</p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-mono">
-                <span>Progress: {processingProgress.processed} / {processingProgress.total}</span>
-                <span>Success: {processingProgress.success} | Failed: {processingProgress.failed}</span>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md text-center p-6 border-border/80 shadow-md">
+            <CardContent className="space-y-4 p-0">
+              <div className="p-3 bg-teal-500/10 text-teal-600 rounded-full w-12 h-12 mx-auto flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin" />
               </div>
-              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-primary h-full transition-all duration-300"
-                  style={{
-                    width: `${processingProgress.total > 0 ? (processingProgress.processed / processingProgress.total) * 100 : 10}%`,
-                  }}
-                />
+              <div>
+                <h3 className="text-base font-bold text-foreground">Executing Ingestion Pipeline</h3>
+                <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{currentBatch?.batchIdentifier}</p>
               </div>
-            </div>
 
-            <p className="text-xs text-muted-foreground">
-              Executing database transactions and generating audit snapshots. Please do not close this window.
-            </p>
-          </CardContent>
-        </Card>
+              <div className="space-y-1.5 pt-2">
+                <div className="flex justify-between text-xs font-mono">
+                  <span>Processed: {processingProgress.processed} / {processingProgress.total}</span>
+                  <span className="text-emerald-600 font-bold">{processingProgress.success} OK</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-teal-600 to-emerald-600 h-full transition-all duration-300"
+                    style={{
+                      width: `${processingProgress.total > 0 ? (processingProgress.processed / processingProgress.total) * 100 : 15}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                Writing audit logs & updating database records. Please do not refresh.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────────────
-          VIEW 5: FINAL RESULT SCREEN (STEP 4)
+          VIEW 5: FINAL RESULT SCREEN (STEP 4: Compact Grid)
       ───────────────────────────────────────────────────────────────────────────── */}
       {currentStep === "results" && currentBatch && (
-        <div className="max-w-3xl mx-auto space-y-6">
-          <Card className="border-t-4 border-t-primary">
-            <CardHeader className="text-center pb-2">
-              <div className="mx-auto p-3 bg-emerald-500/10 text-emerald-600 rounded-full w-14 h-14 flex items-center justify-center mb-2">
-                <CheckCircle2 className="h-8 w-8" />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl border-border/80 shadow-md">
+            <CardHeader className="text-center py-4 border-b bg-muted/20">
+              <div className="mx-auto p-2 bg-emerald-500/10 text-emerald-600 rounded-full w-10 h-10 flex items-center justify-center mb-1">
+                <CheckCircle2 className="h-6 w-6" />
               </div>
-              <CardTitle className="text-2xl font-bold">Import Processing Complete</CardTitle>
-              <CardDescription className="font-mono text-xs">
-                Batch #{currentBatch.batchIdentifier} • {new Date().toLocaleString()}
+              <CardTitle className="text-lg font-bold">Import Processing Complete</CardTitle>
+              <CardDescription className="font-mono text-[11px]">
+                Batch #{currentBatch.batchIdentifier} • {new Date().toLocaleDateString()}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6 pt-4">
-              <div className="grid grid-cols-3 gap-4 text-center p-4 bg-muted/40 rounded-lg">
+            <CardContent className="p-5 space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-center p-3 bg-muted/40 rounded-lg border border-border/40">
                 <div>
-                  <p className="text-xs text-muted-foreground">Successfully Processed</p>
-                  <p className="text-2xl font-bold text-emerald-600 font-mono mt-1">{currentBatch.summary.successRows}</p>
+                  <p className="text-[11px] text-muted-foreground font-medium">Successfully Processed</p>
+                  <p className="text-xl font-bold text-emerald-600 font-mono mt-0.5">{currentBatch.summary.successRows}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Failed Rows</p>
-                  <p className="text-2xl font-bold text-rose-600 font-mono mt-1">{currentBatch.summary.failedRows}</p>
+                  <p className="text-[11px] text-muted-foreground font-medium">Failed Rows</p>
+                  <p className="text-xl font-bold text-rose-600 font-mono mt-0.5">{currentBatch.summary.failedRows}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">No Change (Skipped)</p>
-                  <p className="text-2xl font-bold text-blue-600 font-mono mt-1">{currentBatch.summary.noChangeRows}</p>
+                  <p className="text-[11px] text-muted-foreground font-medium">No Change (Skipped)</p>
+                  <p className="text-xl font-bold text-blue-600 font-mono mt-0.5">{currentBatch.summary.noChangeRows}</p>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <h4 className="font-semibold text-sm">Downloadable Result Workbooks</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Button variant="outline" onClick={handleDownloadFullResult} className="justify-start gap-2 h-auto py-3">
-                    <Download className="h-5 w-5 text-emerald-600 shrink-0" />
-                    <div className="text-left">
-                      <p className="font-medium text-xs">Download Complete Result.xlsx</p>
-                      <p className="text-[10px] text-muted-foreground">6 sheets with summary, diffs & audit log</p>
+              <div className="space-y-2">
+                <h4 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">Download Outcome Workbooks</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button variant="outline" onClick={handleDownloadFullResult} className="justify-start gap-2 h-auto py-2.5 text-xs">
+                    <Download className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <div className="text-left truncate">
+                      <p className="font-semibold text-xs">Full Result.xlsx</p>
+                      <p className="text-[10px] text-muted-foreground">6 audit & diff sheets</p>
                     </div>
                   </Button>
 
                   {currentBatch.summary.failedRows > 0 && (
-                    <Button variant="outline" onClick={handleDownloadFailedRecords} className="justify-start gap-2 h-auto py-3 border-rose-200">
-                      <Download className="h-5 w-5 text-rose-600 shrink-0" />
-                      <div className="text-left">
-                        <p className="font-medium text-xs text-rose-600">Download Failed Records.xlsx</p>
-                        <p className="text-[10px] text-muted-foreground">Includes error reasons for quick re-upload</p>
+                    <Button variant="outline" onClick={handleDownloadFailedRecords} className="justify-start gap-2 h-auto py-2.5 text-xs border-rose-200 hover:bg-rose-500/10">
+                      <Download className="h-4 w-4 text-rose-600 shrink-0" />
+                      <div className="text-left truncate">
+                        <p className="font-semibold text-xs text-rose-600">Failed Records.xlsx</p>
+                        <p className="text-[10px] text-muted-foreground">Pre-annotated error reasons</p>
                       </div>
                     </Button>
                   )}
                 </div>
               </div>
 
-              <div className="flex justify-between items-center pt-4 border-t">
-                <Button variant="ghost" onClick={() => setCurrentStep("history")}>
-                  View All History
+              <div className="flex justify-between items-center pt-3 border-t">
+                <Button variant="ghost" size="sm" onClick={() => setCurrentStep("history")} className="text-xs">
+                  View Audit History
                 </Button>
-                <Button onClick={resetUploadState} className="gap-2">
-                  <RefreshCw className="h-4 w-4" /> Start Another Import
+                <Button size="sm" onClick={resetUploadState} className="gap-1.5 text-xs bg-teal-600 hover:bg-teal-700 text-white">
+                  <RefreshCw className="h-3.5 w-3.5" /> Start Another Ingestion
                 </Button>
               </div>
             </CardContent>

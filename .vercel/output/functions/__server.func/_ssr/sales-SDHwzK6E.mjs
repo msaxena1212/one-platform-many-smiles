@@ -1,5 +1,5 @@
 import { c as require_jsx_runtime } from "../_libs/@radix-ui/react-arrow+[...].mjs";
-import { Gt as Clock, fn as Calendar, gn as Building2, kt as FileText } from "../_libs/lucide-react.mjs";
+import { Ot as FileText, Wt as Clock, dn as Calendar, hn as Building2 } from "../_libs/lucide-react.mjs";
 import { f as Outlet } from "../_libs/@tanstack/react-router+[...].mjs";
 import { t as AppShell } from "./app-shell-BTlCDuJd.mjs";
 //#region node_modules/.nitro/vite/services/ssr/assets/sales-SDHwzK6E.js
