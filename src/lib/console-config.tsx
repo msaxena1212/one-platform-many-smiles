@@ -33,6 +33,7 @@ import {
   PieChart,
   Landmark,
   Scale,
+  FileSpreadsheet,
 } from "lucide-react";
 import type { NavGroup, NavItem, NavModule } from "@/components/app-shell";
 import type { Profile } from "@/lib/supabase";
@@ -346,6 +347,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/prop-mgr/approvals", label: "Approvals", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
               { to: "/prop-mgr/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/prop-mgr/imports", label: "Excel Import", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -362,6 +364,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/prop-mgr/maintenance", title: "Maintenance" },
       { match: "/prop-mgr/approvals", title: "Approvals" },
       { match: "/prop-mgr/users", title: "Users" },
+      { match: "/prop-mgr/imports", title: "Excel Import Engine" },
     ],
   },
 
@@ -604,6 +607,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/admin/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
               { to: "/admin/hrms", label: "HRMS", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/admin/imports", label: "Excel Import", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
               { to: "/admin/audit-logs", label: "Audit Logs", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },
@@ -622,6 +626,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/admin/masters", title: "Masters & Config" },
       { match: "/admin/users", title: "Users" },
       { match: "/admin/hrms", title: "HRMS" },
+      { match: "/admin/imports", title: "Excel Import Engine" },
       { match: "/admin/audit-logs", title: "Audit Logs" },
     ],
   },
@@ -947,7 +952,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
 
 const landingRoutes: Partial<Record<Profile["role"] | "GUEST", LinkProps["to"]>> = {
   SUPER_ADMIN: "/super-admin",
-  ADMIN: "/admin/dashboard",
+  ADMIN: "/admin",
   HOST: "/prop-mgr",
   PROP_MGR: "/prop-mgr",
   LEASING: "/leasing",

@@ -49,6 +49,7 @@ import { Route as PropMgrPropertiesRouteImport } from './routes/prop-mgr.propert
 import { Route as PropMgrMaintenanceRouteImport } from './routes/prop-mgr.maintenance'
 import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
 import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
+import { Route as PropMgrImportsRouteImport } from './routes/prop-mgr.imports'
 import { Route as PropMgrFinanceRouteImport } from './routes/prop-mgr.finance'
 import { Route as PropMgrAssetsRouteImport } from './routes/prop-mgr.assets'
 import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approvals'
@@ -78,6 +79,7 @@ import { Route as AdminPermissionsRouteImport } from './routes/admin.permissions
 import { Route as AdminMastersRouteImport } from './routes/admin.masters'
 import { Route as AdminMaintenanceRouteImport } from './routes/admin.maintenance'
 import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
+import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminHrmsRouteImport } from './routes/admin.hrms'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
@@ -292,6 +294,11 @@ const PropMgrLeasesRoute = PropMgrLeasesRouteImport.update({
   path: '/leases',
   getParentRoute: () => PropMgrRoute,
 } as any)
+const PropMgrImportsRoute = PropMgrImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => PropMgrRoute,
+} as any)
 const PropMgrFinanceRoute = PropMgrFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
@@ -437,6 +444,11 @@ const AdminLeasesRoute = AdminLeasesRouteImport.update({
   path: '/leases',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminImportsRoute = AdminImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminHrmsRoute = AdminHrmsRouteImport.update({
   id: '/hrms',
   path: '/hrms',
@@ -524,6 +536,7 @@ export interface FileRoutesByFullPath {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -553,6 +566,7 @@ export interface FileRoutesByFullPath {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -600,6 +614,7 @@ export interface FileRoutesByTo {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -629,6 +644,7 @@ export interface FileRoutesByTo {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -685,6 +701,7 @@ export interface FileRoutesById {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
@@ -714,6 +731,7 @@ export interface FileRoutesById {
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRouteWithChildren
+  '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
   '/prop-mgr/leasing': typeof PropMgrLeasingRoute
   '/prop-mgr/maintenance': typeof PropMgrMaintenanceRoute
@@ -771,6 +789,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -800,6 +819,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -847,6 +867,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -876,6 +897,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -931,6 +953,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/finance'
     | '/admin/hrms'
+    | '/admin/imports'
     | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
@@ -960,6 +983,7 @@ export interface FileRouteTypes {
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
     | '/prop-mgr/finance'
+    | '/prop-mgr/imports'
     | '/prop-mgr/leases'
     | '/prop-mgr/leasing'
     | '/prop-mgr/maintenance'
@@ -1295,6 +1319,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropMgrLeasesRouteImport
       parentRoute: typeof PropMgrRoute
     }
+    '/prop-mgr/imports': {
+      id: '/prop-mgr/imports'
+      path: '/imports'
+      fullPath: '/prop-mgr/imports'
+      preLoaderRoute: typeof PropMgrImportsRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
     '/prop-mgr/finance': {
       id: '/prop-mgr/finance'
       path: '/finance'
@@ -1498,6 +1529,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLeasesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/imports': {
+      id: '/admin/imports'
+      path: '/imports'
+      fullPath: '/admin/imports'
+      preLoaderRoute: typeof AdminImportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/hrms': {
       id: '/admin/hrms'
       path: '/hrms'
@@ -1610,6 +1648,7 @@ interface AdminRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminHrmsRoute: typeof AdminHrmsRoute
+  AdminImportsRoute: typeof AdminImportsRoute
   AdminLeasesRoute: typeof AdminLeasesRouteWithChildren
   AdminMaintenanceRoute: typeof AdminMaintenanceRoute
   AdminMastersRoute: typeof AdminMastersRoute
@@ -1627,6 +1666,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminDashboardRoute: AdminDashboardRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminHrmsRoute: AdminHrmsRoute,
+  AdminImportsRoute: AdminImportsRoute,
   AdminLeasesRoute: AdminLeasesRouteWithChildren,
   AdminMaintenanceRoute: AdminMaintenanceRoute,
   AdminMastersRoute: AdminMastersRoute,
@@ -1786,6 +1826,7 @@ interface PropMgrRouteChildren {
   PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
   PropMgrAssetsRoute: typeof PropMgrAssetsRoute
   PropMgrFinanceRoute: typeof PropMgrFinanceRouteWithChildren
+  PropMgrImportsRoute: typeof PropMgrImportsRoute
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
   PropMgrLeasingRoute: typeof PropMgrLeasingRoute
   PropMgrMaintenanceRoute: typeof PropMgrMaintenanceRoute
@@ -1800,6 +1841,7 @@ const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrApprovalsRoute: PropMgrApprovalsRoute,
   PropMgrAssetsRoute: PropMgrAssetsRoute,
   PropMgrFinanceRoute: PropMgrFinanceRouteWithChildren,
+  PropMgrImportsRoute: PropMgrImportsRoute,
   PropMgrLeasesRoute: PropMgrLeasesRoute,
   PropMgrLeasingRoute: PropMgrLeasingRoute,
   PropMgrMaintenanceRoute: PropMgrMaintenanceRoute,

@@ -1,0 +1,9 @@
+
+  { email: 'tenant@zyno.com', password: 'Password123!', role: 'TENANT', fullName: 'Demo Tenant' },
+  { email: 'propmgr@zyno.com', password: 'Password123!', role: 'PROP_MGR', fullName: 'Demo Property Manager' },
+  { email: 'admin@zyno.com', password: 'Password123!', role: 'ADMIN', fullName: 'Demo Admin' },
+  { email: 'superadmin@zyno.com', password: 'Password123!', role: 'SUPER_ADMIN', fullName: 'Demo Super Admin' },
+  { email: 'leasing@zyno.com', password: 'Password123!', role: 'LEASING', fullName: 'Demo Leasing Officer' },
+  { email: 'finance@zyno.com', password: 'Password123!', role: 'FINANCE', fullName: 'Demo Finance Officer' },
+  { email: 'cashier@zyno.com', password: 'Password123!', role: 'CASHIER', fullName: 'Demo Cashier' },
+  { email: 'maintenance@zyno.com', password: 'Password123!', role: 'MAINTENANCE', fullName: 'Demo Maintenance Officer' }

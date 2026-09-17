@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Building2, Check, ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -59,6 +59,8 @@ type PropertyFormState = {
   ownership_type: string;
   no_of_units: string;
   total_units: string;
+  amenities: string[];
+  other_amenities: string;
 };
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -78,13 +80,16 @@ const EMPTY_FORM: PropertyFormState = {
   ownership_type: "",
   no_of_units: "",
   total_units: "",
+  amenities: [""],
+  other_amenities: "",
 };
 
 const STEPS = [
   { id: 1, name: "Identity & Location" },
   { id: 2, name: "Configuration" },
   { id: 3, name: "Cost Center & Categories" },
-  { id: 4, name: "Photos" },
+  { id: 4, name: "Amenities & Facilities" },
+  { id: 5, name: "Photos" },
 ];
 
 export function PropertiesModule({ role }: PropertiesModuleProps) {
@@ -228,6 +233,14 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
       const propCostCenterCode = form.cost_center_code || `CC-PROP-${Math.floor(1000 + Math.random() * 9000)}`;
       const propCostCenterName = form.cost_center_name || `${form.title} Cost Center`;
 
+      const validAmenities = (form.amenities || []).map(a => a.trim()).filter(Boolean);
+      const otherAmenitiesList = form.other_amenities ? form.other_amenities.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const totalAmenitiesCount = validAmenities.length + otherAmenitiesList.length;
+
+      if (totalAmenitiesCount === 0) {
+        throw new Error("At least one Amenity / Facility is mandatory for the property.");
+      }
+
       const newProperty = await createProperty(
         buildPropertyPayload({
           hostId, // undefined for demo users → host_id omitted (null in DB)
@@ -249,6 +262,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           ownershipType: form.ownership_type,
           noOfUnits: form.no_of_units || form.total_units,
           totalUnits: form.total_units || form.no_of_units,
+          amenityFields: validAmenities,
+          otherAmenitiesFacilities: form.other_amenities || undefined,
         }) as Omit<Property, "id" | "created_at" | "property_images">,
       );
 
@@ -687,8 +702,74 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
               </div>
             )}
 
-            {/* Step 4: Photos */}
+            {/* Step 4: Amenities & Facilities */}
             {step === 4 && (
+              <div className="space-y-4">
+                <div className="bg-primary/5 p-3 rounded-md border border-primary/20 text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">Requirement:</span> At least one Amenity / Facility is mandatory for this property.
+                </div>
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    {(form.amenities || []).map((amenity, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-xs">Amenity / Facility {idx + 1} {idx === 0 ? '*' : ''}</Label>
+                          <Input
+                            placeholder={idx === 0 ? "e.g. Swimming Pool" : idx === 1 ? "e.g. Gym / Fitness Center" : "e.g. 24/7 Security"}
+                            value={amenity}
+                            onChange={(e) => {
+                              const newAmenities = [...form.amenities];
+                              newAmenities[idx] = e.target.value;
+                              setForm((prev) => ({ ...prev, amenities: newAmenities }));
+                            }}
+                          />
+                        </div>
+                        {form.amenities.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="mt-5 h-9 w-9 text-muted-foreground hover:text-destructive shrink-0"
+                            onClick={() => {
+                              const newAmenities = form.amenities.filter((_, i) => i !== idx);
+                              setForm((prev) => ({ ...prev, amenities: newAmenities.length > 0 ? newAmenities : [""] }));
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {form.amenities.length < 5 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => {
+                        setForm((prev) => ({ ...prev, amenities: [...prev.amenities, ""] }));
+                      }}
+                    >
+                      <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Another Amenity / Facility ({form.amenities.length}/5)
+                    </Button>
+                  )}
+
+                  <div className="space-y-1.5 pt-2 border-t">
+                    <Label className="text-xs">Other Amenities / Facilities (Optional)</Label>
+                    <Input
+                      placeholder="e.g. Sauna, Steam Room, Children Play Area, Concierge (comma separated)"
+                      value={form.other_amenities}
+                      onChange={(e) => setForm((prev) => ({ ...prev, other_amenities: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 5: Photos */}
+            {step === 5 && (
               <div className="space-y-4">
                 <Label>Property Images</Label>
                 <ImageUploader 
@@ -711,14 +792,23 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
               {step < STEPS.length ? (
                 <Button
                   onClick={handleNext}
-                  disabled={step === 1 && (!form.title || !form.address || !form.city)}
+                  disabled={
+                    (step === 1 && (!form.title || !form.address || !form.city)) ||
+                    (step === 4 && !((form.amenities || []).some(a => a.trim() !== '') || form.other_amenities.trim()))
+                  }
                 >
                   Next <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
                 <Button
                   onClick={handleCreateProperty}
-                  disabled={creating || !form.title || !form.address || !form.city}
+                  disabled={
+                    creating || 
+                    !form.title || 
+                    !form.address || 
+                    !form.city ||
+                    !((form.amenities || []).some(a => a.trim() !== '') || form.other_amenities.trim())
+                  }
                 >
                   {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Property

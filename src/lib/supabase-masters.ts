@@ -264,3 +264,16 @@ export async function deleteUnitCode(id: number): Promise<void> {
   const { error } = await supabase.from('mst_unit_codes').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ── Additional Master Fetchers for Excel Import & Dropdowns ──────────────────
+
+export const fetchPropertyTypes = () => fetchSimple('mst_property_types');
+export const fetchPropertyCategories = () => fetchSimple('mst_property_categories');
+export const fetchOwnershipTypes = () => fetchSimple('mst_ownership_types');
+export const fetchUnitUsages = () => fetchSimple('mst_unit_usages');
+export const fetchViewTypes = () => fetchSimple('mst_view_types');
+export const fetchFurnishingTypes = () => fetchSimple('mst_furnishing_types');
+export const fetchLeaseStatuses = () => fetchSimple('mst_lease_statuses');
+export const fetchRentFrequencies = () => fetchSimple('mst_rent_frequencies');
+export const fetchMaintenanceResponsibilities = () => fetchSimple('mst_maintenance_responsibilities');
+

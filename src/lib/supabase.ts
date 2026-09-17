@@ -598,6 +598,8 @@ export type Asset = {
   asset_condition?: string;
   asset_status?: string;
   life_of_asset?: number;
+  depreciation_method?: 'Straight Line (SLM)' | 'Written Down Value (WDV)' | 'None' | string;
+  depreciation_rate?: number;
   opening_cost?: number;
   last_service_date?: string;
   next_service_date?: string;
