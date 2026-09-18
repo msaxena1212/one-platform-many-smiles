@@ -53,6 +53,8 @@ import {
   Loader2,
   Trash2,
   Search,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ImportModule, ImportOperation, ImportBatch, ImportParsedRecord, ImportRowStatus } from "@/lib/excel-import/types";
@@ -88,9 +90,11 @@ export function ExcelImportEmbedded({
   const [isParsing, setIsParsing] = useState(false);
   const [currentBatch, setCurrentBatch] = useState<ImportBatch | null>(null);
   
-  // Preview filtering & search
+  // Preview filtering & search & pagination
   const [previewTab, setPreviewTab] = useState<string>("ALL");
   const [previewSearch, setPreviewSearch] = useState("");
+  const [previewPage, setPreviewPage] = useState<number>(1);
+  const [previewPageSize, setPreviewPageSize] = useState<number>(25);
   const [inspectRecord, setInspectRecord] = useState<ImportParsedRecord | null>(null);
   
   // Confirmation state
@@ -126,6 +130,7 @@ export function ExcelImportEmbedded({
     setDeleteConfirmed(false);
     setPreviewTab("ALL");
     setPreviewSearch("");
+    setPreviewPage(1);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -241,6 +246,9 @@ export function ExcelImportEmbedded({
       setCurrentStep("results");
       setHistoryBatches(getImportBatchHistory().filter(b => b.module === module));
       toast.success(`Import operation complete! ${finalBatch.summary.successRows} Succeeded, ${finalBatch.summary.failedRows} Failed.`);
+      try {
+        window.dispatchEvent(new CustomEvent("pms_data_updated"));
+      } catch {}
       if (onCompleted) {
         onCompleted();
       }
@@ -289,10 +297,20 @@ export function ExcelImportEmbedded({
         rec.recordKey.toLowerCase().includes(search) ||
         (rec.recordName && rec.recordName.toLowerCase().includes(search)) ||
         Object.values(rec.rawRowData || {}).some((val) => String(val).toLowerCase().includes(search)) ||
-        rec.errors.some((e) => e.message.toLowerCase().includes(search))
+        rec.errors.some((e) => e.message.toLowerCase().includes(search)) ||
+        rec.warnings.some((w) => w.message.toLowerCase().includes(search))
       );
     });
   }, [currentBatch, previewTab, previewSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / previewPageSize));
+  const currentPage = Math.min(previewPage, totalPages);
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * previewPageSize;
+    return filteredRecords.slice(start, start + previewPageSize);
+  }, [filteredRecords, currentPage, previewPageSize]);
+
+  const isBusy = isParsing || isConfirming || currentStep === "processing";
 
   return (
     <div className="space-y-6">
@@ -313,6 +331,7 @@ export function ExcelImportEmbedded({
             <Button
               variant={currentStep === "history" ? "secondary" : "outline"}
               size="sm"
+              disabled={isBusy}
               onClick={() => setCurrentStep(currentStep === "history" ? "upload" : "history")}
               className="text-xs gap-1.5"
             >
@@ -321,7 +340,7 @@ export function ExcelImportEmbedded({
             </Button>
           )}
           {currentStep !== "upload" && currentStep !== "history" && (
-            <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
+            <Button variant="outline" size="sm" disabled={isBusy} onClick={resetUploadState} className="text-xs">
               Start New Import
             </Button>
           )}
@@ -332,13 +351,13 @@ export function ExcelImportEmbedded({
       {currentStep !== "history" && (
         <Tabs
           value={selectedOperation}
-          onValueChange={(val) => handleOperationChange(val as ImportOperation)}
+          onValueChange={(val) => !isBusy && handleOperationChange(val as ImportOperation)}
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-3 max-w-md">
-            <TabsTrigger value="CREATE" className="text-xs font-medium">CREATE (New)</TabsTrigger>
-            <TabsTrigger value="UPDATE" className="text-xs font-medium">UPDATE (Modify)</TabsTrigger>
-            <TabsTrigger value="DELETE" className="text-xs font-medium text-destructive">DELETE (Remove)</TabsTrigger>
+            <TabsTrigger value="CREATE" disabled={isBusy} className="text-xs font-medium">CREATE (New)</TabsTrigger>
+            <TabsTrigger value="UPDATE" disabled={isBusy} className="text-xs font-medium">UPDATE (Modify)</TabsTrigger>
+            <TabsTrigger value="DELETE" disabled={isBusy} className="text-xs font-medium text-destructive">DELETE (Remove)</TabsTrigger>
           </TabsList>
         </Tabs>
       )}
@@ -463,14 +482,14 @@ export function ExcelImportEmbedded({
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={resetUploadState} className="h-8 text-xs">
+              <Button variant="outline" size="sm" disabled={isBusy} onClick={resetUploadState} className="h-8 text-xs">
                 Upload Another
               </Button>
               {currentBatch.summary.validRows > 0 && (
                 <Button
                   size="sm"
                   onClick={handleExecuteImport}
-                  disabled={isConfirming || (selectedOperation === "DELETE" && !deleteConfirmed)}
+                  disabled={isBusy || (selectedOperation === "DELETE" && !deleteConfirmed)}
                   className={`h-8 text-xs font-semibold gap-1.5 ${
                     selectedOperation === "DELETE"
                       ? "bg-rose-600 hover:bg-rose-700 text-white"
@@ -552,7 +571,7 @@ export function ExcelImportEmbedded({
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredRecords.slice(0, 50).map((record) => (
+                      paginatedRecords.map((record) => (
                         <TableRow key={record.excelRowNumber} className="hover:bg-muted/30">
                           <TableCell className="font-mono text-[11px] text-muted-foreground">{record.excelRowNumber}</TableCell>
                           <TableCell className="font-mono font-semibold text-xs text-foreground">{record.recordKey}</TableCell>
@@ -632,10 +651,59 @@ export function ExcelImportEmbedded({
                 </Table>
               </div>
 
-              {filteredRecords.length > 50 && (
-                <p className="text-xs text-muted-foreground text-center py-2 border-t">
-                  Showing first 50 of {filteredRecords.length} records.
-                </p>
+              {filteredRecords.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-2.5 border-t bg-muted/20 text-xs">
+                  <div className="text-muted-foreground text-[11px]">
+                    Showing <span className="font-semibold text-foreground">{Math.min((currentPage - 1) * previewPageSize + 1, filteredRecords.length)}</span> - <span className="font-semibold text-foreground">{Math.min(currentPage * previewPageSize, filteredRecords.length)}</span> of <span className="font-semibold text-foreground">{filteredRecords.length}</span> records
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">Rows per page:</span>
+                      <Select
+                        value={String(previewPageSize)}
+                        onValueChange={(val) => {
+                          setPreviewPageSize(Number(val));
+                          setPreviewPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-7 w-[70px] text-xs">
+                          <SelectValue placeholder={String(previewPageSize)} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage <= 1}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="text-[11px] font-mono px-2 text-muted-foreground">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setPreviewPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage >= totalPages}
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -868,12 +936,23 @@ export function ExcelImportEmbedded({
             <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
               {/* Errors/Warnings */}
               {inspectRecord.errors.length > 0 && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-md text-xs text-rose-800 space-y-1">
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-md text-xs text-rose-800 dark:text-rose-300 space-y-1">
                   <p className="font-semibold flex items-center gap-1.5">
                     <XCircle className="h-4 w-4 text-rose-600" /> Validation Errors:
                   </p>
                   {inspectRecord.errors.map((e, idx) => (
                     <p key={idx} className="ml-5 font-mono">[{e.code}] {e.message} {e.resolution && `— ${e.resolution}`}</p>
+                  ))}
+                </div>
+              )}
+
+              {inspectRecord.warnings.length > 0 && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-md text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" /> Validation Warnings & Notices:
+                  </p>
+                  {inspectRecord.warnings.map((w, idx) => (
+                    <p key={idx} className="ml-5 font-mono">[{w.code || 'WARN'}] {w.message} {w.resolution && `— ${w.resolution}`}</p>
                   ))}
                 </div>
               )}

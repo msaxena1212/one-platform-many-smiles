@@ -1,4 +1,4 @@
-import { supabase, type Unit } from '../../supabase';
+import { supabase, createUnit, updateUnit, type Unit } from '../../supabase';
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -6,7 +6,8 @@ import {
   type FieldComparison, 
   type DependencyCheckItem, 
   type ImportOperation,
-  getCellValue
+  getCellValue,
+  sanitizeDateForPostgres
 } from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
@@ -217,6 +218,9 @@ export const unitAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitizedDate = sanitizeDateForPostgres(cellValue);
+          normalized[col.key] = sanitizedDate;
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
@@ -367,20 +371,19 @@ export const unitAdapter: EntityImportAdapter = {
           rent_frequency: data.rent_frequency || 'Monthly',
           current_tenant: data.current_tenant,
           contract_no: data.contract_no,
-          contract_start_date: data.contract_start_date,
-          contract_end_date: data.contract_end_date,
+          contract_start_date: sanitizeDateForPostgres(data.contract_start_date),
+          contract_end_date: sanitizeDateForPostgres(data.contract_end_date),
           current_rent: data.current_rent,
           security_deposit_type: data.security_deposit_type,
           security_deposit_amount: data.security_deposit_amount,
           service_charge: data.service_charge,
           maintenance_responsibility: data.maintenance_responsibility || 'Property Manager',
-          handover_date: data.handover_date,
+          handover_date: sanitizeDateForPostgres(data.handover_date),
           documents_received: typeof data.documents_received === 'boolean' ? data.documents_received : String(data.documents_received).toLowerCase() === 'yes' || String(data.documents_received).toLowerCase() === 'true',
           remarks: data.remarks,
         };
 
-        const { data: created, error } = await supabase.from('units').insert(payload).select().single();
-        if (error) throw error;
+        const created = await createUnit(payload);
 
         return {
           success: true,
@@ -393,16 +396,13 @@ export const unitAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Target unit record ID not found');
 
-        const updatePayload: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-        };
+        const updatePayload: Record<string, any> = {};
 
         for (const change of record.changes) {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('units').update(updatePayload).eq('id', existing.id);
-        if (error) throw error;
+        await updateUnit(existing.id, updatePayload);
 
         return {
           success: true,
@@ -414,8 +414,7 @@ export const unitAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Target unit record ID not found');
 
-        const { error } = await supabase.from('units').update({ status: 'Archived', updated_at: new Date().toISOString() }).eq('id', existing.id);
-        if (error) throw error;
+        await updateUnit(existing.id, { status: 'Archived' });
 
         return {
           success: true,

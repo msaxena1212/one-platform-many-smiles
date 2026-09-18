@@ -206,3 +206,67 @@ export function getCellValue(row: Record<string, any>, ...possibleKeys: (string 
 
   return undefined;
 }
+
+/**
+ * Normalizes Excel dates, JavaScript dates, ISO strings, serial numbers, and custom formatted strings
+ * into a standard clean 'YYYY-MM-DD' format that PostgreSQL DATE columns accept without timezone errors.
+ */
+export function sanitizeDateForPostgres(value: any): string | null {
+  if (value === undefined || value === null) return null;
+  const str = String(value).trim();
+  if (!str || str === '[NULL]' || str.toLowerCase() === 'null' || str === '—' || str === '-') return null;
+
+  // 1. If it's already a JS Date object
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 2. Direct YYYY-MM-DD match
+  const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // 3. DD-MM-YYYY or DD/MM/YYYY match
+  const dmyMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // 4. Excel Serial Number (e.g. 45678)
+  const num = Number(str);
+  if (!isNaN(num) && num > 20000 && num < 80000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const targetDate = new Date(excelEpoch.getTime() + num * 86400000);
+    if (!isNaN(targetDate.getTime())) {
+      const y = targetDate.getUTCFullYear();
+      const m = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(targetDate.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  // 5. Attempt general Date parse, strip out timezone labels
+  try {
+    const cleaned = str.replace(/\b(gmt[+-]\d+|utc[+-]\d+|[a-z]{3,4}\b)/gi, '').trim();
+    const parsed = new Date(cleaned);
+    if (!isNaN(parsed.getTime())) {
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  } catch {}
+
+  return null;
+}

@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-n5LQ9ujS.js";import{r as t,t as n}from"./index-DWBf0WKH.js";var r=e();function i(){let{id:e}=n.useParams(),{mode:i}=n.useSearch();return(0,r.jsx)(t,{basePath:`/admin`,id:e,mode:i})}export{i as component};

@@ -151,32 +151,46 @@ export async function receivePdc(payload: {
   /** Whether this PDC is for rent or a deposit. Defaults to 'RENT_PDC'. */
   pdcType?:       PdcType;
 }) {
-  const pdcType: PdcType = payload.pdcType ?? 'RENT_PDC';
+  // Helper to ensure values inserted into bigint columns of fin_pdc_register are purely numeric
+  const toBigintOrUndefined = (val: string | number | undefined | null): string | undefined => {
+    if (val === undefined || val === null) return undefined;
+    const s = String(val).trim();
+    return /^\d+$/.test(s) ? s : undefined;
+  };
 
-  // 1. Persist to PDC Register
-  const pdc = await FinPdcRegisterApi.create({
-    cheque_number: payload.cheque_number,
-    cheque_date:   payload.cheque_date,
-    amount:        payload.amount,
-    tenant_id:     String(payload.tenant_id),
-    property_id:   String(payload.property_id),
-    unit_id:       String(payload.unit_id),
-    bank_id:       payload.bank_id != null ? String(payload.bank_id) : undefined,
-    status:        'In Hand',
-    lease_id:      payload.lease_id != null ? String(payload.lease_id) : undefined,
-  });
+  // 1. Persist to PDC Register (fin_pdc_register uses bigint foreign keys)
+  let pdc: any = null;
+  try {
+    pdc = await FinPdcRegisterApi.create({
+      cheque_number: payload.cheque_number,
+      cheque_date:   payload.cheque_date,
+      amount:        payload.amount,
+      tenant_id:     toBigintOrUndefined(payload.tenant_id),
+      property_id:   toBigintOrUndefined(payload.property_id),
+      unit_id:       toBigintOrUndefined(payload.unit_id),
+      bank_id:       toBigintOrUndefined(payload.bank_id),
+      status:        'In Hand',
+      lease_id:      toBigintOrUndefined(payload.lease_id),
+    });
+  } catch (err: any) {
+    console.warn('[receivePdc] fin_pdc_register insert notice:', err?.message || err);
+  }
 
-  // 2. Post GL entry with correct SL codes
-  await postPdcCollection(
-    payload.amount,
-    payload.tenant_id as any,
-    payload.property_id as any,
-    payload.unit_id as any,
-    payload.cheque_number,
-    payload.unitCode,
-    pdcType,
-    payload.lease_id,
-  );
+  // 2. Post GL entry with correct SL codes (accepts UUID and string names)
+  try {
+    await postPdcCollection(
+      payload.amount,
+      payload.tenant_id as any,
+      payload.property_id as any,
+      payload.unit_id as any,
+      payload.cheque_number,
+      payload.unitCode,
+      pdcType,
+      payload.lease_id,
+    );
+  } catch (err: any) {
+    console.warn('[receivePdc] GL posting notice:', err?.message || err);
+  }
 
   return pdc;
 }

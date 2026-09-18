@@ -33,15 +33,16 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
     category: 'Employee',
     isMandatoryField: false,
     initialValues: [
-      'Management',
+      'Commercial & Leasing',
       'Finance & Accounts',
-      'HR & Administration',
-      'Sales & Marketing',
-      'Operations',
-      'Procurement',
+      'Facility Operations & Maintenance',
+      'Human Resources & Talent',
+      'Legal & Compliance',
+      'Procurement & Supply Chain',
+      'Management',
       'Information Technology',
       'Customer Service',
-      'Maintenance / Technical',
+      'Operations',
       'Warehouse',
       'Other',
     ],
@@ -244,6 +245,44 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
     category: 'Asset',
     isMandatoryField: false,
     initialValues: ['Available', 'Assigned', 'Under Repair', 'Lost', 'Disposed', 'Inactive', 'In Use'],
+  },
+  {
+    key: 'asset_brand',
+    label: 'Brand / Manufacturer',
+    category: 'Asset',
+    isMandatoryField: false,
+    description: 'Master list of equipment & asset brands and manufacturers.',
+    initialValues: [
+      'Apple',
+      'Dell',
+      'HP',
+      'Lenovo',
+      'Samsung',
+      'LG Electronics',
+      'Daikin',
+      'Carrier',
+      'Mitsubishi Electric',
+      'Gree',
+      'Panasonic',
+      'Sony',
+      'Cisco',
+      'Huawei',
+      'Otis Elevator',
+      'KONE',
+      'Schindler',
+      'Schneider Electric',
+      'Siemens',
+      'Bosch',
+      'Hikvision',
+      'Dahua',
+      'Toyota',
+      'Nissan',
+      'Ford',
+      'IKEA',
+      'Steelcase',
+      'Herman Miller',
+      'Other',
+    ],
   },
 
   // ── Property & Unit Masters ──
@@ -643,6 +682,44 @@ export class DynamicMastersService {
     const customList = stored[masterKey];
     if (customList && Array.isArray(customList) && customList.length > 0) {
       return customList;
+    }
+
+    // Map HR master keys to HRMS cache categories
+    const HRMS_CATEGORY_MAP: Record<string, string> = {
+      department: 'departments',
+      departments: 'departments',
+      designation: 'designations',
+      designations: 'designations',
+      employment_type: 'employment_types',
+      employment_types: 'employment_types',
+      work_location: 'branches',
+      work_locations: 'branches',
+      country: 'countries',
+      countries: 'countries',
+      gender: 'genders',
+      employee_status: 'employee_statuses',
+    };
+
+    if (typeof window !== 'undefined') {
+      const hrmsCat = HRMS_CATEGORY_MAP[masterKey];
+      if (hrmsCat) {
+        try {
+          const hrmsRaw = localStorage.getItem(`zyno_hrms_master_cache_${hrmsCat}`);
+          if (hrmsRaw) {
+            const hrmsParsed = JSON.parse(hrmsRaw);
+            if (Array.isArray(hrmsParsed) && hrmsParsed.length > 0) {
+              return hrmsParsed.map(item => ({
+                id: String(item.id || item.code || item.name),
+                name: String(item.name || ''),
+                code: item.code,
+                extra: item.extra,
+              }));
+            }
+          }
+        } catch (e) {
+          console.warn(`Could not read HRMS cache for ${hrmsCat}:`, e);
+        }
+      }
     }
 
     // Default initialization from definition

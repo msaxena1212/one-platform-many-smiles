@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench, Pencil } from "lucide-react";
+import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench, Pencil, Building2, Sparkles, FileText, CheckCircle2 } from "lucide-react";
 import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, updatePropertyImages, type Property } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
+import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
 import { buildPropertyPayload } from "@/lib/property-master";
 import { toast } from "sonner";
@@ -174,6 +175,7 @@ export function ManagePropertyPage({
   const [ownershipOptions, setOwnershipOptions] = useState<{ id: string; label: string }[]>([]);
   const [costCenterOptions, setCostCenterOptions] = useState<{ code: string; name: string }[]>([]);
   const [images, setImages] = useState<ImageFile[]>([]);
+  const [documents, setDocuments] = useState<PropertyDocument[]>([]);
 
   // Editable form state
   const [title, setTitle] = useState("");
@@ -295,6 +297,11 @@ export function ManagePropertyPage({
     setRemarks(prop.remarks || "");
     setKahramaaNumber((prop as any).kahramaa_number || "");
     setMunicipalityDetails(JSON.stringify(prop.municipality_details || {}, null, 2));
+    if (Array.isArray(municipality.property_documents)) {
+      setDocuments(municipality.property_documents);
+    } else {
+      setDocuments([]);
+    }
   };
 
   useEffect(() => {
@@ -501,6 +508,7 @@ export function ManagePropertyPage({
         costCenterName: proposedCostCenterName,
       },
       ownerLandlord,
+      documents,
     });
     if (isMockProperty) {
       setProperty({
@@ -877,6 +885,34 @@ export function ManagePropertyPage({
                   <Input value={zipCode} onChange={e => setZipCode(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
               </div>
+              <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
+                <div className="space-y-2">
+                  <Label>Street / Building Name</Label>
+                  <Input value={streetBuildingName} onChange={e => setStreetBuildingName(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Street 840 / Tower A" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Plot / Building No.</Label>
+                  <Input value={plotBuildingNo} onChange={e => setPlotBuildingNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Bldg 23 / Plot 45" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Title Deed / Reg. No.</Label>
+                  <Input value={titleDeedNo} onChange={e => setTitleDeedNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. TD-998822" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Municipality / Bldg Ref No.</Label>
+                  <Input value={municipalityRefNo} onChange={e => setMunicipalityRefNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. MUN-44012" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Owner / Landlord</Label>
+                  <Input value={ownerLandlord} onChange={e => setOwnerLandlord(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Sheikh Hassan" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Manager</Label>
+                  <Input value={propertyManager} onChange={e => setPropertyManager(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Jithin Abdul Latheef" />
+                </div>
+              </div>
               {(city || country) && (
                 <div className="mt-2 aspect-video rounded-xl border border-border overflow-hidden">
                   <iframe
@@ -887,6 +923,163 @@ export function ManagePropertyPage({
                   />
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* 4. Specifications & Structure */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" /> Specifications &amp; Structure
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>No. of Floors</Label>
+                  <Input type="number" min="1" value={noOfFloors} onChange={e => setNoOfFloors(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 8" />
+                </div>
+                <div className="space-y-2">
+                  <Label>No. of Units</Label>
+                  <Input type="number" min="1" value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 44" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Parking Count</Label>
+                  <Input type="number" min="0" value={parkingCount} onChange={e => setParkingCount(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 12" />
+                </div>
+                <div className="space-y-2">
+                  <Label>No of Elevator</Label>
+                  <Input type="number" min="0" value={noOfElevators} onChange={e => setNoOfElevators(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 2" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
+                <div className="space-y-2">
+                  <Label>Total Built-up Area (Sqm)</Label>
+                  <Input type="number" min="0" value={totalBuiltUpAreaSqm} onChange={e => setTotalBuiltUpAreaSqm(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 4500" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Common Area (Sqm)</Label>
+                  <Input type="number" min="0" value={commonAreaSqm} onChange={e => setCommonAreaSqm(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 5. Key Dates & Compliance */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-primary" /> Key Dates &amp; Compliance Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Completion Date</Label>
+                  <Input type="date" value={completionDate} onChange={e => setCompletionDate(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Handover Date</Label>
+                  <Input type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Status</Label>
+                  <Select value={propertyStatus || "Active"} onValueChange={setPropertyStatus} disabled={isViewMode}>
+                    <SelectTrigger className={`bg-background ${isViewMode ? 'bg-muted' : ''}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Under Construction">Under Construction</SelectItem>
+                      <SelectItem value="Under Maintenance">Under Maintenance</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 items-center pt-2 border-t border-border">
+                <div className="flex items-center space-x-2 pt-2">
+                  <input
+                    type="checkbox"
+                    id="prop_docs_received"
+                    checked={documentsReceived}
+                    onChange={e => setDocumentsReceived(e.target.checked)}
+                    disabled={isViewMode}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  <Label htmlFor="prop_docs_received" className="text-xs font-semibold cursor-pointer">
+                    Documents Received?
+                  </Label>
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs font-semibold">Remarks</Label>
+                  <Input
+                    value={remarks}
+                    onChange={e => setRemarks(e.target.value)}
+                    readOnly={isViewMode}
+                    disabled={isViewMode}
+                    placeholder="e.g. Standard residential building under prime management"
+                    className={`text-xs ${isViewMode ? 'bg-muted' : ''}`}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 6. Amenities & Facilities */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" /> Amenities &amp; Facilities
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 1</Label>
+                  <Input value={amenity1} onChange={e => setAmenity1(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Swimming Pool" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 2</Label>
+                  <Input value={amenity2} onChange={e => setAmenity2(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 24/7 Security" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 3</Label>
+                  <Input value={amenity3} onChange={e => setAmenity3(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Gym & Fitness" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 4</Label>
+                  <Input value={amenity4} onChange={e => setAmenity4(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Covered Parking" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 5</Label>
+                  <Input value={amenity5} onChange={e => setAmenity5(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. High-speed Elevators" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Other Amenities / Facilities</Label>
+                  <Input value={otherAmenitiesFacilities} onChange={e => setOtherAmenitiesFacilities(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Sauna, BBQ area" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 7. Property Documents */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" /> Property Documents &amp; Compliance Files
+              </CardTitle>
+              <CardDescription>
+                Upload, view, and manage property title deeds, permits, blueprints, and municipality certificates.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PropertyDocumentsManager
+                documents={documents}
+                onChange={setDocuments}
+                disabled={isViewMode}
+              />
             </CardContent>
           </Card>
         </div>

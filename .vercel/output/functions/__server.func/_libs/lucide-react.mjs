@@ -2676,6 +2676,22 @@ var Star = createLucideIcon("star", [["path", {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
+var Tag = createLucideIcon("tag", [["path", {
+	d: "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z",
+	key: "vktsd0"
+}], ["circle", {
+	cx: "7.5",
+	cy: "7.5",
+	r: ".5",
+	fill: "currentColor",
+	key: "kqv944"
+}]]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
 var Ticket = createLucideIcon("ticket", [
 	["path", {
 		d: "M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z",
@@ -3069,4 +3085,4 @@ var Zap = createLucideIcon("zap", [["path", {
 	key: "1xq2db"
 }]]);
 //#endregion
-export { Network as $, CircleCheckBig as $t, ShieldCheck as A, ArrowDownLeft as An, FilePenLine as At, RefreshCw as B, Database as Bt, Snowflake as C, Award as Cn, Globe as Ct, ShoppingBag as D, ArrowRightLeft as Dn, FileUp as Dt, ShoppingCart as E, ArrowRight as En, File as Et, Search as F, Ellipsis as Ft, Phone as G, ClipboardList as Gt, QrCode as H, Copy as Ht, Scale as I, Droplets as It, PenLine as J, CircleX as Jt, Percent as K, ClipboardCheck as Kt, Save as L, Download as Lt, Settings as M, FileCheckCorner as Mt, Server as N, Eye as Nt, Ship as O, ArrowLeft as On, FileText as Ot, Send as P, EyeOff as Pt, PackageCheck as Q, CircleCheck as Qt, RotateCcw as R, DoorOpen as Rt, Sparkles as S, BadgeCheck as Sn, Grid2x2 as St, SlidersHorizontal as T, ArrowUpDown as Tn, Funnel as Tt, Printer as U, CloudUpload as Ut, Receipt as V, CreditCard as Vt, Plus as W, Clock as Wt, Package as X, CirclePlus as Xt, Paperclip as Y, CircleQuestionMark as Yt, PackageOpen as Z, CircleMinus as Zt, TrendingDown as _, BookOpen as _n, House as _t, WifiOff as a, ChevronDown as an, LogOut as at, Star as b, Bath as bn, Hash as bt, User as c, ChartPie as cn, Link2 as ct, UserPlus as d, Calendar as dn, Languages as dt, CircleAlert as en, MousePointerClick as et, UserCheck as f, CalendarClock as fn, Landmark as ft, TrendingUp as g, Box as gn, Inbox as gt, TriangleAlert as h, Building2 as hn, Info as ht, Wifi as i, ChevronLeft as in, Mail as it, ShieldAlert as j, Activity as jn, FileCheck as jt, Shield as k, ArrowLeftRight as kn, FileSpreadsheet as kt, UserX as l, ChartNoAxesColumnIncreasing as ln, LayoutDashboard as lt, Truck as m, Building as mn, KeyRound as mt, X as n, ChevronUp as nn, Megaphone as nt, Wallet as o, Check as on, Lock as ot, Upload as p, CalendarCheck2 as pn, Key as pt, Pencil as q, Circle as qt, Wrench as r, ChevronRight as rn, MapPin as rt, Users as s, CheckCheck as sn, LoaderCircle as st, Zap as t, ChevronsUpDown as tn, MessageSquare as tt, UserRound as u, ChartColumn as un, Layers as ut, Trash2 as v, Bell as vn, History as vt, SlidersVertical as w, ArrowUpRight as wn, GitBranch as wt, SquarePen as x, Banknote as xn, HardDrive as xt, Ticket as y, BedDouble as yn, HeartHandshake as yt, Repeat as z, DollarSign as zt };
+export { PackageCheck as $, CircleCheck as $t, Shield as A, ArrowLeftRight as An, FileSpreadsheet as At, Repeat as B, DollarSign as Bt, Sparkles as C, BadgeCheck as Cn, Grid2x2 as Ct, ShoppingCart as D, ArrowRight as Dn, File as Dt, SlidersHorizontal as E, ArrowUpDown as En, Funnel as Et, Send as F, EyeOff as Ft, Plus as G, Clock as Gt, Receipt as H, CreditCard as Ht, Search as I, Ellipsis as It, Pencil as J, Circle as Jt, Phone as K, ClipboardList as Kt, Scale as L, Droplets as Lt, ShieldAlert as M, Activity as Mn, FileCheck as Mt, Settings as N, FileCheckCorner as Nt, ShoppingBag as O, ArrowRightLeft as On, FileUp as Ot, Server as P, Eye as Pt, PackageOpen as Q, CircleMinus as Qt, Save as R, Download as Rt, SquarePen as S, Banknote as Sn, HardDrive as St, SlidersVertical as T, ArrowUpRight as Tn, GitBranch as Tt, QrCode as U, Copy as Ut, RefreshCw as V, Database as Vt, Printer as W, CloudUpload as Wt, Paperclip as X, CircleQuestionMark as Xt, PenLine as Y, CircleX as Yt, Package as Z, CirclePlus as Zt, TrendingDown as _, Box as _n, Inbox as _t, WifiOff as a, ChevronLeft as an, Mail as at, Tag as b, BedDouble as bn, HeartHandshake as bt, User as c, CheckCheck as cn, LoaderCircle as ct, UserPlus as d, ChartColumn as dn, Layers as dt, CircleCheckBig as en, Network as et, UserCheck as f, Calendar as fn, Languages as ft, TrendingUp as g, Building2 as gn, Info as gt, TriangleAlert as h, Building as hn, KeyRound as ht, Wifi as i, ChevronRight as in, MapPin as it, ShieldCheck as j, ArrowDownLeft as jn, FilePenLine as jt, Ship as k, ArrowLeft as kn, FileText as kt, UserX as l, ChartPie as ln, Link2 as lt, Truck as m, CalendarCheck2 as mn, Key as mt, X as n, ChevronsUpDown as nn, MessageSquare as nt, Wallet as o, ChevronDown as on, LogOut as ot, Upload as p, CalendarClock as pn, Landmark as pt, Percent as q, ClipboardCheck as qt, Wrench as r, ChevronUp as rn, Megaphone as rt, Users as s, Check as sn, Lock as st, Zap as t, CircleAlert as tn, MousePointerClick as tt, UserRound as u, ChartNoAxesColumnIncreasing as un, LayoutDashboard as ut, Trash2 as v, BookOpen as vn, House as vt, Snowflake as w, Award as wn, Globe as wt, Star as x, Bath as xn, Hash as xt, Ticket as y, Bell as yn, History as yt, RotateCcw as z, DoorOpen as zt };

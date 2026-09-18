@@ -285,12 +285,79 @@ export const HrmsApi = {
     return data || [];
   },
 
+  sanitizeEmployeePayload(payload: Record<string, any>) {
+    const EMPLOYEES_WRITE_KEYS = new Set([
+      'employee_id_code',
+      'user_id',
+      'first_name',
+      'last_name',
+      'gender',
+      'nationality',
+      'date_of_birth',
+      'mobile_number',
+      'email',
+      'department_id',
+      'designation_id',
+      'reporting_manager_id',
+      'date_of_joining',
+      'employment_type',
+      'qid_passport_no',
+      'id_expiry_date',
+      'basic_salary',
+      'hra',
+      'tra',
+      'other_allowances',
+      'bank_name',
+      'iban',
+      'air_ticket',
+      'employee_status',
+      'emergency_contact_name',
+      'emergency_contact_relation',
+      'emergency_contact_number',
+      'remarks',
+      'company_id',
+      'branch_id',
+      'business_unit_id',
+      'sub_department_id',
+      'grade_id',
+      'official_email',
+      'marital_status',
+      'contract_type',
+      'probation_status',
+      'probation_end_date',
+      'confirmation_date',
+      'notice_period_days',
+      'date_of_exit',
+      'exit_reason',
+      'rehire_eligible',
+      'device_user_id',
+      'bank_account_holder',
+      'bank_account_type',
+      'swift_code',
+      'emergency_contacts',
+      'qualifications',
+      'previous_experience'
+    ]);
+
+    const sanitized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === undefined) continue;
+      if (key === 'id' || key === 'created_at' || key === 'updated_at' || key === 'total_salary') continue;
+      if (EMPLOYEES_WRITE_KEYS.has(key)) {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  },
+
   async createEmployee(employeeData: any) {
-    return await supabase.from('employees').insert(employeeData).select().single();
+    const sanitized = this.sanitizeEmployeePayload(employeeData);
+    return await supabase.from('employees').insert(sanitized).select().single();
   },
 
   async updateEmployee(id: string, employeeData: any) {
-    return await supabase.from('employees').update(employeeData).eq('id', id).select().single();
+    const sanitized = this.sanitizeEmployeePayload(employeeData);
+    return await supabase.from('employees').update({ ...sanitized, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   },
 
   // Workforce & Shifts
@@ -991,3 +1058,6 @@ export const HrmsApi = {
     return await supabase.from('hrms_helpdesk_tickets').insert(ticket).select().single();
   }
 };
+
+export const hrmsService = HrmsApi;
+export default HrmsApi;

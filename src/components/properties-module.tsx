@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
-import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2 } from "lucide-react";
+import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2, Search, X, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import {
   type Property,
 } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
+import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 interface PropertiesModuleProps {
@@ -125,6 +126,7 @@ const STEPS = [
   { id: 2, name: "Specifications & Structure" },
   { id: 3, name: "Amenities & Facilities" },
   { id: 4, name: "Photos" },
+  { id: 5, name: "Documents" },
 ];
 
 export function PropertiesModule({ role }: PropertiesModuleProps) {
@@ -141,10 +143,11 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
   const [otherAmenities, setOtherAmenities] = useState<string>("");
   const [customPropertyType, setCustomPropertyType] = useState("");
   const [images, setImages] = useState<ImageFile[]>([]);
+  const [propertyDocuments, setPropertyDocuments] = useState<PropertyDocument[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 20;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  useEffect(() => { setCurrentPage(1); }, [properties]);
+  useEffect(() => { setCurrentPage(1); }, [properties, itemsPerPage]);
 
   // Master Data State
   const [propCategoryOptions, setPropCategoryOptions] = useState<{ id: string; label: string }[]>([]);
@@ -318,6 +321,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           remarks: form.remarks || undefined,
           amenityFields: cleanAmenities,
           otherAmenitiesFacilities: otherAmenities.trim() || undefined,
+          documents: propertyDocuments,
         }) as Omit<Property, "id" | "created_at" | "property_images">,
       );
 
@@ -350,6 +354,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
       setOtherAmenities("");
       setCustomPropertyType("");
       setImages([]);
+      setPropertyDocuments([]);
       setStep(1);
       await loadProperties();
     } catch (error: any) {
@@ -372,10 +377,45 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
     return "h-1 w-16 mx-2 rounded " + (step > idx + 1 ? "bg-primary/20" : "bg-muted");
   };
 
-  const totalPages = Math.ceil(properties.length / ITEMS_PER_PAGE);
-  const paginatedProperties = properties.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterOwnership, setFilterOwnership] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+
+  const filteredProperties = properties.filter((prop) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      const matchesCode = (prop.property_code || "").toLowerCase().includes(q);
+      const matchesName = (prop.title || "").toLowerCase().includes(q);
+      if (!matchesCode && !matchesName) return false;
+    }
+    if (filterType && (prop.property_type || "").toLowerCase() !== filterType.toLowerCase()) return false;
+    if (filterCategory && (prop.property_category || "").toLowerCase() !== filterCategory.toLowerCase()) return false;
+    if (filterOwnership && (prop.ownership_type || "").toLowerCase() !== filterOwnership.toLowerCase()) return false;
+    if (filterStatus) {
+      if (filterStatus === "active" && !prop.is_active) return false;
+      if (filterStatus === "inactive" && prop.is_active) return false;
+    }
+    return true;
+  });
+
+  const hasActiveFilters = searchQuery || filterType || filterCategory || filterOwnership || filterStatus;
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setFilterType("");
+    setFilterCategory("");
+    setFilterOwnership("");
+    setFilterStatus("");
+    setCurrentPage(1);
+  };
+
+  const totalPages = Math.ceil(filteredProperties.length / itemsPerPage);
+  const paginatedProperties = filteredProperties.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   const [bulkPropOpen, setBulkPropOpen] = useState(false);
@@ -497,6 +537,80 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       <Card className="border-border">
         <CardContent className="p-0">
+          {/* Search & Filter Bar */}
+          {!loading && properties.length > 0 && (
+            <div className="p-4 border-b border-border space-y-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    placeholder="Search by Property Code or Property Name..."
+                    className="w-full pl-9 pr-4 h-9 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {/* Filter: Property Type */}
+                <select
+                  value={filterType}
+                  onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[140px]"
+                >
+                  <option value="">All Types</option>
+                  {propTypeOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                {/* Filter: Property Category */}
+                <select
+                  value={filterCategory}
+                  onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[150px]"
+                >
+                  <option value="">All Categories</option>
+                  {propCategoryOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                {/* Filter: Ownership */}
+                <select
+                  value={filterOwnership}
+                  onChange={(e) => { setFilterOwnership(e.target.value); setCurrentPage(1); }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[150px]"
+                >
+                  <option value="">All Ownership</option>
+                  {ownershipOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                {/* Filter: Status */}
+                <select
+                  value={filterStatus}
+                  onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[120px]"
+                >
+                  <option value="">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={resetFilters} className="h-9 gap-1.5 text-muted-foreground hover:text-foreground shrink-0">
+                    <X className="h-3.5 w-3.5" /> Reset
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <SlidersHorizontal className="h-3 w-3" />
+                <span>
+                  {hasActiveFilters
+                    ? <>{filteredProperties.length} result{filteredProperties.length !== 1 ? 's' : ''} of {properties.length} properties</>
+                    : <>{properties.length} propert{properties.length !== 1 ? 'ies' : 'y'} total</>}
+                </span>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex h-40 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -517,6 +631,12 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   + Create your first listing
                 </Button>
               )}
+            </div>
+          ) : filteredProperties.length === 0 && hasActiveFilters ? (
+            <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Search className="h-10 w-10 opacity-30" />
+              <p className="text-sm font-medium">No properties match your search or filters.</p>
+              <Button size="sm" variant="outline" onClick={resetFilters}>Clear filters</Button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -552,14 +672,23 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                     const propertyOccupancy = occupancyData[prop.id]?.occupancy ?? "-";
                     return (
                       <tr key={prop.id} className="transition-colors hover:bg-muted/10">
-                        <td className="px-6 py-4 font-semibold text-foreground">
-                          {prop.title}
+                        <td className="px-6 py-4">
+                          <div className="font-semibold text-foreground">{prop.title}</div>
+                          {prop.property_code && (
+                            <div className="text-[11px] font-mono text-muted-foreground mt-0.5">{prop.property_code}</div>
+                          )}
                         </td>
                         <td className="px-6 py-4 capitalize text-muted-foreground">
-                          {prop.property_type.replace(/_/g, " ")}
+                          <div>{prop.property_type.replace(/_/g, " ")}</div>
+                          {prop.property_category && (
+                            <div className="text-[11px] text-muted-foreground/70">{prop.property_category}</div>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-muted-foreground">
-                          {prop.city}, {prop.country}
+                          <div>{prop.city}, {prop.country}</div>
+                          {prop.area_zone && (
+                            <div className="text-[11px] text-muted-foreground/70">{prop.area_zone}</div>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-muted-foreground">
                           {propertyUnits}
@@ -594,9 +723,40 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   })}
                 </tbody>
               </table>
-              {totalPages > 1 && (
-                <div className="p-4 border-t border-border">
-                  <Pagination>
+              <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span>
+                    Showing{" "}
+                    <strong>
+                      {filteredProperties.length === 0
+                        ? 0
+                        : (currentPage - 1) * itemsPerPage + 1}
+                      -
+                      {Math.min(currentPage * itemsPerPage, filteredProperties.length)}
+                    </strong>{" "}
+                    of <strong>{filteredProperties.length}</strong> properties
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Rows per page:</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-7 rounded border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
+
+                {totalPages > 1 && (
+                  <Pagination className="mx-0 w-auto">
                     <PaginationContent>
                       <PaginationItem>
                         <PaginationPrevious 
@@ -605,17 +765,37 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                           className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
                         />
                       </PaginationItem>
-                      {[...Array(totalPages)].map((_, i) => (
-                        <PaginationItem key={i}>
-                          <PaginationLink 
-                            href="#" 
-                            onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1) }} 
-                            isActive={currentPage === i + 1}
-                          >
-                            {i + 1}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ))}
+                      {[...Array(totalPages)].map((_, i) => {
+                        // Show first, last, and near current pages
+                        if (
+                          totalPages <= 7 ||
+                          i === 0 ||
+                          i === totalPages - 1 ||
+                          (i >= currentPage - 2 && i <= currentPage)
+                        ) {
+                          return (
+                            <PaginationItem key={i}>
+                              <PaginationLink 
+                                href="#" 
+                                onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1) }} 
+                                isActive={currentPage === i + 1}
+                              >
+                                {i + 1}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        } else if (
+                          i === currentPage - 3 ||
+                          i === currentPage + 1
+                        ) {
+                          return (
+                            <PaginationItem key={i}>
+                              <span className="px-2 text-xs text-muted-foreground">...</span>
+                            </PaginationItem>
+                          );
+                        }
+                        return null;
+                      })}
                       <PaginationItem>
                         <PaginationNext 
                           href="#" 
@@ -625,15 +805,15 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                       </PaginationItem>
                     </PaginationContent>
                   </Pagination>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
           {/* Header with gradient and icon */}
           <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
@@ -1031,28 +1211,14 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 items-center pt-1">
-                    <div className="flex items-center space-x-2 pt-4">
-                      <input
-                        type="checkbox"
-                        id="docs_received"
-                        checked={form.documents_received}
-                        onChange={(e) => setForm((prev) => ({ ...prev, documents_received: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                      />
-                      <Label htmlFor="docs_received" className="text-xs font-semibold cursor-pointer">
-                        Documents Received?
-                      </Label>
-                    </div>
-                    <div className="space-y-1.5 col-span-2">
-                      <Label className="text-xs font-semibold">Remarks</Label>
-                      <Input
-                        value={form.remarks}
-                        onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
-                        placeholder="e.g. Standard residential building under prime management"
-                        className="bg-background text-xs"
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Remarks</Label>
+                    <Input
+                      value={form.remarks}
+                      onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
+                      placeholder="e.g. Standard residential building under prime management"
+                      className="bg-background text-xs"
+                    />
                   </div>
                 </div>
               </div>
@@ -1157,6 +1323,41 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                 />
               </div>
             )}
+
+            {/* Step 5: Documents */}
+            {step === 5 && (
+              <div className="space-y-4">
+                {/* Documents Received? Banner */}
+                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${
+                  form.documents_received
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-amber-500/10 border-amber-500/30"
+                }`}>
+                  <div className="space-y-0.5">
+                    <p className={`text-xs font-bold ${
+                      form.documents_received ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"
+                    }`}>
+                      {form.documents_received ? "✓ Original Documents Received & Verified" : "Documents Received?"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Confirm that all physical originals have been received, stamped, and filed.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    id="docs_received_step5"
+                    checked={form.documents_received}
+                    onChange={(e) => setForm((prev) => ({ ...prev, documents_received: e.target.checked }))}
+                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer shrink-0"
+                  />
+                </div>
+
+                <PropertyDocumentsManager
+                  documents={propertyDocuments}
+                  onChange={setPropertyDocuments}
+                />
+              </div>
+            )}
           </div>
 
           {/* Dialog Footer */}
@@ -1177,20 +1378,15 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                       !form.title.trim() ||
                       !form.property_code.trim() ||
                       !form.property_type.trim() ||
-                      !form.property_category.trim() ||
-                      !form.ownership_type.trim() ||
                       !form.country.trim() ||
                       !form.city.trim() ||
                       !form.area_zone.trim() ||
                       !form.street_building_name.trim() ||
-                      !form.owner_landlord.trim() ||
                       !form.property_manager.trim()
                     )) ||
                     (step === 2 && (
                       !form.no_of_floors.trim() ||
-                      !form.no_of_units.trim() ||
-                      !form.parking_count.trim() ||
-                      !form.no_of_elevators.trim()
+                      !form.no_of_units.trim()
                     )) ||
                     (step === 3 && !amenitiesList.some((a) => a.trim().length > 0))
                   }
@@ -1206,18 +1402,13 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                     !form.title.trim() ||
                     !form.property_code.trim() ||
                     !form.property_type.trim() ||
-                    !form.property_category.trim() ||
-                    !form.ownership_type.trim() ||
                     !form.country.trim() ||
                     !form.city.trim() ||
                     !form.area_zone.trim() ||
                     !form.street_building_name.trim() ||
-                    !form.owner_landlord.trim() ||
                     !form.property_manager.trim() ||
                     !form.no_of_floors.trim() ||
                     !form.no_of_units.trim() ||
-                    !form.parking_count.trim() ||
-                    !form.no_of_elevators.trim() ||
                     !amenitiesList.some((a) => a.trim().length > 0)
                   }
                   className="shadow-sm"

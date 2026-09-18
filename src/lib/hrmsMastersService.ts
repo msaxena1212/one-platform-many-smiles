@@ -45,6 +45,8 @@ export type MasterCategoryKey =
   | "appraisal_intervals"
   | "kt_masters"
   | "notice_periods"
+  | "genders"
+  | "employee_statuses"
   | "business_units";
 
 export const MASTER_CATEGORIES_CONFIG: {
@@ -169,6 +171,32 @@ export const MASTER_CATEGORIES_CONFIG: {
       { name: "Fixed-Term Contract", code: "CONT", description: "Time-bound contract" },
       { name: "Consultant / Advisor", code: "CONS", description: "Professional advisor" },
       { name: "Part-Time / Intern", code: "PART", description: "Flexible / internship" },
+    ],
+  },
+  {
+    key: "genders",
+    label: "Gender Master",
+    group: "HR & Workforce",
+    codePrefix: "GND",
+    defaultItems: [
+      { name: "Male", code: "M", description: "Male" },
+      { name: "Female", code: "F", description: "Female" },
+      { name: "Other", code: "O", description: "Other" },
+    ],
+  },
+  {
+    key: "employee_statuses",
+    label: "Employee Status Master",
+    group: "HR & Workforce",
+    codePrefix: "EST",
+    defaultItems: [
+      { name: "Active", code: "ACT", description: "Active employee in service" },
+      { name: "Probation", code: "PROB", description: "Under probationary assessment" },
+      { name: "On Notice", code: "NOT", description: "Serving notice period" },
+      { name: "On Leave", code: "LVE", description: "Extended approved leave" },
+      { name: "Suspended", code: "SUSP", description: "Temporarily suspended" },
+      { name: "Resigned", code: "RES", description: "Resigned from service" },
+      { name: "Terminated", code: "TERM", description: "Service terminated" },
     ],
   },
   {
@@ -593,6 +621,8 @@ export const HrmsMastersApi = {
       states,
       cities,
       banks,
+      genders,
+      employeeStatuses,
     ] = await Promise.all([
       this.getMasterItems("companies"),
       this.getMasterItems("branches"),
@@ -608,6 +638,8 @@ export const HrmsMastersApi = {
       this.getMasterItems("states"),
       this.getMasterItems("cities"),
       this.getMasterItems("banks"),
+      this.getMasterItems("genders"),
+      this.getMasterItems("employee_statuses"),
     ]);
 
     return {
@@ -625,6 +657,36 @@ export const HrmsMastersApi = {
       states,
       cities,
       banks,
+      genders,
+      employeeStatuses,
     };
+  },
+
+  // Generate Next Employee ID based on organization master logic or sequential counter
+  async generateNextEmployeeId(prefix: string = "EMP"): Promise<string> {
+    try {
+      const { data } = await supabase
+        .from('employees')
+        .select('employee_id_code');
+      
+      let maxNum = 0;
+      if (data && data.length > 0) {
+        for (const row of data) {
+          const code = String(row.employee_id_code || '').trim();
+          const match = code.match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        }
+      }
+      const nextNum = maxNum + 1;
+      const formatted = String(nextNum).padStart(nextNum > 999 ? 4 : 3, '0');
+      return `${prefix}-${formatted}`;
+    } catch {
+      return `${prefix}-${String(Math.floor(100 + Math.random() * 900))}`;
+    }
   },
 };

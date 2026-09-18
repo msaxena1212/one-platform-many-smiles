@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-n5LQ9ujS.js";import{PropertiesModule as t}from"./properties-module-Djcv5fV6.js";var n=e();function r(){return(0,n.jsx)(t,{role:`owner`})}export{r as component};

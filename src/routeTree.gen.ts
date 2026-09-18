@@ -95,6 +95,7 @@ import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
 import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
+import { Route as AdminLeasesIndexRouteImport } from './routes/admin.leases.index'
 import { Route as PropMgrUnitsPricingRouteImport } from './routes/prop-mgr.units.pricing'
 import { Route as PropMgrManageIdRouteImport } from './routes/prop-mgr.manage.$id'
 import { Route as PortalCommunityReviewsRouteImport } from './routes/portal.community.reviews'
@@ -102,6 +103,7 @@ import { Route as PortalCommunityEventsRouteImport } from './routes/portal.commu
 import { Route as OwnerManageIdRouteImport } from './routes/owner.manage.$id'
 import { Route as AdminManageIdRouteImport } from './routes/admin.manage.$id'
 import { Route as AdminLeasesNewRouteImport } from './routes/admin.leases.new'
+import { Route as AdminLeasesAllRouteImport } from './routes/admin.leases.all'
 
 const SuperAdminRoute = SuperAdminRouteImport.update({
   id: '/super-admin',
@@ -533,6 +535,11 @@ const AdminAssetsRoute = AdminAssetsRouteImport.update({
   path: '/assets',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminLeasesIndexRoute = AdminLeasesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminLeasesRoute,
+} as any)
 const PropMgrUnitsPricingRoute = PropMgrUnitsPricingRouteImport.update({
   id: '/pricing',
   path: '/pricing',
@@ -566,6 +573,11 @@ const AdminManageIdRoute = AdminManageIdRouteImport.update({
 const AdminLeasesNewRoute = AdminLeasesNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => AdminLeasesRoute,
+} as any)
+const AdminLeasesAllRoute = AdminLeasesAllRouteImport.update({
+  id: '/all',
+  path: '/all',
   getParentRoute: () => AdminLeasesRoute,
 } as any)
 
@@ -656,6 +668,7 @@ export interface FileRoutesByFullPath {
   '/portal/': typeof PortalIndexRoute
   '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
+  '/admin/leases/all': typeof AdminLeasesAllRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
@@ -663,6 +676,7 @@ export interface FileRoutesByFullPath {
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
+  '/admin/leases/': typeof AdminLeasesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -677,7 +691,6 @@ export interface FileRoutesByTo {
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
   '/admin/imports': typeof AdminImportsRoute
-  '/admin/leases': typeof AdminLeasesRouteWithChildren
   '/admin/maintenance': typeof AdminMaintenanceRoute
   '/admin/masters': typeof AdminMastersRoute
   '/admin/notifications': typeof AdminNotificationsRoute
@@ -743,6 +756,7 @@ export interface FileRoutesByTo {
   '/portal': typeof PortalIndexRoute
   '/prop-mgr': typeof PropMgrIndexRoute
   '/super-admin': typeof SuperAdminIndexRoute
+  '/admin/leases/all': typeof AdminLeasesAllRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
@@ -750,6 +764,7 @@ export interface FileRoutesByTo {
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
+  '/admin/leases': typeof AdminLeasesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -839,6 +854,7 @@ export interface FileRoutesById {
   '/portal/': typeof PortalIndexRoute
   '/prop-mgr/': typeof PropMgrIndexRoute
   '/super-admin/': typeof SuperAdminIndexRoute
+  '/admin/leases/all': typeof AdminLeasesAllRoute
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
@@ -846,6 +862,7 @@ export interface FileRoutesById {
   '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
+  '/admin/leases/': typeof AdminLeasesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -936,6 +953,7 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/prop-mgr/'
     | '/super-admin/'
+    | '/admin/leases/all'
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
@@ -943,6 +961,7 @@ export interface FileRouteTypes {
     | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
+    | '/admin/leases/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -957,7 +976,6 @@ export interface FileRouteTypes {
     | '/admin/finance'
     | '/admin/hrms'
     | '/admin/imports'
-    | '/admin/leases'
     | '/admin/maintenance'
     | '/admin/masters'
     | '/admin/notifications'
@@ -1023,6 +1041,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/prop-mgr'
     | '/super-admin'
+    | '/admin/leases/all'
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
@@ -1030,6 +1049,7 @@ export interface FileRouteTypes {
     | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
+    | '/admin/leases'
   id:
     | '__root__'
     | '/'
@@ -1118,6 +1138,7 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/prop-mgr/'
     | '/super-admin/'
+    | '/admin/leases/all'
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
@@ -1125,6 +1146,7 @@ export interface FileRouteTypes {
     | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
+    | '/admin/leases/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1749,6 +1771,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAssetsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/leases/': {
+      id: '/admin/leases/'
+      path: '/'
+      fullPath: '/admin/leases/'
+      preLoaderRoute: typeof AdminLeasesIndexRouteImport
+      parentRoute: typeof AdminLeasesRoute
+    }
     '/prop-mgr/units/pricing': {
       id: '/prop-mgr/units/pricing'
       path: '/pricing'
@@ -1798,15 +1827,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLeasesNewRouteImport
       parentRoute: typeof AdminLeasesRoute
     }
+    '/admin/leases/all': {
+      id: '/admin/leases/all'
+      path: '/all'
+      fullPath: '/admin/leases/all'
+      preLoaderRoute: typeof AdminLeasesAllRouteImport
+      parentRoute: typeof AdminLeasesRoute
+    }
   }
 }
 
 interface AdminLeasesRouteChildren {
+  AdminLeasesAllRoute: typeof AdminLeasesAllRoute
   AdminLeasesNewRoute: typeof AdminLeasesNewRoute
+  AdminLeasesIndexRoute: typeof AdminLeasesIndexRoute
 }
 
 const AdminLeasesRouteChildren: AdminLeasesRouteChildren = {
+  AdminLeasesAllRoute: AdminLeasesAllRoute,
   AdminLeasesNewRoute: AdminLeasesNewRoute,
+  AdminLeasesIndexRoute: AdminLeasesIndexRoute,
 }
 
 const AdminLeasesRouteWithChildren = AdminLeasesRoute._addFileChildren(

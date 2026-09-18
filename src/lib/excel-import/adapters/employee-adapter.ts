@@ -1,4 +1,5 @@
 import { supabase } from '../../supabase';
+import { HrmsApi } from '../../hrmsService';
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -6,8 +7,10 @@ import {
   type FieldComparison, 
   type DependencyCheckItem, 
   type ImportOperation,
-  getCellValue
+  getCellValue,
+  sanitizeDateForPostgres
 } from '../types';
+import { HrmsMastersApi } from '../../hrmsMastersService';
 
 export const EMPLOYEE_COLUMNS: ColumnDefinition[] = [
   { key: 'employee_id_code', label: 'Employee ID', type: 'string', required: false, sampleValue: 'EMP-001', description: 'Unique employee identification' },
@@ -95,26 +98,27 @@ export const employeeAdapter: EntityImportAdapter = {
     const dependencies: DependencyCheckItem[] = [];
     const normalized: Record<string, any> = {};
 
-    const empCode = employeeAdapter.resolveRecordKey(row);
+    const rawEmpCode = employeeAdapter.resolveRecordKey(row);
+    const empCode = rawEmpCode || (operation === 'CREATE' ? `EMP-AUTO-${context.rowNumber}` : '');
 
-    if (!empCode) {
+    if (!empCode && operation !== 'CREATE') {
       errors.push({
         row: context.rowNumber,
-        field: 'Employee ID / Code',
+        field: 'Employee ID',
         code: 'VAL_001',
-        message: 'Employee ID / Code is required.',
+        message: 'Employee ID is required for UPDATE / DELETE operations.',
         severity: 'ERROR',
       });
     }
 
-    if (empCode) {
-      const upperKey = empCode.toUpperCase();
+    if (rawEmpCode) {
+      const upperKey = rawEmpCode.toUpperCase();
       if (context.inBatchKeys.has(upperKey)) {
         errors.push({
           row: context.rowNumber,
-          field: 'Employee ID / Code',
+          field: 'Employee ID',
           code: 'DUP_001',
-          message: `Duplicate Employee ID "${empCode}" in Excel file.`,
+          message: `Duplicate Employee ID "${rawEmpCode}" in Excel file.`,
           severity: 'ERROR',
         });
       }
@@ -123,23 +127,23 @@ export const employeeAdapter: EntityImportAdapter = {
     const existingRecord = context.existingRecord;
 
     if (operation === 'CREATE') {
-      if (existingRecord) {
+      if (rawEmpCode && existingRecord) {
         errors.push({
           row: context.rowNumber,
-          field: 'Employee ID / Code',
+          field: 'Employee ID',
           code: 'DUP_002',
-          message: `Employee "${empCode}" already exists in database.`,
+          message: `Employee ID "${rawEmpCode}" already exists in database.`,
           severity: 'ERROR',
-          resolution: 'Use a unique Employee ID or use UPDATE operation.',
+          resolution: 'Leave Employee ID empty to auto-generate or use UPDATE operation.',
         });
       }
     } else {
       if (!existingRecord) {
         errors.push({
           row: context.rowNumber,
-          field: 'Employee ID / Code',
+          field: 'Employee ID',
           code: operation === 'UPDATE' ? 'UPD_001' : 'DEL_001',
-          message: `Employee "${empCode}" was not found in database.`,
+          message: `Employee "${rawEmpCode}" was not found in database.`,
           severity: 'ERROR',
         });
       }
@@ -166,6 +170,9 @@ export const employeeAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitizedDate = sanitizeDateForPostgres(cellValue);
+          normalized[col.key] = sanitizedDate;
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
@@ -320,51 +327,63 @@ export const employeeAdapter: EntityImportAdapter = {
       }
 
       if (operation === 'CREATE') {
-        const payload: Record<string, any> = {
-          employee_id_code: data.employee_id_code || empCode,
-          employee_name: data.employee_name,
-          first_name: firstName,
-          last_name: lastName,
-          gender: data.gender,
-          nationality: data.nationality,
-          date_of_birth: data.date_of_birth,
-          mobile_number: data.mobile_number,
-          email: data.email,
-          department: data.department,
-          department_id: data.department_id,
-          designation: data.designation,
-          designation_id: data.designation_id,
-          reporting_manager: data.reporting_manager,
-          date_of_joining: data.date_of_joining,
-          employment_type: data.employment_type || 'Full-Time',
+        let finalEmpCode = data.employee_id_code || record.rawRowData['Employee ID'] || record.rawRowData['Employee ID / Code'];
+        if (!finalEmpCode || String(finalEmpCode).trim() === '' || String(finalEmpCode).startsWith('EMP-AUTO-')) {
+          finalEmpCode = await HrmsMastersApi.generateNextEmployeeId('EMP');
+        }
+
+        const notesObj = {
+          benefit_telephone: data.benefit_telephone,
+          benefit_accommodation: data.benefit_accommodation,
+          benefit_vehicle: data.benefit_vehicle,
+          air_ticket: data.air_ticket,
+          air_ticket_fare_cap: data.air_ticket_fare_cap,
+          emergency_contact_name: data.emergency_contact_name,
+          relation_with_employee: data.relation_with_employee,
+          emergency_contact_no: data.emergency_contact_no,
+          other_allowances: data.other_allowances || 0,
+          total_salary: data.total_salary,
           qid_passport_no: data.qid_passport_no,
           id_expiry_date: data.id_expiry_date,
+          remarks: data.remarks,
+        };
+
+        const payload: Record<string, any> = {
+          employee_id_code: String(finalEmpCode).trim(),
+          first_name: firstName,
+          last_name: lastName,
+          gender: data.gender || 'Male',
+          nationality: data.nationality || 'Qatar',
+          date_of_birth: sanitizeDateForPostgres(data.date_of_birth),
+          mobile_number: data.mobile_number,
+          email: data.email,
+          department_id: data.department_id || null,
+          designation_id: data.designation_id || null,
+          date_of_joining: sanitizeDateForPostgres(data.date_of_joining) || new Date().toISOString().split('T')[0],
+          employment_type: data.employment_type,
+          qid_passport_no: data.qid_passport_no,
+          id_expiry_date: sanitizeDateForPostgres(data.id_expiry_date),
           basic_salary: data.basic_salary || 0,
           hra: data.hra || 0,
           tra: data.tra || 0,
           other_allowances: data.other_allowances || 0,
-          total_salary: data.total_salary || (Number(data.basic_salary || 0) + Number(data.hra || 0) + Number(data.tra || 0) + Number(data.other_allowances || 0)),
-          benefit_telephone: data.benefit_telephone,
-          benefit_accommodation: data.benefit_accommodation,
-          benefit_vehicle: data.benefit_vehicle,
           bank_name: data.bank_name,
           iban: data.iban,
           air_ticket: data.air_ticket,
-          air_ticket_fare_cap: data.air_ticket_fare_cap,
           employee_status: data.employee_status || 'Active',
           emergency_contact_name: data.emergency_contact_name,
-          relation_with_employee: data.relation_with_employee,
-          emergency_contact_no: data.emergency_contact_no,
+          emergency_contact_relation: data.relation_with_employee,
+          emergency_contact_number: data.emergency_contact_no,
           remarks: data.remarks,
         };
 
-        const { data: created, error } = await supabase.from('employees').insert(payload).select().single();
+        const { data: created, error } = await HrmsApi.createEmployee(payload);
         if (error) throw error;
 
         return {
           success: true,
           createdId: created.id,
-          resultText: `Employee "${empCode}" created successfully.`,
+          resultText: `Employee "${finalEmpCode}" (${firstName} ${lastName}) created successfully.`,
         };
       }
 
@@ -372,20 +391,30 @@ export const employeeAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Employee ID not found');
 
-        const updatePayload: Record<string, any> = {
-          updated_at: new Date().toISOString(),
+        const updatePayload: Record<string, any> = {};
+
+        const fieldMapping: Record<string, string> = {
+          relation_with_employee: 'emergency_contact_relation',
+          emergency_contact_no: 'emergency_contact_number',
         };
 
         for (const change of record.changes) {
-          updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
+          const val = change.newValue === '[CLEARED]' ? null : change.newValue;
+          const targetField = fieldMapping[change.field] || change.field;
+
+          if (targetField === 'date_of_birth' || targetField === 'date_of_joining' || targetField === 'id_expiry_date') {
+            updatePayload[targetField] = sanitizeDateForPostgres(val);
+          } else {
+            updatePayload[targetField] = val;
+          }
         }
 
-        const { error } = await supabase.from('employees').update(updatePayload).eq('id', existing.id);
+        const { error } = await HrmsApi.updateEmployee(existing.id, updatePayload);
         if (error) throw error;
 
         return {
           success: true,
-          resultText: `Employee "${empCode}" updated (${record.changes.length} fields).`,
+          resultText: `Employee "${existing.employee_id_code}" updated (${record.changes.length} fields).`,
         };
       }
 
@@ -394,7 +423,7 @@ export const employeeAdapter: EntityImportAdapter = {
         if (!existing?.id) throw new Error('Employee ID not found');
 
         // Prefer state transition to Terminated/Archived
-        const { error } = await supabase.from('employees').update({ employee_status: 'Terminated', updated_at: new Date().toISOString() }).eq('id', existing.id);
+        const { error } = await HrmsApi.updateEmployee(existing.id, { employee_status: 'Terminated' });
         if (error) throw error;
 
         return {

@@ -1,7 +1,7 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { c as require_jsx_runtime } from "../_libs/@radix-ui/react-arrow+[...].mjs";
 import { u as require_react } from "../_libs/@floating-ui/react-dom+[...].mjs";
-import { Ft as Ellipsis, in as ChevronLeft, rn as ChevronRight } from "../_libs/lucide-react.mjs";
+import { It as Ellipsis, an as ChevronLeft, in as ChevronRight } from "../_libs/lucide-react.mjs";
 import { t as cn } from "./utils-C_uf36nf.mjs";
 import { n as buttonVariants } from "./button-OuFjfcpS.mjs";
 //#region node_modules/.nitro/vite/services/ssr/assets/pagination-Mm0k59kY.js

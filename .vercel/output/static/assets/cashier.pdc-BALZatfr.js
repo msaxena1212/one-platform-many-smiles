@@ -1,0 +1,1 @@
+import{n as e,t}from"./jsx-runtime-n5LQ9ujS.js";import{t as n}from"./pdc-management-DExnIENf.js";e();var r=t();function i(){return(0,r.jsx)(n,{})}export{i as component};

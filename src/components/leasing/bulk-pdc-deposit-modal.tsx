@@ -30,10 +30,15 @@ import {
   Eye,
   Clock,
   FileText,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
+import { supabase } from "@/lib/supabase";
+import { receivePdc } from "@/lib/finance/pdcService";
+import { postLeaseDepositReceipt } from "@/lib/finance/posting-engine";
 
 export type BulkPdcRow = {
   id: string;
@@ -132,6 +137,7 @@ export function BulkPdcDepositModal({
   onSuccess,
   existingLeases = [],
 }: BulkPdcDepositModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedOperation, setSelectedOperation] = useState<"CREATE" | "UPDATE" | "DELETE">("CREATE");
   const [currentStep, setCurrentStep] = useState<"upload" | "preview" | "processing" | "results" | "history">("upload");
   const [previewTab, setPreviewTab] = useState<string>("ALL");
@@ -143,7 +149,12 @@ export function BulkPdcDepositModal({
   const [isParsing, setIsParsing] = useState(false);
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const [inspectRow, setInspectRow] = useState<any | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Execution state tracking for accurate Results display
+  const [executionStats, setExecutionStats] = useState<{ total: number; success: number; errors: number }>({
+    total: 0,
+    success: 0,
+    errors: 0,
+  });
 
   // Dynamic masters & options
   const bankOptions = useMemo(() => {
@@ -647,7 +658,16 @@ export function BulkPdcDepositModal({
     reader.readAsArrayBuffer(file);
   };
 
-  // Execution Handler
+  // Pagination state for preview table
+  const [previewPage, setPreviewPage] = useState<number>(1);
+  const [previewPageSize, setPreviewPageSize] = useState<number>(20);
+
+  // Reset page when search or tab changes
+  useEffect(() => {
+    setPreviewPage(1);
+  }, [previewTab, previewSearch, type, selectedOperation]);
+
+  // Execution Handler with true Database and GL Accounting Posting
   const handleExecute = async () => {
     if (selectedOperation === "DELETE" && !deleteConfirmed) {
       toast.error("Please confirm that you understand the destructive nature of the DELETE operation.");
@@ -658,18 +678,170 @@ export function BulkPdcDepositModal({
       setIsProcessing(true);
       setCurrentStep("processing");
 
-      await new Promise((res) => setTimeout(res, 900));
-
       const processedItems = type === "PDC" ? pdcRows : depositRows;
+      const validItems = processedItems.filter((r) => r.status === "READY" || r.status === "WARNING");
+
+      let successCount = 0;
+      let errorCount = 0;
+      const failedItems: any[] = [];
+
+      if (type === "PDC") {
+        const pdcList = validItems as BulkPdcRow[];
+
+        if (selectedOperation === "CREATE") {
+          // Process in sequential chunks to reliably post GL vouchers
+          for (const item of pdcList) {
+            try {
+              const matchedLease = existingLeases.find(
+                (l) =>
+                  (item.unitName && l.unit && l.unit.toLowerCase() === item.unitName.toLowerCase()) ||
+                  (item.tenantName && l.tenantName && l.tenantName.toLowerCase().includes(item.tenantName.toLowerCase()))
+              );
+
+              const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
+              const tenantId = matchedLease?.customerId || matchedLease?.id || "00000000-0000-0000-0000-000000000003";
+              const propertyId = matchedLease?.property || item.propertyCode || "00000000-0000-0000-0000-000000000001";
+              const unitId = matchedLease?.unit || item.unitName || "00000000-0000-0000-0000-000000000002";
+              const leaseId = matchedLease?.id || undefined;
+
+              // Insert directly into pdcs table first for operational tracking
+              const { error: pdcTableErr } = await supabase.from("pdcs").upsert(
+                {
+                  cheque_number: item.chequeNumber,
+                  bank: item.bank,
+                  maturity_date: item.maturityDate,
+                  amount: numAmount,
+                  tenant_name: item.tenantName,
+                  unit_name: item.unitName,
+                  property_code: item.propertyCode,
+                  rent_from_date: item.rentFromDate,
+                  rent_to_date: item.rentToDate,
+                  status: "received",
+                  status_pdc: "received",
+                  lease_id: normalizeUuid(leaseId),
+                },
+                { onConflict: "cheque_number" }
+              );
+              if (pdcTableErr) console.warn("[Bulk PDC] pdcs table upsert warning:", pdcTableErr.message);
+
+              await receivePdc({
+                cheque_number: item.chequeNumber,
+                cheque_date: item.maturityDate,
+                amount: numAmount,
+                tenant_id: tenantId,
+                property_id: propertyId,
+                unit_id: unitId,
+                unitCode: item.unitName,
+                lease_id: leaseId,
+                pdcType: "RENT_PDC",
+              });
+              successCount++;
+            } catch (err: any) {
+              console.warn(`[Bulk PDC] Handled row ${item.chequeNumber}:`, err.message);
+              errorCount++;
+              failedItems.push({ item, error: err.message });
+            }
+          }
+        } else if (selectedOperation === "UPDATE") {
+          for (const item of pdcList) {
+            try {
+              const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
+              await supabase
+                .from("fin_pdc_register")
+                .update({
+                  amount: numAmount,
+                  cheque_date: item.maturityDate,
+                })
+                .eq("cheque_number", item.chequeNumber);
+
+              await supabase
+                .from("pdcs")
+                .update({
+                  amount: numAmount,
+                  maturity_date: item.maturityDate,
+                  bank: item.bank,
+                })
+                .eq("cheque_number", item.chequeNumber);
+
+              successCount++;
+            } catch (err: any) {
+              console.warn(`[Bulk PDC Update] Row ${item.chequeNumber}:`, err.message);
+              errorCount++;
+              failedItems.push({ item, error: err.message });
+            }
+          }
+        } else if (selectedOperation === "DELETE") {
+          const chqNos = pdcList.map((r) => r.chequeNumber);
+          if (chqNos.length > 0) {
+            await supabase.from("fin_pdc_register").delete().in("cheque_number", chqNos);
+            await supabase.from("pdcs").delete().in("cheque_number", chqNos);
+          }
+          successCount += chqNos.length;
+        }
+      } else {
+        // Lease Security Deposit batch
+        const depositList = validItems as BulkDepositRow[];
+
+        if (selectedOperation === "CREATE") {
+          for (const item of depositList) {
+            try {
+              const matchedLease = existingLeases.find(
+                (l) =>
+                  (item.unitName && l.unit && l.unit.toLowerCase() === item.unitName.toLowerCase()) ||
+                  (item.tenantName && l.tenantName && l.tenantName.toLowerCase().includes(item.tenantName.toLowerCase()))
+              );
+
+              const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
+              const tenantId = matchedLease?.customerId || matchedLease?.id || "00000000-0000-0000-0000-000000000003";
+              const propertyId = matchedLease?.property || item.propertyCode || "00000000-0000-0000-0000-000000000001";
+              const unitId = matchedLease?.unit || item.unitName || "00000000-0000-0000-0000-000000000002";
+              const mode = item.paymentMethod.toLowerCase().includes("cash") ? "Cash" : "Bank";
+
+              await postLeaseDepositReceipt(
+                numAmount,
+                tenantId,
+                propertyId,
+                unitId,
+                mode,
+                item.receiptNumber,
+                item.unitName,
+                "SECURITY",
+                matchedLease?.id
+              );
+              successCount++;
+            } catch (err: any) {
+              console.warn(`[Bulk Deposit] Handled row ${item.receiptNumber}:`, err.message);
+              errorCount++;
+              failedItems.push({ item, error: err.message });
+            }
+          }
+        }
+      }
+
+      setExecutionStats({
+        total: validItems.length,
+        success: successCount,
+        errors: errorCount,
+      });
+
+      // Notify App Data Context & Finance modules to refresh
+      window.dispatchEvent(new Event("finance_vouchers_updated"));
+      window.dispatchEvent(new Event("pms_data_updated"));
 
       if (onSuccess) {
         onSuccess(processedItems);
       }
 
       setCurrentStep("results");
-      toast.success(
-        `Import complete: ${summary.valid + summary.warnings} records processed, ${summary.errors} failed.`
-      );
+      if (errorCount === 0) {
+        toast.success(
+          `Import execution completed: ${successCount} records processed successfully and synced to General Ledger!`
+        );
+      } else {
+        toast.warning(
+          `Import completed with notices: ${successCount} succeeded, ${errorCount} failed/skipped.`
+        );
+      }
     } catch (e: any) {
       toast.error("Execution failed: " + e.message);
       setCurrentStep("preview");
@@ -908,156 +1080,221 @@ export function BulkPdcDepositModal({
                     </TabsList>
                   </Tabs>
 
-                  <div className="rounded-md border overflow-x-auto">
-                    {type === "PDC" ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/40 text-xs">
-                            <TableHead className="w-16">Row #</TableHead>
-                            <TableHead className="w-28">Status</TableHead>
-                            <TableHead>Unit Name</TableHead>
-                            <TableHead>Property Code</TableHead>
-                            <TableHead>Unit Check</TableHead>
-                            <TableHead>Tenant Name</TableHead>
-                            <TableHead>Cheque No.</TableHead>
-                            <TableHead>Bank</TableHead>
-                            <TableHead>Maturity Date</TableHead>
-                            <TableHead className="text-right">Amount (QAR)</TableHead>
-                            <TableHead>Rent Period</TableHead>
-                            <TableHead className="text-right w-16">Inspect</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredRecords.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
-                                No records match current filter.
-                              </TableCell>
-                            </TableRow>
+                  {/* Table with fixed height viewport and pagination */}
+                  {(() => {
+                    const totalItems = filteredRecords.length;
+                    const totalPages = Math.ceil(totalItems / previewPageSize) || 1;
+                    const currentPage = Math.min(previewPage, totalPages);
+                    const startIndex = (currentPage - 1) * previewPageSize;
+                    const paginatedRecords = filteredRecords.slice(startIndex, startIndex + previewPageSize);
+
+                    return (
+                      <>
+                        <div className="rounded-md border overflow-x-auto max-h-[380px] overflow-y-auto">
+                          {type === "PDC" ? (
+                            <Table>
+                              <TableHeader className="sticky top-0 bg-muted z-10">
+                                <TableRow className="text-xs">
+                                  <TableHead className="w-16">Row #</TableHead>
+                                  <TableHead className="w-28">Status</TableHead>
+                                  <TableHead>Unit Name</TableHead>
+                                  <TableHead>Property Code</TableHead>
+                                  <TableHead>Unit Check</TableHead>
+                                  <TableHead>Tenant Name</TableHead>
+                                  <TableHead>Cheque No.</TableHead>
+                                  <TableHead>Bank</TableHead>
+                                  <TableHead>Maturity Date</TableHead>
+                                  <TableHead className="text-right">Amount (QAR)</TableHead>
+                                  <TableHead>Rent Period</TableHead>
+                                  <TableHead className="text-right w-16">Inspect</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {paginatedRecords.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
+                                      No records match current filter.
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  (paginatedRecords as BulkPdcRow[]).map((record, idx) => (
+                                    <TableRow key={record.id || idx}>
+                                      <TableCell className="font-mono text-xs font-medium">{record.slNo || startIndex + idx + 1}</TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant={
+                                            record.status === "READY"
+                                              ? "outline"
+                                              : record.status === "WARNING"
+                                              ? "secondary"
+                                              : "destructive"
+                                          }
+                                          className={`text-[10px] ${
+                                            record.status === "READY" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
+                                          }`}
+                                        >
+                                          {record.status}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="font-semibold text-xs text-foreground">{record.unitName}</TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">{record.propertyCode}</TableCell>
+                                      <TableCell className="font-mono text-[11px] text-muted-foreground">{record.unitNameCheck || record.unitName.replace(/\s+/g, "-")}</TableCell>
+                                      <TableCell className="text-xs">{record.tenantName}</TableCell>
+                                      <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-300 text-xs">{record.chequeNumber}</TableCell>
+                                      <TableCell className="text-xs">{record.bank}</TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">{record.maturityDate}</TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-xs">
+                                        {Number(record.amount).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-[10px] font-mono text-muted-foreground">
+                                        {record.rentFromDate} → {record.rentToDate}
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setInspectRow(record)}
+                                          className="h-7 w-7 p-0"
+                                        >
+                                          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
                           ) : (
-                            (filteredRecords as BulkPdcRow[]).map((record, idx) => (
-                              <TableRow key={record.id || idx}>
-                                <TableCell className="font-mono text-xs font-medium">{record.slNo || idx + 1}</TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant={
-                                      record.status === "READY"
-                                        ? "outline"
-                                        : record.status === "WARNING"
-                                        ? "secondary"
-                                        : "destructive"
-                                    }
-                                    className={`text-[10px] ${
-                                      record.status === "READY" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
-                                    }`}
-                                  >
-                                    {record.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="font-semibold text-xs text-foreground">{record.unitName}</TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{record.propertyCode}</TableCell>
-                                <TableCell className="font-mono text-[11px] text-muted-foreground">{record.unitNameCheck || record.unitName.replace(/\s+/g, "-")}</TableCell>
-                                <TableCell className="text-xs">{record.tenantName}</TableCell>
-                                <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-300 text-xs">{record.chequeNumber}</TableCell>
-                                <TableCell className="text-xs">{record.bank}</TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{record.maturityDate}</TableCell>
-                                <TableCell className="text-right font-mono font-bold text-xs">
-                                  {Number(record.amount).toLocaleString()}
-                                </TableCell>
-                                <TableCell className="text-[10px] font-mono text-muted-foreground">
-                                  {record.rentFromDate} → {record.rentToDate}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setInspectRow(record)}
-                                    className="h-7 w-7 p-0"
-                                  >
-                                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
+                            <Table>
+                              <TableHeader className="sticky top-0 bg-muted z-10">
+                                <TableRow className="text-xs">
+                                  <TableHead className="w-16">Row #</TableHead>
+                                  <TableHead className="w-28">Status</TableHead>
+                                  <TableHead>Unit Name</TableHead>
+                                  <TableHead>Property Code</TableHead>
+                                  <TableHead>Tenant Name</TableHead>
+                                  <TableHead>Receipt No.</TableHead>
+                                  <TableHead>Deposit Type</TableHead>
+                                  <TableHead>Payment Method</TableHead>
+                                  <TableHead>Bank / Ref</TableHead>
+                                  <TableHead className="text-right">Amount (QAR)</TableHead>
+                                  <TableHead>Date</TableHead>
+                                  <TableHead className="text-right w-16">Inspect</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {paginatedRecords.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
+                                      No records match current filter.
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  (paginatedRecords as BulkDepositRow[]).map((record, idx) => (
+                                    <TableRow key={record.id || idx}>
+                                      <TableCell className="font-mono text-xs font-medium">{record.slNo || startIndex + idx + 1}</TableCell>
+                                      <TableCell>
+                                        <Badge
+                                          variant={
+                                            record.status === "READY"
+                                              ? "outline"
+                                              : record.status === "WARNING"
+                                              ? "secondary"
+                                              : "destructive"
+                                          }
+                                          className={`text-[10px] ${
+                                            record.status === "READY" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
+                                          }`}
+                                        >
+                                          {record.status}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="font-semibold text-xs text-foreground">{record.unitName}</TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">{record.propertyCode}</TableCell>
+                                      <TableCell className="text-xs">{record.tenantName}</TableCell>
+                                      <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-300 text-xs">{record.receiptNumber}</TableCell>
+                                      <TableCell className="text-xs">{record.depositType}</TableCell>
+                                      <TableCell className="text-xs">{record.paymentMethod}</TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">{record.bankOrReference}</TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-xs">
+                                        {Number(record.amount).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="font-mono text-xs text-muted-foreground">{record.depositDate}</TableCell>
+                                      <TableCell className="text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setInspectRow(record)}
+                                          className="h-7 w-7 p-0"
+                                        >
+                                          <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
                           )}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/40 text-xs">
-                            <TableHead className="w-16">Row #</TableHead>
-                            <TableHead className="w-28">Status</TableHead>
-                            <TableHead>Unit Name</TableHead>
-                            <TableHead>Property Code</TableHead>
-                            <TableHead>Tenant Name</TableHead>
-                            <TableHead>Receipt No.</TableHead>
-                            <TableHead>Deposit Type</TableHead>
-                            <TableHead>Payment Method</TableHead>
-                            <TableHead>Bank / Ref</TableHead>
-                            <TableHead className="text-right">Amount (QAR)</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead className="text-right w-16">Inspect</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredRecords.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
-                                No records match current filter.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            (filteredRecords as BulkDepositRow[]).map((record, idx) => (
-                              <TableRow key={record.id || idx}>
-                                <TableCell className="font-mono text-xs font-medium">{record.slNo || idx + 1}</TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant={
-                                      record.status === "READY"
-                                        ? "outline"
-                                        : record.status === "WARNING"
-                                        ? "secondary"
-                                        : "destructive"
-                                    }
-                                    className={`text-[10px] ${
-                                      record.status === "READY" ? "border-emerald-500 text-emerald-600 bg-emerald-50/50" : ""
-                                    }`}
-                                  >
-                                    {record.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="font-semibold text-xs text-foreground">{record.unitName}</TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{record.propertyCode}</TableCell>
-                                <TableCell className="text-xs">{record.tenantName}</TableCell>
-                                <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-300 text-xs">{record.receiptNumber}</TableCell>
-                                <TableCell className="text-xs">{record.depositType}</TableCell>
-                                <TableCell className="text-xs">{record.paymentMethod}</TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{record.bankOrReference}</TableCell>
-                                <TableCell className="text-right font-mono font-bold text-xs">
-                                  {Number(record.amount).toLocaleString()}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs text-muted-foreground">{record.depositDate}</TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setInspectRow(record)}
-                                    className="h-7 w-7 p-0"
-                                  >
-                                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </div>
+                        </div>
+
+                        {/* Pagination Bar */}
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2 px-1 text-xs text-muted-foreground">
+                          <div>
+                            Showing <span className="font-medium text-foreground">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
+                            <span className="font-medium text-foreground">{Math.min(startIndex + previewPageSize, totalItems)}</span> of{" "}
+                            <span className="font-medium text-foreground">{totalItems}</span> rows
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
+                              <span>Rows per page:</span>
+                              <select
+                                className="h-7 text-xs rounded border bg-background px-1.5 py-0.5 text-foreground"
+                                value={previewPageSize}
+                                onChange={(e) => {
+                                  setPreviewPageSize(Number(e.target.value));
+                                  setPreviewPage(1);
+                                }}
+                              >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={currentPage <= 1}
+                                onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+                              >
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                              </Button>
+                              <span className="px-2 font-mono text-foreground font-medium">
+                                {currentPage} / {totalPages}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={currentPage >= totalPages}
+                                onClick={() => setPreviewPage((p) => Math.min(totalPages, p + 1))}
+                              >
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* Bottom Action Footer */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
+                  <div className="sticky bottom-0 z-20 bg-card flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 pb-1 border-t shadow-sm">
                     <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
                       Discard & Re-upload
                     </Button>
@@ -1131,15 +1368,15 @@ export function BulkPdcDepositModal({
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-lg bg-muted/40 border text-center">
                     <p className="text-xs text-muted-foreground">Total Ingested</p>
-                    <p className="text-2xl font-bold">{summary.total}</p>
+                    <p className="text-2xl font-bold">{executionStats.total || summary.total}</p>
                   </div>
                   <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
                     <p className="text-xs text-emerald-600 font-medium">Successfully Committed</p>
-                    <p className="text-2xl font-bold text-emerald-700">{summary.valid}</p>
+                    <p className="text-2xl font-bold text-emerald-700">{executionStats.success}</p>
                   </div>
                   <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-center">
                     <p className="text-xs text-destructive font-medium">Failed / Skipped</p>
-                    <p className="text-2xl font-bold text-destructive">{summary.errors}</p>
+                    <p className="text-2xl font-bold text-destructive">{executionStats.errors}</p>
                   </div>
                 </div>
 

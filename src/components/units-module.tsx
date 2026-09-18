@@ -577,7 +577,14 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
   // --- Property occupancy breakdown for the list ---
   const unitsByProperty = properties.map((prop) => {
-    const propUnits = units.filter((u) => u.property_id === prop.id);
+    const propUnits = units.filter((u) => {
+      if (u.property_id === prop.id) return true;
+      const uProp = (u.property_id || "").trim().toLowerCase();
+      const pId = (prop.id || "").trim().toLowerCase();
+      const pCode = (prop.property_code || "").trim().toLowerCase();
+      const pTitle = (prop.title || "").trim().toLowerCase();
+      return uProp === pId || (pCode && uProp === pCode) || (pTitle && uProp === pTitle);
+    });
     const propOccupied = propUnits.filter(
       (u) =>
         u.status?.toLowerCase() === "occupied" ||
@@ -741,45 +748,55 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
         <TabsContent value="property" className="m-0">
           {/* Property Occupancy Summary */}
-          {unitsByProperty.some((p) => p.total > 0) && (
+          {properties.length === 0 ? (
+            <Card className="border-border">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                <Building2 className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                <p className="font-medium">No properties found</p>
+                <p className="text-xs">Add properties first to manage units.</p>
+              </CardContent>
+            </Card>
+          ) : (
             <Card className="border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Property-wise Occupancy</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                  {unitsByProperty
-                    .filter((p) => p.total > 0)
-                    .map((p) => {
-                      const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
-                      return (
-                        <div
-                          key={p.id}
-                          onClick={() => {
-                            setFilterProperty(p.id);
-                            setFilterStatus("all");
-                            setCurrentTab("unit");
-                          }}
-                          className="rounded-lg border border-border bg-muted/10 p-3 text-sm cursor-pointer hover:bg-muted/30 transition-colors"
-                        >
-                          <div className="truncate font-medium" title={p.title}>
-                            {p.property_code || p.title}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {p.occupied}/{p.total} occupied
-                          </div>
-                          <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
-                            <div
-                              className="h-1.5 rounded-full bg-blue-500 transition-all"
-                              style={{ width: `${rate}%` }}
-                            />
-                          </div>
-                          <div className="mt-0.5 text-right text-xs font-semibold text-blue-600">
-                            {rate}%
-                          </div>
+                  {unitsByProperty.map((p) => {
+                    const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setFilterProperty(p.id);
+                          setFilterStatus("all");
+                          setCurrentTab("unit");
+                        }}
+                        className="rounded-lg border border-border bg-muted/10 p-3 text-sm cursor-pointer hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="truncate font-medium" title={p.title}>
+                          {p.property_code ? `${p.property_code} - ` : ""}{p.title}
                         </div>
-                      );
-                    })}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {p.total === 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">0 units added</span>
+                          ) : (
+                            <span>{p.occupied}/{p.total} occupied</span>
+                          )}
+                        </div>
+                        <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
+                          <div
+                            className={`h-1.5 rounded-full transition-all ${p.total > 0 ? "bg-blue-500" : "bg-muted-foreground/30"}`}
+                            style={{ width: `${p.total > 0 ? rate : 0}%` }}
+                          />
+                        </div>
+                        <div className="mt-0.5 text-right text-xs font-semibold text-muted-foreground">
+                          {p.total > 0 ? `${rate}%` : "0%"}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>

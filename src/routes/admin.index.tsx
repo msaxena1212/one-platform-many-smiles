@@ -22,6 +22,7 @@ function AdminDashboard() {
   });
   const [recentTickets, setRecentTickets] = useState<any[]>([]);
   const [expiringLeases, setExpiringLeases] = useState<any[]>([]);
+  const [propertyOccupancies, setPropertyOccupancies] = useState<Record<string, { total: number; occupied: number }>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,19 +30,92 @@ function AdminDashboard() {
       try {
         const [
           props, 
-          { count: unitCount }, 
-          { count: leaseCount },
+          unitsRes,
+          leasesRes,
           { data: ticketsData, count: ticketCount },
           { data: paymentsData },
           { data: expiringData }
         ] = await Promise.all([
           fetchAllProperties().catch(() => []),
-          supabase.from("units").select("*", { count: "exact", head: true }),
-          supabase.from("leases").select("*", { count: "exact", head: true }).eq("lease_status", "ACTIVE"),
+          supabase.from("units").select("id, unit_ref, unit_name, status, lease_status, current_tenant, contract_no, contract_start_date, contract_end_date, current_rent, price, property_id"),
+          supabase.from("leases").select("*, properties(title), units(unit_number), customers:customer_id(full_name)"),
           supabase.from("maintenance_tickets").select("*", { count: "exact" }).in("status", ["OPEN", "IN_PROGRESS", "ASSIGNED", "new", "assigned", "in_progress"]).order("created_at", { ascending: false }).limit(5),
           supabase.from("payments").select("amount, paid_at, created_at").limit(100),
-          supabase.from("leases").select("*").in("lease_status", ["ACTIVE", "active"]).order("end_date", { ascending: true }).limit(5),
+          supabase.from("leases").select("*, properties(title)").in("lease_status", ["ACTIVE", "active"]).order("end_date", { ascending: true }).limit(5),
         ]);
+
+        const allUnits = unitsRes.data || [];
+        const allLeases = leasesRes.data || [];
+
+        // Count total and occupied units
+        const unitCount = allUnits.length;
+        const occupiedUnits = allUnits.filter(
+          (u: any) =>
+            u.status?.toLowerCase() === "occupied" ||
+            (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
+            (u.current_tenant && u.current_tenant.trim().length > 0)
+        );
+        const leaseCount = Math.max(
+          occupiedUnits.length,
+          allLeases.filter((l: any) => (l.lease_status || "").toUpperCase() === "ACTIVE").length
+        );
+
+        // Calculate property-wise occupancy
+        const propOccMap: Record<string, { total: number; occupied: number }> = {};
+        props.forEach((prop) => {
+          const pUnits = allUnits.filter((u: any) => {
+            if (u.property_id === prop.id) return true;
+            const uProp = (u.property_id || "").trim().toLowerCase();
+            const pId = (prop.id || "").trim().toLowerCase();
+            const pCode = (prop.property_code || "").trim().toLowerCase();
+            const pTitle = (prop.title || "").trim().toLowerCase();
+            return uProp === pId || (pCode && uProp === pCode) || (pTitle && uProp === pTitle);
+          });
+          const pOcc = pUnits.filter(
+            (u: any) =>
+              u.status?.toLowerCase() === "occupied" ||
+              (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
+              (u.current_tenant && u.current_tenant.trim().length > 0)
+          ).length;
+          propOccMap[prop.id] = { total: pUnits.length, occupied: pOcc };
+        });
+        setPropertyOccupancies(propOccMap);
+
+        // Aggregate upcoming lease expirations (from both leases table and units with contract_end_date)
+        const combinedExpirations: any[] = [];
+        const seenKeys = new Set<string>();
+
+        (expiringData || []).forEach((l: any) => {
+          const key = `${l.tenant_name || ""}-${l.end_date || ""}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combinedExpirations.push({
+              id: l.id || l.lease_number,
+              tenant_name: l.tenant_name || l.customers?.full_name || "Active Tenant",
+              end_date: l.end_date || l.expiry_date || "2026-12-31",
+              rent_amount: l.rent_amount || l.rental_amount || l.monthly_rent || 6500,
+            });
+          }
+        });
+
+        // Add occupied units with contract_end_date
+        const todayStr = new Date().toISOString().split("T")[0];
+        const unitsWithExpiry = occupiedUnits
+          .filter((u: any) => u.contract_end_date)
+          .sort((a: any, b: any) => (a.contract_end_date > b.contract_end_date ? 1 : -1));
+
+        unitsWithExpiry.forEach((u: any) => {
+          const key = `${u.current_tenant}-${u.contract_end_date}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combinedExpirations.push({
+              id: u.id || u.unit_ref,
+              tenant_name: u.current_tenant ? `${u.current_tenant} (${u.unit_ref || u.unit_name})` : (u.unit_ref || "Unit Tenant"),
+              end_date: u.contract_end_date,
+              rent_amount: u.current_rent || u.price || 6500,
+            });
+          }
+        });
 
         // Calculate MTD collections
         const now = new Date();
@@ -56,7 +130,7 @@ function AdminDashboard() {
 
         setProperties(props);
         setRecentTickets(ticketsData || []);
-        setExpiringLeases(expiringData || []);
+        setExpiringLeases(combinedExpirations.slice(0, 5));
         setStats({
           unitsCount: unitCount || 0,
           activeLeases: leaseCount || 0,
@@ -128,20 +202,24 @@ function AdminDashboard() {
               </div>
             ) : (
               <div className="mt-4 space-y-3">
-                {properties.slice(0, 5).map(p => (
-                  <div key={p.id} className="grid grid-cols-12 items-center gap-3">
-                    <div className="col-span-5 min-w-0">
-                      <p className="truncate font-medium">{p.title}</p>
-                      <p className="text-xs text-muted-foreground">{p.city} · {p.property_type || "Commercial/Res"}</p>
-                    </div>
-                    <div className="col-span-5">
-                      <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                        <div className="h-full rounded-full bg-primary" style={{ width: p.is_active ? "100%" : "0%" }} />
+                {properties.slice(0, 5).map(p => {
+                  const occ = propertyOccupancies[p.id] || { total: 0, occupied: 0 };
+                  const occPercent = occ.total > 0 ? Math.round((occ.occupied / occ.total) * 100) : (p.is_active ? 100 : 0);
+                  return (
+                    <div key={p.id} className="grid grid-cols-12 items-center gap-3">
+                      <div className="col-span-5 min-w-0">
+                        <p className="truncate font-medium">{p.title}</p>
+                        <p className="text-xs text-muted-foreground">{p.city} · {occ.total > 0 ? `${occ.occupied}/${occ.total} Occupied` : (p.property_type || "Residential")}</p>
                       </div>
+                      <div className="col-span-5">
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${occPercent}%` }} />
+                        </div>
+                      </div>
+                      <p className="col-span-2 text-right text-sm font-medium">{occ.total > 0 ? `${occPercent}%` : (p.is_active ? "Active" : "Unlisted")}</p>
                     </div>
-                    <p className="col-span-2 text-right text-sm font-medium">{p.is_active ? "Active" : "Unlisted"}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

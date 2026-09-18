@@ -21,10 +21,7 @@ export function useReservations() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("reservations")
-        .select(`
-          *,
-          units:unit_id(unit_number, floor, rent_amount, property_id)
-        `)
+        .select(`*`)
         .order("created_at", { ascending: false });
 
       if (error) throw error;

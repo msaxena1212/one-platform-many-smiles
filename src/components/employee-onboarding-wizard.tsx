@@ -70,6 +70,8 @@ export function EmployeeOnboardingWizard({
     states: MasterItem[];
     cities: MasterItem[];
     banks: MasterItem[];
+    genders: MasterItem[];
+    employeeStatuses: MasterItem[];
   }>({
     companies: [],
     branches: [],
@@ -84,7 +86,9 @@ export function EmployeeOnboardingWizard({
     countries: [],
     states: [],
     cities: [],
-    banks: []
+    banks: [],
+    genders: [],
+    employeeStatuses: [],
   });
 
   // Step 1: Basic Information
@@ -195,7 +199,14 @@ export function EmployeeOnboardingWizard({
     secondary_iban: "",
     basic_salary: 5000,
     hra: 1500,
-    tra: 500
+    tra: 500,
+    other_allowances: 0,
+    benefit_telephone: "Provided By Company",
+    benefit_accommodation: "Provided By Company",
+    benefit_vehicle: "Provided By Company",
+    air_ticket: "Yearly",
+    air_ticket_fare_cap: 2500,
+    remarks: ""
   });
 
   // Step 4: Document Details
@@ -279,8 +290,9 @@ export function EmployeeOnboardingWizard({
     if (open) {
       initMasters();
       if (!employeeToEdit) {
-        const generatedCode = "EMP-" + Math.floor(1000 + Math.random() * 9000);
-        setBasic((prev) => ({ ...prev, employee_id_code: generatedCode }));
+        HrmsMastersApi.generateNextEmployeeId("EMP").then((generatedCode) => {
+          setBasic((prev) => ({ ...prev, employee_id_code: generatedCode }));
+        });
       }
     }
   }, [open, employeeToEdit]);
@@ -661,9 +673,19 @@ export function EmployeeOnboardingWizard({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Male">Male</SelectItem>
-                      <SelectItem value="Female">Female</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      {masters.genders.length > 0 ? (
+                        masters.genders.map((g) => (
+                          <SelectItem key={g.id} value={g.name}>
+                            {g.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -869,10 +891,20 @@ export function EmployeeOnboardingWizard({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Active">Active</SelectItem>
-                      <SelectItem value="Probation">Probation</SelectItem>
-                      <SelectItem value="On Notice">On Notice</SelectItem>
-                      <SelectItem value="Suspended">Suspended</SelectItem>
+                      {masters.employeeStatuses.length > 0 ? (
+                        masters.employeeStatuses.map((st) => (
+                          <SelectItem key={st.id} value={st.name}>
+                            {st.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Probation">Probation</SelectItem>
+                          <SelectItem value="On Notice">On Notice</SelectItem>
+                          <SelectItem value="Suspended">Suspended</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1367,7 +1399,7 @@ export function EmployeeOnboardingWizard({
                 <h4 className="text-sm font-bold flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-emerald-600" /> Monthly Compensation Structure (QAR)
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <Label className="text-xs font-semibold">Basic Pay (Monthly)</Label>
                     <Input
@@ -1394,12 +1426,83 @@ export function EmployeeOnboardingWizard({
                       onChange={(e) => setPayment({ ...payment, tra: Number(e.target.value) })}
                     />
                   </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Other Allowances</Label>
+                    <Input
+                      type="number"
+                      value={payment.other_allowances}
+                      onChange={(e) => setPayment({ ...payment, other_allowances: Number(e.target.value) })}
+                    />
+                  </div>
                 </div>
+
                 <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex justify-between items-center text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                  <span>Gross Estimated Monthly CTC</span>
+                  <span>Gross Estimated Monthly CTC (Total Salary)</span>
                   <span className="text-base font-bold">
-                    {(payment.basic_salary + payment.hra + payment.tra).toLocaleString()} QAR
+                    {(payment.basic_salary + payment.hra + payment.tra + (payment.other_allowances || 0)).toLocaleString()} QAR
                   </span>
+                </div>
+              </div>
+
+              {/* Perquisites, Corporate Benefits & Travel */}
+              <div className="p-4 rounded-xl border bg-card/60 space-y-4">
+                <h4 className="text-sm font-bold flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-primary" /> Corporate Benefits, Travel & Perquisites
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs font-semibold">Other Benefit (Telephone / Allowance)</Label>
+                    <Input
+                      value={payment.benefit_telephone}
+                      onChange={(e) => setPayment({ ...payment, benefit_telephone: e.target.value })}
+                      placeholder="e.g. Provided By Company"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Other Benefit (Accommodation)</Label>
+                    <Input
+                      value={payment.benefit_accommodation}
+                      onChange={(e) => setPayment({ ...payment, benefit_accommodation: e.target.value })}
+                      placeholder="e.g. Company Accommodation / Allowance"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Other Benefit (Vehicle)</Label>
+                    <Input
+                      value={payment.benefit_vehicle}
+                      onChange={(e) => setPayment({ ...payment, benefit_vehicle: e.target.value })}
+                      placeholder="e.g. Company Provided / Allowance"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <Label className="text-xs font-semibold">Air Ticket Entitlement</Label>
+                    <Input
+                      value={payment.air_ticket}
+                      onChange={(e) => setPayment({ ...payment, air_ticket: e.target.value })}
+                      placeholder="e.g. Yearly, Bi-Annual"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Air Ticket Fare CAP (QAR)</Label>
+                    <Input
+                      type="number"
+                      value={payment.air_ticket_fare_cap}
+                      onChange={(e) => setPayment({ ...payment, air_ticket_fare_cap: Number(e.target.value) })}
+                      placeholder="2500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <Label className="text-xs font-semibold">Remarks & Compensation Notes</Label>
+                  <Input
+                    value={payment.remarks}
+                    onChange={(e) => setPayment({ ...payment, remarks: e.target.value })}
+                    placeholder="Special terms, sign-on bonuses, relocation support..."
+                  />
                 </div>
               </div>
             </div>

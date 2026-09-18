@@ -79,7 +79,7 @@ function SuperAdminDashboard() {
       const [orgsRes, propsRes, unitsRes, leasesRes, profilesRes] = await Promise.all([
         supabase.from("tenant_organisations").select("*").order("created_at", { ascending: false }),
         supabase.from("properties").select("id, host_id, title, city, is_active"),
-        supabase.from("units").select("id, unit_status, rent_amount"),
+        supabase.from("units").select("id, status, current_rent, price"),
         supabase.from("leases").select("id, lease_status, rental_amount"),
         supabase.from("profiles").select("id, full_name, role, created_at"),
       ]);

@@ -19,11 +19,26 @@ import {
   Pencil, Search, Shield, FileCheck, Paperclip, ChevronRight, ChevronLeft, Download, FileSpreadsheet
 } from "lucide-react";
 import { fetchAssets, createAsset, updateAsset, deleteAsset, fetchProperties, fetchUnits, type Asset, type Property, type Unit } from "@/lib/supabase";
-import { fetchAssetSubcategories, fetchAssetCategories, type AssetSubcategory, type AssetCategory } from "@/lib/supabase-masters";
+import { 
+  fetchAssetSubcategories, 
+  fetchAssetCategories, 
+  fetchAssetOwnershipTypes, 
+  fetchAssetConditions, 
+  fetchAssetStatuses,
+  fetchDepartments,
+  type AssetSubcategory, 
+  type AssetCategory,
+  type AssetOwnershipType,
+  type AssetCondition,
+  type AssetStatus,
+  type Simplemaster
+} from "@/lib/supabase-masters";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { formatDDMMMYYYY, getTodayIST } from "@/lib/date-utils";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
+import { hrmsService } from "@/lib/hrmsService";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
@@ -231,6 +246,12 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const [vendors, setVendors] = useState<FinVendor[]>([]);
   const [assetCategoriesList, setAssetCategoriesList] = useState<AssetCategory[]>([]);
   const [assetSubcategoriesList, setAssetSubcategoriesList] = useState<AssetSubcategory[]>([]);
+  const [ownershipTypesList, setOwnershipTypesList] = useState<AssetOwnershipType[]>([]);
+  const [conditionsList, setConditionsList] = useState<AssetCondition[]>([]);
+  const [statusesList, setStatusesList] = useState<AssetStatus[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<Simplemaster[]>([]);
+  const [brandsList, setBrandsList] = useState<string[]>([]);
+  const [employeesList, setEmployeesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [bulkAssetOpen, setBulkAssetOpen] = useState(false);
@@ -277,17 +298,51 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   // ── Edit Asset Modal State ──
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [editForm, setEditForm] = useState({
+    // Identity
     asset_name: "",
-    category: "Furniture",
-    asset_code: "",
+    category: "",
+    subcategory: "",
+    brand: "",
+    model: "",
     serial_number: "",
-    purchase_cost: "",
-    purchase_date: getTodayIST(),
-    life_of_asset: "60",
-    brand: "Straight Line Method (SLM)",
+    ownership_type: "",
+    asset_code: "",
+    // Purchase & Warranty
+    purchase_date: "",
     supplier: "",
+    purchase_cost: "",
+    warranty_expiry_date: "",
+    warranty_status: "",
+    // Assignment
+    department: "",
+    assigned_property_code: "",
+    assigned_unit_code: "",
+    assigned_employee_id: "",
+    assigned_employee_name: "",
+    assignment_date: "",
+    // Status
     asset_condition: "Good",
+    asset_status: "",
+    // Financials
+    life_of_asset: "",
+    depreciation_method: "",
+    depreciation_rate: "",
+    opening_cost: "",
+    addition_during_year: "",
+    total_asset_value: "",
+    disposal_value: "",
+    opening_accumulated_depreciation: "",
+    current_year_depreciation: "",
+    closing_accumulated_depreciation: "",
+    net_book_value: "",
+    // Service
+    last_service_date: "",
+    next_service_date: "",
+    return_date: "",
+    disposal_date: "",
+    // Remarks
     description: "",
+    remarks: "",
   });
 
   // ── Module-level sub-tabs (synced with URL ?tab=...) ──
@@ -463,6 +518,10 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     category: "Furniture",
     subcategory: "",
     item_name: "",
+    brand: "",
+    model: "",
+    ownership_type: "Company Owned",
+    department: "",
     commission_date: getTodayIST(),
     put_to_use_date: getTodayIST(),
     asset_tag_id: "",
@@ -472,6 +531,34 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     useful_life_years: "5",
     depreciation_rate: "20",
     depreciation_method: "Straight Line Method (SLM)",
+
+    // Initial Assignment & Custody (Optional at registration)
+    assigned_property_id: "",
+    assigned_property_code: "",
+    assigned_unit_id: "",
+    assigned_unit_code: "",
+    assigned_employee_id: "",
+    assigned_employee_name: "",
+    assignment_date: "",
+    asset_condition: "New",
+    asset_status: "Available",
+
+    // Financial & Book Value Balances
+    opening_cost: "",
+    addition_during_year: "",
+    total_asset_value: "",
+    disposal_value: "",
+    opening_accumulated_depreciation: "",
+    current_year_depreciation: "",
+    closing_accumulated_depreciation: "",
+    net_book_value: "",
+
+    // Service & Lifecycle Dates
+    last_service_date: "",
+    next_service_date: "",
+    return_date: "",
+    disposal_date: "",
+    remarks: "",
 
     account_rows: [
       { id: "1", account_code: "12300001", account_name: "12300001 - Fixed Asset (Capital Cost / Asset A/C)", debit: "", credit: "" },
@@ -591,13 +678,18 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [allAssets, allProps, allUnits, allVendors, allAssetCats, allAssetSubcats] = await Promise.all([
+      const [allAssets, allProps, allUnits, allVendors, allAssetCats, allAssetSubcats, allOwnership, allConds, allStats, allDepts, allEmployees] = await Promise.all([
         fetchAssets(),
         fetchProperties(),
         fetchUnits(),
         FinVendorsApi.fetchAll().catch(() => []),
         fetchAssetCategories().catch(() => []),
         fetchAssetSubcategories().catch(() => []),
+        fetchAssetOwnershipTypes().catch(() => []),
+        fetchAssetConditions().catch(() => []),
+        fetchAssetStatuses().catch(() => []),
+        fetchDepartments().catch(() => []),
+        hrmsService.getEmployees().catch(() => []),
       ]);
       setAssets(allAssets);
       setProperties(allProps);
@@ -605,6 +697,19 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       setVendors(allVendors);
       setAssetCategoriesList(allAssetCats);
       setAssetSubcategoriesList(allAssetSubcats);
+      setOwnershipTypesList(allOwnership);
+      setConditionsList(allConds);
+      setStatusesList(allStats);
+      setDepartmentsList(allDepts);
+      setEmployeesList(allEmployees || []);
+
+      const dynamicBrands = DynamicMastersService.getMasterStringOptions('asset_brand');
+      setBrandsList(dynamicBrands.length > 0 ? dynamicBrands : [
+        'Apple', 'Dell', 'HP', 'Lenovo', 'Samsung', 'LG Electronics', 'Daikin', 'Carrier',
+        'Mitsubishi Electric', 'Gree', 'Panasonic', 'Sony', 'Cisco', 'Huawei', 'Otis Elevator',
+        'KONE', 'Schindler', 'Schneider Electric', 'Siemens', 'Bosch', 'Hikvision', 'Dahua',
+        'Toyota', 'Nissan', 'Ford', 'IKEA', 'Steelcase', 'Herman Miller', 'Other'
+      ]);
 
       // Auto-synthesize baseline warranties from assets if empty
       setWarranties(prev => {
@@ -966,17 +1071,51 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   function openEditAssetModal(a: Asset) {
     setEditingAsset(a);
     setEditForm({
+      // Identity
       asset_name: a.asset_name || "",
-      category: a.category || "Furniture",
-      asset_code: a.asset_code || "",
+      category: a.category || "",
+      subcategory: a.subcategory || "",
+      brand: a.brand || "",
+      model: a.model || "",
       serial_number: a.serial_number || "",
-      purchase_cost: a.purchase_cost ? String(a.purchase_cost) : "",
-      purchase_date: a.purchase_date || getTodayIST(),
-      life_of_asset: a.life_of_asset ? String(a.life_of_asset) : "60",
-      brand: a.brand || "Straight Line Method (SLM)",
+      ownership_type: a.ownership_type || "",
+      asset_code: a.asset_code || "",
+      // Purchase & Warranty
+      purchase_date: a.purchase_date || "",
       supplier: a.supplier || "",
+      purchase_cost: a.purchase_cost ? String(a.purchase_cost) : "",
+      warranty_expiry_date: a.warranty_expiry_date || "",
+      warranty_status: a.warranty_status || "",
+      // Assignment
+      department: a.department || "",
+      assigned_property_code: a.assigned_property_code || "",
+      assigned_unit_code: a.assigned_unit_code || "",
+      assigned_employee_id: a.assigned_employee_id || "",
+      assigned_employee_name: a.assigned_employee_name || "",
+      assignment_date: a.assignment_date || "",
+      // Status
       asset_condition: a.asset_condition || "Good",
+      asset_status: a.asset_status || "",
+      // Financials
+      life_of_asset: a.life_of_asset ? String(a.life_of_asset) : "",
+      depreciation_method: a.depreciation_method || "",
+      depreciation_rate: a.depreciation_rate ? String(a.depreciation_rate) : "",
+      opening_cost: a.opening_cost ? String(a.opening_cost) : "",
+      addition_during_year: a.addition_during_year ? String(a.addition_during_year) : "",
+      total_asset_value: a.total_asset_value ? String(a.total_asset_value) : "",
+      disposal_value: a.disposal_value ? String(a.disposal_value) : "",
+      opening_accumulated_depreciation: a.opening_accumulated_depreciation ? String(a.opening_accumulated_depreciation) : "",
+      current_year_depreciation: a.current_year_depreciation ? String(a.current_year_depreciation) : "",
+      closing_accumulated_depreciation: a.closing_accumulated_depreciation ? String(a.closing_accumulated_depreciation) : "",
+      net_book_value: a.net_book_value ? String(a.net_book_value) : "",
+      // Service
+      last_service_date: a.last_service_date || "",
+      next_service_date: a.next_service_date || "",
+      return_date: a.return_date || "",
+      disposal_date: a.disposal_date || "",
+      // Remarks
       description: a.description || "",
+      remarks: a.remarks || "",
     });
   }
 
@@ -989,18 +1128,53 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     }
     setSaving(true);
     try {
+      const toNum = (v: string) => v ? Number(v) : undefined;
       const payload: Partial<Asset> = {
+        // Identity
         asset_name: editForm.asset_name.trim(),
-        category: editForm.category,
-        asset_code: editForm.asset_code.trim() || editingAsset.asset_code,
-        serial_number: editForm.serial_number.trim() || undefined,
-        purchase_cost: editForm.purchase_cost ? Number(editForm.purchase_cost) : 0,
-        purchase_date: editForm.purchase_date || undefined,
-        life_of_asset: editForm.life_of_asset ? Number(editForm.life_of_asset) : undefined,
+        category: editForm.category || undefined,
+        subcategory: editForm.subcategory || undefined,
         brand: editForm.brand || undefined,
+        model: editForm.model || undefined,
+        serial_number: editForm.serial_number.trim() || undefined,
+        ownership_type: editForm.ownership_type || undefined,
+        asset_code: editForm.asset_code.trim() || editingAsset.asset_code,
+        // Purchase & Warranty
+        purchase_date: editForm.purchase_date || undefined,
         supplier: editForm.supplier || undefined,
+        purchase_cost: editForm.purchase_cost ? Number(editForm.purchase_cost) : undefined,
+        warranty_expiry_date: editForm.warranty_expiry_date || undefined,
+        warranty_status: editForm.warranty_status || undefined,
+        // Assignment
+        department: editForm.department || undefined,
+        assigned_property_code: editForm.assigned_property_code || undefined,
+        assigned_unit_code: editForm.assigned_unit_code || undefined,
+        assigned_employee_id: editForm.assigned_employee_id || undefined,
+        assigned_employee_name: editForm.assigned_employee_name || undefined,
+        assignment_date: editForm.assignment_date || undefined,
+        // Status
         asset_condition: editForm.asset_condition || "Good",
+        asset_status: editForm.asset_status || undefined,
+        // Financials
+        life_of_asset: toNum(editForm.life_of_asset),
+        depreciation_method: editForm.depreciation_method || undefined,
+        depreciation_rate: toNum(editForm.depreciation_rate),
+        opening_cost: toNum(editForm.opening_cost),
+        addition_during_year: toNum(editForm.addition_during_year),
+        total_asset_value: toNum(editForm.total_asset_value),
+        disposal_value: toNum(editForm.disposal_value),
+        opening_accumulated_depreciation: toNum(editForm.opening_accumulated_depreciation),
+        current_year_depreciation: toNum(editForm.current_year_depreciation),
+        closing_accumulated_depreciation: toNum(editForm.closing_accumulated_depreciation),
+        net_book_value: toNum(editForm.net_book_value),
+        // Service
+        last_service_date: editForm.last_service_date || undefined,
+        next_service_date: editForm.next_service_date || undefined,
+        return_date: editForm.return_date || undefined,
+        disposal_date: editForm.disposal_date || undefined,
+        // Remarks
         description: editForm.description || undefined,
+        remarks: editForm.remarks || undefined,
       };
 
       await updateAsset(editingAsset.id, payload);
@@ -1504,17 +1678,50 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         asset_name: form.item_name.trim(),
         category: form.category,
         subcategory: form.subcategory.trim() || undefined,
+        brand: form.brand.trim() || undefined,
+        model: form.model.trim() || undefined,
         asset_code: tagCode,
         serial_number: form.serial_number.trim() || undefined,
+        ownership_type: form.ownership_type.trim() || "Company Owned",
+        department: form.department.trim() || undefined,
         purchase_cost: acqAmount,
         purchase_date: form.commission_date,
         life_of_asset: usefulLifeMonths,
         depreciation_method: form.depreciation_method,
         depreciation_rate: form.depreciation_method === "None" ? 0 : Number(form.depreciation_rate) || 0,
-        brand: form.depreciation_method,
         supplier: vendors.find(v => v.id === form.vendor_id)?.name || form.warranty_provider || undefined,
-        asset_condition: "New",
-        asset_status: "Available",
+        
+        // Initial Allocation & Location
+        assigned_property_id: form.assigned_property_id || undefined,
+        assigned_property_code: form.assigned_property_code.trim() || (properties.find(p => p.id === form.assigned_property_id)?.title) || undefined,
+        assigned_unit_id: form.assigned_unit_id || undefined,
+        assigned_unit_code: form.assigned_unit_code.trim() || (units.find(u => u.id === form.assigned_unit_id)?.unit_ref) || undefined,
+        assigned_employee_id: form.assigned_employee_id.trim() || undefined,
+        assigned_employee_name: form.assigned_employee_name.trim() || undefined,
+        assignment_date: form.assignment_date || undefined,
+        asset_condition: form.asset_condition || "New",
+        asset_status: form.assigned_property_id || form.assigned_employee_name ? "Assigned" : form.asset_status || "Available",
+
+        // Financial & Depreciation Balances
+        opening_cost: form.opening_cost ? Number(form.opening_cost) : acqAmount,
+        addition_during_year: form.addition_during_year ? Number(form.addition_during_year) : undefined,
+        total_asset_value: form.total_asset_value ? Number(form.total_asset_value) : acqAmount,
+        disposal_value: form.disposal_value ? Number(form.disposal_value) : undefined,
+        opening_accumulated_depreciation: form.opening_accumulated_depreciation ? Number(form.opening_accumulated_depreciation) : undefined,
+        current_year_depreciation: form.current_year_depreciation ? Number(form.current_year_depreciation) : undefined,
+        closing_accumulated_depreciation: form.closing_accumulated_depreciation ? Number(form.closing_accumulated_depreciation) : undefined,
+        net_book_value: form.net_book_value ? Number(form.net_book_value) : acqAmount,
+
+        // Lifecycle & Service Dates
+        last_service_date: form.last_service_date || undefined,
+        next_service_date: form.next_service_date || undefined,
+        return_date: form.return_date || undefined,
+        disposal_date: form.disposal_date || undefined,
+        remarks: form.remarks.trim() || undefined,
+
+        warranty_expiry_date: form.has_warranty ? (form.warranty_expiry_date || undefined) : undefined,
+        warranty_status: form.has_warranty ? (form.warranty_expiry_date < getTodayIST() ? "EXPIRED" : "ACTIVE") : "NONE",
+
         description: form.specifications.length > 0 ? form.specifications.map(s => `${s.spec_type}: ${s.spec_details}`).join(" | ") : undefined,
       });
 
@@ -1568,7 +1775,12 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       setForm({
         asset_type: "Fixed Asset",
         category: "Furniture",
+        subcategory: "",
         item_name: "",
+        brand: "",
+        model: "",
+        ownership_type: "Company Owned",
+        department: "",
         commission_date: getTodayIST(),
         put_to_use_date: getTodayIST(),
         asset_tag_id: "",
@@ -1578,6 +1790,32 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         useful_life_years: "5",
         depreciation_rate: "20",
         depreciation_method: "Straight Line Method (SLM)",
+
+        assigned_property_id: "",
+        assigned_property_code: "",
+        assigned_unit_id: "",
+        assigned_unit_code: "",
+        assigned_employee_id: "",
+        assigned_employee_name: "",
+        assignment_date: "",
+        asset_condition: "New",
+        asset_status: "Available",
+
+        opening_cost: "",
+        addition_during_year: "",
+        total_asset_value: "",
+        disposal_value: "",
+        opening_accumulated_depreciation: "",
+        current_year_depreciation: "",
+        closing_accumulated_depreciation: "",
+        net_book_value: "",
+
+        last_service_date: "",
+        next_service_date: "",
+        return_date: "",
+        disposal_date: "",
+        remarks: "",
+
         account_rows: [
           { id: "1", account_code: "12300001", account_name: "12300001 - Fixed Asset (Capital Cost / Asset A/C)", debit: "", credit: "" },
           { id: "2", account_code: "22100001", account_name: "22100001 - Trade Payables (Vendors / Supplier A/C)", debit: "", credit: "" }
@@ -3555,41 +3793,53 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
 
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Department / Business Unit *</Label>
-                    <Select 
-                      value={allocationForm.department} 
-                      onValueChange={v => setAllocationForm(f => ({ ...f, department: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs bg-background">
-                        <SelectValue placeholder="Select Department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[
-                          "Administration & Executive",
-                          "Finance & Accounting",
-                          "Leasing & Marketing",
-                          "Property & Facility Management",
-                          "Operations & Field Support",
-                          "IT & Systems Infrastructure",
-                          "Human Resources (HR)",
-                          "Procurement & Supply Chain",
-                          "Legal & Compliance"
-                        ].map(d => (
-                          <SelectItem key={d} value={d}>{d}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={[
+                        { label: "— All Departments —", value: "" },
+                        ...departmentsList.map(d => ({ label: d.name, value: d.name }))
+                      ]}
+                      value={allocationForm.department}
+                      onValueChange={v => setAllocationForm(f => ({ ...f, department: v, to_employee_name: "" }))}
+                      placeholder="Select Department..."
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Official Staff / Employee Name *</Label>
-                    <Input
-                      className="h-8 text-xs bg-background"
-                      placeholder="e.g. Tariq Mansoor / Fatima Al-Thani"
-                      value={allocationForm.to_employee_name}
-                      onChange={e => setAllocationForm(f => ({ ...f, to_employee_name: e.target.value }))}
-                    />
+                    {(() => {
+                      const filteredEmployeesForAllocation = employeesList.filter(emp => {
+                        if (!allocationForm.department) return true;
+                        const deptName = emp.departments?.name || emp.department || "";
+                        const deptId = emp.department_id || "";
+                        return deptName.toLowerCase() === allocationForm.department.toLowerCase() ||
+                               departmentsList.some(d => d.name.toLowerCase() === allocationForm.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+                      });
+
+                      return (
+                        <SearchableSelect
+                          options={[
+                            { label: "— Select Staff Member —", value: "" },
+                            ...filteredEmployeesForAllocation.map(emp => ({
+                              label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                              value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                            }))
+                          ]}
+                          value={allocationForm.to_employee_name}
+                          onValueChange={v => {
+                            const matchedEmp = filteredEmployeesForAllocation.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                               employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                            setAllocationForm(f => ({
+                              ...f,
+                              to_employee_name: v,
+                              department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                            }));
+                          }}
+                          placeholder={allocationForm.department ? `Select employee in ${allocationForm.department}...` : "Select employee..."}
+                        />
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-1">
@@ -3918,223 +4168,590 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       {/* ── MODAL: EDIT ASSET DETAILS ──────────────────────────────────────────── */}
       {/* ══════════════════════════════════════════════════════════════════════════ */}
       <Dialog open={!!editingAsset} onOpenChange={open => !open && setEditingAsset(null)}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-4 w-4 text-primary" /> Edit Asset Details
+              <Pencil className="h-4 w-4 text-primary" /> Edit Asset — {editingAsset?.asset_name}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Update specification, category, valuation, serials, and condition for {editingAsset?.asset_name}.
+              Update all asset specifications, valuation, assignment, and service details.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Asset Name *</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={editForm.asset_name}
-                  onChange={e => setEditForm(f => ({ ...f, asset_name: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Category *</Label>
-                <Select value={editForm.category} onValueChange={v => setEditForm(f => ({ ...f, category: v }))}>
-                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"].map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div className="space-y-5 py-2 text-xs">
+
+            {/* ── Section: Identity ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Identity & Classification</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs font-semibold">Asset Name *</Label>
+                  <Input className="h-8 text-xs" value={editForm.asset_name} onChange={e => setEditForm(f => ({ ...f, asset_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Category</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...assetCategoriesList.map(c => c.name),
+                      "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
+                    ])).map(c => ({ label: c, value: c }))}
+                    value={editForm.category}
+                    onValueChange={v => setEditForm(f => ({ ...f, category: v, subcategory: "" }))}
+                    placeholder="Select category..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">SubCategory</Label>
+                  {(() => {
+                    const matchedCat = assetCategoriesList.find(c => c.name.toLowerCase() === editForm.category.toLowerCase());
+                    const filteredSubs = matchedCat ? assetSubcategoriesList.filter(sc => sc.category_id === matchedCat.id) : assetSubcategoriesList;
+                    const subOpts = filteredSubs.length > 0
+                      ? filteredSubs.map(sc => ({ label: sc.name, value: sc.name }))
+                      : [
+                          { label: "General / Standard", value: "General / Standard" },
+                          { label: "Split AC", value: "Split AC" },
+                          { label: "Office Table", value: "Office Table" },
+                        ];
+                    return (
+                      <SearchableSelect
+                        options={subOpts}
+                        value={editForm.subcategory}
+                        onValueChange={v => setEditForm(f => ({ ...f, subcategory: v }))}
+                        placeholder="Select subcategory..."
+                      />
+                    );
+                  })()}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Brand</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...brandsList,
+                      "Apple", "Dell", "HP", "Lenovo", "Samsung", "LG Electronics", "Daikin", "Carrier",
+                      "Mitsubishi Electric", "Gree", "Panasonic", "Sony", "Cisco", "Huawei", "Otis Elevator",
+                      "KONE", "Schindler", "Schneider Electric", "Siemens", "Bosch", "Hikvision", "Dahua",
+                      "Toyota", "Nissan", "Ford", "IKEA", "Steelcase", "Herman Miller", "Other"
+                    ])).map(b => ({ label: b, value: b }))}
+                    value={editForm.brand}
+                    onValueChange={v => setEditForm(f => ({ ...f, brand: v }))}
+                    placeholder="Select brand..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Model</Label>
+                  <Input className="h-8 text-xs" placeholder="e.g. FTKM50 / Latitude 5420" value={editForm.model} onChange={e => setEditForm(f => ({ ...f, model: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Serial / IMEI No.</Label>
+                  <Input className="h-8 text-xs font-mono" placeholder="e.g. SN-98234" value={editForm.serial_number} onChange={e => setEditForm(f => ({ ...f, serial_number: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Ownership Type</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...ownershipTypesList.map(o => o.name),
+                      "Company Owned", "Leased", "Rented", "Freehold", "Third-Party Custody", "Client Owned"
+                    ])).map(ot => ({ label: ot, value: ot }))}
+                    value={editForm.ownership_type}
+                    onValueChange={v => setEditForm(f => ({ ...f, ownership_type: v }))}
+                    placeholder="Select ownership type..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset ID / Tag</Label>
+                  <Input className="h-8 text-xs font-mono" value={editForm.asset_code} onChange={e => setEditForm(f => ({ ...f, asset_code: e.target.value }))} />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Asset Tag / Barcode</Label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={editForm.asset_code}
-                  onChange={e => setEditForm(f => ({ ...f, asset_code: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Serial Number</Label>
-                <Input
-                  className="h-8 text-xs font-mono"
-                  value={editForm.serial_number}
-                  onChange={e => setEditForm(f => ({ ...f, serial_number: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Purchase Value (QAR)</Label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs font-mono"
-                  value={editForm.purchase_cost}
-                  onChange={e => setEditForm(f => ({ ...f, purchase_cost: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Commission Date</Label>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={editForm.purchase_date}
-                  onChange={e => setEditForm(f => ({ ...f, purchase_date: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Useful Life (Months)</Label>
-                <Input
-                  type="number"
-                  className="h-8 text-xs"
-                  value={editForm.life_of_asset}
-                  onChange={e => setEditForm(f => ({ ...f, life_of_asset: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Depreciation Method / Brand</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={editForm.brand}
-                  onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Supplier / Vendor</Label>
-                <Input
-                  className="h-8 text-xs"
-                  value={editForm.supplier}
-                  onChange={e => setEditForm(f => ({ ...f, supplier: e.target.value }))}
-                />
+            {/* ── Section: Purchase & Warranty ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Purchase & Warranty</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Purchase Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.purchase_date} onChange={e => setEditForm(f => ({ ...f, purchase_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Purchase Cost (QAR)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.purchase_cost}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, purchase_cost: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Supplier / Vendor</Label>
+                  <SearchableSelect
+                    options={vendors.map(v => ({ label: v.name, value: v.name }))}
+                    value={editForm.supplier}
+                    onValueChange={v => setEditForm(f => ({ ...f, supplier: v }))}
+                    placeholder="Select supplier..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Warranty Expiry Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.warranty_expiry_date} onChange={e => setEditForm(f => ({ ...f, warranty_expiry_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Warranty Status</Label>
+                  <SearchableSelect
+                    options={[
+                      { label: "Under Warranty", value: "Under Warranty" },
+                      { label: "Expired", value: "Expired" },
+                      { label: "Extended", value: "Extended" },
+                      { label: "No Warranty", value: "No Warranty" },
+                    ]}
+                    value={editForm.warranty_status}
+                    onValueChange={v => setEditForm(f => ({ ...f, warranty_status: v }))}
+                    placeholder="Select status..."
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Asset Condition</Label>
-                <Select value={editForm.asset_condition} onValueChange={v => setEditForm(f => ({ ...f, asset_condition: v }))}>
-                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["New", "Good", "Minor Wear", "Needs Repair", "Fair"].map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Specifications / Description</Label>
-                <Input
-                  className="h-8 text-xs"
-                  placeholder="Dimensions, model details..."
-                  value={editForm.description}
-                  onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                />
+            {/* ── Section: Assignment ── */}
+            {(() => {
+              const selectedEditProp = properties.find(p => (p.property_code && p.property_code === editForm.assigned_property_code) || p.id === editForm.assigned_property_code || p.title === editForm.assigned_property_code);
+              const isEditCorp = editForm.assigned_property_code === "Corporate Office" || editForm.assigned_property_code === "corporate" || Boolean(
+                selectedEditProp && (
+                  (selectedEditProp.property_type && selectedEditProp.property_type.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.property_category && selectedEditProp.property_category.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.title && selectedEditProp.title.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.cost_center_name && selectedEditProp.cost_center_name.toLowerCase().includes("corporate"))
+                )
+              );
+
+              const filteredEditEmployees = employeesList.filter(emp => {
+                if (!editForm.department) return true;
+                const deptName = emp.departments?.name || emp.department || "";
+                const deptId = emp.department_id || "";
+                return deptName.toLowerCase() === editForm.department.toLowerCase() ||
+                       departmentsList.some(d => d.name.toLowerCase() === editForm.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+              });
+
+              return (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Assignment & Location</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Assigned Property</Label>
+                      <SearchableSelect
+                        options={[
+                          { label: "— None / Unassigned —", value: "" },
+                          { label: "🏢 Corporate Office (HQ & Staff)", value: "Corporate Office" },
+                          ...properties.map(p => ({
+                            label: `${p.property_code || p.id} – ${p.title}${p.property_type?.toLowerCase().includes("corporate") || p.title.toLowerCase().includes("corporate") ? " [Corporate]" : ""}`,
+                            value: p.property_code || p.id,
+                          }))
+                        ]}
+                        value={editForm.assigned_property_code}
+                        onValueChange={v => {
+                          if (v === "Corporate Office") {
+                            setEditForm(f => ({
+                              ...f,
+                              assigned_property_code: "Corporate Office",
+                              assigned_unit_code: "",
+                            }));
+                            return;
+                          }
+                          const p = properties.find(prop => (prop.property_code && prop.property_code === v) || prop.id === v || prop.title === v);
+                          const willBeCorp = Boolean(
+                            p && (
+                              (p.property_type && p.property_type.toLowerCase().includes("corporate")) ||
+                              (p.property_category && p.property_category.toLowerCase().includes("corporate")) ||
+                              (p.title && p.title.toLowerCase().includes("corporate")) ||
+                              (p.cost_center_name && p.cost_center_name.toLowerCase().includes("corporate"))
+                            )
+                          );
+                          setEditForm(f => ({
+                            ...f,
+                            assigned_property_code: v,
+                            ...(willBeCorp ? { assigned_unit_code: "" } : { department: "", assigned_employee_name: "", assigned_employee_id: "" })
+                          }));
+                        }}
+                        placeholder="Select property..."
+                      />
+                    </div>
+
+                    {!isEditCorp && (
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Unit Code</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— None / Common Area —", value: "" },
+                            ...units.map(u => ({
+                              label: `${u.unit_code || u.unit_ref || u.id} ${u.unit_name ? `(${u.unit_name})` : ""}`.trim(),
+                              value: u.unit_code || u.unit_ref || u.id,
+                            }))
+                          ]}
+                          value={editForm.assigned_unit_code}
+                          onValueChange={v => setEditForm(f => ({ ...f, assigned_unit_code: v }))}
+                          placeholder="Select unit..."
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Assignment Date</Label>
+                      <Input type="date" className="h-8 text-xs" value={editForm.assignment_date} onChange={e => setEditForm(f => ({ ...f, assignment_date: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {isEditCorp && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 mt-3 border-t border-border/60">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Department</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— All Departments —", value: "" },
+                            ...departmentsList.map(d => ({ label: d.name, value: d.name }))
+                          ]}
+                          value={editForm.department}
+                          onValueChange={v => setEditForm(f => ({ ...f, department: v, assigned_employee_name: "", assigned_employee_id: "" }))}
+                          placeholder="Select department..."
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Employee Name</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— Unassigned —", value: "" },
+                            ...filteredEditEmployees.map(emp => ({
+                              label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                              value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                            }))
+                          ]}
+                          value={editForm.assigned_employee_name}
+                          onValueChange={v => {
+                            const matchedEmp = filteredEditEmployees.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                               employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                            setEditForm(f => ({
+                              ...f,
+                              assigned_employee_name: v,
+                              assigned_employee_id: matchedEmp?.employee_id_code || (v ? f.assigned_employee_id : ""),
+                              department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                            }));
+                          }}
+                          placeholder={editForm.department ? `Search in ${editForm.department}...` : "Search employee in HRMS..."}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Employee ID</Label>
+                        <Input
+                          className="h-8 text-xs font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                          placeholder="Auto-populated from employee"
+                          value={editForm.assigned_employee_id}
+                          readOnly
+                          disabled
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Section: Condition & Status ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Condition & Status</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset Condition</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([...conditionsList.map(c => c.name), "New", "Good", "Fair", "Poor", "Under Repair", "Damaged", "Disposed"])).map(c => ({ label: c, value: c }))}
+                    value={editForm.asset_condition}
+                    onValueChange={v => setEditForm(f => ({ ...f, asset_condition: v }))}
+                    placeholder="Select condition..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset Status</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([...statusesList.map(s => s.name), "Active", "Inactive", "Under Maintenance", "Disposed", "Lost"])).map(s => ({ label: s, value: s }))}
+                    value={editForm.asset_status}
+                    onValueChange={v => setEditForm(f => ({ ...f, asset_status: v }))}
+                    placeholder="Select status..."
+                  />
+                </div>
               </div>
             </div>
+
+            {/* ── Section: Depreciation & Financials ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Depreciation & Financials</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Life of Asset (Months)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs"
+                    value={editForm.life_of_asset}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, life_of_asset: Number(val) || 0 }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Depreciation Method</Label>
+                  <Select value={editForm.depreciation_method} onValueChange={v => setEditForm(f => ({ ...f, depreciation_method: v }))}>
+                    <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Method..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Straight Line Method (SLM)">Straight Line Method (SLM)</SelectItem>
+                      <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                      <SelectItem value="Units of Production">Units of Production</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Depreciation Rate (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.depreciation_rate}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, depreciation_rate: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Opening Cost</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.opening_cost}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, opening_cost: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Addition During Year</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.addition_during_year}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, addition_during_year: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Total Asset Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.total_asset_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, total_asset_value: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Disposal Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.disposal_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, disposal_value: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Opening Acc. Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.opening_accumulated_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, opening_accumulated_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Current Year Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.current_year_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, current_year_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Closing Acc. Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.closing_accumulated_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, closing_accumulated_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Net Book Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.net_book_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, net_book_value: val }));
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Service Dates ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Service & Disposal Dates</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Last Service Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.last_service_date} onChange={e => setEditForm(f => ({ ...f, last_service_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Next Service Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.next_service_date} onChange={e => setEditForm(f => ({ ...f, next_service_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Return Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.return_date} onChange={e => setEditForm(f => ({ ...f, return_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Disposal Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.disposal_date} onChange={e => setEditForm(f => ({ ...f, disposal_date: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Remarks ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Notes & Remarks</p>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Description / Notes</Label>
+                  <Textarea className="text-xs" rows={2} value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Remarks</Label>
+                  <Textarea className="text-xs" rows={2} value={editForm.remarks} onChange={e => setEditForm(f => ({ ...f, remarks: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
           </div>
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setEditingAsset(null)}>Cancel</Button>
-            <Button size="sm" disabled={saving} onClick={handleEditAssetSubmit} className="bg-primary hover:bg-primary/90 text-white min-w-[100px]">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Save Changes
+            <Button size="sm" disabled={saving} className="bg-primary hover:bg-primary/90 text-white" onClick={handleEditAssetSubmit}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* ══════════════════════════════════════════════════════════════════════════ */}
-      {/* ── MODAL: ASSET DETAILS & COMPLETE HISTORY (CTA TARGET) ───────────────── */}
+      {/* ── MODAL: ASSET DETAILS & COMPLETE LIFECYCLE AUDIT (VIEW ASSET) ───────── */}
       {/* ══════════════════════════════════════════════════════════════════════════ */}
-      <Dialog open={!!selectedAssetForDetail} onOpenChange={(open) => !open && setSelectedAssetForDetail(null)}>
-        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden rounded-xl">
+      <Dialog open={!!selectedAssetForDetail} onOpenChange={open => !open && setSelectedAssetForDetail(null)}>
+        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden">
           {selectedAssetForDetail && (
             <>
               <DialogHeader className="p-5 pb-3 border-b bg-gradient-to-r from-muted/60 via-background to-muted/40 shrink-0">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <DialogTitle className="text-lg font-bold">{selectedAssetForDetail.asset_name}</DialogTitle>
-                      <Badge variant="outline" className={`text-xs ${getAssetStatus(selectedAssetForDetail).badgeClass}`}>
-                        {getAssetStatus(selectedAssetForDetail).label}
-                      </Badge>
-                    </div>
-                    <DialogDescription className="text-xs font-mono mt-0.5 flex items-center gap-2">
-                      <span>Tag: {selectedAssetForDetail.asset_code}</span>
-                      {selectedAssetForDetail.serial_number && <span>• SN: {selectedAssetForDetail.serial_number}</span>}
-                      <span>• Category: {selectedAssetForDetail.category || "Fixed Asset"}</span>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                      <Package className="h-5 w-5 text-primary" /> {selectedAssetForDetail.asset_name}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs flex items-center gap-2 font-mono">
+                      <span>Tag: {selectedAssetForDetail.asset_code || "No Code"}</span>
+                      <span>•</span>
+                      <span>Category: {selectedAssetForDetail.category || "Fixed Asset"}</span>
+                      {selectedAssetForDetail.serial_number && (
+                        <>
+                          <span>•</span>
+                          <span>S/N: {selectedAssetForDetail.serial_number}</span>
+                        </>
+                      )}
                     </DialogDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="h-8 gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/10"
-                      onClick={() => openEditAssetModal(selectedAssetForDetail)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> Edit Details
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="h-8 gap-1.5 text-xs font-mono"
-                      onClick={() => setPrintBarcode(selectedAssetForDetail.asset_code || "")}
-                    >
-                      <Printer className="h-3.5 w-3.5" /> Print QR / Tag
-                    </Button>
-                  </div>
+                  <Badge variant="outline" className={`text-xs px-2.5 py-0.5 font-medium ${getAssetStatus(selectedAssetForDetail).badgeClass}`}>
+                    {getAssetStatus(selectedAssetForDetail).label}
+                  </Badge>
                 </div>
               </DialogHeader>
 
-              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* 4 Summary Highlight KPI Badges */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3 rounded-lg border bg-card/60">
                     <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Purchase Cost</span>
-                    <p className="text-sm font-bold font-mono text-foreground mt-0.5">
+                    <p className="text-sm font-bold font-mono text-emerald-600 mt-0.5">
                       QAR {Number(selectedAssetForDetail.purchase_cost || 0).toLocaleString()}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg border bg-card/60">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Useful Life</span>
-                    <p className="text-sm font-bold text-foreground mt-0.5">
-                      {selectedAssetForDetail.life_of_asset ? `${(selectedAssetForDetail.life_of_asset / 12).toFixed(1)} Years` : "5.0 Years"}
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Net Book Value</span>
+                    <p className="text-sm font-bold font-mono text-primary mt-0.5">
+                      QAR {Number(selectedAssetForDetail.net_book_value || selectedAssetForDetail.purchase_cost || 0).toLocaleString()}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg border bg-card/60">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Current Location</span>
-                    <p className={`text-sm font-semibold mt-0.5 truncate ${selectedAssetForDetail.assigned_property_code === "Corporate Office" ? "text-indigo-600" : "text-blue-600"}`}>
-                      {selectedAssetForDetail.assigned_property_code === "Corporate Office" ? "Corporate Office (HQ)" : (selectedAssetForDetail.assigned_property_code || selectedAssetForDetail.properties?.title || "Central Inventory Pool")}
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Ownership / Dept</span>
+                    <p className="text-sm font-semibold mt-0.5 truncate text-foreground">
+                      {selectedAssetForDetail.ownership_type || "Company Owned"}
+                      {selectedAssetForDetail.department ? ` • ${selectedAssetForDetail.department}` : ""}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg border bg-card/60">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                      {selectedAssetForDetail.assigned_property_code === "Corporate Office" ? "Staff Custodian & Space" : "Assigned Unit / User"}
-                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Assigned Location</span>
                     <p className="text-sm font-semibold text-foreground mt-0.5 truncate">
-                      {selectedAssetForDetail.assigned_property_code === "Corporate Office" ? (
-                        selectedAssetForDetail.assigned_employee_name 
-                          ? `${selectedAssetForDetail.assigned_employee_name}${selectedAssetForDetail.assigned_unit_code ? ` (${selectedAssetForDetail.assigned_unit_code})` : ""}`
-                          : "Corporate Staff"
-                      ) : (
-                        selectedAssetForDetail.assigned_unit_code ? `Unit ${selectedAssetForDetail.assigned_unit_code}` : (selectedAssetForDetail.assigned_employee_name || "— Unassigned —")
-                      )}
+                      {selectedAssetForDetail.assigned_property_code || selectedAssetForDetail.properties?.title || "Central Stock"}
+                      {selectedAssetForDetail.assigned_unit_code ? ` (Unit ${selectedAssetForDetail.assigned_unit_code})` : ""}
                     </p>
                   </div>
                 </div>
 
-                <Tabs defaultValue="history" className="w-full">
-                  <TabsList className="grid grid-cols-5 h-9">
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="grid grid-cols-6 h-9">
+                    <TabsTrigger value="overview" className="text-xs gap-1">
+                      <Layers className="h-3 w-3" /> Master Info
+                    </TabsTrigger>
+                    <TabsTrigger value="financials" className="text-xs gap-1">
+                      <DollarSign className="h-3 w-3" /> Financials &amp; Depr.
+                    </TabsTrigger>
                     <TabsTrigger value="history" className="text-xs gap-1">
-                      <ArrowRightLeft className="h-3 w-3" /> Allocations
+                      <ArrowRightLeft className="h-3 w-3" /> Custody &amp; Move
                     </TabsTrigger>
                     <TabsTrigger value="warranty" className="text-xs gap-1">
                       <ShieldCheck className="h-3 w-3" /> Warranty &amp; AMC
@@ -4142,31 +4759,216 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     <TabsTrigger value="maintenance" className="text-xs gap-1">
                       <Wrench className="h-3 w-3" /> Maintenance
                     </TabsTrigger>
-                    <TabsTrigger value="financials" className="text-xs gap-1">
-                      <DollarSign className="h-3 w-3" /> Financials
-                    </TabsTrigger>
-                    <TabsTrigger value="specs" className="text-xs gap-1">
-                      <Layers className="h-3 w-3" /> Specs
+                    <TabsTrigger value="lifecycle" className="text-xs gap-1">
+                      <Clock className="h-3 w-3" /> Service &amp; Remarks
                     </TabsTrigger>
                   </TabsList>
 
+                  {/* ── TAB 1: MASTER INFO & SPECIFICATIONS ── */}
+                  <TabsContent value="overview" className="space-y-4 pt-3 text-xs">
+                    <div className="p-4 rounded-lg border bg-muted/20 space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Tag className="h-3.5 w-3.5 text-primary" /> Asset Identification &amp; Master Classification
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-card p-3 rounded-lg border">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset ID / Code</span>
+                          <p className="font-mono font-bold text-foreground text-xs">{selectedAssetForDetail.asset_code || selectedAssetForDetail.id}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Name</span>
+                          <p className="font-bold text-foreground text-xs">{selectedAssetForDetail.asset_name}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Category</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.category || "Fixed Asset"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Subcategory</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.subcategory || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Brand</span>
+                          <p className="text-foreground text-xs font-semibold">{selectedAssetForDetail.brand || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Model</span>
+                          <p className="text-foreground text-xs font-semibold">{selectedAssetForDetail.model || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Serial / IMEI No.</span>
+                          <p className="font-mono text-foreground text-xs">{selectedAssetForDetail.serial_number || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Ownership Type</span>
+                          <p className="text-foreground text-xs font-medium">{selectedAssetForDetail.ownership_type || "Company Owned"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Department</span>
+                          <p className="text-foreground text-xs font-medium">{selectedAssetForDetail.department || selectedAssetForDetail.departments?.name || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Supplier / Vendor</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.supplier || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Condition</span>
+                          <Badge variant="outline" className="text-[10px] mt-0.5 bg-background">
+                            {selectedAssetForDetail.asset_condition || "New / Good"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Status</span>
+                          <Badge variant="outline" className={`text-[10px] mt-0.5 ${getAssetStatus(selectedAssetForDetail).badgeClass}`}>
+                            {selectedAssetForDetail.asset_status || getAssetStatus(selectedAssetForDetail).label}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Technical Specs & Description */}
+                    <div className="p-4 rounded-lg border bg-muted/20 space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Layers className="h-3.5 w-3.5 text-blue-500" /> Technical Data &amp; Description
+                      </h4>
+                      <p className="p-3 rounded bg-card border text-foreground leading-relaxed text-xs">
+                        {selectedAssetForDetail.description || "Standard fixed asset unit with complete technical documentation."}
+                      </p>
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 2: EXTENDED FINANCIALS & DEPRECIATION (ALL 13 FINANCIAL FIELDS) ── */}
+                  <TabsContent value="financials" className="space-y-4 pt-3 text-xs">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Acquisition, Valuation &amp; General Ledger Balances
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Purchase Cost</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.purchase_cost || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Opening Cost</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.opening_cost ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Addition during Year</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.addition_during_year || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Total Asset Value</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.total_asset_value ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Disposal Value</span>
+                          <p className="font-mono font-bold text-amber-600 text-sm mt-0.5">QAR {Number(selectedAssetForDetail.disposal_value || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Life of Asset</span>
+                          <p className="font-semibold text-foreground text-sm mt-0.5">
+                            {selectedAssetForDetail.life_of_asset ? `${(selectedAssetForDetail.life_of_asset / 12).toFixed(1)} Years (${selectedAssetForDetail.life_of_asset} Mos)` : "5.0 Years (60 Mos)"}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Depreciation Method</span>
+                          <p className="font-medium text-foreground text-sm mt-0.5">{selectedAssetForDetail.depreciation_method || selectedAssetForDetail.brand || "Straight Line Method (SLM)"}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Depreciation Rate</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">{selectedAssetForDetail.depreciation_rate ?? 20}%</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-lg border bg-card space-y-2.5">
+                        <h5 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Accumulated Depreciation &amp; Net Book Value Breakdown</h5>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Opening Acc. Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.opening_accumulated_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Current Year Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.current_year_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Closing Acc. Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.closing_accumulated_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">Net Book Value (Current)</span>
+                            <p className="font-mono font-bold text-emerald-600 text-sm mt-0.5">QAR {Number(selectedAssetForDetail.net_book_value ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {assetDetailHistory?.revaluations && assetDetailHistory.revaluations.length > 0 && (
+                        <div className="mt-3">
+                          <h5 className="text-[11px] font-bold text-foreground mb-1.5">Revaluation History</h5>
+                          {assetDetailHistory.revaluations.map(r => (
+                            <div key={r.id} className="p-2 rounded bg-card border flex justify-between text-xs font-mono">
+                              <span>{formatDDMMMYYYY(r.date)}: QAR {r.prev_value.toLocaleString()} → QAR {r.new_value.toLocaleString()}</span>
+                              <span className="text-muted-foreground">({r.reason})</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 3: CUSTODY, ALLOCATION & TRANSFERS ── */}
                   <TabsContent value="history" className="space-y-3 pt-3">
-                    <div className="rounded-lg border p-4 bg-muted/20">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-                        <ArrowRightLeft className="h-3.5 w-3.5 text-primary" /> Lifecycle Movement &amp; Custody Trail
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Current Deployment &amp; Custody
+                        </h4>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                          onClick={() => openAllocationModalForAsset(selectedAssetForDetail, "ALLOCATE")}
+                        >
+                          <ArrowRightLeft className="h-3 w-3" /> Transfer / Reallocate
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Property</span>
+                          <p className="font-semibold text-foreground mt-0.5">{selectedAssetForDetail.assigned_property_code || selectedAssetForDetail.properties?.title || "Central Stock (Unallocated)"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Unit Code</span>
+                          <p className="font-mono text-foreground mt-0.5">{selectedAssetForDetail.assigned_unit_code || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Employee ID</span>
+                          <p className="font-mono text-foreground mt-0.5">{selectedAssetForDetail.assigned_employee_id || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Employee Name</span>
+                          <p className="font-semibold text-foreground mt-0.5">{selectedAssetForDetail.assigned_employee_name || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assignment Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.assignment_date)}</p>
+                        </div>
+                      </div>
+
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mt-4 mb-2 flex items-center gap-1.5">
+                        <ArrowRightLeft className="h-3.5 w-3.5 text-primary" /> Movement History Trail
                       </h4>
                       {assetDetailHistory?.allocations.length === 0 ? (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <ArrowRightLeft className="mx-auto h-6 w-6 mb-1 opacity-40" />
-                          <p className="text-xs">No movements recorded yet.</p>
-                          {getAssetStatus(selectedAssetForDetail).isAllocated && (
-                            <p className="text-[11px] text-primary mt-1">
-                              Currently deployed to: {selectedAssetForDetail.assigned_property_code || "Property"} {selectedAssetForDetail.assigned_unit_code ? `(Unit ${selectedAssetForDetail.assigned_unit_code})` : ""}
-                            </p>
-                          )}
+                        <div className="text-center py-6 text-muted-foreground bg-card rounded border">
+                          <ArrowRightLeft className="mx-auto h-5 w-5 mb-1 opacity-40" />
+                          <p className="text-xs">No transfer movements recorded yet.</p>
                         </div>
                       ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {assetDetailHistory?.allocations.map(al => (
                             <div key={al.id} className="flex items-start gap-3 p-2.5 rounded border bg-card text-xs">
                               <div className="p-1.5 rounded bg-primary/10 text-primary font-mono text-[10px] font-bold shrink-0">
@@ -4195,6 +4997,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     </div>
                   </TabsContent>
 
+                  {/* ── TAB 4: WARRANTY & AMC ── */}
                   <TabsContent value="warranty" className="space-y-3 pt-3">
                     <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
                       <div className="flex items-center justify-between">
@@ -4211,67 +5014,33 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                         </Button>
                       </div>
 
-                      {assetDetailHistory?.warranty ? (
-                        <div className="space-y-3 text-xs">
-                          <div className="grid grid-cols-3 gap-3">
-                            <div className="p-2.5 rounded bg-card border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-bold">Policy Type</span>
-                              <p className="font-semibold text-foreground mt-0.5">{assetDetailHistory.warranty.warranty_type}</p>
-                              {assetDetailHistory.warranty.policy_number && (
-                                <p className="text-[10px] font-mono text-muted-foreground">#{assetDetailHistory.warranty.policy_number}</p>
-                              )}
-                            </div>
-                            <div className="p-2.5 rounded bg-card border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-bold">Provider / Vendor</span>
-                              <p className="font-semibold text-foreground mt-0.5">{assetDetailHistory.warranty.provider_name}</p>
-                              <p className="text-[10px] text-muted-foreground">{assetDetailHistory.warranty.support_phone || "Support on record"}</p>
-                            </div>
-                            <div className="p-2.5 rounded bg-card border">
-                              <span className="text-[10px] text-muted-foreground uppercase font-bold">Valid Until</span>
-                              <p className="font-mono font-bold text-foreground mt-0.5">{formatDDMMMYYYY(assetDetailHistory.warranty.expiry_date)}</p>
-                              <Badge variant="outline" className="text-[9px] mt-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30 font-mono">
-                                {assetDetailHistory.warranty.status}
-                              </Badge>
-                            </div>
-                          </div>
-
-                          <div className="p-3 rounded bg-card border">
-                            <span className="text-[10px] text-muted-foreground font-bold uppercase">Coverage Scope &amp; Terms:</span>
-                            <p className="text-foreground mt-1">{assetDetailHistory.warranty.coverage_scope}</p>
-                          </div>
-
-                          {assetDetailHistory.warranty.documents && assetDetailHistory.warranty.documents.length > 0 && (
-                            <div className="space-y-1.5">
-                              <span className="text-[10px] text-muted-foreground font-bold uppercase">Attached Proof Documents:</span>
-                              <div className="flex flex-wrap gap-2">
-                                {assetDetailHistory.warranty.documents.map(d => (
-                                  <div key={d.id} className="flex items-center gap-1.5 p-1.5 px-2.5 rounded border bg-card text-xs">
-                                    <FileCheck className="h-3.5 w-3.5 text-emerald-600" />
-                                    <span className="font-medium text-foreground">{d.name}</span>
-                                    <span className="text-[10px] text-muted-foreground font-mono">({d.file_name})</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Warranty Expiry Date</span>
+                          <p className="font-mono font-bold text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.warranty_expiry_date || assetDetailHistory?.warranty?.expiry_date)}</p>
                         </div>
-                      ) : (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <Shield className="mx-auto h-6 w-6 mb-1 opacity-40" />
-                          <p className="text-xs">No warranty policy registered for this asset.</p>
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="h-7 text-xs mt-2 border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10"
-                            onClick={() => openWarrantyModal(selectedAssetForDetail)}
-                          >
-                            Register Warranty Now
-                          </Button>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Warranty Status</span>
+                          <Badge variant="outline" className="text-[10px] mt-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30 font-mono">
+                            {selectedAssetForDetail.warranty_status || assetDetailHistory?.warranty?.status || "ACTIVE"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Policy Provider</span>
+                          <p className="font-semibold text-foreground mt-0.5">{assetDetailHistory?.warranty?.provider_name || selectedAssetForDetail.supplier || "Manufacturer"}</p>
+                        </div>
+                      </div>
+
+                      {assetDetailHistory?.warranty?.coverage_scope && (
+                        <div className="p-3 rounded bg-card border text-xs">
+                          <span className="text-[10px] text-muted-foreground font-bold uppercase">Coverage Scope &amp; Terms:</span>
+                          <p className="text-foreground mt-1">{assetDetailHistory.warranty.coverage_scope}</p>
                         </div>
                       )}
                     </div>
                   </TabsContent>
 
+                  {/* ── TAB 5: MAINTENANCE WORK ORDERS ── */}
                   <TabsContent value="maintenance" className="space-y-3 pt-3">
                     <div className="rounded-lg border p-4 bg-muted/20">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
@@ -4297,9 +5066,6 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                                 <p className="text-[11px] text-muted-foreground mt-1">
                                   Vendor: {m.service_vendor} {m.technician_name && `• Tech: ${m.technician_name}`} • Scheduled: {formatDDMMMYYYY(m.scheduled_date)}
                                 </p>
-                                {m.completion_notes && (
-                                  <p className="text-[11px] text-emerald-600 mt-0.5">Notes: {m.completion_notes}</p>
-                                )}
                               </div>
                               <div className="text-right font-mono font-bold">
                                 QAR {(m.actual_cost || m.estimated_cost || 0).toLocaleString()}
@@ -4311,77 +5077,42 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="financials" className="space-y-3 pt-3">
-                    <div className="rounded-lg border p-4 bg-muted/20 space-y-4">
+                  {/* ── TAB 6: SERVICE DATES, LIFECYCLE & REMARKS (ALL REMAINING FIELDS) ── */}
+                  <TabsContent value="lifecycle" className="space-y-4 pt-3 text-xs">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                        <DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Book Value &amp; Depreciation Profile
+                        <Calendar className="h-3.5 w-3.5 text-blue-500" /> Service Dates &amp; Complete Lifecycle Timeline
                       </h4>
-                      <div className="grid grid-cols-3 gap-3 text-xs">
-                        <div className="p-2.5 rounded bg-card border">
-                          <span className="text-[10px] text-muted-foreground">Original Cost</span>
-                          <p className="font-mono font-bold text-foreground">QAR {Number(selectedAssetForDetail.purchase_cost || 0).toLocaleString()}</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Purchase Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.purchase_date)}</p>
                         </div>
-                        <div className="p-2.5 rounded bg-card border">
-                          <span className="text-[10px] text-muted-foreground">Depreciation Method</span>
-                          <p className="font-medium text-foreground">{selectedAssetForDetail.brand || "Straight Line Method (SLM)"}</p>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Last Service Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.last_service_date)}</p>
                         </div>
-                        <div className="p-2.5 rounded bg-card border">
-                          <span className="text-[10px] text-muted-foreground">Commission Date</span>
-                          <p className="font-mono text-foreground">{formatDDMMMYYYY(selectedAssetForDetail.purchase_date)}</p>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Next Service Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.next_service_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Return Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.return_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Disposal Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.disposal_date)}</p>
                         </div>
                       </div>
 
-                      {assetDetailHistory?.revaluations && assetDetailHistory.revaluations.length > 0 && (
-                        <div className="mt-3">
-                          <h5 className="text-[11px] font-bold text-foreground mb-1.5">Revaluation Adjustments</h5>
-                          {assetDetailHistory.revaluations.map(r => (
-                            <div key={r.id} className="p-2 rounded bg-card border flex justify-between text-xs font-mono">
-                              <span>{formatDDMMMYYYY(r.date)}: QAR {r.prev_value.toLocaleString()} → QAR {r.new_value.toLocaleString()}</span>
-                              <span className="text-muted-foreground">({r.reason})</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {assetDetailHistory?.sale && (
-                        <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs">
-                          <span className="font-bold text-emerald-700 dark:text-emerald-300">Disposal via Sale</span>
-                          <p className="text-[11px] mt-0.5">
-                            Sold to {assetDetailHistory.sale.buyer} on {formatDDMMMYYYY(assetDetailHistory.sale.date)} for <strong>QAR {assetDetailHistory.sale.sale_value.toLocaleString()}</strong>.
-                          </p>
-                        </div>
-                      )}
-
-                      {assetDetailHistory?.writeoff && (
-                        <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-xs">
-                          <span className="font-bold text-red-700 dark:text-red-300">Written Off &amp; Scrapped</span>
-                          <p className="text-[11px] mt-0.5">
-                            Decommissioned on {formatDDMMMYYYY(assetDetailHistory.writeoff.date)}. Reason: {assetDetailHistory.writeoff.writeoff_reason}. Approved by: {assetDetailHistory.writeoff.approved_by || "Management"}.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="specs" className="space-y-3 pt-3">
-                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3 text-xs">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                        <Layers className="h-3.5 w-3.5 text-blue-500" /> Technical Data &amp; Specifications
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>Asset ID: <span className="font-mono text-foreground">{selectedAssetForDetail.id}</span></div>
-                        <div>Category: <span className="text-foreground">{selectedAssetForDetail.category || "Fixed Asset"}</span></div>
-                        <div>Serial Number: <span className="font-mono text-foreground">{selectedAssetForDetail.serial_number || "N/A"}</span></div>
-                        <div>Condition: <span className="text-foreground">{selectedAssetForDetail.asset_condition || "Good"}</span></div>
-                        <div>Supplier / Vendor: <span className="text-foreground">{selectedAssetForDetail.supplier || "—"}</span></div>
-                        <div>Barcode: <span className="font-mono text-foreground">{selectedAssetForDetail.asset_code}</span></div>
+                      {/* Remarks & Notes */}
+                      <div className="p-3.5 rounded-lg border bg-card space-y-1.5">
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Remarks &amp; Lifecycle Notes:</span>
+                        <p className="text-foreground text-xs leading-relaxed">
+                          {selectedAssetForDetail.remarks || "No additional remarks recorded for this asset."}
+                        </p>
                       </div>
-                      {selectedAssetForDetail.description && (
-                        <div className="p-2.5 rounded bg-card border mt-2">
-                          <span className="text-[10px] text-muted-foreground font-semibold">Notes / Description:</span>
-                          <p className="mt-1 text-foreground">{selectedAssetForDetail.description}</p>
-                        </div>
-                      )}
                     </div>
                   </TabsContent>
                 </Tabs>
@@ -4467,24 +5198,15 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Category *</Label>
-                    <Select
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...assetCategoriesList.map(c => c.name),
+                        "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
+                      ])).map(c => ({ label: c, value: c }))}
                       value={form.category}
-                      onValueChange={v => {
-                        setForm(f => ({ ...f, category: v, subcategory: "" }));
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Array.from(
-                          new Set([
-                            ...assetCategoriesList.map(c => c.name),
-                            "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
-                          ])
-                        ).map(c => (
-                          <SelectItem key={c} value={c}>{c}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onValueChange={v => setForm(f => ({ ...f, category: v, subcategory: "" }))}
+                      placeholder="Select category..."
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">SubCategory</Label>
@@ -4494,33 +5216,24 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                         ? assetSubcategoriesList.filter(sc => sc.category_id === matchedCat.id)
                         : assetSubcategoriesList;
 
+                      const subOptions = filteredSubcategories.length > 0
+                        ? filteredSubcategories.map(sc => ({ label: sc.name, value: sc.name }))
+                        : [
+                            { label: "General / Standard", value: "General / Standard" },
+                            { label: "Split AC", value: "Split AC" },
+                            { label: "Office Table", value: "Office Table" },
+                            { label: "Executive Chair", value: "Executive Chair" },
+                            { label: "Refrigerator", value: "Refrigerator" },
+                            { label: "Water Heater", value: "Water Heater" },
+                          ];
+
                       return (
-                        <Select
-                          value={form.subcategory || undefined}
+                        <SearchableSelect
+                          options={subOptions}
+                          value={form.subcategory}
                           onValueChange={v => setForm(f => ({ ...f, subcategory: v }))}
-                        >
-                          <SelectTrigger className="h-8 text-xs bg-background">
-                            <SelectValue placeholder="Select subcategory..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {filteredSubcategories.length > 0 ? (
-                              filteredSubcategories.map(sc => (
-                                <SelectItem key={sc.id} value={sc.name}>
-                                  {sc.name}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <>
-                                <SelectItem value="General / Standard">General / Standard</SelectItem>
-                                <SelectItem value="Split AC">Split AC</SelectItem>
-                                <SelectItem value="Office Table">Office Table</SelectItem>
-                                <SelectItem value="Executive Chair">Executive Chair</SelectItem>
-                                <SelectItem value="Refrigerator">Refrigerator</SelectItem>
-                                <SelectItem value="Water Heater">Water Heater</SelectItem>
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select subcategory..."
+                        />
                       );
                     })()}
                   </div>
@@ -4528,7 +5241,46 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs font-semibold">Asset Tag / Barcode Code</Label>
+                    <Label className="text-xs font-semibold">Brand</Label>
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...brandsList,
+                        "Apple", "Dell", "HP", "Lenovo", "Samsung", "LG Electronics", "Daikin", "Carrier",
+                        "Mitsubishi Electric", "Gree", "Panasonic", "Sony", "Cisco", "Huawei", "Otis Elevator",
+                        "KONE", "Schindler", "Schneider Electric", "Siemens", "Bosch", "Hikvision", "Dahua",
+                        "Toyota", "Nissan", "Ford", "IKEA", "Steelcase", "Herman Miller", "Other"
+                      ])).map(b => ({ label: b, value: b }))}
+                      value={form.brand}
+                      onValueChange={v => setForm(f => ({ ...f, brand: v }))}
+                      placeholder="Select brand..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Model</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="e.g. FTKM50 / Latitude 5420"
+                      value={form.model}
+                      onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Ownership Type</Label>
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...ownershipTypesList.map(o => o.name),
+                        "Company Owned", "Leased", "Rented", "Freehold", "Third-Party Custody", "Client Owned"
+                      ])).map(ot => ({ label: ot, value: ot }))}
+                      value={form.ownership_type}
+                      onValueChange={v => setForm(f => ({ ...f, ownership_type: v }))}
+                      placeholder="Select ownership type..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Asset ID / Barcode Code *</Label>
                     <Input
                       className="h-8 text-xs font-mono"
                       placeholder="e.g. AST-0820 (Auto if blank)"
@@ -4537,24 +5289,22 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs font-semibold">Serial Number</Label>
+                    <Label className="text-xs font-semibold">Serial / IMEI No.</Label>
                     <Input
                       className="h-8 text-xs font-mono"
-                      placeholder="e.g. SN-98234-LG"
+                      placeholder="e.g. SN-98234-LG / IMEI-8612..."
                       value={form.serial_number}
                       onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Supplier / Vendor</Label>
-                    <Select value={form.vendor_id} onValueChange={v => setForm(f => ({ ...f, vendor_id: v }))}>
-                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select supplier..." /></SelectTrigger>
-                      <SelectContent>
-                        {vendors.map(v => (
-                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      options={vendors.map(v => ({ label: v.name, value: v.id }))}
+                      value={form.vendor_id}
+                      onValueChange={v => setForm(f => ({ ...f, vendor_id: v }))}
+                      placeholder="Select supplier..."
+                    />
                   </div>
                 </div>
 
@@ -4563,10 +5313,14 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     <Label className="text-xs font-semibold">Acquisition / Purchase Cost (QAR) *</Label>
                     <Input
                       type="number"
+                      min={0}
                       className="h-8 text-xs font-mono"
                       placeholder="0.00"
                       value={form.acquisition_amount}
-                      onChange={e => setForm(f => ({ ...f, acquisition_amount: e.target.value }))}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, acquisition_amount: val }));
+                      }}
                     />
                   </div>
                   <div className="space-y-1">
@@ -4593,21 +5347,29 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     <Label className="text-xs font-semibold">Depreciation Rate (%)</Label>
                     <Input
                       type="number"
+                      min={0}
                       className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
                       placeholder="e.g. 20"
                       disabled={form.depreciation_method === "None"}
                       value={form.depreciation_method === "None" ? "0" : form.depreciation_rate}
-                      onChange={e => setForm(f => ({ ...f, depreciation_rate: e.target.value }))}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, depreciation_rate: val }));
+                      }}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs font-semibold">Useful Life (Years)</Label>
                     <Input
                       type="number"
+                      min={0}
                       className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
                       disabled={form.depreciation_method === "None"}
                       value={form.useful_life_years}
-                      onChange={e => setForm(f => ({ ...f, useful_life_years: e.target.value }))}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, useful_life_years: val }));
+                      }}
                     />
                   </div>
                 </div>
@@ -4693,7 +5455,15 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs font-semibold">Warranty / Service Provider *</Label>
-                        <Select
+                        <SearchableSelect
+                          options={Array.from(new Set([
+                            ...vendors.map(vnd => vnd.name),
+                            "Al-Futtaim Technologies",
+                            "LG Electronics Gulf",
+                            "Daikin Air Conditioning",
+                            "Otis Elevator Company",
+                            "Schneider Electric QA"
+                          ])).map(name => ({ label: name, value: name }))}
                           value={form.warranty_provider}
                           onValueChange={v => {
                             const selectedVendor = vendors.find(vnd => vnd.name === v || vnd.id === v);
@@ -4704,23 +5474,8 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                               warranty_support_phone: selectedVendor?.phone || f.warranty_support_phone,
                             }));
                           }}
-                        >
-                          <SelectTrigger className="h-8 text-xs bg-background">
-                            <SelectValue placeholder="Select warranty / service vendor..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {vendors.map(vnd => (
-                              <SelectItem key={vnd.id} value={vnd.name}>
-                                {vnd.name} {vnd.vendor_type ? `(${vnd.vendor_type})` : ''}
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="Al-Futtaim Technologies">Al-Futtaim Technologies</SelectItem>
-                            <SelectItem value="LG Electronics Gulf">LG Electronics Gulf</SelectItem>
-                            <SelectItem value="Daikin Air Conditioning">Daikin Air Conditioning</SelectItem>
-                            <SelectItem value="Otis Elevator Company">Otis Elevator Company</SelectItem>
-                            <SelectItem value="Schneider Electric QA">Schneider Electric QA</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select warranty / service vendor..."
+                        />
                       </div>
                     </div>
 
@@ -4948,6 +5703,368 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                   )}
                 </div>
 
+                {/* Section A: Deployment, Custody & Condition */}
+                {(() => {
+                  const selectedProp = properties.find(p => p.id === form.assigned_property_id);
+                  const isCorporate = form.assigned_property_id === "corporate" || Boolean(
+                    selectedProp && (
+                      (selectedProp.property_type && selectedProp.property_type.toLowerCase().includes("corporate")) ||
+                      (selectedProp.property_category && selectedProp.property_category.toLowerCase().includes("corporate")) ||
+                      (selectedProp.title && selectedProp.title.toLowerCase().includes("corporate")) ||
+                      (selectedProp.cost_center_name && selectedProp.cost_center_name.toLowerCase().includes("corporate"))
+                    )
+                  );
+
+                  // Filter employees by selected department if department is set
+                  const filteredEmployees = employeesList.filter(emp => {
+                    if (!form.department) return true;
+                    const deptName = emp.departments?.name || emp.department || "";
+                    const deptId = emp.department_id || "";
+                    return deptName.toLowerCase() === form.department.toLowerCase() ||
+                           departmentsList.some(d => d.name.toLowerCase() === form.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+                  });
+
+                  return (
+                    <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                      <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Custody, Location &amp; Physical Condition
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Assigned Property</Label>
+                          <SearchableSelect
+                            options={[
+                              { label: "— Unassigned (Central Storage) —", value: "none" },
+                              { label: "🏢 Corporate Office (HQ & Staff)", value: "corporate" },
+                              ...properties.map(p => ({
+                                label: `${p.title} (${p.property_code || "No Code"})${p.property_type?.toLowerCase().includes("corporate") || p.title.toLowerCase().includes("corporate") ? " [Corporate]" : ""}`,
+                                value: p.id,
+                              }))
+                            ]}
+                            value={form.assigned_property_id || "none"}
+                            onValueChange={v => {
+                              if (v === "corporate") {
+                                setForm(f => ({
+                                  ...f,
+                                  assigned_property_id: "corporate",
+                                  assigned_property_code: "Corporate Office",
+                                  assigned_unit_id: "",
+                                  assigned_unit_code: "",
+                                }));
+                                return;
+                              }
+                              const p = properties.find(prop => prop.id === v);
+                              const willBeCorp = Boolean(
+                                p && (
+                                  (p.property_type && p.property_type.toLowerCase().includes("corporate")) ||
+                                  (p.property_category && p.property_category.toLowerCase().includes("corporate")) ||
+                                  (p.title && p.title.toLowerCase().includes("corporate")) ||
+                                  (p.cost_center_name && p.cost_center_name.toLowerCase().includes("corporate"))
+                                )
+                              );
+                              setForm(f => ({
+                                ...f,
+                                assigned_property_id: v === "none" ? "" : v,
+                                assigned_property_code: p?.title || "",
+                                // If not corporate, clear employee & department assignment
+                                ...(willBeCorp ? { assigned_unit_id: "", assigned_unit_code: "" } : { department: "", assigned_employee_name: "", assigned_employee_id: "" })
+                              }));
+                            }}
+                            placeholder="Select property..."
+                          />
+                        </div>
+
+                        {!isCorporate && (
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Unit Code</Label>
+                            <SearchableSelect
+                              options={[
+                                { label: "— None / Common Area —", value: "none" },
+                                ...units
+                                  .filter(u => !form.assigned_property_id || form.assigned_property_id === "none" || u.property_id === form.assigned_property_id)
+                                  .map(u => ({
+                                    label: `Unit ${u.unit_code || u.unit_name || u.unit_ref || u.id}`,
+                                    value: u.id,
+                                  }))
+                              ]}
+                              value={form.assigned_unit_id || "none"}
+                              onValueChange={v => {
+                                const u = units.find(unit => unit.id === v);
+                                setForm(f => ({ ...f, assigned_unit_id: v === "none" ? "" : v, assigned_unit_code: u?.unit_code || u?.unit_ref || "" }));
+                              }}
+                              placeholder="Select unit..."
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Assignment Date</Label>
+                          <Input
+                            type="date"
+                            className="h-8 text-xs"
+                            value={form.assignment_date}
+                            onChange={e => setForm(f => ({ ...f, assignment_date: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Corporate-only fields: Department, Assigned Employee Name, Assigned Employee ID */}
+                      {isCorporate && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-border/60">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Department</Label>
+                            <SearchableSelect
+                              options={Array.from(new Set([
+                                ...departmentsList.map(d => d.name),
+                                "Administration", "Operations", "Finance", "HR", "Facility Management", "IT & Security", "Executive Office"
+                              ])).map(dept => ({ label: dept, value: dept }))}
+                              value={form.department}
+                              onValueChange={v => setForm(f => ({ ...f, department: v, assigned_employee_name: "", assigned_employee_id: "" }))}
+                              placeholder="Select department..."
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Employee Name</Label>
+                            <SearchableSelect
+                              options={[
+                                { label: "— Unassigned —", value: "" },
+                                ...filteredEmployees.map(emp => ({
+                                  label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                                  value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                                }))
+                              ]}
+                              value={form.assigned_employee_name}
+                              onValueChange={v => {
+                                const matchedEmp = filteredEmployees.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                                   employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                                setForm(f => ({
+                                  ...f,
+                                  assigned_employee_name: v,
+                                  assigned_employee_id: matchedEmp?.employee_id_code || (v ? f.assigned_employee_id : ""),
+                                  // Auto-fill department if not already selected
+                                  department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                                }));
+                              }}
+                              placeholder={form.department ? `Search in ${form.department}...` : "Search employee in HRMS..."}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Employee ID</Label>
+                            <Input
+                              className="h-8 text-xs font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                              placeholder="Auto-populated from employee"
+                              value={form.assigned_employee_id}
+                              readOnly
+                              disabled
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/60">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Asset Condition</Label>
+                          <SearchableSelect
+                            options={Array.from(new Set([...conditionsList.map(c => c.name), "New", "Good / Operational", "Minor Wear", "Needs Maintenance", "Fair", "Damaged"])).map(c => ({ label: c, value: c }))}
+                            value={form.asset_condition}
+                            onValueChange={v => setForm(f => ({ ...f, asset_condition: v }))}
+                            placeholder="Select condition..."
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Asset Status</Label>
+                          <SearchableSelect
+                            options={Array.from(new Set([...statusesList.map(s => s.name), "Available", "Assigned", "Under Maintenance", "In Repair", "Decommissioned", "Disposed"])).map(st => ({ label: st, value: st }))}
+                            value={form.asset_status}
+                            onValueChange={v => setForm(f => ({ ...f, asset_status: v }))}
+                            placeholder="Select status..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Section B: Financial & Depreciation Balances */}
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Depreciation &amp; Asset Valuation Balances (QAR)
+                  </h4>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Opening Cost (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.opening_cost}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, opening_cost: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Addition during Year (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.addition_during_year}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, addition_during_year: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Total Asset Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.total_asset_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, total_asset_value: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Disposal Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.disposal_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, disposal_value: val }));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Opening Acc. Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.opening_accumulated_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, opening_accumulated_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Current Year Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.current_year_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, current_year_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Closing Acc. Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.closing_accumulated_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, closing_accumulated_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Net Book Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.net_book_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, net_book_value: val }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section C: Lifecycle Dates & Remarks */}
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-amber-500" /> Service Dates, Lifecycle &amp; Remarks
+                  </h4>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Last Service Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.last_service_date}
+                        onChange={e => setForm(f => ({ ...f, last_service_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Next Service Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.next_service_date}
+                        onChange={e => setForm(f => ({ ...f, next_service_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Return Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.return_date}
+                        onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Disposal Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.disposal_date}
+                        onChange={e => setForm(f => ({ ...f, disposal_date: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Remarks &amp; Lifecycle Notes</Label>
+                    <Textarea
+                      rows={2}
+                      className="text-xs"
+                      placeholder="Enter asset remarks, procurement notes, warranty caveats..."
+                      value={form.remarks}
+                      onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
                 {/* Summary Review Card */}
                 <div className="p-3.5 rounded-lg border bg-card space-y-2.5">
                   <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted-foreground">
@@ -4959,16 +6076,16 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                       <p className="font-semibold truncate">{form.item_name || "—"}</p>
                     </div>
                     <div className="p-2 rounded bg-muted/40">
+                      <span className="text-[10px] text-muted-foreground">Brand / Model</span>
+                      <p className="font-semibold truncate">{form.brand ? `${form.brand} ${form.model}` : "—"}</p>
+                    </div>
+                    <div className="p-2 rounded bg-muted/40">
                       <span className="text-[10px] text-muted-foreground">Category</span>
                       <p className="font-semibold">{form.category}</p>
                     </div>
                     <div className="p-2 rounded bg-muted/40">
                       <span className="text-[10px] text-muted-foreground">Acquisition Cost</span>
                       <p className="font-mono font-bold text-emerald-600">QAR {Number(form.acquisition_amount || 0).toLocaleString()}</p>
-                    </div>
-                    <div className="p-2 rounded bg-muted/40">
-                      <span className="text-[10px] text-muted-foreground">Warranty</span>
-                      <p className="font-semibold">{form.has_warranty ? `${form.warranty_duration_months} Mos (${form.warranty_type})` : "None"}</p>
                     </div>
                   </div>
                 </div>

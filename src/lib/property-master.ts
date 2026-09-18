@@ -55,6 +55,7 @@ export function buildPropertyPayload(input: {
   };
   ownerLandlord?: string;
   hostId?: string;
+  documents?: any[];
 }): PropertySavePayload {
   const amenityValues = input.amenities ?? (input.amenityFields ?? []).filter(Boolean);
   const municipalityPayload = buildMunicipalityPayload(
@@ -63,6 +64,7 @@ export function buildPropertyPayload(input: {
     amenityValues,
     input.otherAmenitiesFacilities,
     input.proposedFields,
+    input.documents,
   );
 
   return {
@@ -122,6 +124,7 @@ function buildMunicipalityPayload(
     costCenterCode?: string;
     costCenterName?: string;
   },
+  documents?: any[],
 ) {
   let municipality: any = null;
   try {
@@ -135,6 +138,7 @@ function buildMunicipalityPayload(
     owner_landlord: ownerLandlord || undefined,
     facility_amenities: amenitiesFields.filter(Boolean),
     other_amenities_facilities: otherAmenitiesFacilities || undefined,
+    property_documents: documents ?? municipality?.property_documents ?? undefined,
     change_request: {
       property_code_new: proposedFields?.propertyCode || undefined,
       property_name_new: proposedFields?.propertyName || undefined,

@@ -124,7 +124,41 @@ export const updateGender = (id: number, name: string) => updateSimple('mst_gend
 export const deleteGender = (id: number) => deleteSimple('mst_genders', id);
 
 // Department
-export const fetchDepartments = () => fetchSimple('mst_departments');
+export const fetchDepartments = async (): Promise<Simplemaster[]> => {
+  try {
+    const { data, error } = await supabase.from('departments').select('id, name').order('name');
+    if (!error && data && data.length > 0) {
+      return data.map((d: any) => ({
+        id: typeof d.id === 'number' ? d.id : (parseInt(String(d.id), 10) || 1),
+        name: d.name,
+      }));
+    }
+  } catch {
+    // fallback to mst_departments
+  }
+
+  try {
+    const { data: mstData, error: mstError } = await supabase.from('mst_departments').select('*').order('name');
+    if (!mstError && mstData && mstData.length > 0) {
+      return mstData;
+    }
+  } catch {
+    // fallback
+  }
+
+  // Fallback to HRMS master defaults
+  return [
+    { id: 1, name: 'Commercial & Leasing' },
+    { id: 2, name: 'Finance & Accounts' },
+    { id: 3, name: 'Facility Operations & Maintenance' },
+    { id: 4, name: 'Human Resources & Talent' },
+    { id: 5, name: 'Legal & Compliance' },
+    { id: 6, name: 'Procurement & Supply Chain' },
+    { id: 7, name: 'Management' },
+    { id: 8, name: 'Information Technology' },
+    { id: 9, name: 'Operations' },
+  ];
+};
 export const createDepartment = (name: string) => createSimple('mst_departments', name);
 export const updateDepartment = (id: number, name: string) => updateSimple('mst_departments', id, name);
 export const deleteDepartment = (id: number) => deleteSimple('mst_departments', id);
@@ -207,6 +241,11 @@ export const fetchAssetStatuses = () => fetchSimple('mst_asset_statuses');
 export const createAssetStatus = (name: string) => createSimple('mst_asset_statuses', name);
 export const updateAssetStatus = (id: number, name: string) => updateSimple('mst_asset_statuses', id, name);
 export const deleteAssetStatus = (id: number) => deleteSimple('mst_asset_statuses', id);
+
+export const fetchAssetBrands = () => fetchSimple('mst_asset_brands');
+export const createAssetBrand = (name: string) => createSimple('mst_asset_brands', name);
+export const updateAssetBrand = (id: number, name: string) => updateSimple('mst_asset_brands', id, name);
+export const deleteAssetBrand = (id: number) => deleteSimple('mst_asset_brands', id);
 
 // ── Property Masters ───────────────────────────────────────────────────────────
 

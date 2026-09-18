@@ -569,6 +569,7 @@ export type Asset = {
   warranty_expiry_date?: string;
   warranty_status?: string;
   department_id?: string;
+  department?: string;
   assigned_property_id?: string;
   assigned_property_code?: string;
   assigned_unit_id?: string;
@@ -579,6 +580,8 @@ export type Asset = {
   asset_condition?: string;
   asset_status?: string;
   life_of_asset?: number;
+  depreciation_method?: string;
+  depreciation_rate?: number;
   opening_cost?: number;
   last_service_date?: string;
   next_service_date?: string;
@@ -984,14 +987,83 @@ export async function fetchUnits(filters?: { property_id?: string }) {
   return data as Unit[];
 }
 
+/** Columns present on public.units (PostgREST schema). */
+const UNITS_WRITE_KEYS = new Set([
+  'property_id',
+  'unit_ref',
+  'room_type',
+  'bedrooms',
+  'bathrooms',
+  'area',
+  'price',
+  'status',
+  'unit_code',
+  'unit_cost_center_code',
+  'unit_name',
+  'parent_cost_center_code',
+  'unit_usage',
+  'block_tower',
+  'floor',
+  'balcony_sqm',
+  'total_area_sqm',
+  'view_type',
+  'furnishing',
+  'parking_slot_no',
+  'electricity_meter_no',
+  'water_meter_no',
+  'cooling_meter_no',
+  'lease_status',
+  'rent_frequency',
+  'current_tenant',
+  'contract_no',
+  'contract_start_date',
+  'contract_end_date',
+  'current_rent',
+  'security_deposit_type',
+  'security_deposit_amount',
+  'service_charge',
+  'maintenance_responsibility',
+  'handover_date',
+  'documents_received',
+  'remarks',
+  'max_adults',
+  'max_children',
+  'total_occupancy',
+  'weekend_price',
+  'holiday_price',
+  'cleaning_fee',
+]);
+
+export function sanitizeUnitWritePayload<T extends Record<string, unknown>>(payload: T): T {
+  const sanitized = {} as T;
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    // Strip client-only keys or invalid property keys
+    if (key === 'host_id' || key === 'id' || key === 'created_at' || key === 'updated_at') {
+      continue;
+    }
+    if (UNITS_WRITE_KEYS.has(key)) {
+      (sanitized as Record<string, unknown>)[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 export async function createUnit(payload: Partial<Unit>) {
-  const { data, error } = await supabase.from('units').insert(payload).select().single();
+  const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
+  const { data, error } = await supabase.from('units').insert(sanitized).select().single();
   if (error) throw error;
   return data as Unit;
 }
 
 export async function updateUnit(id: string, payload: Partial<Unit>) {
-  const { data, error } = await supabase.from('units').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
+  const { data, error } = await supabase
+    .from('units')
+    .update({ ...sanitized, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
   if (error) throw error;
   return data as Unit;
 }

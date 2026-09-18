@@ -1,7 +1,7 @@
 import { i as __toESM } from "../_runtime.mjs";
 import { c as require_jsx_runtime } from "../_libs/@radix-ui/react-arrow+[...].mjs";
 import { u as require_react } from "../_libs/@floating-ui/react-dom+[...].mjs";
-import { b as Star } from "../_libs/lucide-react.mjs";
+import { x as Star } from "../_libs/lucide-react.mjs";
 import { n as CardContent, t as Card } from "./card-xVPC106M.mjs";
 import { t as Button } from "./button-OuFjfcpS.mjs";
 //#region node_modules/.nitro/vite/services/ssr/assets/portal.community.reviews-CleMFCvW.js

@@ -2068,7 +2068,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             title="HRMS Workforce: Excel Bulk Import & Management"
             description="Production-grade Excel CREATE, UPDATE, and DELETE engine for employee profiles, salaries, designations, and departments."
             onCompleted={() => {
-              loadHrmsData();
+              loadAllHRMSData();
             }}
           />
         </DialogContent>
@@ -2872,36 +2872,170 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Official Email</span>
-                  <span className="font-semibold text-xs truncate block">{selectedEmployeeProfile.email}</span>
-                </div>
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Contact Number</span>
-                  <span className="font-semibold text-xs">{selectedEmployeeProfile.mobile_number || "—"}</span>
-                </div>
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Nationality</span>
-                  <span className="font-semibold text-xs">{selectedEmployeeProfile.nationality || "Qatari"}</span>
-                </div>
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Monthly CTC Salary</span>
-                  <span className="font-bold text-xs text-emerald-600">
-                    {(Number(selectedEmployeeProfile.basic_salary || 0) + Number(selectedEmployeeProfile.hra || 0) + Number(selectedEmployeeProfile.tra || 0)).toLocaleString()} QAR
-                  </span>
-                </div>
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Status</span>
-                  <Badge variant="outline" className="text-[10px] mt-0.5 border-emerald-500/30 text-emerald-600 bg-emerald-500/10">
-                    {selectedEmployeeProfile.employee_status || "Active"}
-                  </Badge>
-                </div>
-                <div className="p-3 rounded-lg border bg-card">
-                  <span className="text-[11px] text-muted-foreground block font-medium">Disbursement Bank</span>
-                  <span className="font-semibold text-xs truncate block">{selectedEmployeeProfile.bank_name || "Qatar National Bank"}</span>
-                </div>
-              </div>
+              {/* Full Details Breakdown */}
+              {(() => {
+                let extraNotes: Record<string, any> = {};
+                try {
+                  if (selectedEmployeeProfile.notes) {
+                    extraNotes = typeof selectedEmployeeProfile.notes === 'string' ? JSON.parse(selectedEmployeeProfile.notes) : selectedEmployeeProfile.notes;
+                  }
+                } catch {}
+
+                const totalSalary = (Number(selectedEmployeeProfile.basic_salary || 0) + Number(selectedEmployeeProfile.hra || 0) + Number(selectedEmployeeProfile.tra || 0) + Number(extraNotes.other_allowances || 0));
+
+                return (
+                  <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                    {/* Identification & Employment */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                        Employment & Personal Information
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Employee Name</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.first_name} {selectedEmployeeProfile.last_name || ""}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Gender</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.gender || "Male"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Nationality</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.nationality || "Qatar"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Date of Birth</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.date_of_birth ? String(selectedEmployeeProfile.date_of_birth).slice(0, 10) : "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Mobile Number</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.mobile_number || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Official Email</span>
+                          <span className="font-semibold truncate block">{selectedEmployeeProfile.email || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Department</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.departments?.name || "General"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Designation</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.designations?.title || "Staff"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Reporting Manager</span>
+                          <span className="font-semibold">{extraNotes.basic_extra?.reporting_manager || extraNotes.reporting_manager || "Admin Director"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Date of Joining</span>
+                          <span className="font-semibold">{selectedEmployeeProfile.date_of_joining ? String(selectedEmployeeProfile.date_of_joining).slice(0, 10) : "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Employment Type</span>
+                          <span className="font-semibold">{extraNotes.basic_extra?.employment_type || "Full-Time"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">QID / Passport No.</span>
+                          <span className="font-semibold font-mono">{extraNotes.personal_extra?.passport_number || extraNotes.qid_passport_no || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">ID Expiry Date</span>
+                          <span className="font-semibold">{extraNotes.personal_extra?.passport_expiry || extraNotes.id_expiry_date || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Employee Status</span>
+                          <Badge variant="outline" className="text-[10px] mt-0.5 border-emerald-500/30 text-emerald-600 bg-emerald-500/10">
+                            {selectedEmployeeProfile.employee_status || "Active"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Financials & Allowances */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                        Compensation & Financial Structure
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Basic Salary</span>
+                          <span className="font-semibold">{Number(selectedEmployeeProfile.basic_salary || 0).toLocaleString()} QAR</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">HRA</span>
+                          <span className="font-semibold">{Number(selectedEmployeeProfile.hra || 0).toLocaleString()} QAR</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">TRA</span>
+                          <span className="font-semibold">{Number(selectedEmployeeProfile.tra || 0).toLocaleString()} QAR</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Other Allowances</span>
+                          <span className="font-semibold">{Number(extraNotes.other_allowances || 0).toLocaleString()} QAR</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60 bg-emerald-500/5 border-emerald-500/20">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Total Monthly Salary</span>
+                          <span className="font-bold text-emerald-600">{totalSalary.toLocaleString()} QAR</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Bank Name</span>
+                          <span className="font-semibold truncate block">{selectedEmployeeProfile.bank_name || "Qatar National Bank"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60 col-span-2">
+                          <span className="text-[10px] text-muted-foreground block font-medium">IBAN / Account Number</span>
+                          <span className="font-semibold font-mono text-[11px] truncate block">{selectedEmployeeProfile.iban || "—"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Benefits & Emergency Contacts */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
+                        Benefits & Emergency Contacts
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Other Benefit (Telephone)</span>
+                          <span className="font-semibold">{extraNotes.benefit_telephone || "Company Provided"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Other Benefit (Accommodation)</span>
+                          <span className="font-semibold">{extraNotes.benefit_accommodation || "Company Provided"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Other Benefit (Vehicle)</span>
+                          <span className="font-semibold">{extraNotes.benefit_vehicle || "Company Provided"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Air Ticket</span>
+                          <span className="font-semibold">{extraNotes.air_ticket || "Yearly"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Air Ticket Fare CAP</span>
+                          <span className="font-semibold">{extraNotes.air_ticket_fare_cap ? `${Number(extraNotes.air_ticket_fare_cap).toLocaleString()} QAR` : "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Emergency Contact Name</span>
+                          <span className="font-semibold">{extraNotes.emergency_contact_name || extraNotes.personal_extra?.family?.[0]?.name || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Relation with Employee</span>
+                          <span className="font-semibold">{extraNotes.relation_with_employee || extraNotes.personal_extra?.family?.[0]?.relationship || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Emergency Contact No.</span>
+                          <span className="font-semibold">{extraNotes.emergency_contact_no || extraNotes.personal_extra?.family?.[0]?.contact || "—"}</span>
+                        </div>
+                        <div className="p-2.5 rounded-lg border bg-card/60 col-span-2 sm:col-span-3">
+                          <span className="text-[10px] text-muted-foreground block font-medium">Remarks</span>
+                          <span className="text-muted-foreground">{extraNotes.remarks || "—"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
           <DialogFooter className="flex justify-between items-center sm:justify-between">

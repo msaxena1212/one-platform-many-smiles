@@ -29,7 +29,6 @@ export function useLeases() {
         .select(`
           *,
           properties:property_id(title, address, city, country),
-          units:unit_id(unit_number, floor, rent_amount, status),
           customers:customer_id(full_name, mobile_number, email_address, qatar_id)
         `)
         .order("created_at", { ascending: false });
@@ -50,7 +49,6 @@ export function useLease(id: string | undefined) {
         .select(`
           *,
           properties:property_id(title, address, city, country),
-          units:unit_id(unit_number, floor, rent_amount, status),
           customers:customer_id(full_name, mobile_number, email_address, qatar_id)
         `)
         .eq("id", id)
