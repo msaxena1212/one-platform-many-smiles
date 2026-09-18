@@ -870,7 +870,7 @@ export function ManagePropertyPage({
                 </div>
                 <div className="space-y-2">
                   <Label>Area / Zone</Label>
-                  <Input value={state} onChange={e => setState(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                  <Input value={areaZone} onChange={e => setAreaZone(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>Zip / Postal Code</Label>
