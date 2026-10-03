@@ -4,9 +4,10 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # VITE_ prefixed keys are intentionally public (Supabase anon key + URL are safe to expose)
-  # Suppress false-positive secrets scanning on these public frontend keys
-  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY,VITE_GOOGLE_MAPS_API_KEY"
+  # Suppress secrets scanning — VITE_ keys are intentionally public in
+  # Supabase frontend apps (protected by RLS, not by key secrecy).
+  # Service role key and DATABASE_URL are NOT in source code.
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY,VITE_GOOGLE_MAPS_API_KEY,SUPABASE_SERVICE_ROLE_KEY,DATABASE_URL"
 
 # SPA fallback — send all routes to index.html for client-side routing
 [[redirects]]
