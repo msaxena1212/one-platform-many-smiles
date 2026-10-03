@@ -14,6 +14,7 @@ import { customerAdapter } from './adapters/customer-adapter';
 import { assetAdapter } from './adapters/asset-adapter';
 import { leaseAdapter } from './adapters/lease-adapter';
 import { employeeAdapter } from './adapters/employee-adapter';
+import { vendorAdapter } from './adapters/vendor-adapter';
 import { getMasterOptions } from './master-options';
 import { saveImportBatch, updateImportBatchRecord, recordAuditEvent } from './storage-service';
 
@@ -24,6 +25,7 @@ export const ADAPTER_REGISTRY: Record<ImportModule, EntityImportAdapter> = {
   asset: assetAdapter,
   lease: leaseAdapter,
   employee: employeeAdapter,
+  vendor: vendorAdapter,
 };
 
 export class ExcelImportEngine {

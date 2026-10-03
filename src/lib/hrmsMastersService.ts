@@ -63,9 +63,9 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "CMP",
     defaultItems: [
-      { name: "Mindz Developers Pvt Ltd", code: "MDPL", description: "Primary Real Estate Development Entity" },
-      { name: "One Platform Hospitality W.L.L", code: "OPHW", description: "Hospitality & Facility Ops" },
-      { name: "Gulf Property Holdings", code: "GPH", description: "Commercial Assets Division" },
+      { name: "Zyno Property Management W.L.L", code: "ZYNO", description: "Primary Real Estate Management & Operations Entity" },
+      { name: "Zyno Real Estate & Facilities Services", code: "ZRFS", description: "Facility Operations & Asset Maintenance" },
+      { name: "Al Ameen Property Holdings W.L.L", code: "AAPH", description: "Commercial & Residential Assets Division" },
     ],
   },
   {
@@ -74,10 +74,12 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "BRN",
     defaultItems: [
-      { name: "Gurugram India Corporate", code: "GGN-IN", description: "Global Tech & Support Hub" },
-      { name: "Doha Downtown Branch", code: "DOH-QA", description: "Property Operations & Leasing Hub" },
-      { name: "West Bay Commercial Tower", code: "WB-01", description: "Executive Assets Branch" },
-      { name: "Lusail Marina Office", code: "LSL-02", description: "Residential Community Hub" },
+      { name: "Doha Head Office (D-Ring Road)", code: "DOH-HQ", description: "Central Corporate & Leasing Management HQ" },
+      { name: "Old Salata Site Operations Hub", code: "SLT-01", description: "Old Salata & Central Doha Properties" },
+      { name: "Al Wakra Operations Center", code: "WKR-01", description: "Wakra Residential & Commercial Portfolio" },
+      { name: "Mansoura Facility Office", code: "MNS-01", description: "Mansoura Community & Maintenance Desk" },
+      { name: "Musheireb Support Center", code: "MSH-01", description: "Downtown Residential Asset Management" },
+      { name: "Bin Omran Site Office", code: "BOM-01", description: "Bin Omran Portfolio Operations" },
     ],
   },
   {
@@ -86,9 +88,9 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "ENT",
     defaultItems: [
-      { name: "MGT-IN-GUR (PRIMARY)", code: "MGT-IN-GUR", description: "Primary Management Entity" },
-      { name: "MGT-QA-DOH (REGIONAL)", code: "MGT-QA-DOH", description: "Qatar Regional Entity" },
-      { name: "ESTATE-HOLDINGS-LLC", code: "EST-HLD", description: "Holding SPV Entity" },
+      { name: "ZYNO-QA-DOH (PRIMARY)", code: "ZYNO-QA", description: "Primary Property Management & Hospitality Entity" },
+      { name: "ZYNO-FACILITIES-LLC", code: "ZYNO-FAC", description: "Integrated Facility Management & Maintenance" },
+      { name: "AL-AMEEN-ESTATES-WLL", code: "AMEEN-EST", description: "Real Estate Asset Holding SPV" },
     ],
   },
   {
@@ -97,10 +99,10 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "BU",
     defaultItems: [
-      { name: "BVR (Residential Tower)", code: "BVR", description: "Bay View Residences" },
-      { name: "CPT (Commercial Park)", code: "CPT", description: "Capital Commercial Park" },
-      { name: "MKT (Retail Mall & Promenade)", code: "MKT", description: "Market Promenade" },
-      { name: "CORP (Shared Services)", code: "CORP", description: "Corporate Services" },
+      { name: "Residential Leasing & Tenancy", code: "BU-RES", description: "Residential Apartment & Villa Operations" },
+      { name: "Commercial & Retail Assets", code: "BU-COM", description: "Commercial Spaces, Offices & Retail Units" },
+      { name: "Facility Maintenance & MEP", code: "BU-FM", description: "Planned Preventive & Reactive Maintenance" },
+      { name: "Corporate & Shared Services", code: "BU-CORP", description: "Finance, HR, IT & Procurement" },
     ],
   },
   {
@@ -109,12 +111,16 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "DEP",
     defaultItems: [
-      { name: "Commercial & Leasing", code: "LEAS", description: "Tenant acquisition & contracts" },
-      { name: "Finance & Accounts", code: "FIN", description: "Treasury, GL, AP & AR" },
-      { name: "Facility Operations & Maintenance", code: "MAINT", description: "Engineering, PPM & tickets" },
-      { name: "Human Resources & Talent", code: "HR", description: "Personnel, payroll, & culture" },
-      { name: "Legal & Compliance", code: "LEG", description: "Regulatory, permits, contracts" },
-      { name: "Procurement & Supply Chain", code: "PROC", description: "Vendor sourcing & materials" },
+      { name: "Management", code: "MGMT" },
+      { name: "Finance & Accounts", code: "FIN" },
+      { name: "HR & Administration", code: "HR" },
+      { name: "Sales & Marketing", code: "SALES" },
+      { name: "Operations", code: "OPS" },
+      { name: "Procurement", code: "PROC" },
+      { name: "Information Technology", code: "IT" },
+      { name: "Customer Service", code: "CS" },
+      { name: "Maintenance / Technical", code: "TECH" },
+      { name: "Warehouse", code: "WH" },
     ],
   },
   {
@@ -137,14 +143,22 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "HR & Workforce",
     codePrefix: "DSG",
     defaultItems: [
-      { name: "Managing Director / CEO", code: "CEO", description: "Executive Board" },
-      { name: "Senior Property Manager", code: "SPM", description: "Asset & Site Supervision" },
-      { name: "Leasing Executive", code: "LEX", description: "Tenant Onboarding" },
-      { name: "Chief Financial Officer", code: "CFO", description: "Financial Oversight" },
-      { name: "Senior Accountant", code: "SAC", description: "General Ledger & Audit" },
-      { name: "Chief MEP Engineer", code: "MEP-ENG", description: "Technical Facility Lead" },
-      { name: "Facility Technician", code: "TECH", description: "On-ground Maintenance" },
-      { name: "HR Manager", code: "HRM", description: "Human Resource Head" },
+      { name: "Director", code: "DIR" },
+      { name: "General Manager", code: "GM" },
+      { name: "Manager", code: "MGR" },
+      { name: "Assistant Manager", code: "AM" },
+      { name: "Accountant", code: "ACC" },
+      { name: "HR Executive", code: "HR-EXEC" },
+      { name: "Admin Executive", code: "ADMIN-EXEC" },
+      { name: "Sales Executive", code: "SALES-EXEC" },
+      { name: "Operations Executive", code: "OPS-EXEC" },
+      { name: "Procurement Executive", code: "PROC-EXEC" },
+      { name: "IT Support", code: "IT-SUPPORT" },
+      { name: "Customer Service Executive", code: "CS-EXEC" },
+      { name: "Supervisor", code: "SUP" },
+      { name: "Technician", code: "TECH" },
+      { name: "Driver", code: "DRIVER" },
+      { name: "Office Assistant", code: "OFFICE-ASST" },
     ],
   },
   {
@@ -520,24 +534,31 @@ export const MASTER_CATEGORIES_CONFIG: {
 ];
 
 const MASTER_CACHE_KEY_PREFIX = "zyno_hrms_master_cache_";
+const REPLACED_CATALOG_ITEMS: Partial<Record<MasterCategoryKey, string[]>> = {
+  departments: [
+    "Commercial & Leasing",
+    "Facility Operations & Maintenance",
+    "Human Resources & Talent",
+    "Legal & Compliance",
+    "Procurement & Supply Chain",
+  ],
+  designations: [
+    "Managing Director / CEO",
+    "Senior Property Manager",
+    "Leasing Executive",
+    "Chief Financial Officer",
+    "Senior Accountant",
+    "Chief MEP Engineer",
+    "Facility Technician",
+    "HR Manager",
+  ],
+};
 
 export const HrmsMastersApi = {
   // Get all items for a category
   async getMasterItems(categoryKey: MasterCategoryKey): Promise<MasterItem[]> {
     const config = MASTER_CATEGORIES_CONFIG.find((c) => c.key === categoryKey);
     const localKey = `${MASTER_CACHE_KEY_PREFIX}${categoryKey}`;
-
-    try {
-      const stored = localStorage.getItem(localKey);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.warn("Could not read local master cache:", e);
-    }
 
     // Default seeded data
     const defaults: MasterItem[] = (config?.defaultItems || []).map((item, idx) => ({
@@ -547,6 +568,36 @@ export const HrmsMastersApi = {
       description: item.description,
       is_active: true,
     }));
+
+    try {
+      const stored = localStorage.getItem(localKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Filter out legacy dummy entries like "Mindz Developers"
+          const clean = parsed.filter(p => !p.name?.includes("Mindz Developers") && !p.name?.includes("Gurugram"));
+          if (clean.length > 0) {
+            if (categoryKey !== "departments" && categoryKey !== "designations") return clean;
+
+            const replacedNames = new Set((REPLACED_CATALOG_ITEMS[categoryKey] || []).map((name) => name.toLowerCase()));
+            const currentItems = defaults.map((item) => {
+              const storedItem = clean.find((stored) => stored.name?.toLowerCase() === item.name.toLowerCase());
+              return storedItem ? { ...item, ...storedItem, code: item.code } : item;
+            });
+            const currentNames = new Set(currentItems.map((item) => item.name.toLowerCase()));
+            const customItems = clean.filter((item) =>
+              !replacedNames.has(item.name?.toLowerCase()) &&
+              !currentNames.has(item.name?.toLowerCase())
+            );
+            const migrated = [...currentItems, ...customItems];
+            localStorage.setItem(localKey, JSON.stringify(migrated));
+            return migrated;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not read local master cache:", e);
+    }
 
     try {
       localStorage.setItem(localKey, JSON.stringify(defaults));

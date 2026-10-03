@@ -15,7 +15,7 @@ import { supabase } from "@/lib/supabase";
 
 export interface SecurityAuditLog {
   id?: string;
-  event_type: "auth" | "access_denied" | "data_mutation" | "suspicious_activity" | "system";
+  event_type: "auth" | "access_denied" | "data_mutation" | "suspicious_activity" | "system" | "IMPERSONATION_STARTED" | "IMPERSONATION_STOPPED" | "TENANT_DATA_EXPORTED";
   severity: "info" | "warning" | "critical";
   user_id?: string;
   user_role?: string;

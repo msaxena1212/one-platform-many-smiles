@@ -1,4 +1,5 @@
 import { supabase, createProperty, updateProperty, type Property } from '../../supabase';
+import { parseFloors } from '../../utils';
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -182,13 +183,16 @@ export const propertyAdapter: EntityImportAdapter = {
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
         } else if (col.type === 'number') {
-          const num = Number(strVal.replace(/,/g, ''));
+          // no_of_floors accepts expressions like "GF + 7" (= 8 floors)
+          const num = col.key === 'no_of_floors' ? parseFloors(strVal) : Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
             errors.push({
               row: context.rowNumber,
               field: col.label,
               code: 'VAL_005',
-              message: `${col.label} must be a valid number.`,
+              message: col.key === 'no_of_floors'
+                ? `${col.label} must be a valid number or expression (e.g. "GF + 7", "B + GF + 5", or "8").`
+                : `${col.label} must be a valid number.`,
               severity: 'ERROR',
             });
           } else {

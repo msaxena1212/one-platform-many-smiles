@@ -185,7 +185,7 @@ export async function receivePdc(payload: {
       payload.unit_id as any,
       payload.cheque_number,
       payload.unitCode,
-      pdcType,
+      (payload as any).pdcType || 'RENT',
       payload.lease_id,
     );
   } catch (err: any) {

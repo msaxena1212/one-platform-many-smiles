@@ -711,47 +711,11 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
         'Toyota', 'Nissan', 'Ford', 'IKEA', 'Steelcase', 'Herman Miller', 'Other'
       ]);
 
-      // Auto-synthesize baseline warranties from assets if empty
+      // Sync warranties strictly with real assets
       setWarranties(prev => {
-        if (prev.length > 0) return prev;
-        const initialList: AssetWarrantyRecord[] = [];
-        allAssets.slice(0, 30).forEach((a, idx) => {
-          const startDate = a.purchase_date || "2025-01-15";
-          const durMonths = (idx % 3 === 0) ? 24 : (idx % 2 === 0) ? 36 : 12;
-          const expDate = new Date(startDate);
-          expDate.setMonth(expDate.getMonth() + durMonths);
-          const expIso = expDate.toISOString().split("T")[0];
-
-          const todayStr = getTodayIST();
-          const isExpired = expIso < todayStr;
-          const daysLeft = Math.ceil((new Date(expIso).getTime() - new Date(todayStr).getTime()) / (1000 * 3600 * 24));
-          const isExpiringSoon = !isExpired && daysLeft <= 45;
-
-          const wType = (idx % 4 === 0) ? "Annual Maintenance Contract (AMC)" : (idx % 3 === 0) ? "Extended Warranty" : "Standard Manufacturer";
-          
-          initialList.push({
-            id: `WAR-${a.asset_code || `AST-${1000 + idx}`}`,
-            asset_id: a.id,
-            asset_name: a.asset_name,
-            asset_code: a.asset_code || `AST-${1000 + idx}`,
-            warranty_type: wType as any,
-            provider_name: a.supplier || "Al-Futtaim Technologies / LG Electronics",
-            policy_number: `POL-QA-2026-${5000 + idx}`,
-            support_email: "service@alfuttaim.qa",
-            support_phone: "+974 4455 6677",
-            start_date: startDate,
-            expiry_date: expIso,
-            duration_months: durMonths,
-            coverage_scope: "Comprehensive Parts, Compressor & On-site Repair Labor",
-            status: isExpired ? "EXPIRED" : isExpiringSoon ? "EXPIRING_SOON" : wType === "Extended Warranty" ? "EXTENDED" : "ACTIVE",
-            documents: [
-              { id: `doc-${idx}-1`, name: "Warranty Certificate", file_name: `Warranty_Cert_${a.asset_code || a.id.slice(0, 6)}.pdf`, upload_date: startDate },
-              { id: `doc-${idx}-2`, name: "Purchase Invoice", file_name: `Invoice_INV_${a.asset_code || a.id.slice(0, 6)}.pdf`, upload_date: startDate },
-            ],
-            created_at: new Date().toISOString()
-          });
-        });
-        return initialList;
+        if (allAssets.length === 0) return [];
+        // Keep only warranties belonging to existing assets
+        return prev.filter(w => allAssets.some(a => a.id === w.asset_id || a.asset_code === w.asset_code));
       });
     } catch (err: any) {
       toast.error(`Failed to load assets: ${err.message}`);
@@ -804,8 +768,13 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
   }, [allocations, historyPage, historyPageSize]);
 
   // ── Warranties Filtered & Paged List ──
+  const effectiveWarranties = useMemo(() => {
+    if (assets.length === 0) return [];
+    return warranties.filter(w => assets.some(a => a.id === w.asset_id || a.asset_code === w.asset_code));
+  }, [warranties, assets]);
+
   const filteredWarranties = useMemo(() => {
-    return warranties.filter(w => {
+    return effectiveWarranties.filter(w => {
       if (warrantyFilter === "active" && w.status !== "ACTIVE" && w.status !== "EXTENDED") return false;
       if (warrantyFilter === "expiring" && w.status !== "EXPIRING_SOON") return false;
       if (warrantyFilter === "extended" && w.warranty_type !== "Extended Warranty" && w.warranty_type !== "Annual Maintenance Contract (AMC)") return false;
@@ -822,7 +791,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
       }
       return true;
     });
-  }, [warranties, warrantyFilter, warrantySearch]);
+  }, [effectiveWarranties, warrantyFilter, warrantySearch]);
 
   const pagedWarranties = useMemo(() => {
     const start = (warrantyPage - 1) * warrantyPageSize;
@@ -836,15 +805,15 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     let expired = 0;
     let extended = 0;
 
-    warranties.forEach(w => {
+    effectiveWarranties.forEach(w => {
       if (w.status === "ACTIVE") active++;
       if (w.status === "EXPIRING_SOON") expiringSoon++;
       if (w.status === "EXPIRED") expired++;
       if (w.warranty_type === "Extended Warranty" || w.warranty_type === "Annual Maintenance Contract (AMC)") extended++;
     });
 
-    return { total: warranties.length, active, expiringSoon, expired, extended };
-  }, [warranties]);
+    return { total: effectiveWarranties.length, active, expiringSoon, expired, extended };
+  }, [effectiveWarranties]);
 
   // ── Status Counts ──
   const assetCounts = useMemo(() => {
@@ -4495,7 +4464,7 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                     value={editForm.life_of_asset}
                     onChange={e => {
                       const val = e.target.value;
-                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, life_of_asset: Number(val) || 0 }));
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, life_of_asset: val }));
                     }}
                   />
                 </div>

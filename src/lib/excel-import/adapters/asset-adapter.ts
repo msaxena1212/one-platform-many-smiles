@@ -6,7 +6,8 @@ import {
   type FieldComparison, 
   type DependencyCheckItem, 
   type ImportOperation,
-  getCellValue
+  getCellValue,
+  sanitizeDateForPostgres
 } from '../types';
 
 export const ASSET_COLUMNS: ColumnDefinition[] = [
@@ -172,6 +173,9 @@ export const assetAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          // Convert Excel serial numbers, ISO strings, JS Dates → YYYY-MM-DD
+          normalized[col.key] = sanitizeDateForPostgres(cellValue);
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
@@ -205,21 +209,21 @@ export const assetAdapter: EntityImportAdapter = {
         if (propData) {
           normalized.assigned_property_id = propData.id;
         } else {
-          errors.push({
+          warnings.push({
             row: context.rowNumber,
             field: 'Assigned Property Code',
             code: 'REF_001',
-            message: `Assigned Property Code "${assignedPropCode}" does not exist.`,
-            severity: 'ERROR',
+            message: `Assigned Property Code "${assignedPropCode}" not found — asset will be imported without property assignment.`,
+            severity: 'WARNING',
           });
         }
       } catch {
-        errors.push({
+        warnings.push({
           row: context.rowNumber,
           field: 'Assigned Property Code',
           code: 'REF_001',
-          message: `Assigned Property Code "${assignedPropCode}" does not exist.`,
-          severity: 'ERROR',
+          message: `Assigned Property Code "${assignedPropCode}" not found — asset will be imported without property assignment.`,
+          severity: 'WARNING',
         });
       }
     }

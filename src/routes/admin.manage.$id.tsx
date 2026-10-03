@@ -4,7 +4,7 @@ import { ManagePropertyPage } from "./prop-mgr.manage.$id";
 
 export const Route = createFileRoute("/admin/manage/$id")({
   component: AdminManageProperty,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { mode?: "view" | "edit" } => ({
     mode: (search.mode as string) === 'edit' ? 'edit' : 'view',
   }),
 });

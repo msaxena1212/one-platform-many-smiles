@@ -90,23 +90,61 @@ export type Profile = {
 export type Customer = {
   id: string;
   customer_type: 'Individual' | 'Company';
+  display_name?: string;
   full_name: string;
-  qatar_id?: string;
-  passport_number?: string;
-  commercial_registration?: string;
-  nationality?: string;
-  mobile_number: string;
+  primary_mobile: string;
+  mobile_number?: string;
+  primary_email?: string;
   email_address?: string;
-  permanent_address?: string;
-  local_address?: string;
+  current_address?: string;
+  preferred_communication?: 'WhatsApp' | 'Email' | 'SMS' | 'Phone Call';
+  customer_status?: 'Active' | 'Inactive' | 'Blacklisted' | 'Prospect';
+  approval_status?: 'Pending' | 'Approved' | 'Rejected' | 'Under Review';
+  remarks?: string;
+
+  // Individual specific fields
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  nationality?: string;
+  qatar_id?: string;
+  qid_expiry_date?: string;
+  passport_number?: string;
+  passport_expiry_date?: string;
+  date_of_birth?: string;
+  gender?: 'Male' | 'Female' | 'Other';
+  employer_name?: string;
+  designation?: string;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
-  employer_name?: string;
-  employer_address?: string;
-  designation?: string;
-  monthly_income?: number;
+
+  // Company specific fields
+  company_legal_name?: string;
+  trade_name?: string;
+  commercial_registration?: string;
+  cr_expiry_date?: string;
+  trade_licence_no?: string;
+  trade_licence_expiry_date?: string;
+  computer_card_no?: string;
+  computer_card_expiry_date?: string;
+  tax_identification_no?: string;
+  registered_office_address?: string;
+  billing_address?: string;
+  company_telephone?: string;
+  website?: string;
+  industry_activity?: string;
   authorized_signatory_name?: string;
+  signatory_qid_passport?: string;
   authorized_signatory_id?: string;
+  signatory_id_expiry_date?: string;
+  primary_contact_person?: string;
+  contact_designation?: string;
+  contact_mobile?: string;
+  contact_email?: string;
+
+  permanent_address?: string;
+  local_address?: string;
+  monthly_income?: number;
   verification_status: 'Pending' | 'Verified' | 'Rejected' | 'Additional Info Required';
   verified_by?: string;
   verified_at?: string;
@@ -1273,8 +1311,109 @@ export async function createERPVoucher(
   );
 }
 
+export type CoaType = {
+  id: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  report_type: 'Balance Sheet' | 'Profit & Loss';
+  is_active: boolean;
+  created_at: string;
+};
+
+export type CoaGroup = {
+  id: string;
+  type_id: string;
+  type_code: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type CoaClass = {
+  id: string;
+  group_id: string;
+  type_id: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type CoaGL = {
+  id: string;
+  class_id: string;
+  group_id: string;
+  type_id: string;
+  class_code: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  is_control_account: boolean;
+  is_posting_account: boolean;
+  allows_direct_posting: boolean;
+  requires_property: boolean;
+  requires_unit: boolean;
+  requires_tenant: boolean;
+  requires_vendor: boolean;
+  requires_employee: boolean;
+  is_active: boolean;
+};
+
+export type CoaSL = {
+  id: string;
+  gl_id: string;
+  class_id: string;
+  group_id: string;
+  type_id: string;
+  gl_code: string;
+  class_code: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  is_control_account: boolean;
+  is_posting_account: boolean;
+  allows_direct_posting: boolean;
+  is_active: boolean;
+};
+
+export type UnitCoaMapping = {
+  id: string;
+  unit_id: string;
+  property_id?: string;
+  unit_code: string;
+  property_name?: string;
+  receivable_sl_id?: string;
+  receivable_sl_code?: string;
+  receivable_sl_name?: string;
+  pdc_sl_id?: string;
+  pdc_sl_code?: string;
+  pdc_sl_name?: string;
+  deposit_sl_id?: string;
+  deposit_sl_code?: string;
+  deposit_sl_name?: string;
+  status: 'Active' | 'Inactive';
+};
+
+export type PropertyCoaMapping = {
+  id: string;
+  property_id: string;
+  property_code?: string;
+  property_name?: string;
+  rental_revenue_gl_code?: string;
+  property_management_fee_gl_code?: string;
+  other_income_gl_code?: string;
+  gain_loss_disposal_gl_code?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export async function fetchERPChartOfAccounts() {
-  // Supabase defaults to 1000 rows max. Paginate to fetch all COA records.
   const PAGE_SIZE = 1000;
   let allData: ERPChartOfAccount[] = [];
   let from = 0;
@@ -1291,17 +1430,62 @@ export async function fetchERPChartOfAccounts() {
 
     allData = [...allData, ...(data as ERPChartOfAccount[])];
 
-    if (data.length < PAGE_SIZE) break; // Last page
+    if (data.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
 
   return allData;
 }
 
+export async function fetchCoaHierarchyTree() {
+  const [typesRes, groupsRes, classesRes, glsRes] = await Promise.all([
+    supabase.from('coa_types').select('*').order('code'),
+    supabase.from('coa_groups').select('*').order('code'),
+    supabase.from('coa_classes').select('*').order('code'),
+    supabase.from('coa_gl').select('*').order('code'),
+  ]);
+
+  if (typesRes.error) throw typesRes.error;
+  if (groupsRes.error) throw groupsRes.error;
+  if (classesRes.error) throw classesRes.error;
+  if (glsRes.error) throw glsRes.error;
+
+  return {
+    types: (typesRes.data || []) as CoaType[],
+    groups: (groupsRes.data || []) as CoaGroup[],
+    classes: (classesRes.data || []) as CoaClass[],
+    gls: (glsRes.data || []) as CoaGL[]
+  };
+}
+
 export async function fetchUnitCOAs() {
   const { data, error } = await supabase.from('unit_coas').select('*').order('unit_code');
   if (error) throw error;
   return data as UnitCOA[];
+}
+
+export async function fetchUnitCoaMappings() {
+  const { data, error } = await supabase.from('unit_coa_mapping').select('*').order('unit_code');
+  if (error) throw error;
+  return data as UnitCoaMapping[];
+}
+
+export async function fetchPropertyCoaMappings() {
+  const { data, error } = await supabase.from('property_coa_mapping').select('*').order('property_name');
+  if (error) throw error;
+  return data as PropertyCoaMapping[];
+}
+
+export async function fetchCoaSLByGL(glIdOrCode: string) {
+  const query = supabase.from('coa_sl').select('*');
+  if (glIdOrCode.length === 36 && glIdOrCode.includes('-')) {
+    query.eq('gl_id', glIdOrCode);
+  } else {
+    query.eq('gl_code', glIdOrCode);
+  }
+  const { data, error } = await query.order('code');
+  if (error) throw error;
+  return data as CoaSL[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
@@ -1322,3 +1506,88 @@ export async function createUnitRooms(rooms: Record<string, unknown>[]): Promise
   if (error) throw error;
   return data ?? [];
 }
+
+export async function fetchPropertyManagerEmployees(): Promise<{ id: string; name: string; email?: string; designation?: string }[]> {
+  try {
+    const results: { id: string; name: string; email?: string; designation?: string }[] = [];
+    const seenNames = new Set<string>();
+
+    // 1. Fetch from profiles table for users with PROP_MGR role (authoritative PMS role)
+    try {
+      const { data: profiles, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, role')
+        .eq('role', 'PROP_MGR');
+
+      if (!profileErr && profiles && profiles.length > 0) {
+        profiles.forEach((p: any) => {
+          const name = (p.full_name || p.email || '').trim();
+          if (name && !seenNames.has(name.toLowerCase())) {
+            seenNames.add(name.toLowerCase());
+            results.push({
+              id: p.id,
+              name: name,
+              email: p.email,
+              designation: 'Property Manager',
+            });
+          }
+        });
+      }
+    } catch {
+      // Ignore profile lookup error if not accessible
+    }
+
+    // 2. Fetch from HRMS employees table strictly with Property Manager designation
+    try {
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, email, employee_status, designations(title)')
+        .order('first_name');
+
+      if (!empError && empData && empData.length > 0) {
+        const pmEmps = empData.filter((e: any) => {
+          if (e.employee_status && e.employee_status.toLowerCase() === 'terminated') return false;
+          const desig = (e.designations?.title || '').toLowerCase().trim();
+          // Strictly check if designation is Property Manager or Estate/Facility Manager
+          return desig.includes('property manager') || desig.includes('prop mgr') || desig.includes('estate manager') || desig.includes('facility manager');
+        });
+
+        pmEmps.forEach((e: any) => {
+          const name = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+          if (name && !seenNames.has(name.toLowerCase())) {
+            seenNames.add(name.toLowerCase());
+            results.push({
+              id: e.id,
+              name: name,
+              email: e.email,
+              designation: e.designations?.title || 'Property Manager',
+            });
+          }
+        });
+      }
+    } catch {
+      // Ignore employee lookup error
+    }
+
+    // Default fallback list if no active PM found in DB
+    if (results.length === 0) {
+      results.push(
+        { id: 'default-pm-1', name: 'Jithin Abdul Latheef', designation: 'Property Manager' },
+        { id: 'default-pm-2', name: 'Shajid Varikkodath', designation: 'Property Manager' },
+        { id: 'default-pm-3', name: 'Mohamed Farhan Abdul Salam', designation: 'Property Manager' },
+        { id: 'default-pm-4', name: 'Mohamed Shafraz Hussain', designation: 'Property Manager' }
+      );
+    }
+
+    return results;
+  } catch (err) {
+    console.error('Error fetching property managers:', err);
+    return [
+      { id: 'default-pm-1', name: 'Jithin Abdul Latheef', designation: 'Property Manager' },
+      { id: 'default-pm-2', name: 'Shajid Varikkodath', designation: 'Property Manager' },
+      { id: 'default-pm-3', name: 'Mohamed Farhan Abdul Salam', designation: 'Property Manager' },
+      { id: 'default-pm-4', name: 'Mohamed Shafraz Hussain', designation: 'Property Manager' }
+    ];
+  }
+}
+

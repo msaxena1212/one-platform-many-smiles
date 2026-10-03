@@ -78,6 +78,7 @@ type PropertyOption = {
   property_code?: string;
   cost_center_code?: string;
   cost_center_name?: string;
+  no_of_units?: number;
 };
 
 type RoomEntry = {
@@ -142,12 +143,7 @@ const EMPTY_FORM: FormState = {
   electricity_meter_no: "",
   water_meter_no: "",
   cooling_meter_no: "",
-  max_adults: 2,
-  max_children: 0,
-  total_occupancy: 2,
   price: 0,
-  weekend_price: undefined,
-  holiday_price: undefined,
   cleaning_fee: 0,
   status: "Available",
   lease_status: "Vacant",
@@ -327,6 +323,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           property_code: p.property_code,
           cost_center_code: p.cost_center_code,
           cost_center_name: p.cost_center_name,
+          no_of_units: (p as any).no_of_units ?? undefined,
         })),
       );
       setFurnishingTypes(fur);
@@ -446,7 +443,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         
         if (created?.id) {
           try {
-            const unitLabel = form.unit_name || form.unit_ref || created.id.slice(0, 6);
+            const unitLabel = form.unit_code || form.unit_ref || created.id.slice(0, 6);
             const unitCcCode = `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`;
             const unitCcName = `Unit ${unitLabel} Cost Center`;
             await supabase.from('fin_cost_centers').upsert({
@@ -513,7 +510,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
       } else {
         const end = new Date(unit.contract_end_date);
         end.setHours(0, 0, 0, 0);
-        matchStatus = end <= in60Days;
+        matchStatus = end >= today && end <= in60Days;
       }
     } else {
       matchStatus = unit.status?.toLowerCase() === filterStatus.toLowerCase();
@@ -537,26 +534,35 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   // Reset to page 1 whenever filters change
   useEffect(() => { setCurrentPage(1); }, [filterStatus, filterProperty, search]);
 
-  const total = units.length;
-  const occupied = units.filter(
+  // Derive stats dynamically based on the selected property (or all units if 'all')
+  const scopeUnits = filterProperty === "all" ? units : units.filter((u) => u.property_id === filterProperty);
+
+  const total = scopeUnits.length;
+  const occupied = scopeUnits.filter(
     (u) =>
       u.status?.toLowerCase() === "occupied" ||
       (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available"),
   ).length;
-  const available = units.filter(
+  const available = scopeUnits.filter(
     (u) =>
       u.status?.toLowerCase() === "available" ||
       u.lease_status?.toLowerCase() === "vacant" ||
       (!u.status && !u.lease_status),
   ).length;
-  const renewalDue = units.filter((u) => {
+  const maintenance = scopeUnits.filter(
+    (u) =>
+      u.status?.toLowerCase() === "maintenance" ||
+      u.status?.toLowerCase() === "under maintenance" ||
+      u.status?.toLowerCase() === "vacant - under maintenance",
+  ).length;
+  const renewalDue = scopeUnits.filter((u) => {
     const isOccupied =
       u.status?.toLowerCase() === "occupied" ||
       (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available");
     if (!isOccupied || !u.contract_end_date) return false;
     const end = new Date(u.contract_end_date);
     end.setHours(0, 0, 0, 0);
-    return end <= in60Days; // includes already expired + expiring within 60 days
+    return end >= today && end <= in60Days;
   }).length;
   const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0;
 
@@ -565,6 +571,17 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     const a = parseFloat(r.area);
     return sum + (isNaN(a) ? 0 : a * r.count);
   }, 0);
+
+  // ── Unit capacity enforcement ──────────────────────────────────────────────
+  const selectedPropertyOption = properties.find((p) => p.id === form.property_id);
+  const propertyUnitLimit = selectedPropertyOption?.no_of_units ?? null;
+  const existingUnitCountForProperty = units.filter((u) => u.property_id === form.property_id).length;
+  const isAtCapacity =
+    !editingUnitId && // only block new units, not edits
+    propertyUnitLimit !== null &&
+    existingUnitCountForProperty >= propertyUnitLimit;
+  const remainingSlots =
+    propertyUnitLimit !== null ? Math.max(0, propertyUnitLimit - existingUnitCountForProperty) : null;
 
   const masterOptions = {
     furnishing: furnishingTypes.length ? furnishingTypes : fallbackOptions.furnishing,
@@ -628,7 +645,18 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         toast.error("CSV must contain at least 1 unit data row.");
         return;
       }
-      const dataRows = lines.slice(1);
+      // Capacity check for legacy CSV bulk import
+      const bulkPropOption = properties.find((p) => p.id === bulkSelectedProp);
+      const bulkLimit = bulkPropOption?.no_of_units ?? null;
+      const bulkExistingCount = units.filter((u) => u.property_id === bulkSelectedProp).length;
+      const dataRows = lines.slice(1).filter((r) => r.trim() && r.split(",")[0]?.trim());
+      if (bulkLimit !== null && bulkExistingCount + dataRows.length > bulkLimit) {
+        const available = Math.max(0, bulkLimit - bulkExistingCount);
+        toast.error(
+          `Cannot import ${dataRows.length} unit(s). Property "${bulkPropOption?.title}" has a limit of ${bulkLimit} units — ${bulkExistingCount} already registered, only ${available} slot(s) remaining.`
+        );
+        return;
+      }
       let successCount = 0;
       for (const row of dataRows) {
         const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
@@ -824,7 +852,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   Available ({available})
                 </TabsTrigger>
                 <TabsTrigger value="maintenance" className="text-xs">
-                  Maintenance
+                  Maintenance ({maintenance})
                 </TabsTrigger>
                 <TabsTrigger value="renewal_due" className="text-xs text-amber-600">
                   Renewal Due ({renewalDue})
@@ -874,7 +902,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <tr>
                   {[
                     "Unit Code",
-                    "Unit Name",
                     "Property",
                     "Floor",
                     "BR/BA",
@@ -924,9 +951,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                       >
                         <td className="px-4 py-3 font-mono text-xs font-medium">
                           {unit.unit_code || unit.unit_ref}
-                        </td>
-                        <td className="max-w-[160px] truncate px-4 py-3 font-medium">
-                          {unit.unit_name || unit.unit_ref}
                         </td>
                         <td className="max-w-[140px] truncate px-4 py-3 text-xs text-muted-foreground">
                           {propertyLabel}
@@ -1041,7 +1065,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
-              {selectedUnit?.unit_name || selectedUnit?.unit_ref}
+              {selectedUnit?.unit_code || selectedUnit?.unit_ref}
             </DialogTitle>
             <DialogDescription>{selectedUnit?.unit_cost_center_code}</DialogDescription>
           </DialogHeader>
@@ -1054,7 +1078,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
                   {[
                     ["Unit Code", selectedUnit.unit_code],
-                    ["Unit Name", selectedUnit.unit_name],
+                    ["Unit Ref", selectedUnit.unit_ref],
                     ["Cost Center", selectedUnit.unit_cost_center_code],
                     ["Block/Tower", selectedUnit.block_tower],
                     ["Floor", selectedUnit.floor],
@@ -1085,8 +1109,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     ["Balcony (sqm)", selectedUnit.balcony_sqm],
                     ["Total Area (sqm)", selectedUnit.total_area_sqm],
                     ["Parking Slot", selectedUnit.parking_slot_no],
-                    ["Max Adults", selectedUnit.max_adults],
-                    ["Max Children", selectedUnit.max_children],
                   ].map(([label, value]) => (
                     <div key={label as string}>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1271,15 +1293,43 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                       <SelectValue placeholder="Select property" />
                     </SelectTrigger>
                     <SelectContent>
-                      {properties.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.property_code ? `${p.property_code} - ` : ""}
-                          {p.title}
-                        </SelectItem>
-                      ))}
+                      {properties.map((p) => {
+                        const propExisting = units.filter((u) => u.property_id === p.id).length;
+                        const propLimit = p.no_of_units ?? null;
+                        const propFull = propLimit !== null && propExisting >= propLimit;
+                        return (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.property_code ? `${p.property_code} - ` : ""}
+                            {p.title}
+                            {propLimit !== null && (
+                              <span className={`ml-2 text-[10px] ${propFull ? "text-red-500" : "text-muted-foreground"}`}>
+                                ({propExisting}/{propLimit} units{propFull ? " — FULL" : ""})
+                              </span>
+                            )}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
+                {/* Capacity Banner */}
+                {form.property_id && propertyUnitLimit !== null && (
+                  <div className={`col-span-2 flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
+                    isAtCapacity
+                      ? "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/40"
+                      : remainingSlots !== null && remainingSlots <= 2
+                        ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40"
+                        : "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/40"
+                  }`}>
+                    <span className={isAtCapacity ? "font-semibold text-red-700 dark:text-red-300" : remainingSlots !== null && remainingSlots <= 2 ? "font-semibold text-amber-700 dark:text-amber-300" : "font-medium text-emerald-700 dark:text-emerald-300"}>
+                      {isAtCapacity
+                        ? `⛔ Unit limit reached — this property allows ${propertyUnitLimit} unit(s) and all slots are filled.`
+                        : `✓ ${existingUnitCountForProperty} / ${propertyUnitLimit} units registered — ${remainingSlots} slot(s) remaining`}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Unit Reference *</Label>
                   <Input
@@ -1298,14 +1348,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     readOnly
                     className="bg-muted/40 cursor-not-allowed font-mono"
                     placeholder="Select property & enter unit ref"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Unit Name</Label>
-                  <Input
-                    value={form.unit_name || ""}
-                    onChange={(e) => setF("unit_name", e.target.value)}
-                    placeholder="Enter unit name manually"
                   />
                 </div>
 {/* Cost center selection removed as per new logic */}
@@ -1362,18 +1404,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="space-y-1">
                   <Label className="flex items-center gap-1"><Bath className="h-3 w-3" /> Bathrooms</Label>
                   <Input type="number" min={0} max={10} value={form.bathrooms} onChange={(e) => setF("bathrooms", Number(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Max Adults</Label>
-                  <Input type="number" min={1} value={form.max_adults} onChange={(e) => { const a = Number(e.target.value); setF("max_adults", a); setF("total_occupancy", a + (form.max_children || 0)); }} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Max Children</Label>
-                  <Input type="number" min={0} value={form.max_children} onChange={(e) => { const c = Number(e.target.value); setF("max_children", c); setF("total_occupancy", (form.max_adults || 0) + c); }} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Total Occupancy</Label>
-                  <Input type="number" value={form.total_occupancy} disabled className="bg-muted/40" />
                 </div>
                 <div className="space-y-1">
                   <Label>Furnishing</Label>
@@ -1476,14 +1506,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="space-y-1">
                   <Label>Current Rent (QR)</Label>
                   <Input type="number" value={form.current_rent || ""} onChange={(e) => setF("current_rent", toNumberOrUndefined(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Weekend Rate (QR)</Label>
-                  <Input type="number" value={form.weekend_price || ""} onChange={(e) => setF("weekend_price", toNumberOrUndefined(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Holiday Rate (QR)</Label>
-                  <Input type="number" value={form.holiday_price || ""} onChange={(e) => setF("holiday_price", toNumberOrUndefined(e.target.value))} />
                 </div>
                 <div className="space-y-1">
                   <Label>Cleaning Fee (QR)</Label>
@@ -1735,12 +1757,13 @@ export function UnitsModule({ role }: UnitsModuleProps) {
               {step < STEPS.length ? (
                 <Button
                   onClick={() => setStep((s) => Math.min(STEPS.length, s + 1))}
-                  disabled={step === 1 && (!form.property_id || !form.unit_ref)}
+                  disabled={step === 1 && (!form.property_id || !form.unit_ref || isAtCapacity)}
+                  title={isAtCapacity ? `Unit limit of ${propertyUnitLimit} reached for this property` : undefined}
                 >
                   Next <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                <Button onClick={handleCreate} disabled={saving}>
+                <Button onClick={handleCreate} disabled={saving || isAtCapacity}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingUnitId ? "Update Unit" : "Create Unit"}
                 </Button>

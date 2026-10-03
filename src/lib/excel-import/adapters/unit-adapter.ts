@@ -15,7 +15,6 @@ export const UNIT_COLUMNS: ColumnDefinition[] = [
   { key: 'unit_code', label: 'Unit Code / No.', type: 'string', required: true, sampleValue: 'GF1', description: 'Unit identifier unique under Property' },
   { key: 'property_code', label: 'Property Code', type: 'string', required: true, sampleValue: 'AAA', description: 'Must match an existing Property Code' },
   { key: 'unit_cost_center_code', label: 'Unit Cost Center Code', type: 'string', required: false, sampleValue: 'AAA-GF1' },
-  { key: 'unit_name', label: 'Unit Name', type: 'string', required: false, sampleValue: 'AAA - GF1' },
   { key: 'parent_cost_center_code', label: 'Parent Cost Center Code', type: 'string', required: false, sampleValue: '0' },
   { key: 'unit_type', label: 'Unit Type', type: 'string', required: false, sampleValue: 'Apartment' },
   { key: 'unit_usage', label: 'Unit Usage', type: 'enum', required: false, allowedValues: ['Residential', 'Commercial', 'Staff Accommodation', 'Storage', 'Retail'], sampleValue: 'Residential' },
@@ -139,7 +138,7 @@ export const unitAdapter: EntityImportAdapter = {
       try {
         const { data: propData } = await supabase
           .from('properties')
-          .select('id, property_code, title')
+          .select('id, property_code, title, no_of_units')
           .ilike('property_code', rawPropCode)
           .limit(1)
           .single();
@@ -195,6 +194,50 @@ export const unitAdapter: EntityImportAdapter = {
           resolution: 'Choose a different Unit Code or use UPDATE operation.',
         });
       }
+
+      // ── Unit capacity check for bulk import ────────────────────────────────
+      if (matchedProperty && matchedProperty.no_of_units != null) {
+        const propertyId: string = matchedProperty.id;
+        const unitLimit: number = matchedProperty.no_of_units;
+
+        // Fetch current unit count once per property (cached in context.cache)
+        const cacheKey = `unit_count_${propertyId}`;
+        if (!(context as any).cache) (context as any).cache = {};
+        if ((context as any).cache[cacheKey] === undefined) {
+          try {
+            const { count } = await supabase
+              .from('units')
+              .select('id', { count: 'exact', head: true })
+              .eq('property_id', propertyId);
+            (context as any).cache[cacheKey] = count ?? 0;
+          } catch {
+            (context as any).cache[cacheKey] = 0;
+          }
+        }
+
+        // Track how many new units this batch is adding per property
+        const batchCountKey = `batch_unit_count_${propertyId}`;
+        if ((context as any).cache[batchCountKey] === undefined) {
+          (context as any).cache[batchCountKey] = 0;
+        }
+        (context as any).cache[batchCountKey] += 1;
+
+        const existingCount: number = (context as any).cache[cacheKey];
+        const batchCount: number = (context as any).cache[batchCountKey];
+        const projectedTotal = existingCount + batchCount;
+
+        if (projectedTotal > unitLimit) {
+          errors.push({
+            row: context.rowNumber,
+            field: 'Property Code',
+            code: 'CAP_001',
+            message: `Unit capacity exceeded for Property "${rawPropCode}". Limit: ${unitLimit}, already registered: ${existingCount}, this batch adds: ${batchCount} (projected total: ${projectedTotal}).`,
+            severity: 'ERROR',
+            resolution: `Remove ${projectedTotal - unitLimit} row(s) from the import file for this property, or increase the property's "No. of Units" limit.`,
+          });
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────
     } else {
       if (!existingRecord) {
         errors.push({
@@ -347,7 +390,7 @@ export const unitAdapter: EntityImportAdapter = {
           property_id: data.property_id,
           unit_code: unitCode,
           unit_ref: unitCode,
-          unit_name: data.unit_name || `${data.property_code || ''} - ${unitCode}`,
+          unit_name: `${data.property_code || ''} - ${unitCode}`.replace(/^ - /, ''),
           unit_cost_center_code: data.unit_cost_center_code,
           parent_cost_center_code: data.parent_cost_center_code,
           room_type: data.unit_type || 'Apartment',

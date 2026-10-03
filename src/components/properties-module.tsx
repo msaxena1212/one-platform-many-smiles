@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
-import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2, Search, X, SlidersHorizontal } from "lucide-react";
+import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2, Search, X, SlidersHorizontal, Users, Home, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -38,12 +38,14 @@ import {
   fetchOwnershipTypes,
   fetchPropertyCategories,
   fetchCostCenters,
+  fetchPropertyManagerEmployees,
   updatePropertyImages,
   type Property,
 } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { parseFloors } from "@/lib/utils";
 
 interface PropertiesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -154,6 +156,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
   const [propTypeOptions, setPropTypeOptions] = useState<{ id: string; label: string }[]>([]);
   const [ownershipOptions, setOwnershipOptions] = useState<{ id: string; label: string }[]>([]);
   const [costCenterOptions, setCostCenterOptions] = useState<any[]>([]);
+  const [propertyManagerOptions, setPropertyManagerOptions] = useState<{ id: string; name: string; email?: string; designation?: string }[]>([]);
 
   const loadProperties = useCallback(async () => {
     setLoading(true);
@@ -164,13 +167,14 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
       const demoSession = getDemoSession();
       const hostId = session?.user?.id || demoSession?.id || MOCK_HOST_ID;
 
-      const [data, pc, pt, ow, cc] = await Promise.all([
+      const [data, pc, pt, ow, cc, pms] = await Promise.all([
         // Internal PMS: all staff roles can see all properties (host_id is null on seeded data)
         fetchAllProperties(),
         fetchPropertyCategories(),
         fetchPropertyTypes(),
         fetchOwnershipTypes(),
         fetchCostCenters(),
+        fetchPropertyManagerEmployees(),
       ]);
 
       setProperties(data || []);
@@ -178,6 +182,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
       setPropTypeOptions(pt);
       setOwnershipOptions(ow);
       setCostCenterOptions(cc);
+      setPropertyManagerOptions(pms || []);
     } catch (error: any) {
       console.error("Failed to load properties:", error?.message || error);
     } finally {
@@ -214,10 +219,16 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             
             // Check occupied units in db or active leases in context matching property title
             const occupiedDbCount = (units || []).filter(
-              (u: any) =>
-                u.status?.toLowerCase() === "occupied" ||
-                u.lease_status?.toLowerCase() === "leased" ||
-                u.lease_status?.toLowerCase() === "active"
+              (u: any) => {
+                const tenantVal = (u.current_tenant || "").trim().toLowerCase();
+                const hasRealTenant = tenantVal.length > 0 && tenantVal !== "vacant" && tenantVal !== "available" && tenantVal !== "n/a" && tenantVal !== "-";
+                return (
+                  u.status?.toLowerCase() === "occupied" ||
+                  u.lease_status?.toLowerCase() === "leased" ||
+                  u.lease_status?.toLowerCase() === "active" ||
+                  hasRealTenant
+                );
+              }
             ).length;
 
             const activeContextLeaseCount = contextLeases.filter(
@@ -307,7 +318,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           municipalityRefNo: form.municipality_ref_no.trim() || undefined,
           ownerLandlord: form.owner_landlord.trim(),
           propertyManager: form.property_manager.trim(),
-          noOfFloors: Number(form.no_of_floors) || 1,
+          noOfFloors: parseFloors(form.no_of_floors) || 1,
           noOfUnits: Number(form.no_of_units) || 1,
           totalUnits: Number(form.total_units || form.no_of_units) || 1,
           totalBuiltUpAreaSqm: form.total_built_up_area_sqm ? Number(form.total_built_up_area_sqm) : undefined,
@@ -487,6 +498,29 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
     }
   };
 
+  const totalProperties = properties.length;
+  const activeProperties = properties.filter((p) => p.is_active).length;
+  
+  // Calculate total units and total occupied units across all properties for an accurate portfolio occupancy rate
+  const { totalUnitsAcrossProperties, totalOccupiedUnitsAcrossProperties } = properties.reduce(
+    (acc, p) => {
+      const occInfo = occupancyData[p.id];
+      const uCount = occInfo ? occInfo.units : (p.total_units || p.no_of_units || 0);
+      const occPct = occInfo && occInfo.occupancy !== "N/A" ? parseInt(occInfo.occupancy, 10) : 0;
+      const occupiedUnits = Math.round((occPct / 100) * Number(uCount || 0));
+      return {
+        totalUnitsAcrossProperties: acc.totalUnitsAcrossProperties + Number(uCount || 0),
+        totalOccupiedUnitsAcrossProperties: acc.totalOccupiedUnitsAcrossProperties + occupiedUnits,
+      };
+    },
+    { totalUnitsAcrossProperties: 0, totalOccupiedUnitsAcrossProperties: 0 }
+  );
+
+  const portfolioOccupancyRate =
+    totalUnitsAcrossProperties > 0
+      ? Math.round((totalOccupiedUnitsAcrossProperties / totalUnitsAcrossProperties) * 100)
+      : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -534,6 +568,38 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {[
+          { label: "Total Properties", value: totalProperties, icon: Building2, color: "text-primary" },
+          {
+            label: "Active Properties",
+            value: `${activeProperties} (${totalProperties > 0 ? Math.round((activeProperties / totalProperties) * 100) : 0}%)`,
+            icon: CheckCircle2,
+            color: "text-emerald-600",
+          },
+          { label: "Total Units", value: totalUnitsAcrossProperties, icon: Home, color: "text-blue-600" },
+          {
+            label: "Occupancy",
+            value: `${portfolioOccupancyRate}%`,
+            icon: Users,
+            color: "text-amber-600",
+          },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {item.label}
+              </CardTitle>
+              <item.icon className={`h-4 w-4 ${item.color}`} />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${item.color}`}>{item.value}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <Card className="border-border">
         <CardContent className="p-0">
@@ -882,15 +948,6 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   </span>
                   <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold">Property Code *</Label>
-                        <Input
-                          value={form.property_code}
-                          onChange={(e) => setForm((prev) => ({ ...prev, property_code: e.target.value }))}
-                          placeholder="e.g. PROP-001 (Auto if blank)"
-                          className="bg-background font-mono"
-                        />
-                      </div>
                       <div className="space-y-1.5 col-span-2">
                         <Label className="text-xs font-semibold">Property / Building Name *</Label>
                         <Input
@@ -898,6 +955,15 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                           onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
                           placeholder="e.g. Al Sadd Commercial Tower / Lusail Marina Residences"
                           className="bg-background font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold">Property Code *</Label>
+                        <Input
+                          value={form.property_code}
+                          onChange={(e) => setForm((prev) => ({ ...prev, property_code: e.target.value }))}
+                          placeholder="e.g. PROP-001 (Auto if blank)"
+                          className="bg-background font-mono"
                         />
                       </div>
                     </div>
@@ -979,11 +1045,14 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs font-semibold">Property Manager *</Label>
-                        <Input
+                        <SearchableSelect
+                          options={propertyManagerOptions.map((pm) => ({
+                            id: pm.name,
+                            label: `${pm.name}${pm.designation ? ` (${pm.designation})` : ""}`,
+                          }))}
                           value={form.property_manager}
-                          onChange={(e) => setForm((prev) => ({ ...prev, property_manager: e.target.value }))}
-                          placeholder="e.g. Jithin Abdul Latheef"
-                          className="bg-background"
+                          onValueChange={(val) => setForm((prev) => ({ ...prev, property_manager: val }))}
+                          placeholder="Select Property Manager from HRMS..."
                         />
                       </div>
                     </div>
@@ -1094,13 +1163,15 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold">No. of Floors *</Label>
                       <Input
-                        type="number"
-                        min="1"
+                        type="text"
                         value={form.no_of_floors}
                         onChange={(e) => setForm((prev) => ({ ...prev, no_of_floors: e.target.value }))}
-                        placeholder="e.g. 8"
+                        placeholder="e.g. 8 or GF + 7"
                         className="bg-background font-mono"
                       />
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        Accepts plain numbers or expressions like <span className="font-mono">GF + 7</span>
+                      </p>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-semibold">No. of Units *</Label>
@@ -1327,30 +1398,6 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             {/* Step 5: Documents */}
             {step === 5 && (
               <div className="space-y-4">
-                {/* Documents Received? Banner */}
-                <div className={`flex items-center justify-between p-3.5 rounded-xl border ${
-                  form.documents_received
-                    ? "bg-emerald-500/10 border-emerald-500/30"
-                    : "bg-amber-500/10 border-amber-500/30"
-                }`}>
-                  <div className="space-y-0.5">
-                    <p className={`text-xs font-bold ${
-                      form.documents_received ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"
-                    }`}>
-                      {form.documents_received ? "✓ Original Documents Received & Verified" : "Documents Received?"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Confirm that all physical originals have been received, stamped, and filed.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    id="docs_received_step5"
-                    checked={form.documents_received}
-                    onChange={(e) => setForm((prev) => ({ ...prev, documents_received: e.target.checked }))}
-                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer shrink-0"
-                  />
-                </div>
 
                 <PropertyDocumentsManager
                   documents={propertyDocuments}

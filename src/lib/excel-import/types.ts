@@ -1,4 +1,4 @@
-export type ImportModule = 'property' | 'unit' | 'customer' | 'asset' | 'lease' | 'employee';
+export type ImportModule = 'property' | 'unit' | 'customer' | 'asset' | 'lease' | 'employee' | 'vendor';
 
 export type ImportOperation = 'CREATE' | 'UPDATE' | 'DELETE';
 

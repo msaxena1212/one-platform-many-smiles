@@ -313,6 +313,7 @@ export interface FinanceStoreContextType {
 
   isSyncing: boolean;
   refreshFinanceData: () => Promise<void>;
+  resetAndInitializeGLFromPDCs: () => Promise<{ created: number; cleared: number }>;
 }
 
 const FinanceContext = createContext<FinanceStoreContextType | null>(null);
@@ -515,7 +516,216 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // 3. Reload localStorage caches for AP/AR/Cashbook
+      // 3. Synthesize "PDC Received" (Entry 1 only) for every PDC in the system.
+      //
+      // KEY DESIGN DECISIONS:
+      //   a) Only Entry 1 (RCV — Dr 12900001 PDC In Hand / Cr 21400001 Customer PDC Liability)
+      //      is synthesized here. Entries 2 (DEP), 3 (CLR), 4 (RET) are written to fin_vouchers
+      //      by actual user actions in PDC Management and are already loaded by Section 1 above.
+      //      Synthesizing DEP/CLR here was causing ALL PDCs to show as "Contra Vouchers".
+      //
+      //   b) ID-based deduplication (same strategy as PDC Management component):
+      //      • Primary map keyed by pdcs.id (guarantees uniqueness)
+      //      • cheque_number → id lookup for matching fin_pdc_register rows
+      //      • pdcs table is authoritative for property/unit/tenant names
+      //      This fixes "Property / Unit / Customer showing —".
+
+      // Paginated fetch helper — avoids PostgREST 1,000-row default limit
+      async function fetchAllPagesFSD<T = any>(
+        queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        let rows: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
+          if (res.error || !res.data || res.data.length === 0) break;
+          rows = rows.concat(res.data);
+          if (res.data.length < pageSize) break;
+          from += pageSize;
+        }
+        return rows;
+      }
+
+      const [finPdcRows2, pdcsRows2] = await Promise.all([
+        fetchAllPagesFSD((from, to) =>
+          supabase.from("fin_pdc_register").select("*").order("cheque_date", { ascending: true }).range(from, to)
+        ),
+        fetchAllPagesFSD((from, to) =>
+          supabase.from("pdcs").select("*").order("created_at", { ascending: true }).range(from, to)
+        ),
+      ]);
+      const finPdcRes = { data: finPdcRows2 };
+      const pdcsTableRes = { data: pdcsRows2 };
+
+      // Step A: Build primary map from pdcs table keyed by row ID
+      const pdcIdMap = new Map<string, any>();   // rowKey → merged row
+      const chqToKey = new Map<string, string>(); // cheque_number → rowKey
+
+      for (const p of (pdcsTableRes.data || [])) {
+        const rowKey  = String(p.id);
+        const chqNo   = p.cheque_number ? String(p.cheque_number).trim() : null;
+
+        const row = {
+          id:            p.id,
+          cheque_number: chqNo || rowKey,
+          property_name: p.property_code || p.property_name || "",
+          unit_ref:      p.unit_name || p.unit_ref || "",
+          tenant_name:   p.tenant_name || p.drawer_name || "",
+          cheque_date:   p.maturity_date || p.cheque_date || (p.created_at ? String(p.created_at).split("T")[0] : ""),
+          amount:        Number(p.amount || 0),
+          status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
+        };
+
+        pdcIdMap.set(rowKey, row);
+        if (chqNo) chqToKey.set(chqNo, rowKey);
+      }
+
+      // Step B: Merge fin_pdc_register into the map (update status / date; never overwrite display fields)
+      for (const p of (finPdcRes.data || [])) {
+        const chqNo      = p.cheque_number ? String(p.cheque_number).trim() : null;
+        const existingKey = chqNo ? chqToKey.get(chqNo) : null;
+
+        if (existingKey && pdcIdMap.has(existingKey)) {
+          // Update the existing pdcs row — take the more advanced status, keep pdcs display fields
+          const existing      = pdcIdMap.get(existingKey)!;
+          const rawFinStatus  = (p.status || "").toLowerCase().replace(/_/g, " ").trim();
+          const rawPdcStatus  = existing.status;
+
+          const isFinal = (s: string) => ["cleared", "returned", "bounced", "cancelled", "replaced", "partial cash"].includes(s);
+          let mergedStatus = rawPdcStatus || rawFinStatus || "in hand";
+          if (isFinal(rawPdcStatus))                                           mergedStatus = rawPdcStatus;
+          else if (isFinal(rawFinStatus))                                      mergedStatus = rawFinStatus;
+          else if (rawPdcStatus === "deposited" || rawFinStatus === "deposited") mergedStatus = "deposited";
+
+          pdcIdMap.set(existingKey, {
+            ...existing,
+            // Take cheque_date from fin_pdc_register if pdcs table had it empty
+            cheque_date: existing.cheque_date || p.cheque_date || p.maturity_date || "",
+            status: mergedStatus,
+          });
+        } else {
+          // fin_pdc_register row with no matching pdcs entry — add it with its own unique key
+          const newKey = chqNo ? `freg-${chqNo}` : `freg-${p.id}`;
+          if (!pdcIdMap.has(newKey)) {
+            pdcIdMap.set(newKey, {
+              id:            p.id,
+              cheque_number: chqNo || String(p.id),
+              property_name: p.property_name || p.property_code || "",
+              unit_ref:      p.unit_name || p.unit_ref || "",
+              tenant_name:   p.tenant_name || p.drawer_name || "",
+              cheque_date:   p.cheque_date || p.maturity_date || "",
+              amount:        Number(p.amount || 0),
+              status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
+            });
+            if (chqNo) chqToKey.set(chqNo, newKey);
+          }
+        }
+      }
+
+      const mergedPdcs = Array.from(pdcIdMap.values()).filter(p => Number(p.amount || 0) > 0);
+
+      if (mergedPdcs.length > 0) {
+        setVouchers(prev => {
+          const existingNos = new Set(prev.map(v => v.voucher_no));
+          const pdcVouchers: FinanceVoucher[] = [];
+
+          for (const p of mergedPdcs) {
+            const chequeNo     = String(p.cheque_number);
+            const amount       = Number(p.amount || 0);
+            const chqDate      = p.cheque_date || new Date().toISOString().split("T")[0];
+            const tenantName   = p.tenant_name || "";
+            const unitRef      = p.unit_ref    || "";
+            const propertyName = p.property_name || "";
+            const desc         = unitRef ? `${tenantName} (${unitRef})` : tenantName || `Cheque #${chequeNo}`;
+
+            // ── Entry 1 only: PDC Received ──────────────────────────────────────
+            // Dr 12900001 Rent PDC In Hand  /  Cr 21400001 Customer PDC Liability
+            // This is ALWAYS created for every PDC (the moment the cheque is received).
+            // DEP/CLR/RET entries are written to fin_vouchers by PDC Management actions.
+            const rcvNo = `VCH-PDC-RCV-${chequeNo}`;
+            if (!existingNos.has(rcvNo)) {
+              pdcVouchers.push({
+                id:           `pdc-rcv-${p.id ?? chequeNo}`,
+                voucher_no:   rcvNo,
+                voucher_type: "Receipt Voucher",
+                date:         chqDate,
+                name:         `PDC Received — ${desc} [Cheque #${chequeNo}]`,
+                debit:        "Rent PDC In Hand",
+                debit_code:   "12900001",
+                credit:       "Customer PDC Liability",
+                credit_code:  "21400001",
+                amount,
+                method:       "PDC",
+                status:       "Posted",
+                property_name: propertyName,
+                unit_ref:     unitRef,
+                tenant_name:  tenantName,
+              });
+            }
+          }
+
+          return pdcVouchers.length ? [...pdcVouchers, ...prev] : prev;
+        });
+      }
+
+
+
+
+      // 4. Pull fin_accounting_events for security deposits, utility deposits, and other
+
+      // in-app posting-engine events that were written to the DB but not via fin_vouchers.
+      const { data: evtData } = await supabase
+        .from("fin_accounting_events")
+        .select("*")
+        .order("event_date", { ascending: true });
+
+      if (evtData && evtData.length > 0) {
+        setJournalEntries(prev => {
+          const existingIds = new Set(prev.map(j => j.id));
+          const mapped: JournalLedgerEntry[] = evtData
+            .filter((e: any) => !existingIds.has(e.id))
+            .map((e: any) => {
+              const meta = (e.metadata as any) || {};
+              // Infer Dr/Cr from event_type
+              const evtType = (e.event_type || "").toLowerCase();
+              let drCode = "12000001", crCode = "41100001";
+              let drName = "Bank Operating Account", crName = "Rental Revenue";
+              if (evtType.includes("pdc") && evtType.includes("receiv")) {
+                drCode = "12900001"; drName = "Rent PDC In Hand";
+                crCode = "21400001"; crName = "Customer PDC Liability";
+              } else if (evtType.includes("deposit") && evtType.includes("security")) {
+                drCode = "12000001"; drName = "Bank Operating Account";
+                crCode = "21500001"; crName = "Security Deposit Liability";
+              } else if (evtType.includes("deposit") && evtType.includes("pdc")) {
+                drCode = "12000001"; drName = "Bank Operating Account";
+                crCode = "12900001"; crName = "Rent PDC In Hand";
+              } else if (evtType.includes("clear")) {
+                drCode = "21400001"; drName = "Customer PDC Liability";
+                crCode = "41100001"; crName = "Rental Revenue";
+              }
+              return {
+                id: e.id,
+                je_no: e.reference_number || `EVT-${String(e.id).slice(0, 8).toUpperCase()}`,
+                posting_date: e.event_date || e.posting_date || new Date().toISOString().split("T")[0],
+                reference: e.source_id || e.reference_number || e.id,
+                narration: e.description || e.event_type || "Accounting Event",
+                dr_account: drName,
+                dr_code: drCode,
+                cr_account: crName,
+                cr_code: crCode,
+                amount: Number(e.total_debit || e.total_credit || 0),
+                status: "Posted",
+                property_name: meta.property_name,
+                unit_ref: meta.unit_ref,
+                tenant_name: meta.tenant_name,
+              };
+            });
+          return mapped.length ? [...mapped, ...prev] : prev;
+        });
+      }
+
+      // 5. Reload localStorage caches for AP/AR/Cashbook
       if (typeof window !== "undefined") {
         try {
           const vDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
@@ -560,6 +770,222 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   const refreshFinanceData = async () => {
     await fetchSupabaseData(true);
+  };
+
+  // ── One-time GL Initializer from PDCs ─────────────────────────────────────
+  // Clears ALL synthetic PDC vouchers, re-fetches PDC data fresh, then generates:
+  //   Entry 1 (RCV) for every PDC — Dr PDC In Hand / Cr Customer PDC Liability
+  //   Entry 2 (DEP) for PDCs where cheque_date ≤ today — Dr Bank / Cr PDC In Hand  (Journal, NOT Contra)
+  //   Entry 3 (CLR) for PDCs where cheque_date ≤ today — Dr Customer PDC Liability / Cr Rental Revenue
+  // This is intended as a one-time bulk initialisation, not run on every refresh.
+  const resetAndInitializeGLFromPDCs = async (): Promise<{ created: number; cleared: number }> => {
+    setIsSyncing(true);
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      // Paginated fetch helper — avoids PostgREST 1,000-row default limit
+      async function fetchAllPages<T = any>(
+        queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        let rows: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
+          if (res.error || !res.data || res.data.length === 0) break;
+          rows = rows.concat(res.data);
+          if (res.data.length < pageSize) break;
+          from += pageSize;
+        }
+        return rows;
+      }
+
+      // Step 1: Fetch ALL PDC rows (paginated past the 1,000-row PostgREST limit)
+      // + customers + leases for full name resolution
+      const [finPdcRows, pdcsRows, customersRes, leasesRes] = await Promise.all([
+        fetchAllPages((from, to) =>
+          supabase.from("fin_pdc_register").select("*").order("cheque_date", { ascending: true }).range(from, to)
+        ),
+        fetchAllPages((from, to) =>
+          supabase.from("pdcs").select("*").order("created_at", { ascending: true }).range(from, to)
+        ),
+        supabase.from("customers").select("id, name"),
+        supabase.from("leases").select("id, customer_id, tenant_name, tenantName"),
+      ]);
+
+      // Wrap in same shape for compatibility
+      const finPdcRes  = { data: finPdcRows };
+      const pdcsTableRes = { data: pdcsRows };
+
+      // Build customer id → name lookup
+      const customerById = new Map<string, string>();
+      for (const c of (customersRes.data || [])) {
+        if (c.id && c.name) customerById.set(String(c.id), String(c.name));
+      }
+
+      // Build lease id → tenant name lookup (prefer lease.tenant_name, then customers table)
+      const tenantByLeaseId = new Map<string, string>();
+      for (const l of (leasesRes.data || [])) {
+        if (!l.id) continue;
+        const tName = (l as any).tenant_name || (l as any).tenantName ||
+          (l.customer_id ? customerById.get(String(l.customer_id)) : "") || "";
+        if (tName) tenantByLeaseId.set(String(l.id), tName);
+      }
+
+      // Helper: resolve best tenant name from a raw pdcs row
+      function resolveTenant(p: any): string {
+        // Priority: tenant_name field → drawer_name → tenant_id in customers → lease_id in leases
+        if (p.tenant_name && p.tenant_name !== "—") return String(p.tenant_name).trim();
+        if (p.drawer_name  && p.drawer_name  !== "—") return String(p.drawer_name).trim();
+        if (p.tenant_id) {
+          const fromCustomer = customerById.get(String(p.tenant_id));
+          if (fromCustomer) return fromCustomer;
+        }
+        if (p.lease_id) {
+          const fromLease = tenantByLeaseId.get(String(p.lease_id));
+          if (fromLease) return fromLease;
+        }
+        return "";
+      }
+
+      // Step 2: ID-based deduplication — pdcs table is authoritative for display fields
+      const pdcIdMap = new Map<string, any>();
+      const chqToKey = new Map<string, string>();
+
+      for (const p of (pdcsTableRes.data || [])) {
+        const rowKey = String(p.id);
+        const chqNo  = p.cheque_number ? String(p.cheque_number).trim() : null;
+        pdcIdMap.set(rowKey, {
+          id:            p.id,
+          cheque_number: chqNo || rowKey,
+          property_name: p.property_code || p.property_name || "",
+          unit_ref:      p.unit_name || p.unit_ref || "",
+          tenant_name:   resolveTenant(p),
+          cheque_date:   p.maturity_date || p.cheque_date || (p.created_at ? String(p.created_at).split("T")[0] : ""),
+          amount:        Number(p.amount || 0),
+          status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
+        });
+        if (chqNo) chqToKey.set(chqNo, rowKey);
+      }
+
+      for (const p of (finPdcRes.data || [])) {
+        const chqNo      = p.cheque_number ? String(p.cheque_number).trim() : null;
+        const existingKey = chqNo ? chqToKey.get(chqNo) : null;
+        if (existingKey && pdcIdMap.has(existingKey)) {
+          const existing = pdcIdMap.get(existingKey)!;
+          pdcIdMap.set(existingKey, {
+            ...existing,
+            cheque_date: existing.cheque_date || p.cheque_date || p.maturity_date || "",
+            // Enrich tenant_name if pdcs table had it empty
+            tenant_name: existing.tenant_name || resolveTenant(p),
+          });
+        } else {
+          const newKey = chqNo ? `freg-${chqNo}` : `freg-${p.id}`;
+          if (!pdcIdMap.has(newKey)) {
+            pdcIdMap.set(newKey, {
+              id: p.id, cheque_number: chqNo || String(p.id),
+              property_name: p.property_name || p.property_code || "",
+              unit_ref:      p.unit_name || p.unit_ref || "",
+              tenant_name:   resolveTenant(p),
+              cheque_date:   p.cheque_date || p.maturity_date || "",
+              amount: Number(p.amount || 0),
+              status: (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
+            });
+            if (chqNo) chqToKey.set(chqNo, newKey);
+          }
+        }
+      }
+
+      const allPdcs = Array.from(pdcIdMap.values()).filter(p => Number(p.amount || 0) > 0);
+
+      // Step 3: Build full voucher set — no Contra Vouchers
+      const freshVouchers: FinanceVoucher[] = [];
+      let clearedCount = 0;
+
+      for (const p of allPdcs) {
+        const chequeNo     = String(p.cheque_number);
+        const amount       = Number(p.amount || 0);
+        const chqDate      = p.cheque_date || todayStr;
+        const isPastDue    = chqDate <= todayStr;
+        const tenantName   = p.tenant_name || "";
+        const unitRef      = p.unit_ref    || "";
+        const propertyName = p.property_name || "";
+        const desc         = unitRef ? `${tenantName} (${unitRef})` : tenantName || `Cheque #${chequeNo}`;
+
+        // ── Entry 1: PDC Received (In Hand) — always ─────────────────────────
+        freshVouchers.push({
+          id:           `pdc-rcv-${p.id ?? chequeNo}`,
+          voucher_no:   `VCH-PDC-RCV-${chequeNo}`,
+          voucher_type: "Receipt Voucher",
+          date:         chqDate,
+          name:         `PDC Received — ${desc} [Cheque #${chequeNo}]`,
+          debit:        "Rent PDC In Hand",
+          debit_code:   "12900001",
+          credit:       "Customer PDC Liability",
+          credit_code:  "21400001",
+          amount, method: "PDC", status: "Posted",
+          property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+        });
+
+        if (isPastDue) {
+          clearedCount++;
+          // ── Entry 2: PDC Deposited to Bank — Journal Voucher (NOT Contra) ──
+          freshVouchers.push({
+            id:           `pdc-dep-${p.id ?? chequeNo}`,
+            voucher_no:   `VCH-PDC-DEP-${chequeNo}`,
+            voucher_type: "Journal Voucher",  // NOT Contra Voucher
+            date:         chqDate,
+            name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
+            debit:        "Bank Operating Account (QNB)",
+            debit_code:   "12000001",
+            credit:       "Rent PDC In Hand",
+            credit_code:  "12900001",
+            amount, method: "Bank Transfer", status: "Posted",
+            property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+          });
+
+          // ── Entry 3: Revenue Recognised — Journal Voucher ─────────────────
+          freshVouchers.push({
+            id:           `pdc-clr-${p.id ?? chequeNo}`,
+            voucher_no:   `VCH-PDC-CLR-${chequeNo}`,
+            voucher_type: "Journal Voucher",
+            date:         chqDate,
+            name:         `PDC Cleared — Revenue Recognised — ${desc} [Cheque #${chequeNo}]`,
+            debit:        "Customer PDC Liability",
+            debit_code:   "21400001",
+            credit:       "Rental Revenue",
+            credit_code:  "41100001",
+            amount, method: "PDC", status: "Posted",
+            property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+          });
+        }
+      }
+
+      // Step 4: Clear all existing synthetic PDC vouchers and replace with fresh set.
+      // Non-PDC vouchers (from fin_vouchers, procurement etc.) are preserved.
+      setVouchers(prev => {
+        const nonPdc = prev.filter(v =>
+          !v.voucher_no.startsWith("VCH-PDC-RCV-") &&
+          !v.voucher_no.startsWith("VCH-PDC-DEP-") &&
+          !v.voucher_no.startsWith("VCH-PDC-CLR-") &&
+          !v.id.startsWith("pdc-rcv-") &&
+          !v.id.startsWith("pdc-dep-") &&
+          !v.id.startsWith("pdc-clr-")
+        );
+        return [...freshVouchers, ...nonPdc];
+      });
+
+      toast.success(
+        `GL Initialised: ${freshVouchers.length} voucher entries created for ${allPdcs.length} PDCs` +
+        ` (${clearedCount} marked Deposited & Cleared, ${allPdcs.length - clearedCount} In Hand).`
+      );
+      return { created: freshVouchers.length, cleared: clearedCount };
+    } catch (err: any) {
+      toast.error("GL initialisation failed: " + (err?.message || "Unknown error"));
+      return { created: 0, cleared: 0 };
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Pull and subscribe to Supabase data on mount
@@ -1340,40 +1766,48 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       let unitName = (vch as any).unit_ref || (vch as any).unit;
       let tenantName = (vch as any).tenant_name || (vch as any).tenant;
 
-      if ((!tenantName || tenantName === "Corporate / Admin") && vch.name) {
+      // Only attempt regex extraction from the voucher name when the fields are truly empty.
+      // Do NOT override already-populated values (e.g. from PDC synthesis) with fallback strings.
+      const hasProp   = propName   && propName   !== "Main Portfolio" && propName   !== "Unassigned";
+      const hasUnit   = unitName   && unitName   !== "General"        && unitName   !== "Unassigned";
+      const hasTenant = tenantName && tenantName !== "Corporate / Admin" && tenantName !== "Tenant" && tenantName !== "Unassigned";
+
+      if (!hasTenant && vch.name) {
         const slashMatch = vch.name.match(/[—–\-]\s*([^(|—–\-/]+?)\s*\/\s*([^(|—–\-/]+)/);
         if (slashMatch && slashMatch[1]?.trim() && slashMatch[1].trim() !== "Tenant") {
           tenantName = slashMatch[1].trim();
-          if (!unitName || unitName === "General") unitName = slashMatch[2].trim();
+          if (!hasUnit) unitName = slashMatch[2].trim();
         } else {
           const parenMatch = vch.name.match(/[—–\-]\s*([^(|—–\-]+?)\s*\(([^)]+)\)/);
           if (parenMatch && parenMatch[1]?.trim() && parenMatch[1].trim() !== "Tenant") {
             tenantName = parenMatch[1].trim();
-            if (!unitName || unitName === "General") unitName = parenMatch[2].trim();
+            if (!hasUnit) unitName = parenMatch[2].trim();
           } else {
-            const dashMatch = vch.name.match(/[—–\-]\s*([^|—–\-]+)/);
-            if (dashMatch && dashMatch[1]?.trim()) {
+            const dashMatch = vch.name.match(/[—–\-]\s*([^|—–\-[\]]+)/);
+            if (dashMatch && dashMatch[1]?.trim() && dashMatch[1].trim() !== "Tenant") {
               tenantName = dashMatch[1].trim();
             }
           }
         }
       }
 
-      if ((!propName || propName === "Main Portfolio") && unitName) {
+      if (!hasProp && unitName) {
         const u = unitName.toLowerCase();
         if (u.includes("flat16") || u.includes("aaa")) propName = "Old Salata - Residence No:23";
         else if (u.includes("flat14") || u.includes("flat08") || u.includes("mansoura")) propName = "MANSOURA - BLDG06";
         else if (u.includes("002") || u.includes("neeman")) propName = "Neeman's New Building";
+        else if (!hasProp && propName) propName = propName; // keep existing
       }
 
       if (tenantName && tenantName.toLowerCase().includes("ashutosh")) {
-        if (!propName || propName === "Main Portfolio") propName = "MANSOURA - BLDG06";
-        if (!unitName || unitName === "General") unitName = "Flat14";
+        if (!hasProp) propName = "MANSOURA - BLDG06";
+        if (!hasUnit) unitName = "Flat14";
       }
 
-      const finalProp = propName || (vch.name.includes("Depreciation") ? "Main Portfolio (Corporate)" : "Main Portfolio");
-      const finalUnit = unitName || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr" : "General");
-      const finalTenant = tenantName || (vch.name.includes("Depreciation") ? "Internal Assets Desk" : "Corporate / Admin");
+      // Finalise — use real values if available, generic fallback only when truly unknown
+      const finalProp   = propName   || (vch.name.includes("Depreciation") ? "Main Portfolio (Corporate)" : "");
+      const finalUnit   = unitName   || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr"       : "");
+      const finalTenant = tenantName || (vch.name.includes("Depreciation") ? "Internal Assets Desk"       : "");
 
       list.push({
         id: `tx-vch-dr-${vch.id}`,
@@ -1821,7 +2255,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         cashFlowReport,
         cashOnHandPosition,
         isSyncing,
-        refreshFinanceData
+        refreshFinanceData,
+        resetAndInitializeGLFromPDCs,
       }}
     >
       {children}

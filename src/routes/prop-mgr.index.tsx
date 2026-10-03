@@ -54,7 +54,8 @@ function HostDashboard() {
       try {
         const { count: propCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
         const { count: unitCount } = await supabase.from('units').select('*', { count: 'exact', head: true });
-        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).eq('lease_status', 'ACTIVE');
+        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).or('lease_status.ilike.active,lease_status.ilike.fully_signed,lease_status.ilike.renewed');
+        const { count: occupiedCount } = await supabase.from('units').select('*', { count: 'exact', head: true }).or('status.ilike.occupied,lease_status.ilike.leased');
         
         const { data: propData } = await supabase.from('properties').select('id');
         const propIds = propData?.map(p => p.id) || [];
@@ -72,7 +73,7 @@ function HostDashboard() {
         setStats({
           properties: propCount || 0,
           units: unitCount || 0,
-          activeLeases: leaseCount || 0,
+          activeLeases: leaseCount || occupiedCount || 0,
           monthlyRevenue: 0, 
           pendingTickets: 0,
           assetsCount: assetsCount,

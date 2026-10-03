@@ -1,4 +1,5 @@
 import type { Property } from "@/lib/supabase";
+import { parseFloors } from "@/lib/utils";
 
 export type PropertySavePayload = Partial<Omit<Property, "id" | "created_at" | "property_images">>;
 
@@ -96,7 +97,7 @@ export function buildPropertyPayload(input: {
     title_deed_no: input.titleDeedNo || undefined,
     municipality_ref_no: input.municipalityRefNo || undefined,
     property_manager: input.propertyManager || undefined,
-    no_of_floors: input.noOfFloors ? Number(input.noOfFloors) : undefined,
+    no_of_floors: input.noOfFloors != null ? (parseFloors(String(input.noOfFloors)) || undefined) : undefined,
     no_of_units: input.noOfUnits ? Number(input.noOfUnits) : input.totalUnits ? Number(input.totalUnits) : undefined,
     total_units: input.totalUnits ? Number(input.totalUnits) : input.noOfUnits ? Number(input.noOfUnits) : undefined,
     total_built_up_area_sqm: input.totalBuiltUpAreaSqm ? Number(input.totalBuiltUpAreaSqm) : undefined,

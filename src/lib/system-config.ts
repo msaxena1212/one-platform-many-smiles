@@ -352,11 +352,12 @@ export async function markNotificationAsRead(id: string): Promise<boolean> {
       .from("system_notifications")
       .update({ 
         is_read: true,
-        engagement_count: supabase.rpc ? undefined : 1
       })
       .eq("id", id);
 
-    await supabase.rpc("track_notification_engagement", { notif_id: id, is_click: false });
+    try {
+      await supabase.rpc("track_notification_engagement", { notif_id: id, is_click: false });
+    } catch {}
     return !error;
   } catch {
     return false;

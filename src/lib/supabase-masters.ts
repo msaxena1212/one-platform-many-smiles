@@ -148,15 +148,16 @@ export const fetchDepartments = async (): Promise<Simplemaster[]> => {
 
   // Fallback to HRMS master defaults
   return [
-    { id: 1, name: 'Commercial & Leasing' },
+    { id: 1, name: 'Management' },
     { id: 2, name: 'Finance & Accounts' },
-    { id: 3, name: 'Facility Operations & Maintenance' },
-    { id: 4, name: 'Human Resources & Talent' },
-    { id: 5, name: 'Legal & Compliance' },
-    { id: 6, name: 'Procurement & Supply Chain' },
-    { id: 7, name: 'Management' },
-    { id: 8, name: 'Information Technology' },
-    { id: 9, name: 'Operations' },
+    { id: 3, name: 'HR & Administration' },
+    { id: 4, name: 'Sales & Marketing' },
+    { id: 5, name: 'Operations' },
+    { id: 6, name: 'Procurement' },
+    { id: 7, name: 'Information Technology' },
+    { id: 8, name: 'Customer Service' },
+    { id: 9, name: 'Maintenance / Technical' },
+    { id: 10, name: 'Warehouse' },
   ];
 };
 export const createDepartment = (name: string) => createSimple('mst_departments', name);

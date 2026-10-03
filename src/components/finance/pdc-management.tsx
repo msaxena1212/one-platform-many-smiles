@@ -385,151 +385,170 @@ export function PdcManagement() {
       setLoading(true);
     }
     try {
-      let finRegisterData: any[] = [];
-      try {
-        const { data, error } = await supabase
-          .from("fin_pdc_register")
-          .select("*")
-          .order("cheque_date", { ascending: true });
-        if (!error && data) {
-          finRegisterData = data.map((p) => {
-            const rawStatus = (p.status || "").trim().toLowerCase();
-            const normalizedStatus =
-              rawStatus === "deposited" ? "Deposited" :
-              rawStatus === "cleared" ? "Cleared" :
-              (rawStatus === "bounced" || rawStatus === "returned") ? "Returned" :
-              rawStatus === "cancelled" ? "Cancelled" :
-              rawStatus === "replaced" ? "Replaced" :
-              (rawStatus === "partial cash" || rawStatus === "partial_cash") ? "Partial Cash" :
-              "In Hand";
-
-            return {
-              ...p,
-              paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : undefined,
-              status: normalizedStatus,
-            };
-          });
-        }
-      } catch { /* fallback */ }
-
-      let pdcsTableData: any[] = [];
-      try {
-        const { data: altData } = await supabase.from("pdcs").select("*").order("created_at", { ascending: true });
-        if (altData && altData.length > 0) {
-          pdcsTableData = altData.map((p) => {
-            const rawStatus = (p.status || p.status_pdc || "").trim().toLowerCase();
-            const normalizedStatus =
-              rawStatus === "deposited" ? "Deposited" :
-              rawStatus === "cleared" ? "Cleared" :
-              (rawStatus === "bounced" || rawStatus === "returned") ? "Returned" :
-              rawStatus === "cancelled" ? "Cancelled" :
-              rawStatus === "replaced" ? "Replaced" :
-              (rawStatus === "partial cash" || rawStatus === "partial_cash") ? "Partial Cash" :
-              "In Hand";
-
-            return {
-              id: p.id,
-              entry_date: p.created_at ? p.created_at.split("T")[0] : "2026-08-01",
-              cheque_date: p.maturity_date || p.deposit_date || (p.created_at ? p.created_at.split("T")[0] : "2026-08-01"),
-              cheque_number: p.cheque_number,
-              amount: Number(p.amount) || 0,
-              paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : undefined,
-              status: normalizedStatus,
-              bank_name: p.bank,
-              property_name: p.property_code || p.property_name || "—",
-              unit_ref: p.unit_name || p.unit_ref || "—",
-              tenant_name: p.tenant_name || "—",
-              lease_start: p.rent_from_date || p.lease_start,
-              lease_end: p.rent_to_date || p.lease_end,
-              monthly_rent: Number(p.amount) || 0,
-              _source: "supabase",
-            };
-          });
-        }
-      } catch { /* fallback */ }
-
-      // Build primary list starting from fin_pdc_register, complemented by pdcs table
-      const dbDataMap = new Map<string, any>();
-      for (const p of pdcsTableData) {
-        if (p.cheque_number) dbDataMap.set(String(p.cheque_number), p);
-      }
-      for (const p of finRegisterData) {
-        const key = p.cheque_number ? String(p.cheque_number) : String(p.id);
-        const existing = dbDataMap.get(key);
-        if (existing) {
-          const isFinalStatus = (s: string) => s === "Cleared" || s === "Returned" || s === "Replaced" || s === "Cancelled" || s === "Partial Cash";
-          let finalStatus = p.status;
-          if (isFinalStatus(existing.status)) {
-            finalStatus = existing.status;
-          } else if (isFinalStatus(p.status)) {
-            finalStatus = p.status;
-          } else if (existing.status === "Deposited" || p.status === "Deposited") {
-            finalStatus = "Deposited";
+      // Helper to fetch all rows across PostgREST 1000-row default pages
+      async function fetchAllRows<T = any>(
+        queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        let rows: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          try {
+            const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
+            if (res.error || !res.data || res.data.length === 0) break;
+            rows = rows.concat(res.data);
+            if (res.data.length < pageSize) break;
+            from += pageSize;
+          } catch {
+            break;
           }
+        }
+        return rows;
+      }
 
-          dbDataMap.set(key, {
-            ...existing,
-            ...p,
-            paid_amount: p.paid_amount ?? existing.paid_amount,
-            status: finalStatus,
-          });
-        } else {
-          dbDataMap.set(key, p);
+      const [rawFinRegister, rawPdcsTable] = await Promise.all([
+        fetchAllRows((from, to) =>
+          supabase
+            .from("fin_pdc_register")
+            .select("*")
+            .order("cheque_date", { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from("pdcs")
+            .select("*")
+            .order("created_at", { ascending: true })
+            .range(from, to)
+        ),
+      ]);
+
+      // Normalize statuses
+      const normalizeStatus = (raw: string | null | undefined): string => {
+        const s = (raw || "").trim().toLowerCase();
+        if (s === "deposited") return "Deposited";
+        if (s === "cleared") return "Cleared";
+        if (s === "bounced" || s === "returned") return "Returned";
+        if (s === "cancelled") return "Cancelled";
+        if (s === "replaced") return "Replaced";
+        if (s === "partial cash" || s === "partial_cash") return "Partial Cash";
+        return "In Hand";
+      };
+
+      // Step 1: Index pdcs table by compound key (unit_name||cheque_number) and by cheque_number
+      const pdcsByCompound = new Map<string, any>();
+      const pdcsByCheque = new Map<string, any[]>();
+
+      for (const p of rawPdcsTable) {
+        const u = (p.unit_name || p.unit_ref || "").trim();
+        const chq = String(p.cheque_number || p.id || "").trim();
+        if (u && chq) {
+          pdcsByCompound.set(`${u}||${chq}`, p);
+        }
+        if (chq) {
+          const list = pdcsByCheque.get(chq) || [];
+          list.push(p);
+          pdcsByCheque.set(chq, list);
         }
       }
 
-      const contextPdcs = (sharedPdcs || []).map((p, idx) => {
-        const lease = leases?.find((l) => l.id === p.leaseId);
-        const rawStatus = (p.status || "").trim().toLowerCase();
-        const normalizedStatus =
-          rawStatus === "deposited" ? "Deposited" :
-          rawStatus === "cleared" ? "Cleared" :
-          (rawStatus === "bounced" || rawStatus === "returned") ? "Returned" :
-          rawStatus === "cancelled" ? "Cancelled" :
-          rawStatus === "replaced" ? "Replaced" :
-          (rawStatus === "partial cash" || rawStatus === "partial_cash") ? "Partial Cash" :
-          "In Hand";
-
-        return {
-          id: p.id || `ctx-pdc-${idx}`,
-          leaseId: p.leaseId,
-          entry_date: (p as any).entry_date || lease?.startDate || p.date || "2026-08-01",
-          cheque_date: p.date,
-          cheque_number: p.chequeNo,
-          amount: Number(p.amount) || 0,
-          paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : undefined,
-          status: normalizedStatus,
-          bank_name: p.bank,
-          property_name: (p as any).propertyName || (p as any).property || lease?.property || "Old Salata - Residence No:23",
-          unit_ref: (p as any).unitRef || (p as any).unit || lease?.unit || "AAA - Flat16",
-          tenant_name: (p as any).tenantName || (p as any).payerName || lease?.tenantName || "Valued Tenant",
-          lease_start: (p as any).tenureStart || lease?.startDate || p.date,
-          lease_end: (p as any).tenureEnd || lease?.endDate || p.date,
-          monthly_rent: lease?.monthlyRent || Number(p.amount) || 0,
-          _source: "context",
-        };
+      // Step 2: Index units table by unit_ref/name for fallback tenant & property resolution
+      const unitsMap = new Map<string, any>();
+      (units || []).forEach(u => {
+        if (u.unit) unitsMap.set(u.unit.toLowerCase().trim(), u);
       });
 
-      // Merge contextPdcs into dbDataMap so recorded cash settlements in context are retained
-      for (const cp of contextPdcs) {
-        const key = cp.cheque_number ? String(cp.cheque_number) : String(cp.id);
-        const existing = dbDataMap.get(key);
-        if (existing) {
-          if (cp.paid_amount != null && (existing.paid_amount == null || cp.paid_amount > existing.paid_amount)) {
-            existing.paid_amount = cp.paid_amount;
+      // Step 3: Build merged dataset keeping EVERY fin_pdc_register row unique by row id
+      const dbDataMap = new Map<string, any>();
+      const coveredPdcIds = new Set<string>();
+
+      for (const f of rawFinRegister) {
+        const chq = String(f.cheque_number || f.id || "").trim();
+        const finUnit = (f.unit_name || f.unit_ref || "").trim();
+        
+        // Match with pdcs table
+        let matchedPdc: any = null;
+        if (finUnit && chq && pdcsByCompound.has(`${finUnit}||${chq}`)) {
+          matchedPdc = pdcsByCompound.get(`${finUnit}||${chq}`);
+        } else if (chq && pdcsByCheque.has(chq)) {
+          const candidates = pdcsByCheque.get(chq)!;
+          // If multiple, try to find one with matching amount or return first candidate
+          matchedPdc = candidates.find(c => Number(c.amount) === Number(f.amount)) || candidates[0];
+        }
+
+        if (matchedPdc?.id) {
+          coveredPdcIds.add(String(matchedPdc.id));
+        }
+
+        const propName = (f.property_name || f.property_code || matchedPdc?.property_code || matchedPdc?.property_name || "").trim();
+        const unitName = (finUnit || matchedPdc?.unit_name || matchedPdc?.unit_ref || "").trim();
+        let tenantName = (f.tenant_name || matchedPdc?.tenant_name || matchedPdc?.drawer_name || "").trim();
+
+        // If tenant name still missing, check units table
+        if ((!tenantName || tenantName === "—" || tenantName.toLowerCase() === "tenant") && unitName) {
+          const unitMatch = unitsMap.get(unitName.toLowerCase());
+          if (unitMatch?.currentTenant) {
+            tenantName = unitMatch.currentTenant;
           }
-          if (cp.status === "Partial Cash" || cp.status === "Replaced") {
-            existing.status = cp.status;
-          }
-          dbDataMap.set(key, existing);
-        } else {
-          dbDataMap.set(key, cp);
+        }
+
+        // Determine terminal status priority
+        const fStatus = normalizeStatus(f.status);
+        const pStatus = matchedPdc ? normalizeStatus(matchedPdc.status || matchedPdc.status_pdc) : "In Hand";
+        const isFinalStatus = (s: string) => ["Cleared", "Returned", "Replaced", "Cancelled", "Partial Cash"].includes(s);
+        let finalStatus = fStatus;
+        if (isFinalStatus(pStatus)) finalStatus = pStatus;
+        else if (isFinalStatus(fStatus)) finalStatus = fStatus;
+        else if (pStatus === "Deposited" || fStatus === "Deposited") finalStatus = "Deposited";
+
+        const rowKey = `fin-${f.id}`;
+        dbDataMap.set(rowKey, {
+          id: f.id,
+          entry_date: f.created_at ? f.created_at.split("T")[0] : matchedPdc?.created_at?.split("T")[0] || "2026-08-01",
+          cheque_date: f.cheque_date || f.maturity_date || matchedPdc?.maturity_date || "2026-08-01",
+          cheque_number: f.cheque_number || chq,
+          amount: Number(f.amount) || Number(matchedPdc?.amount) || 0,
+          paid_amount: f.paid_amount != null ? Number(f.paid_amount) : (matchedPdc?.paid_amount != null ? Number(matchedPdc.paid_amount) : undefined),
+          status: finalStatus,
+          bank_name: f.bank_name || f.bank || matchedPdc?.bank || "Qatar National Bank (QNB)",
+          property_name: propName || "—",
+          unit_ref: unitName || "—",
+          tenant_name: tenantName && tenantName !== "Tenant" ? tenantName : (matchedPdc?.tenant_name || "—"),
+          lease_start: matchedPdc?.rent_from_date || matchedPdc?.lease_start,
+          lease_end: matchedPdc?.rent_to_date || matchedPdc?.lease_end,
+          monthly_rent: Number(f.amount) || Number(matchedPdc?.amount) || 0,
+          _source: "fin_pdc_register",
+        });
+      }
+
+      // Also add any pdcs table rows not covered in fin_pdc_register
+      for (const p of rawPdcsTable) {
+        if (coveredPdcIds.has(String(p.id))) continue;
+        const rowKey = `pdc-${p.id}`;
+        if (!dbDataMap.has(rowKey)) {
+          dbDataMap.set(rowKey, {
+            id: p.id,
+            entry_date: p.created_at ? p.created_at.split("T")[0] : "2026-08-01",
+            cheque_date: p.maturity_date || p.deposit_date || (p.created_at ? p.created_at.split("T")[0] : "2026-08-01"),
+            cheque_number: p.cheque_number || String(p.id),
+            amount: Number(p.amount) || 0,
+            paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : undefined,
+            status: normalizeStatus(p.status || p.status_pdc),
+            bank_name: p.bank || "Qatar National Bank (QNB)",
+            property_name: p.property_code || p.property_name || "—",
+            unit_ref: p.unit_name || p.unit_ref || "—",
+            tenant_name: p.tenant_name || "—",
+            lease_start: p.rent_from_date || p.lease_start,
+            lease_end: p.rent_to_date || p.lease_end,
+            monthly_rent: Number(p.amount) || 0,
+            _source: "pdcs_table",
+          });
         }
       }
 
       // If a lease is closed / vacated, all unpresented future PDCs beyond the vacate date are Returned
       for (const p of dbDataMap.values()) {
-        const lease = leases?.find((l) => l.id === p.lease_id || l.tenantName === p.tenant_name || l.unit === p.unit_ref);
+        const lease = leases?.find((l) => l.id === p.lease_id || (p.tenant_name && p.tenant_name !== "—" && l.tenantName === p.tenant_name) || (p.unit_ref && p.unit_ref !== "—" && l.unit === p.unit_ref));
         if (lease && (lease.status === "closed" || (lease as any).earlyVacate)) {
           const vacateDate = (lease as any).actualVacateDate || (lease as any).moveOutDate || lease.endDate;
           if (vacateDate && p.cheque_date && new Date(p.cheque_date).getTime() > new Date(vacateDate).getTime()) {
@@ -553,10 +572,8 @@ export function PdcManagement() {
   const propertyOptions = useMemo(() => {
     const set = new Set<string>();
     pdcs.forEach(p => { if (p.property_name && p.property_name !== "—") set.add(String(p.property_name).trim()); });
-    leases?.forEach(l => { if (l.property) set.add(String(l.property).trim()); });
-    units?.forEach(u => { const prop = (u as any).propertyName || (u as any).property; if (prop) set.add(String(prop).trim()); });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [pdcs, leases, units]);
+  }, [pdcs]);
 
   const unitOptions = useMemo(() => {
     const set = new Set<string>();
@@ -564,20 +581,14 @@ export function PdcManagement() {
       if (selectedProperty !== "all" && p.property_name !== selectedProperty) return;
       if (p.unit_ref && p.unit_ref !== "—") set.add(String(p.unit_ref).trim());
     });
-    leases?.forEach(l => {
-      if (selectedProperty !== "all" && l.property !== selectedProperty) return;
-      if (l.unit) set.add(String(l.unit).trim());
-    });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-  }, [pdcs, leases, selectedProperty]);
+  }, [pdcs, selectedProperty]);
 
   const customerOptions = useMemo(() => {
     const set = new Set<string>();
     pdcs.forEach(p => { if (p.tenant_name && p.tenant_name !== "—") set.add(String(p.tenant_name).trim()); });
-    leases?.forEach(l => { if (l.tenantName) set.add(String(l.tenantName).trim()); });
-    customers?.forEach(c => { if (c.name) set.add(String(c.name).trim()); });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [pdcs, leases, customers]);
+  }, [pdcs]);
 
   const monthOptions = useMemo(() => {
     const set = new Set<string>();

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,16 +16,17 @@ import {
   Clock, BookOpen, FileText, PlusCircle, MinusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
   Building, Building2, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
   DollarSign, Activity, FileCode, CheckCircle, Search, Plus, Trash2, Pencil,
-  ChevronRight, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2,
+  ChevronRight, ChevronDown, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2,
   AlertTriangle, RefreshCw, Eye, Printer, ShieldCheck, TrendingUp, ArrowUpDown,
-  Home as HomeIcon, User as UserIcon
+  Home as HomeIcon, User as UserIcon, FolderTree, Folder, FolderOpen, Network
 } from "lucide-react";
 import {
   supabase,
   fetchJournalEntries, fetchARLedgers, fetchGLAccounts,
   createJournalEntry, createAREntry, settleAREntry, createGLAccount,
-  fetchERPChartOfAccounts, fetchUnitCOAs,
-  type JournalEntry, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA
+  fetchERPChartOfAccounts, fetchUnitCOAs, fetchCoaHierarchyTree, fetchPropertyCoaMappings, fetchCoaSLByGL,
+  type JournalEntry, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA,
+  type CoaType, type CoaGroup, type CoaClass, type CoaGL, type CoaSL, type PropertyCoaMapping, type UnitCoaMapping
 } from "@/lib/supabase";
 import {
   FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
@@ -726,13 +728,9 @@ function BudgetHeadSubModule() {
   const { allLedgerTransactions } = useFinanceStore();
   const { units: sharedUnits } = useAppData();
 
-  const [budgetHeads, setBudgetHeads] = useState<BudgetHeadItem[]>(() => {
-    const saved = localStorage.getItem("zyno_finance_budget_heads");
-    if (saved) {
-      try { return JSON.parse(saved); } catch { }
-    }
-    return DEFAULT_BUDGET_HEADS;
-  });
+  const [budgetHeads, setBudgetHeads] = useState<BudgetHeadItem[]>([]);
+  const [loadingBudgets, setLoadingBudgets] = useState(true);
+
 
   const [costCenters, setCostCenters] = useState<FinCostCenter[]>([]);
   const [selectedCostCenter, setSelectedCostCenter] = useState<string>("all");
@@ -1593,12 +1591,31 @@ function PostingPeriodSubModule() {
 function ChartOfAccountsSubModule() {
   const [erpAccounts, setErpAccounts] = useState<ERPChartOfAccount[]>([]);
   const [unitCoas, setUnitCoas] = useState<UnitCOA[]>([]);
+  const [propertyMappings, setPropertyMappings] = useState<PropertyCoaMapping[]>([]);
+  const [hierarchyData, setHierarchyData] = useState<{
+    types: CoaType[];
+    groups: CoaGroup[];
+    classes: CoaClass[];
+    gls: CoaGL[];
+  }>({ types: [], groups: [], classes: [], gls: [] });
+
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'master' | 'units'>('master');
+  const [tab, setTab] = useState<'tree' | 'master' | 'units' | 'properties'>('tree');
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const pageSize = 25;
+
+  // Tree expansion state
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
+    'type-1': true,
+    'type-2': true,
+    'type-3': true,
+    'type-4': true,
+    'type-5': true,
+  });
+  const [glSLs, setGlSLs] = useState<Record<string, CoaSL[]>>({});
+  const [loadingSLs, setLoadingSLs] = useState<Record<string, boolean>>({});
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", type: "Assets", type_code: "1", group_name: "Current Assets", class_name: "Accounts Receivables", gl_name: "Tenant Receivables" });
@@ -1608,17 +1625,16 @@ function ChartOfAccountsSubModule() {
   async function loadData() {
     setLoading(true);
     try {
-      const [accs, uCoas] = await Promise.all([
+      const [accs, uCoas, tree, propMaps] = await Promise.all([
         fetchERPChartOfAccounts(),
-        fetchUnitCOAs()
+        fetchUnitCOAs(),
+        fetchCoaHierarchyTree().catch(() => ({ types: [], groups: [], classes: [], gls: [] })),
+        fetchPropertyCoaMappings().catch(() => [])
       ]);
 
-      // ── Clean Master COA: Group by the Master GL Code (e.g. 11000, 12000, 12100, 12200, 12300, 12400, etc.) ──
-      // In the ERP database, 8-digit codes like 11000001 were auto-generated per property/unit.
-      // Master COA should represent the unique root Enterprise GL accounts.
+      // ── Clean Master COA ──
       const masterMap = new Map<string, ERPChartOfAccount>();
       (accs || []).forEach(a => {
-        // Master GL key is either a.gl_code, or the base 4/5-digit prefix (e.g. 11000 from 11000001), or a.name
         const glKey = a.gl_code || (a.code && a.code.length >= 5 ? a.code.substring(0, 5) : a.code) || a.name;
         if (!masterMap.has(glKey)) {
           masterMap.set(glKey, {
@@ -1630,7 +1646,7 @@ function ChartOfAccountsSubModule() {
       });
       const cleanMaster = Array.from(masterMap.values());
 
-      // ── Clean Unit Sub-Ledgers: Deduplicate by property and unit_code ──
+      // ── Clean Unit Sub-Ledgers ──
       const distinctUnitMap = new Map<string, UnitCOA>();
       (uCoas || []).forEach(u => {
         const key = `${u.property_name || ''}__${u.unit_code || ''}`;
@@ -1642,12 +1658,51 @@ function ChartOfAccountsSubModule() {
 
       setErpAccounts(cleanMaster);
       setUnitCoas(cleanUnits);
+      setHierarchyData(tree);
+      setPropertyMappings(propMaps);
     } catch (e: any) {
       toast.error("Failed to load Chart of Accounts: " + e.message);
     } finally {
       setLoading(false);
     }
   }
+
+  const toggleNode = async (nodeKey: string, glCode?: string) => {
+    setExpandedNodes(prev => {
+      const next = { ...prev, [nodeKey]: !prev[nodeKey] };
+      return next;
+    });
+
+    if (glCode && !glSLs[glCode] && !loadingSLs[glCode]) {
+      setLoadingSLs(prev => ({ ...prev, [glCode]: true }));
+      try {
+        const sls = await fetchCoaSLByGL(glCode);
+        setGlSLs(prev => ({ ...prev, [glCode]: sls }));
+      } catch (err) {
+        console.error("Failed to fetch SLs for GL:", glCode, err);
+      } finally {
+        setLoadingSLs(prev => ({ ...prev, [glCode]: false }));
+      }
+    }
+  };
+
+  const expandAll = () => {
+    const all: Record<string, boolean> = {};
+    hierarchyData.types.forEach(t => {
+      all[`type-${t.code}`] = true;
+    });
+    hierarchyData.groups.forEach(g => {
+      all[`group-${g.code}`] = true;
+    });
+    hierarchyData.classes.forEach(c => {
+      all[`class-${c.code}`] = true;
+    });
+    setExpandedNodes(all);
+  };
+
+  const collapseAll = () => {
+    setExpandedNodes({});
+  };
 
   async function handleCreate() {
     try {
@@ -1685,35 +1740,54 @@ function ChartOfAccountsSubModule() {
       (u.receivables_name || "").toLowerCase().includes(q);
   });
 
+  const filteredProperties = propertyMappings.filter(p => {
+    const q = search.toLowerCase();
+    return !search ||
+      (p.property_name || "").toLowerCase().includes(q) ||
+      (p.property_code || "").toLowerCase().includes(q);
+  });
+
   const totalMasterPages = Math.ceil(filteredMaster.length / pageSize) || 1;
   const paginatedMaster = filteredMaster.slice((page - 1) * pageSize, page * pageSize);
 
-  const totalUnitPages = Math.ceil(filteredUnits.length / pageSize) || 1;
-  const paginatedUnits = filteredUnits.slice((page - 1) * pageSize, page * pageSize);
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-card p-4 rounded-lg border shadow-sm">
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-card p-4 rounded-lg border shadow-xs">
         <div>
-          <h3 className="text-base font-bold tracking-tight">Company Chart of Accounts (COA) & Property Unit Sub-Ledgers</h3>
-          <p className="text-xs text-muted-foreground">
-            Single Unified COA for the entire enterprise with hierarchical property sub-ledgers & unit account mapping.
+          <h3 className="text-base font-bold tracking-tight flex items-center gap-2">
+            <FolderTree className="h-5 w-5 text-primary" />
+            Company Chart of Accounts (COA) & Sub-Ledger System
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Authoritative 5-tier relational COA hierarchy (Type → Group → Class → GL → SL) with Property & Unit Sub-Ledger mappings.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex bg-muted p-1 rounded-md text-xs font-medium">
             <button
-              onClick={() => { setTab('master'); setPage(1); }}
-              className={`px-3 py-1.5 rounded-sm transition-all ${tab === 'master' ? 'bg-background text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={() => { setTab('tree'); setPage(1); }}
+              className={`px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-all ${tab === 'tree' ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              Enterprise Master COA ({erpAccounts.length})
+              <Network className="h-3.5 w-3.5" /> 5-Tier Hierarchy Tree
+            </button>
+            <button
+              onClick={() => { setTab('master'); setPage(1); }}
+              className={`px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-all ${tab === 'master' ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <BookOpen className="h-3.5 w-3.5" /> Enterprise Master ({erpAccounts.length})
             </button>
             <button
               onClick={() => { setTab('units'); setPage(1); }}
-              className={`px-3 py-1.5 rounded-sm transition-all ${tab === 'units' ? 'bg-background text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-all ${tab === 'units' ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              Property & Unit Sub-Ledgers ({unitCoas.length} Units)
+              <Building2 className="h-3.5 w-3.5" /> Unit Sub-Ledgers ({unitCoas.length})
+            </button>
+            <button
+              onClick={() => { setTab('properties'); setPage(1); }}
+              className={`px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-all ${tab === 'properties' ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <Building className="h-3.5 w-3.5" /> Property Rules ({propertyMappings.length})
             </button>
           </div>
 
@@ -1727,7 +1801,7 @@ function ChartOfAccountsSubModule() {
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={tab === 'master' ? "Search code, name, class..." : "Search property, unit, COA code..."}
+            placeholder={tab === 'master' ? "Search code, name, class..." : tab === 'units' ? "Search property, unit, COA..." : tab === 'properties' ? "Search property name..." : "Filter tree..."}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="pl-9 text-xs"
@@ -1748,11 +1822,197 @@ function ChartOfAccountsSubModule() {
             ))}
           </div>
         )}
+
+        {tab === 'tree' && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={expandAll} className="h-8 text-xs">
+              Expand All
+            </Button>
+            <Button variant="outline" size="sm" onClick={collapseAll} className="h-8 text-xs">
+              Collapse All
+            </Button>
+          </div>
+        )}
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center p-12 text-muted-foreground gap-2">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading Chart of Accounts...
+        </div>
+      ) : tab === 'tree' ? (
+        <div className="border rounded-lg bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Relational 5-Tier Chart of Accounts Hierarchy</span>
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> Debit Normal Balance</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" /> Credit Normal Balance</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {hierarchyData.types.map(type => {
+              const typeKey = `type-${type.code}`;
+              const isTypeExpanded = !!expandedNodes[typeKey];
+              const groupsInType = hierarchyData.groups.filter(g => g.type_code === type.code || g.type_id === type.id);
+
+              return (
+                <div key={type.id} className="border rounded-md overflow-hidden bg-muted/10">
+                  {/* Tier 1: TYPE */}
+                  <div
+                    onClick={() => toggleNode(typeKey)}
+                    className="flex items-center justify-between px-3 py-2.5 bg-muted/40 hover:bg-muted/60 cursor-pointer select-none transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {isTypeExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary">{type.code}</span>
+                      <span className="font-bold text-sm text-foreground">{type.name}</span>
+                      <Badge variant="outline" className={`text-[10px] uppercase font-bold ${type.financial_statement === 'BS' ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-purple-300 text-purple-700 bg-purple-50'}`}>
+                        {type.financial_statement === 'BS' ? 'Balance Sheet' : 'Profit & Loss'}
+                      </Badge>
+                    </div>
+                    <Badge variant={type.normal_balance === 'Debit' ? 'default' : 'secondary'} className="text-[10px]">
+                      Normal: {type.normal_balance}
+                    </Badge>
+                  </div>
+
+                  {/* Tier 2: GROUPS */}
+                  {isTypeExpanded && (
+                    <div className="pl-6 pr-3 py-2 space-y-2 border-t border-muted/50">
+                      {groupsInType.map(group => {
+                        const groupKey = `group-${group.code}`;
+                        const isGroupExpanded = !!expandedNodes[groupKey];
+                        const classesInGroup = hierarchyData.classes.filter(c => c.group_code === group.code || c.group_id === group.id);
+
+                        return (
+                          <div key={group.id} className="border rounded bg-card/60">
+                            <div
+                              onClick={() => toggleNode(groupKey)}
+                              className="flex items-center justify-between px-3 py-2 bg-muted/20 hover:bg-muted/40 cursor-pointer select-none"
+                            >
+                              <div className="flex items-center gap-2">
+                                {isGroupExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                                <FolderOpen className="h-3.5 w-3.5 text-amber-500" />
+                                <span className="font-mono text-xs font-semibold text-foreground/80">{group.code}</span>
+                                <span className="font-semibold text-xs text-foreground">{group.name}</span>
+                              </div>
+                              <span className="text-[11px] text-muted-foreground font-medium">{classesInGroup.length} Classes</span>
+                            </div>
+
+                            {/* Tier 3: CLASSES */}
+                            {isGroupExpanded && (
+                              <div className="pl-6 pr-3 py-2 space-y-1.5 border-t border-muted/40 bg-muted/5">
+                                {classesInGroup.map(cls => {
+                                  const classKey = `class-${cls.code}`;
+                                  const isClassExpanded = !!expandedNodes[classKey];
+                                  const glsInClass = hierarchyData.gls.filter(g => g.class_code === cls.code || g.class_id === cls.id);
+
+                                  return (
+                                    <div key={cls.id} className="border rounded bg-card/80">
+                                      <div
+                                        onClick={() => toggleNode(classKey)}
+                                        className="flex items-center justify-between px-3 py-1.5 hover:bg-muted/30 cursor-pointer select-none"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {isClassExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                                          <Folder className="h-3 w-3 text-blue-500" />
+                                          <span className="font-mono text-[11px] font-semibold text-foreground/70">{cls.code}</span>
+                                          <span className="font-medium text-xs text-foreground">{cls.name}</span>
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground">{glsInClass.length} GL Accounts</span>
+                                      </div>
+
+                                      {/* Tier 4: GL ACCOUNTS */}
+                                      {isClassExpanded && (
+                                        <div className="pl-6 pr-3 py-1.5 space-y-1 border-t border-muted/30 bg-muted/10">
+                                          {glsInClass.map(gl => {
+                                            const glKey = `gl-${gl.code}`;
+                                            const isGlExpanded = !!expandedNodes[glKey];
+                                            const slList = glSLs[gl.code] || [];
+                                            const isSlLoading = !!loadingSLs[gl.code];
+
+                                            return (
+                                              <div key={gl.id} className="border rounded bg-card text-xs">
+                                                <div
+                                                  onClick={() => toggleNode(glKey, gl.code)}
+                                                  className="flex items-center justify-between px-3 py-1.5 hover:bg-muted/20 cursor-pointer select-none"
+                                                >
+                                                  <div className="flex items-center gap-2">
+                                                    {isGlExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                                                    <span className="font-mono font-bold text-primary">{gl.code}</span>
+                                                    <span className="font-medium">{gl.name}</span>
+                                                  </div>
+                                                  <div className="flex items-center gap-1.5">
+                                                    <Badge variant={gl.normal_balance === 'Debit' ? 'outline' : 'secondary'} className="text-[9px] px-1.5 py-0">
+                                                      {gl.normal_balance}
+                                                    </Badge>
+                                                    {gl.is_control_account && (
+                                                      <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200">
+                                                        Control
+                                                      </Badge>
+                                                    )}
+                                                    {gl.requires_unit && (
+                                                      <Badge variant="outline" className="text-[9px] bg-blue-50 text-blue-700 border-blue-200">
+                                                        Unit Req
+                                                      </Badge>
+                                                    )}
+                                                    {gl.requires_property && (
+                                                      <Badge variant="outline" className="text-[9px] bg-purple-50 text-purple-700 border-purple-200">
+                                                        Property Req
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                {/* Tier 5: SUB-LEDGER (SL) ACCOUNTS */}
+                                                {isGlExpanded && (
+                                                  <div className="pl-6 pr-3 py-2 border-t bg-muted/20 text-xs">
+                                                    {isSlLoading ? (
+                                                      <div className="flex items-center gap-2 text-muted-foreground py-2">
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading Sub-Ledger (SL) accounts...
+                                                      </div>
+                                                    ) : slList.length === 0 ? (
+                                                      <div className="text-muted-foreground italic py-1">
+                                                        No Sub-Ledgers configured directly under this GL account.
+                                                      </div>
+                                                    ) : (
+                                                      <div className="space-y-1">
+                                                        <div className="text-[11px] font-semibold text-muted-foreground mb-1">
+                                                          Sub-Ledger Accounts ({slList.length} Accounts):
+                                                        </div>
+                                                        <div className="max-h-56 overflow-y-auto divide-y rounded border bg-card">
+                                                          {slList.map(sl => (
+                                                            <div key={sl.id} className="flex items-center justify-between px-3 py-1.5 hover:bg-muted/30">
+                                                              <div className="flex items-center gap-2">
+                                                                <span className="font-mono font-bold text-blue-600">{sl.code}</span>
+                                                                <span className="text-foreground">{sl.name}</span>
+                                                              </div>
+                                                              <span className="text-[10px] text-muted-foreground font-mono">GL: {sl.gl_code}</span>
+                                                            </div>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : tab === 'master' ? (
         <div className="border rounded-lg overflow-hidden bg-card">
@@ -1804,9 +2064,44 @@ function ChartOfAccountsSubModule() {
             </div>
           )}
         </div>
+      ) : tab === 'properties' ? (
+        <div className="border rounded-lg overflow-hidden bg-card shadow-xs">
+          <div className="bg-muted/70 px-4 py-2.5 flex items-center justify-between border-b">
+            <div className="flex items-center gap-2">
+              <Building className="h-4 w-4 text-primary" />
+              <span className="font-bold text-sm text-foreground">Property-Level COA Routing Configuration</span>
+              <Badge variant="secondary" className="text-[11px] font-semibold">
+                {propertyMappings.length} Properties
+              </Badge>
+            </div>
+            <span className="text-xs text-muted-foreground">Authoritative GL routing accounts per property</span>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30 text-xs">
+                <TableHead className="font-bold">Property Name</TableHead>
+                <TableHead className="font-bold">Rental Revenue GL</TableHead>
+                <TableHead className="font-bold">Management Fee GL</TableHead>
+                <TableHead className="font-bold">Other Income GL</TableHead>
+                <TableHead className="font-bold">Gain/Loss Disposal GL</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProperties.map(p => (
+                <TableRow key={p.id} className="hover:bg-muted/30 text-xs">
+                  <TableCell className="font-semibold text-foreground">{p.property_name}</TableCell>
+                  <TableCell><Badge variant="outline" className="font-mono text-emerald-700 bg-emerald-50 border-emerald-200">{p.rental_revenue_gl_code || '41100'}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className="font-mono text-blue-700 bg-blue-50 border-blue-200">{p.property_management_fee_gl_code || '41101'}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className="font-mono text-purple-700 bg-purple-50 border-purple-200">{p.other_income_gl_code || '41201'}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className="font-mono text-amber-700 bg-amber-50 border-amber-200">{p.gain_loss_disposal_gl_code || '41301'}</Badge></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       ) : (
         <div className="space-y-4">
-          {/* Grouping units by property with unit counts */}
           {(() => {
             const propertiesMap = new Map<string, typeof unitCoas>();
             filteredUnits.forEach(u => {
@@ -1816,7 +2111,7 @@ function ChartOfAccountsSubModule() {
             });
 
             return Array.from(propertiesMap.entries()).map(([propertyName, unitsList]) => (
-              <div key={propertyName} className="border rounded-lg overflow-hidden bg-card shadow-sm">
+              <div key={propertyName} className="border rounded-lg overflow-hidden bg-card shadow-xs">
                 <div className="bg-muted/70 px-4 py-2.5 flex items-center justify-between border-b">
                   <div className="flex items-center gap-2">
                     <Building className="h-4 w-4 text-primary" />
@@ -5867,7 +6162,7 @@ function BalanceSheetSubModule() {
 }
 
 function GeneralLedgerReportSubModule() {
-  const { allLedgerTransactions, leases, units, customers, isSyncing, refreshFinanceData } = useFinanceStore() as any;
+  const { allLedgerTransactions, leases, units, customers, isSyncing, refreshFinanceData, resetAndInitializeGLFromPDCs } = useFinanceStore() as any;
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -5877,9 +6172,11 @@ function GeneralLedgerReportSubModule() {
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
   const [sortField, setSortField] = useState<"date" | "account_code" | "debit" | "credit">("date");
-  const [sortAsc, setSortAsc] = useState<boolean>(false); // Descending order based on date default
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [pageSize, setPageSize] = useState<number>(100);
+  const [showInitConfirm, setShowInitConfirm] = useState(false);
+  const [initResult, setInitResult] = useState<{ created: number; cleared: number } | null>(null);
 
   // ── Compute ascending filter options ──────────────────────────────────────
   const txList: any[] = allLedgerTransactions || [];
@@ -5887,9 +6184,8 @@ function GeneralLedgerReportSubModule() {
   const propertyOptions = useMemo(() => {
     const set = new Set<string>();
     txList.forEach(tx => { if (tx.property_name) set.add(tx.property_name); });
-    (leases || []).forEach((l: any) => { if (l.property) set.add(l.property); });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [txList, leases]);
+  }, [txList]);
 
   const unitOptions = useMemo(() => {
     const set = new Set<string>();
@@ -5897,20 +6193,14 @@ function GeneralLedgerReportSubModule() {
       if (selectedProperty !== "all" && tx.property_name !== selectedProperty) return;
       if (tx.unit_ref) set.add(tx.unit_ref);
     });
-    (leases || []).forEach((l: any) => {
-      if (selectedProperty !== "all" && l.property !== selectedProperty) return;
-      if (l.unit) set.add(l.unit);
-    });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-  }, [txList, leases, selectedProperty]);
+  }, [txList, selectedProperty]);
 
   const customerOptions = useMemo(() => {
     const set = new Set<string>();
     txList.forEach(tx => { if (tx.tenant_name) set.add(tx.tenant_name); });
-    (leases || []).forEach((l: any) => { if (l.tenantName) set.add(l.tenantName); });
-    (customers || []).forEach((c: any) => { if (c.name) set.add(c.name); });
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [txList, leases, customers]);
+  }, [txList]);
 
   const monthOptions = useMemo(() => {
     const set = new Set<string>();
@@ -6002,6 +6292,68 @@ function GeneralLedgerReportSubModule() {
 
   return (
     <div className="space-y-4">
+      {/* ── Confirmation Dialog for GL Reset + Init ─────────────────────── */}
+      <Dialog open={showInitConfirm} onOpenChange={setShowInitConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <span className="text-lg">⚠️</span> Initialize GL from PDCs
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground space-y-2 pt-2">
+              <p>This is a <strong>one-time setup operation</strong>. It will:</p>
+              <ul className="list-disc pl-4 space-y-1 text-xs">
+                <li>Clear all existing synthetic PDC voucher entries from the GL</li>
+                <li>Re-fetch all PDCs fresh from the database (resolving names via customers &amp; leases tables)</li>
+                <li>Post <strong>Entry 1 (In Hand)</strong> for every PDC — Dr PDC In Hand / Cr Customer PDC Liability</li>
+                <li>Post <strong>Entry 2 (Deposited) + Entry 3 (Cleared)</strong> for PDCs whose cheque date is <strong>on or before today</strong></li>
+                <li>No Contra Vouchers — all entries are Journal or Receipt Vouchers</li>
+              </ul>
+              <p className="pt-1 text-xs rounded bg-amber-50 border border-amber-200 px-2 py-1.5">
+                <strong>ℹ️ About GL totals:</strong> The GL DR/CR total will be <em>higher</em> than the PDC Management
+                face-value total because past-due cheques each generate 3 entries
+                (RCV + DEP + CLR), so their amount appears in the ledger 3 times.
+                This is correct double-entry accounting.
+              </p>
+              <p className="text-amber-600 font-medium">Do not run this repeatedly — it is for initial bulk import only.</p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowInitConfirm(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={isSyncing}
+              onClick={async () => {
+                setShowInitConfirm(false);
+                const result = await (resetAndInitializeGLFromPDCs as () => Promise<{ created: number; cleared: number }>)();
+                setInitResult(result);
+              }}
+            >
+              {isSyncing ? "Processing..." : "Yes, Initialize GL"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Result Banner ──────────────────────────────────────────────────── */}
+      {initResult && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 space-y-1">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-emerald-700 font-medium">
+              ✅ GL Initialized: <strong>{initResult.created}</strong> voucher entries for <strong>{initResult.cleared + Math.round((initResult.created - initResult.cleared * 3) / 1)}</strong> PDCs
+              {" — "}<strong>{initResult.cleared}</strong> Deposited &amp; Cleared,
+              {" "}<strong>{initResult.created - initResult.cleared * 3}</strong> In Hand.
+            </p>
+            <button className="text-xs text-emerald-600 underline shrink-0" onClick={() => setInitResult(null)}>Dismiss</button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            ℹ️ The GL DR/CR total will exceed the PDC face-value sum because past-due cheques
+            each have 3 ledger entries (RCV + DEP + CLR) — their amount appears in the DR column 3×.
+            This is correct double-entry accounting.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
@@ -6009,6 +6361,17 @@ function GeneralLedgerReportSubModule() {
           <p className="text-xs text-muted-foreground">Complete double-entry log with multi-dimensional filters: Property, Unit, Date, Month &amp; Customer.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* One-time Init button */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowInitConfirm(true)}
+            disabled={isSyncing}
+            className="h-7 text-xs gap-1.5 border-amber-400 text-amber-700 hover:bg-amber-50"
+            title="One-time: Reset GL and initialize all PDC entries from database"
+          >
+            <span className="text-base leading-none">⚡</span> Init GL from PDCs
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -6043,52 +6406,55 @@ function GeneralLedgerReportSubModule() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {/* 1. Property Filter */}
+          {/* 1. Property Filter — Searchable */}
           <div className="space-y-1">
             <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
               <Building2 className="h-3 w-3" /> Property
             </Label>
-            <Select value={selectedProperty} onValueChange={v => { setSelectedProperty(v); setSelectedUnit("all"); setPage(1); }}>
-              <SelectTrigger className="h-8 text-xs bg-background">
-                <SelectValue placeholder="All Properties" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Properties ({propertyOptions.length})</SelectItem>
-                {propertyOptions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedProperty}
+              onValueChange={v => { setSelectedProperty(v); setSelectedUnit("all"); setPage(1); }}
+              placeholder={`All Properties (${propertyOptions.length})`}
+              emptyText="No properties found"
+              options={[
+                { label: `All Properties (${propertyOptions.length})`, value: "all" },
+                ...propertyOptions.map(p => ({ label: p, value: p }))
+              ]}
+            />
           </div>
 
-          {/* 2. Unit Filter */}
+          {/* 2. Unit Filter — Searchable */}
           <div className="space-y-1">
             <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
               <HomeIcon className="h-3 w-3" /> Unit
             </Label>
-            <Select value={selectedUnit} onValueChange={v => { setSelectedUnit(v); setPage(1); }}>
-              <SelectTrigger className="h-8 text-xs bg-background">
-                <SelectValue placeholder="All Units" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Units ({unitOptions.length})</SelectItem>
-                {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedUnit}
+              onValueChange={v => { setSelectedUnit(v); setPage(1); }}
+              placeholder={`All Units (${unitOptions.length})`}
+              emptyText="No units found"
+              options={[
+                { label: `All Units (${unitOptions.length})`, value: "all" },
+                ...unitOptions.map(u => ({ label: u, value: u }))
+              ]}
+            />
           </div>
 
-          {/* 3. Customer / Tenant Name Filter */}
+          {/* 3. Customer / Tenant Name Filter — Searchable */}
           <div className="space-y-1">
             <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
               <UserIcon className="h-3 w-3" /> Customer Name
             </Label>
-            <Select value={selectedCustomer} onValueChange={v => { setSelectedCustomer(v); setPage(1); }}>
-              <SelectTrigger className="h-8 text-xs bg-background">
-                <SelectValue placeholder="All Customers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Customers ({customerOptions.length})</SelectItem>
-                {customerOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedCustomer}
+              onValueChange={v => { setSelectedCustomer(v); setPage(1); }}
+              placeholder={`All Customers (${customerOptions.length})`}
+              emptyText="No customers found"
+              options={[
+                { label: `All Customers (${customerOptions.length})`, value: "all" },
+                ...customerOptions.map(c => ({ label: c, value: c }))
+              ]}
+            />
           </div>
 
           {/* 4. Month Filter (Ascending Chronological) */}
@@ -6177,7 +6543,7 @@ function GeneralLedgerReportSubModule() {
           </span>
           <div className="flex items-center gap-1 ml-2 border-l pl-2">
             <span className="text-[11px] text-muted-foreground">Rows:</span>
-            {[25, 50, 100, 0].map(size => (
+            {[25, 50, 100, 200, 0].map(size => (
               <button
                 key={size}
                 type="button"
@@ -6351,9 +6717,22 @@ function CashFlowSubModule() {
   );
 }
 
+interface CashBookEntry {
+  id: string;
+  date: string;
+  voucher: string;
+  description: string;
+  cash_in: number;
+  cash_out: number;
+  balance: number;
+  computedRunningBal?: number;
+}
+
 function CashBookSubModule() {
   const { cashBookEntries, addCashBookEntry, isSyncing, refreshFinanceData } = useFinanceStore();
   const [open, setOpen] = useState(false);
+  const [directEntries, setDirectEntries] = useState<CashBookEntry[]>([]);
+  const [loadingDirect, setLoadingDirect] = useState(true);
   const [form, setForm] = useState({
     date: new Date().toISOString().split("T")[0],
     voucher: `CSH-${Math.floor(10 + Math.random() * 90)}`,
@@ -6361,6 +6740,59 @@ function CashBookSubModule() {
     type: "in",
     amount: "1500",
   });
+
+  // Fetch PDC deposits and cash receipts directly from DB (mirrors how PDC Management loads data)
+  useEffect(() => {
+    async function fetchCashEntries() {
+      setLoadingDirect(true);
+      try {
+        const [finRes, evtRes] = await Promise.all([
+          supabase.from("fin_pdc_register").select("id, cheque_number, amount, status, deposit_date, cheque_date, tenant_name, unit_name, property_name").order("cheque_date", { ascending: false }),
+          supabase.from("fin_accounting_events").select("id, event_type, event_date, posting_date, total_debit, total_credit, description, reference_number, metadata").order("event_date", { ascending: false }).limit(300),
+        ]);
+
+        const synthesized: CashBookEntry[] = [];
+        let runBal = 0;
+
+        // PDC deposits → Cash In (money arrived in bank from deposited cheque)
+        for (const p of (finRes.data || [])) {
+          const rawStatus = (p.status || "").toLowerCase();
+          if (rawStatus !== "deposited" && rawStatus !== "cleared" && rawStatus !== "partial cash") continue;
+          const amt = Number(p.amount || 0);
+          if (amt <= 0) continue;
+          const date = p.deposit_date || p.cheque_date || new Date().toISOString().split("T")[0];
+          const desc = `PDC Deposited — ${p.tenant_name || "Tenant"}${p.unit_name ? ` (${p.unit_name})` : ""} [Cheque #${p.cheque_number}]`;
+          runBal += amt;
+          synthesized.push({ id: `cb-pdc-${p.id}`, date, voucher: `VCH-PDC-DEP-${p.cheque_number}`, description: desc, cash_in: amt, cash_out: 0, balance: runBal });
+        }
+
+        // Accounting events → Cash In / Out
+        for (const e of (evtRes.data || [])) {
+          const evtType = (e.event_type || "").toLowerCase();
+          const meta = (e.metadata as any) || {};
+          const amt = Number(e.total_debit || e.total_credit || 0);
+          if (amt <= 0) continue;
+          const date = e.event_date || e.posting_date || new Date().toISOString().split("T")[0];
+          const voucher = e.reference_number || `EVT-${String(e.id).slice(0, 8).toUpperCase()}`;
+          const isCashIn = evtType.includes("receiv") || evtType.includes("deposit") || evtType.includes("collect");
+          if (isCashIn) {
+            runBal += amt;
+            synthesized.push({ id: `cb-evt-${e.id}`, date, voucher, description: e.description || e.event_type, cash_in: amt, cash_out: 0, balance: runBal });
+          } else if (evtType.includes("pay") || evtType.includes("refund") || evtType.includes("expense")) {
+            runBal -= amt;
+            synthesized.push({ id: `cb-evt-${e.id}`, date, voucher, description: e.description || e.event_type, cash_in: 0, cash_out: amt, balance: runBal });
+          }
+        }
+
+        setDirectEntries(synthesized);
+      } catch (err) {
+        console.warn("[CashBook] Direct fetch failed:", err);
+      } finally {
+        setLoadingDirect(false);
+      }
+    }
+    void fetchCashEntries();
+  }, []);
 
   function handleAdd() {
     const amt = parseFloat(form.amount) || 0;
@@ -6374,26 +6806,37 @@ function CashBookSubModule() {
     setOpen(false);
   }
 
-  const totalIn = cashBookEntries.reduce((s, r) => s + r.cash_in, 0);
-  const totalOut = cashBookEntries.reduce((s, r) => s + r.cash_out, 0);
-  const currentNetBalance = totalIn - totalOut;
+  // Merge manual + direct entries (deduplicated by id), sorted newest first
+  const allCashEntries = useMemo(() => {
+    const seenIds = new Set<string>();
+    const merged: CashBookEntry[] = [];
+    for (const e of [...cashBookEntries, ...directEntries]) {
+      if (e && !seenIds.has(e.id)) { seenIds.add(e.id); merged.push(e); }
+    }
+    return merged.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }, [cashBookEntries, directEntries]);
 
-  // Compute accumulated running balance for each row chronologically (oldest to newest)
-  const sortedChronological = [...cashBookEntries].sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
-  let runningAcc = 0;
-  const entriesWithAccBalance = sortedChronological.map(item => {
-    runningAcc += (item.cash_in || 0) - (item.cash_out || 0);
-    return { ...item, computedRunningBal: runningAcc };
-  });
-  // Display newest first
-  const displayRows = [...entriesWithAccBalance].reverse();
+  // Recompute running balance across ALL entries (chronological)
+  const displayRows = useMemo(() => {
+    const chrono = [...allCashEntries].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    let runBal = 0;
+    const withBal = chrono.map(r => {
+      runBal += (r.cash_in || 0) - (r.cash_out || 0);
+      return { ...r, computedRunningBal: runBal };
+    });
+    return withBal.reverse();
+  }, [allCashEntries]);
+
+  const totalIn = allCashEntries.reduce((s, r) => s + (r.cash_in || 0), 0);
+  const totalOut = allCashEntries.reduce((s, r) => s + (r.cash_out || 0), 0);
+  const currentNetBalance = totalIn - totalOut;
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Main Cash Book — Live</h3>
-          <p className="text-xs text-muted-foreground">All physical cash receipts, vault deposits, and disbursements — synced with Cash On Hand report.</p>
+          <p className="text-xs text-muted-foreground">All physical cash receipts, PDC deposits, vault deposits, and disbursements — synced with Cash On Hand report.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -6417,6 +6860,12 @@ function CashBookSubModule() {
         <Card className="p-3 bg-blue-50 border-blue-200"><p className="text-xs text-blue-700 font-semibold">Current Balance</p><p className="font-mono font-bold text-blue-800 text-sm">QR {currentNetBalance.toLocaleString()}</p></Card>
       </div>
 
+      {loadingDirect && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading PDC deposits and cash transactions…
+        </div>
+      )}
+
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
           <TableHeader>
@@ -6432,7 +6881,7 @@ function CashBookSubModule() {
           <TableBody className="text-xs">
             {displayRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No cash entries recorded yet.</TableCell>
+                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">{loadingDirect ? "Loading…" : "No cash entries recorded yet."}</TableCell>
               </TableRow>
             ) : (
               displayRows.map((row) => (
@@ -6440,9 +6889,9 @@ function CashBookSubModule() {
                   <TableCell className="font-mono">{row.date}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">{row.voucher}</TableCell>
                   <TableCell className="font-medium">{row.description}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-emerald-600">{row.cash_in > 0 ? row.cash_in.toLocaleString() : "—"}</TableCell>
-                  <TableCell className="text-right font-mono font-semibold text-rose-600">{row.cash_out > 0 ? row.cash_out.toLocaleString() : "—"}</TableCell>
-                  <TableCell className="text-right font-mono font-bold">{row.computedRunningBal.toLocaleString()} QAR</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-emerald-600">{(row.cash_in || 0) > 0 ? (row.cash_in || 0).toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-right font-mono font-semibold text-rose-600">{(row.cash_out || 0) > 0 ? (row.cash_out || 0).toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-right font-mono font-bold">{(row as any).computedRunningBal.toLocaleString()} QAR</TableCell>
                 </TableRow>
               ))
             )}

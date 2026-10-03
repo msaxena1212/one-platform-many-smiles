@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, Search, Filter, RotateCcw } from "lucide-react";
+import { Loader2, Search, Filter, RotateCcw, FileText } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 export interface LeasesModuleProps {
@@ -40,21 +40,79 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       }
 
       // Map context leases to match table structure
-      const mappedContext = (contextLeases || []).map(cl => ({
-        id: cl.id,
-        lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
-        properties: { title: cl.property },
-        property_name: cl.property,
-        unit: cl.unit,
-        tenant_name: cl.tenantName,
-        commencement_date: cl.startDate,
-        expiry_date: cl.endDate,
-        rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
-        lease_status: cl.status === 'closed' ? 'CLOSED' : (cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed') ? 'ACTIVE' : cl.status === 'renewal_due' ? 'EXPIRING' : 'DRAFT',
-      }));
+      const today90 = new Date();
+      today90.setDate(today90.getDate() + 90);
+
+      const mappedContext = (contextLeases || []).map(cl => {
+        const rawStatus = (cl.status || '').toLowerCase();
+        let status = 'DRAFT';
+        if (rawStatus === 'closed' || rawStatus === 'checkout' || rawStatus === 'terminated' || rawStatus === 'vacated') {
+          status = 'CLOSED';
+        } else if (rawStatus === 'active' || rawStatus === 'fully_signed' || rawStatus === 'collection_completed' || rawStatus === 'leased') {
+          if (cl.endDate) {
+            const expDate = new Date(cl.endDate);
+            if (!isNaN(expDate.getTime()) && expDate <= today90) {
+              status = 'EXPIRING';
+            } else {
+              status = 'ACTIVE';
+            }
+          } else {
+            status = 'ACTIVE';
+          }
+        } else if (rawStatus === 'renewal_due' || rawStatus === 'expiring') {
+          status = 'EXPIRING';
+        } else if (rawStatus === 'draft' || rawStatus === 'pending' || rawStatus === 'in_progress') {
+          status = 'DRAFT';
+        } else if (rawStatus) {
+          status = rawStatus.toUpperCase();
+        }
+        return {
+          id: cl.id,
+          lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
+          properties: { title: cl.property },
+          property_name: cl.property,
+          unit: cl.unit,
+          tenant_name: cl.tenantName,
+          commencement_date: cl.startDate,
+          expiry_date: cl.endDate,
+          rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
+          lease_status: status,
+        };
+      });
+
+      // Normalize DB lease statuses to match the same ACTIVE/DRAFT/EXPIRING/CLOSED scheme
+      const normalizedDbLeases = dbLeases.map((l: any) => {
+        const rawStatus = (l.lease_status || l.status || "").toLowerCase();
+        let normalized: string;
+        if (rawStatus === "closed" || rawStatus === "terminated" || rawStatus === "vacated") {
+          normalized = "CLOSED";
+        } else if (rawStatus === "active" || rawStatus === "fully_signed" || rawStatus === "collection_completed" || rawStatus === "leased") {
+          // Check if expiring within 90 days
+          const expiry = l.expiry_date || l.contract_end_date;
+          if (expiry) {
+            const expDate = new Date(expiry);
+            if (!isNaN(expDate.getTime()) && expDate <= today90) {
+              normalized = "EXPIRING";
+            } else {
+              normalized = "ACTIVE";
+            }
+          } else {
+            normalized = "ACTIVE";
+          }
+        } else if (rawStatus === "renewal_due" || rawStatus === "expiring") {
+          normalized = "EXPIRING";
+        } else if (rawStatus === "draft" || rawStatus === "pending" || rawStatus === "in_progress") {
+          normalized = "DRAFT";
+        } else if (rawStatus) {
+          normalized = rawStatus.toUpperCase();
+        } else {
+          normalized = "DRAFT";
+        }
+        return { ...l, lease_status: normalized };
+      });
 
       // Combine both sources
-      const allLeases = [...dbLeases];
+      const allLeases = [...normalizedDbLeases];
       for (const mc of mappedContext) {
         if (!allLeases.some(l => l.id === mc.id || l.lease_number === mc.lease_number)) {
           allLeases.push(mc);
@@ -67,7 +125,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     } finally {
       setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [contextLeases]);
 
   useEffect(() => {
     load(true);
@@ -262,19 +320,20 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                   <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">End Date</th>
                   <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Annual Rent</th>
                   <th className="px-4 py-2.5 text-center font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Status</th>
+                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Agreement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
                    <tr>
-                     <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                     <td colSpan={8} className="text-center py-8 text-muted-foreground">
                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
                        Loading leases...
                      </td>
                    </tr>
                 ) : filteredLeases.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-muted-foreground text-xs">
+                    <td colSpan={8} className="text-center py-8 text-muted-foreground text-xs">
                       No matching leases found.
                     </td>
                   </tr>
@@ -299,6 +358,66 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                         }`}>
                           {lease.lease_status || 'DRAFT'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs hover:text-primary hover:bg-primary/10"
+                          title="Download / Print Bilingual Lease Contract"
+                          onClick={() => {
+                            import('@/lib/qatar-lease-contract').then(({ printBilingualLeaseContract }) => {
+                              printBilingualLeaseContract({
+                                contractNumber: undefined,
+                                agreementDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                                landlord: {
+                                  companyNameEn: "AL AMEEN REAL ESTATE",
+                                  companyNameAr: "الأمين للعقارات",
+                                  representedByEn: "MR. MOHAMED AMEEN",
+                                  representedByAr: "السيد / محمد أمين",
+                                  poBox: "20722",
+                                  cityEn: "DOHA - QATAR",
+                                  cityAr: "الدوحة - قطر",
+                                  phone: "+974 4444 1234",
+                                },
+                                tenant: {
+                                  nameEn: lease.tenant_name || "VALUED TENANT",
+                                  nameAr: lease.tenant_name || "المستأجر المحترم",
+                                  qid: lease.tenant_qid || lease.customer_qid || "28463401234",
+                                  mobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
+                                  poBox: lease.tenant_pobox || "Doha, Qatar",
+                                  addressEn: lease.tenant_address || "Doha, State of Qatar",
+                                  addressAr: lease.tenant_address || "الدوحة، دولة قطر",
+                                },
+                                property: {
+                                  propertyNameEn: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence",
+                                  propertyNameAr: (lease as any).properties?.title || lease.property_name || "مبنى الأمين السكني",
+                                  unitNumber: lease.unit || "Flat No. 04",
+                                  zone: (lease as any).properties?.area_zone || "90",
+                                  street: (lease as any).properties?.street_building_name || "Al Wukair Street",
+                                  building: (lease as any).properties?.property_code || "Building 12",
+                                  electricityMeterNo: lease.electricity_meter_no || "E-984210",
+                                  waterMeterNo: lease.water_meter_no || "W-541298",
+                                  unitTypeEn: lease.bedrooms ? `${lease.bedrooms} Bedroom Apartment` : "Residential Flat",
+                                  unitTypeAr: lease.bedrooms ? `شقة سكنية ${lease.bedrooms} غرف نوم` : "شقة سكنية",
+                                  furnishingEn: lease.furnishing || "Fully Furnished",
+                                  furnishingAr: lease.furnishing === 'unfurnished' ? "غير مفروشة" : lease.furnishing === 'semi_furnished' ? "نصف مفروشة" : "مفروشة بالكامل",
+                                },
+                                financial: {
+                                  monthlyRent: Number(lease.rental_amount) ? Math.round(Number(lease.rental_amount) / 12) : 5000,
+                                  securityDeposit: Math.round(Number(lease.rental_amount || 60000) / 12),
+                                  numberOfCheques: 12,
+                                  startDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : "2026-09-01",
+                                  endDate: lease.expiry_date ? new Date(lease.expiry_date).toISOString().split('T')[0] : "2027-08-31",
+                                  pdcCount: 12,
+                                }
+                              });
+                            });
+                          }}
+                        >
+                          <FileText className="h-3.5 w-3.5 mr-1" />
+                          Contract
+                        </Button>
                       </td>
                     </tr>
                   ))

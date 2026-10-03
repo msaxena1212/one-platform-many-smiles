@@ -35,6 +35,8 @@ export interface PmsUnit {
   unit: string;
   status: UnitStatus;
   rent: number;
+  contractEndDate?: string;
+  currentTenant?: string;
 }
 
 export interface PmsCustomer {
@@ -210,9 +212,13 @@ export interface PmsAppData {
   auditEvents: PmsAuditEvent[];
 }
 
+const INITIAL_SEED_CUSTOMERS: PmsCustomer[] = [];
+
+const INITIAL_SEED_RESERVATIONS: PmsReservation[] = [];
+
 const EMPTY_DATA: PmsAppData = {
   units: [],
-  customers: [],
+  customers: [],   // populated by fetchDirectFromDatabase (3-source: customers + fin_pdc_register + pdcs)
   reservations: [],
   leases: [],
   pdcs: [],
@@ -247,28 +253,85 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const fetchDirectFromDatabase = useCallback(async () => {
     setSyncing(true);
     try {
-      // Safe concurrent fetch with individual try-catch fallbacks
+      // Helper to fetch all rows across PostgREST 1000-row default pages
+      async function fetchAllRows<T = any>(
+        queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        let rows: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          try {
+            const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
+            if (res.error || !res.data || res.data.length === 0) break;
+            rows = rows.concat(res.data);
+            if (res.data.length < pageSize) break;
+            from += pageSize;
+          } catch {
+            break;
+          }
+        }
+        return rows;
+      }
+
+      // Safe concurrent fetch with full pagination
       const [
-        unitsRes,
-        propertiesRes,
-        customersRes,
-        leasesRes,
-        pdcsRes,
-        reservationsRes,
-        vouchersRes,
-        handoversRes,
-        inspectionsRes,
+        unitsData,
+        propertiesData,
+        customersData,
+        leasesData,
+        finPdcsData,
+        altPdcsData,
+        reservationsData,
+        vouchersData,
+        handoversData,
+        inspectionsData,
       ] = await Promise.all([
-        supabase.from("units").select("id, unit_ref, unit_name, unit_code, status, lease_status, current_tenant, contract_no, contract_start_date, contract_end_date, current_rent, price, security_deposit_amount, rent_frequency, maintenance_responsibility, parking_slot_no, property_id, properties(id, title, property_code)").limit(500).catch(e => ({ data: [], error: e })),
-        supabase.from("properties").select("id, title, property_code").limit(200).catch(e => ({ data: [], error: e })),
-        supabase.from("customers").select("*").limit(500).catch(e => ({ data: [], error: e })),
-        supabase.from("leases").select("*, properties(id, title, property_code), customers:customer_id(full_name)").limit(200).catch(e => ({ data: [], error: e })),
-        supabase.from("fin_pdc_register").select("*").limit(300).catch(e => ({ data: [], error: e })),
-        supabase.from("reservations").select("*").limit(100).catch(e => ({ data: [], error: e })),
-        supabase.from("fin_vouchers").select("*").limit(200).catch(e => ({ data: [], error: e })),
-        supabase.from("key_handovers").select("*").limit(100).catch(e => ({ data: [], error: e })),
-        supabase.from("inspection_reports").select("*").limit(100).catch(e => ({ data: [], error: e })),
+        fetchAllRows((from, to) =>
+          supabase
+            .from("units")
+            .select("id, unit_ref, unit_name, unit_code, status, lease_status, current_tenant, contract_no, contract_start_date, contract_end_date, current_rent, price, security_deposit_amount, rent_frequency, maintenance_responsibility, parking_slot_no, property_id, properties(id, title, property_code)")
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("properties").select("id, title, property_code").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("customers").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("leases").select("*, properties(id, title, property_code), customers:customer_id(full_name)").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("fin_pdc_register").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("pdcs").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("reservations").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("fin_vouchers").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("key_handovers").select("*").range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase.from("inspection_reports").select("*").range(from, to)
+        ),
       ]);
+
+      const unitsRes = { data: unitsData };
+      const propertiesRes = { data: propertiesData };
+      const customersRes = { data: customersData };
+      const leasesRes = { data: leasesData };
+      const pdcsRes = { data: finPdcsData };
+      const altPdcsRes = { data: altPdcsData };
+      const reservationsRes = { data: reservationsData };
+      const vouchersRes = { data: vouchersData };
+      const handoversRes = { data: handoversData };
+      const inspectionsRes = { data: inspectionsData };
 
       const propMap = new Map<string, string>();
       (propertiesRes.data || []).forEach((p: any) => {
@@ -292,18 +355,124 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         };
       });
 
-      // 1. Build rich customer records: from Supabase customers table AND synthesized from active leases/units
-      const rawCustomers: PmsCustomer[] = (customersRes.data || []).map((c: any) => ({
-        id: c.id,
-        name: c.full_name || c.name || "Customer",
-        type: (c.customer_type?.toLowerCase() === "company" ? "company" : "individual") as any,
-        qatarId: c.qatar_id || "",
-        passport: c.passport_number || "",
-        crNumber: c.commercial_registration || "",
-        mobile: c.mobile_number || c.phone || "",
-        email: c.email_address || c.email || "",
-        status: (c.verification_status?.toLowerCase() === "verified" || c.status?.toLowerCase() === "active" ? "active" : "active") as any,
-      }));
+      // ──────────────────────────────────────────────────────────────────────
+      // CUSTOMER MASTER: 3-source synthesis (same logic as PDC Management)
+      //   Source 1: customers table   → real DB rows with full profile data
+      //   Source 2: fin_pdc_register  → unique tenant_name across all PDCs
+      //   Source 3: pdcs table        → unique tenant_name / drawer_name
+      //
+      // This guarantees that Customer Master, Reservations, and any other
+      // component that reads `customers` from context all see the same N.
+      // ──────────────────────────────────────────────────────────────────────
+
+      const seenCustIds  = new Set<string>();
+      const seenCustNames = new Set<string>();
+      const mergedCustomers: PmsCustomer[] = [];
+
+      // Helper: normalize customer name to prevent duplicates like "M/s Embassy of Pakistan" vs "M/s.Embassy of Pakistan"
+      const normalizeCustKey = (name: string): string => {
+        if (!name) return "";
+        let n = name.toLowerCase().trim();
+        // Normalize common salutations / prefixes like M/s, M/s., M/S.
+        n = n.replace(/^m\s*\/\s*s\.?\s*/i, "m/s ");
+        // Strip punctuation/special chars and collapse multiple whitespace
+        n = n.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+        return n;
+      };
+
+      // Helper: produce a canonical display name (preserves original casing but normalises the M/s prefix)
+      const canonicalName = (name: string): string => {
+        if (!name) return name;
+        // Normalise M/s. → M/s  (with a space after)
+        return name.trim().replace(/^(M|m)\s*\/\s*(S|s)\.?\s*/,  "M/s ");
+      };
+
+      // Helper: resolve the best available name from a raw DB row
+      const resolveName = (c: any): string =>
+        (c.full_name || c.name || c.tenant_name || c.customer_name ||
+          (c.first_name && c.last_name ? `${c.first_name} ${c.last_name}`.trim() : "") ||
+          c.first_name || c.last_name || "").trim();
+
+      // Helper: guess company vs individual from display name
+      const guessType = (name: string): "company" | "individual" => {
+        const l = (name || "").toLowerCase().trim();
+        return l.startsWith("m/s") || l.startsWith("m/s.") || l.includes("trading") || l.includes("w.l.l") || l.includes("llc") ||
+          l.includes("corp") || l.includes("group") || l.includes("co.") ||
+          l.includes("company") || l.includes("services") || l.includes("international") ||
+          l.includes("logistics") || l.includes("contracting") || l.includes("industries") ||
+          l.includes("enterprise") || l.includes("real estate") || l.includes("embassy") ||
+          l.includes("solutions") || l.includes("limited") || l.includes("sport club") ||
+          l.includes("electrical") || l.includes("katara") || l.includes("larsen") ||
+          l.includes("qentz") || l.includes("saipem") || l.includes("special numberz") ||
+          l.includes("glamour") || l.includes("alfanet") || l.includes("axiom") ? "company" : "individual";
+      };
+
+      // SOURCE 1: proper DB records from customers table
+      for (const c of (customersRes.data || [])) {
+        const name = resolveName(c);
+        if (!name || name.toLowerCase().includes("abc trading")) continue;
+        const id = String(c.id);
+        const normKey = normalizeCustKey(name);
+        if (seenCustIds.has(id) || (normKey && seenCustNames.has(normKey))) continue;
+        seenCustIds.add(id);
+        if (normKey) seenCustNames.add(normKey);
+        mergedCustomers.push({
+          id,
+          name,
+          type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
+          qatarId:  c.qatar_id || c.qatarId || "",
+          passport: c.passport_number || c.passport || "",
+          crNumber: c.commercial_registration || c.cr_number || c.crNumber || "",
+          mobile:   c.mobile_number || c.mobile || c.phone || "",
+          email:    c.email_address || c.email || "",
+          status:   "active" as any,
+          _source:  "db",
+        } as any);
+      }
+
+      // Also pull any imported customers from localStorage (Excel bulk import)
+      try {
+        const rawHistory = localStorage.getItem("stayhub_import_batches_history_v1");
+        if (rawHistory) {
+          const parsedBatches = JSON.parse(rawHistory);
+          if (Array.isArray(parsedBatches)) {
+            parsedBatches.forEach((b: any) => {
+              if (b.module === "customer" && Array.isArray(b.records)) {
+                b.records.forEach((r: any) => {
+                  const norm = r.normalizedData || r.rawRowData || {};
+                  const custName = norm.full_name || norm["Full Name / Company Name"] || norm["Full Name / Company Name *"] || r.recordName;
+                  if (custName && (r.status === "SUCCESS" || r.status === "READY" || b.status === "COMPLETED" || b.status === "PARTIAL_SUCCESS")) {
+                    const nameClean = String(custName).trim();
+                    const normKey = normalizeCustKey(nameClean);
+                    if (!nameClean || (normKey && seenCustNames.has(normKey)) || nameClean.toLowerCase().includes("abc trading")) return;
+                    if (normKey) seenCustNames.add(normKey);
+                    const isCompany = (norm.customer_type || norm["Customer Type"])?.toLowerCase() === "company" || guessType(nameClean) === "company";
+                    mergedCustomers.push({
+                      id: r.recordId || `cust-imp-${r.recordKey || Math.floor(Math.random() * 100000)}`,
+                      name: nameClean,
+                      type: isCompany ? "company" : "individual",
+                      qatarId: norm.qatar_id || norm["Qatar ID"] || (isCompany ? "" : r.recordKey),
+                      passport: norm.passport_number || norm["Passport Number"] || "",
+                      crNumber: norm.commercial_registration || norm["Commercial Registration (CR)"] || (isCompany ? r.recordKey : ""),
+                      mobile: norm.mobile_number || norm["Mobile Number"] || "",
+                      email: norm.email_address || norm["Email Address"] || "",
+                      status: "active" as any,
+                      _source: "import",
+                    } as any);
+                  }
+                });
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load local imported customers:", err);
+      }
+
+      const mappedCustomers: PmsCustomer[] = mergedCustomers.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      );
+
 
       // Map existing relational leases
       const existingLeases: PmsLease[] = (leasesRes.data || []).map((l: any) => ({
@@ -312,7 +481,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         reservationId: l.id || "",
         property: l.properties?.title || propMap.get(l.property_id) || "Property",
         unit: unitMap.get(l.unit_id) || l.unit_ref || "Unit",
-        tenantName: l.customers?.full_name || l.tenant_name || "Tenant",
+        tenantName: canonicalName(l.customers?.full_name || l.tenant_name || "Tenant"),
         startDate: l.commencement_date || "",
         endDate: l.expiry_date || "",
         monthlyRent: Number(l.rental_amount || 0),
@@ -350,7 +519,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             const monthlyRent = Number(u.current_rent || u.price || u.rent_amount || 6500);
             const secDeposit = Number(u.security_deposit_amount || monthlyRent);
             const contractNo = u.contract_no || `L-${unitIdentifier.replace(/\W/g, "") || u.id.slice(0, 5)}`;
-            const tenantName = u.current_tenant && u.current_tenant.trim() ? u.current_tenant.trim() : `Tenant (${unitIdentifier})`;
+            const tenantName = u.current_tenant && u.current_tenant.trim() ? canonicalName(u.current_tenant.trim()) : `Tenant (${unitIdentifier})`;
             const custId = `cust-${u.id.slice(0, 8)}`;
 
             unitContracts.push({
@@ -361,7 +530,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               unit: unitIdentifier,
               tenantName: tenantName,
               startDate: u.contract_start_date || "2026-01-01",
-              endDate: u.contract_end_date || "2026-12-31",
+              endDate: u.contract_end_date || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })(),
               monthlyRent: monthlyRent,
               securityDeposit: secDeposit,
               pdcCount: 12,
@@ -382,98 +551,61 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       const mappedLeases: PmsLease[] = [...existingLeases, ...unitContracts];
 
-      // Auto-extract and populate customer records from all leases and tenants
-      const seenCustKeys = new Set(rawCustomers.map((c) => c.name.toLowerCase().trim()));
-      const synthesizedCustomers: PmsCustomer[] = [];
+      // Build lookup from pdcs table by compound key (unit||cheque) and cheque number
+      const pdcsLookup = new Map<string, any>();
+      (altPdcsRes.data || []).forEach((p: any) => {
+        const u = (p.unit_name || p.unit_ref || "").trim();
+        const c = String(p.cheque_number || p.id).trim();
+        if (c) {
+          if (u) pdcsLookup.set(`${u}||${c}`, p);
+          if (!pdcsLookup.has(c)) pdcsLookup.set(c, p);
+        }
+      });
 
-      mappedLeases.forEach((l, idx) => {
-        const nameClean = (l.tenantName || "").trim();
-        if (nameClean && !seenCustKeys.has(nameClean.toLowerCase())) {
-          seenCustKeys.add(nameClean.toLowerCase());
-          const isCompany = nameClean.toLowerCase().includes("trading") || nameClean.toLowerCase().includes("w.l.l") || nameClean.toLowerCase().includes("llc") || nameClean.toLowerCase().includes("corp") || nameClean.toLowerCase().includes("group");
-          synthesizedCustomers.push({
-            id: l.customerId || `cust-${idx + 100}`,
-            name: nameClean,
-            type: isCompany ? "company" : "individual",
-            qatarId: isCompany ? "" : `28${Math.floor(100000000 + (idx * 48271) % 899999999)}`,
-            passport: isCompany ? "" : `N${Math.floor(10000000 + (idx * 31723) % 89999999)}`,
-            crNumber: isCompany ? `CR-${Math.floor(10000 + (idx * 1234) % 89999)}` : "",
-            mobile: `+974 ${55000000 + (idx * 1111) % 44444444}`,
-            email: `${nameClean.toLowerCase().replace(/[^a-z0-9]/g, ".") || "tenant"}@domain.qa`,
-            status: "active",
+      // Combine PDCs preserving ALL unique records by row ID
+      const allRawPdcs: any[] = [];
+      const seenPdcIds = new Set<string>();
+
+      (pdcsRes.data || []).forEach((p: any) => {
+        const id = `fin-${p.id}`;
+        if (!seenPdcIds.has(id)) {
+          seenPdcIds.add(id);
+          const chq = String(p.cheque_number || "").trim();
+          const u = (p.unit_name || p.unit_ref || "").trim();
+          const matched = (u && chq ? pdcsLookup.get(`${u}||${chq}`) : null) || (chq ? pdcsLookup.get(chq) : null);
+
+          allRawPdcs.push({
+            ...p,
+            id: String(p.id),
+            property_name: matched?.property_name || matched?.property_code || p.property_name || p.property_code || "",
+            unit_name: matched?.unit_name || matched?.unit_ref || p.unit_name || p.unit_ref || "",
+            tenant_name: matched?.tenant_name || matched?.drawer_name || p.tenant_name || p.drawer_name || "",
+            bank: matched?.bank || p.bank || p.bank_name || "QNB",
           });
         }
       });
 
-      // Also pull all successfully committed customers from Excel Import History
-      const importedCustomers: PmsCustomer[] = [];
-      try {
-        const rawHistory = localStorage.getItem("stayhub_import_batches_history_v1");
-        if (rawHistory) {
-          const parsedBatches = JSON.parse(rawHistory);
-          if (Array.isArray(parsedBatches)) {
-            parsedBatches.forEach((b: any) => {
-              if (b.module === "customer" && Array.isArray(b.records)) {
-                b.records.forEach((r: any) => {
-                  const norm = r.normalizedData || r.rawRowData || {};
-                  const custName = norm.full_name || norm["Full Name / Company Name"] || norm["Full Name / Company Name *"] || r.recordName;
-                  if (custName && (r.status === "SUCCESS" || r.status === "READY" || b.status === "COMPLETED" || b.status === "PARTIAL_SUCCESS")) {
-                    const cKey = String(custName).trim().toLowerCase();
-                    if (!seenCustKeys.has(cKey)) {
-                      seenCustKeys.add(cKey);
-                      const isCompany = (norm.customer_type || norm["Customer Type"])?.toLowerCase() === "company";
-                      importedCustomers.push({
-                        id: r.recordId || `cust-imp-${r.recordKey || Math.floor(Math.random() * 100000)}`,
-                        name: String(custName).trim(),
-                        type: isCompany ? "company" : "individual",
-                        qatarId: norm.qatar_id || norm["Qatar ID"] || (isCompany ? "" : r.recordKey),
-                        passport: norm.passport_number || norm["Passport Number"] || "",
-                        crNumber: norm.commercial_registration || norm["Commercial Registration (CR)"] || (isCompany ? r.recordKey : ""),
-                        mobile: norm.mobile_number || norm["Mobile Number"] || "+974 5500 0000",
-                        email: norm.email_address || norm["Email Address"] || "",
-                        status: (norm.verification_status?.toLowerCase() === "verified" ? "active" : "active") as any,
-                      });
-                    }
-                  }
-                });
-              }
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to load local imported customers:", err);
-      }
-
-      const defaultSeedCustomers: PmsCustomer[] = [
-        { id: "c-seed-1", name: "ABC Trading & Contracting W.L.L.", type: "company", qatarId: "28463401923", passport: "N8829104", crNumber: "CR-109283", mobile: "97455123456", email: "contact@abctrading.qa", status: "active" },
-        { id: "c-seed-2", name: "Nasser Al-Kuwari", type: "individual", qatarId: "29063401928", passport: "P9812401", crNumber: "", mobile: "+974 5511 2233", email: "nasser.alkuwari@gmail.com", status: "active" },
-        { id: "c-seed-3", name: "Al Mana Trading W.L.L.", type: "company", qatarId: "", passport: "", crNumber: "CR-QAT-88192", mobile: "+974 4433 2211", email: "leasing@almanatrading.qa", status: "active" },
-        { id: "c-seed-4", name: "Fatima Al-Sulaiti", type: "individual", qatarId: "28863409124", passport: "P7741290", crNumber: "", mobile: "+974 6622 3344", email: "fatima.sulaiti@outlook.com", status: "active" },
-        { id: "c-seed-5", name: "Gulf Horizon Logistics Co.", type: "company", qatarId: "", passport: "", crNumber: "CR-QAT-55421", mobile: "+974 4488 9900", email: "facilities@gulfhorizon.qa", status: "active" },
-        { id: "c-seed-6", name: "Tariq Mansour", type: "individual", qatarId: "29263410293", passport: "P6623199", crNumber: "", mobile: "+974 7733 4455", email: "tariq.mansour@qatarair.qa", status: "active" },
-      ];
-
-      defaultSeedCustomers.forEach((sc) => {
-        if (!seenCustKeys.has(sc.name.toLowerCase())) {
-          seenCustKeys.add(sc.name.toLowerCase());
-          synthesizedCustomers.push(sc);
+      // Also add any pdcs table entries not covered
+      (altPdcsRes.data || []).forEach((p: any) => {
+        const chq = String(p.cheque_number || p.id).trim();
+        const covered = allRawPdcs.some(f => String(f.cheque_number || f.id).trim() === chq);
+        if (!covered) {
+          allRawPdcs.push(p);
         }
       });
 
-      const mappedCustomers: PmsCustomer[] = [...rawCustomers, ...importedCustomers, ...synthesizedCustomers];
-
-      const mappedPdcs: PmsPdc[] = (pdcsRes.data || []).map((p: any) => ({
-        id: p.id,
+      const mappedPdcs: PmsPdc[] = allRawPdcs.map((p: any) => ({
+        id: String(p.id),
         leaseId: p.lease_id || "",
         chequeNo: p.cheque_number || "",
-        bank: p.bank_name || "QNB",
-        date: p.cheque_date || "",
+        bank: p.bank || p.bank_name || "QNB",
+        date: p.maturity_date || p.cheque_date || "",
         amount: Number(p.amount || 0),
         status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
-        payerName: p.drawer_name || p.tenant_name,
+        payerName: p.tenant_name || p.drawer_name || "Tenant",
       }));
 
-      // Map raw reservations or synthesize realistic reservations from available units
+      // Map raw reservations or synthesize realistic reservations from available units and ALL active/expired leases
       const rawReservations: PmsReservation[] = (reservationsRes.data || []).map((r: any) => ({
         id: r.id,
         property: "Property",
@@ -486,7 +618,35 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         remarks: r.special_conditions,
       }));
 
-      let mappedReservations: PmsReservation[] = [...rawReservations];
+      // Ensure all customers with a lease are visible in Reservations as converted.
+      // Lease-backed reservations always use "converted" status because the tenant
+      // successfully signed — only raw DB reservations that lapsed without a lease
+      // should appear as "expired" or "released".
+      const leaseReservations: PmsReservation[] = mappedLeases.map((l, idx) => ({
+        id: `res-lease-${l.id || idx}`,
+        property: l.property || "Property",
+        unit: l.unit || "Unit",
+        tenantName: l.tenantName || "Tenant",
+        agent: "Leasing Desk",
+        startDate: l.startDate || today.toISOString().split("T")[0],
+        validUntil: l.endDate || addDays(today, 30),
+        rent: l.monthlyRent || 0,
+        status: "converted" as const,
+        remarks: `Linked to Lease Contract ${l.id} (${l.status || "Active"})`,
+      }));
+
+      // Deduplicate reservations by (property + unit + id)
+      const seenResKey = new Set<string>();
+      const combinedReservations: PmsReservation[] = [];
+      [...rawReservations, ...leaseReservations].forEach((res) => {
+        const key = `${(res.property || "").trim().toLowerCase()}--${(res.unit || "").trim().toLowerCase()}`;
+        if (res.unit && !seenResKey.has(key)) {
+          seenResKey.add(key);
+          combinedReservations.push(res);
+        }
+      });
+
+      let mappedReservations: PmsReservation[] = combinedReservations;
       if (mappedReservations.length === 0) {
         // Generate seed reservations for Available or Reserved units
         const availUnits = mappedUnits.filter((u) => u.status === "Available" || u.status === "Reserved").slice(0, 6);
@@ -522,7 +682,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         id: v.id,
         leaseId: v.party_id || v.tenant_id || v.lease_id || "",
         name: v.narration || v.voucher_no || "General Voucher",
-        receiptNo: v.voucher_no,
+        receiptNo: v.voucher_no || v.reference_no,
         method: v.voucher_type === "Receipt" ? "Bank Transfer" : "Journal",
         period: v.voucher_date,
         debit: "Bank",
@@ -531,52 +691,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         status: (v.status as VoucherStatus) || "posted",
       }));
 
-      // Also synthesize PDC receipt vouchers from fin_pdc_register so they appear under Lease Lifecycle -> Vouchers
-      const pdcVouchers: PmsVoucher[] = (pdcsRes.data || []).map((p: any) => ({
-        id: `pdc-vch-${p.id || p.cheque_number}`,
-        leaseId: p.lease_id || p.tenant_id || "",
-        name: `Receipt Voucher - PDC (${p.cheque_number})`,
-        receiptNo: `RV-PDC-${p.cheque_number}`,
-        method: "PDC",
-        period: p.cheque_date,
-        debit: "PDC In Hand",
-        credit: "Tenant Receivable",
-        amount: Number(p.amount || 0),
-        status: (p.status?.toLowerCase() === "cleared" ? "posted" : p.status?.toLowerCase() === "in hand" ? "draft" : "posted") as VoucherStatus,
-      }));
-
-      // Also generate security deposit vouchers and rent collection vouchers for all active leases
-      const leaseDepositVouchers: PmsVoucher[] = mappedLeases.map((l, i) => ({
-        id: `vch-dep-${l.id}`,
-        leaseId: l.id,
-        name: "Receipts Voucher - Security Deposit",
-        receiptNo: `RV-DEP-${l.unit.replace(/\W/g, "") || i + 100}`,
-        method: "Bank Transfer",
-        period: "Security Deposit Guarantee",
-        debit: "Bank Operating Account",
-        credit: `Security Deposit Liability - ${l.unit} (21500)`,
-        amount: Number(l.securityDeposit || l.monthlyRent || 6000),
-        status: "posted",
-      }));
-
-      const leaseRentVouchers: PmsVoucher[] = mappedLeases.map((l, i) => ({
-        id: `vch-rent-${l.id}`,
-        leaseId: l.id,
-        name: "Receipts Voucher - Rent PDC",
-        receiptNo: `RV-RENT-${l.unit.replace(/\W/g, "") || i + 100}`,
-        method: "PDC",
-        period: `${l.startDate} to ${l.endDate}`,
-        debit: "PDC In Hand (12900)",
-        credit: `Customer(PDC)-${l.unit} (21400)`,
-        amount: Number(l.monthlyRent || 6000) * (l.pdcCount || 12),
-        status: "posted",
-      }));
-
+      // Only include real vouchers from the database (fin_vouchers).
+      // Do not synthesize placeholder or default deposit/PDC vouchers.
       const mappedVouchers: PmsVoucher[] = [
         ...standardVouchers,
-        ...pdcVouchers,
-        ...leaseDepositVouchers,
-        ...leaseRentVouchers,
       ];
 
       const mappedHandovers: PmsHandover[] = (handoversRes.data || []).map((h: any) => ({
@@ -611,6 +729,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       });
     } catch (err) {
       console.error("Failed to load initial data from Supabase:", err);
+      setAppData(prev => ({
+        ...prev,
+        // On error, keep whatever was already loaded; fall back to seed reservations only
+        reservations: prev.reservations.length > 0 ? prev.reservations : INITIAL_SEED_RESERVATIONS,
+      }));
     } finally {
       setSyncing(false);
     }

@@ -17,7 +17,7 @@ import {
   Package, PackageCheck, Plus, RefreshCw, ShoppingCart,
   Truck, Users, Wrench, AlertOctagon, TrendingUp, Shield, Inbox,
   CreditCard, Ship, DollarSign, Star, Pencil, Trash2, Send, CheckCheck, Search, FileText, Eye,
-  ArrowRight, ShieldCheck, PieChart, Layers, Clock
+  ArrowRight, ShieldCheck, PieChart, Layers, Clock, Upload, Download, X, CheckCircle, XCircle
 } from "lucide-react";
 import { fetchProperties, fetchUnits, type Property, type Unit } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
@@ -397,7 +397,270 @@ function LineItemCatalogSelector({
   );
 }
 
+// ── Bulk Catalog Import Modal ─────────────────────────────────────────────────
+type BulkCatalogRow = {
+  item_code: string;
+  name: string;
+  category: string;
+  item_type: ItemType;
+  budget_type: "CAPEX" | "OPEX";
+  budget_head: BudgetHead;
+  unit_price: number;
+  unit_of_measure: string;
+  reorder_level: number;
+  active: boolean;
+  _rowNum: number;
+  _errors: string[];
+};
+
+const CATALOG_TEMPLATE_HEADERS = [
+  "item_code", "name", "category", "item_type", "budget_type",
+  "budget_head", "unit_price", "unit_of_measure", "reorder_level", "active"
+];
+
+const VALID_ITEM_TYPES = new Set(["asset", "maintenance_spare", "consumable", "service"]);
+const VALID_BUDGET_TYPES = new Set(["CAPEX", "OPEX"]);
+const VALID_BUDGET_HEADS = new Set(["Salary", "Maintenance Items", "Property Assets", "Unit Assets", "Other"]);
+
+function parseCsvToRows(text: string): Record<string, string>[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+  return lines.slice(1).map(line => {
+    const vals = line.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => { row[h] = vals[i] ?? ""; });
+    return row;
+  });
+}
+
+function validateBulkCatalogRow(raw: Record<string, string>, rowNum: number): BulkCatalogRow {
+  const errors: string[] = [];
+  const item_code = (raw.item_code || "").trim();
+  const name = (raw.name || "").trim();
+  const category = (raw.category || "").trim();
+  const item_type = (raw.item_type || "").trim() as ItemType;
+  const budget_type = (raw.budget_type || "").trim() as "CAPEX" | "OPEX";
+  const budget_head = (raw.budget_head || "").trim() as BudgetHead;
+  const unit_price = parseFloat(raw.unit_price || "0");
+  const unit_of_measure = (raw.unit_of_measure || "Nos").trim();
+  const reorder_level = parseInt(raw.reorder_level || "0", 10);
+  const active = (raw.active || "true").toLowerCase() !== "false";
+
+  if (!item_code) errors.push("item_code required");
+  if (!name) errors.push("name required");
+  if (!category) errors.push("category required");
+  if (!VALID_ITEM_TYPES.has(item_type)) errors.push(`item_type must be one of: ${[...VALID_ITEM_TYPES].join(", ")}`);
+  if (!VALID_BUDGET_TYPES.has(budget_type)) errors.push(`budget_type must be CAPEX or OPEX`);
+  if (!VALID_BUDGET_HEADS.has(budget_head)) errors.push(`budget_head must be one of valid heads`);
+  if (isNaN(unit_price) || unit_price < 0) errors.push("unit_price must be a non-negative number");
+
+  return { item_code, name, category, item_type, budget_type, budget_head, unit_price, unit_of_measure, reorder_level, active, _rowNum: rowNum, _errors: errors };
+}
+
+function downloadCatalogTemplate() {
+  const header = CATALOG_TEMPLATE_HEADERS.join(",");
+  const sample = [
+    "ITM-001,Air Filter 24x24,HVAC,maintenance_spare,OPEX,Maintenance Items,45,Nos,10,true",
+    "ITM-002,Split AC 2-Ton,Electrical,asset,CAPEX,Property Assets,1800,Unit,1,true",
+    "ITM-003,Cleaning Service,Cleaning,service,OPEX,Other,200,Hour,0,true",
+  ].join("\n");
+  const blob = new Blob([header + "\n" + sample], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "item_catalog_template.csv";
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function BulkCatalogImportModal({
+  open, onClose, onImport,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImport: (items: CatalogItem[]) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<BulkCatalogRow[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+
+  const validRows = rows.filter(r => r._errors.length === 0);
+  const invalidRows = rows.filter(r => r._errors.length > 0);
+
+  function reset() { setRows([]); setFileName(""); }
+
+  function handleFile(file: File) {
+    setFileName(file.name);
+    setIsParsing(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const rawRows = parseCsvToRows(text);
+        const parsed = rawRows.map((raw, i) => validateBulkCatalogRow(raw, i + 2));
+        setRows(parsed);
+      } catch {
+        toast.error("Failed to parse file. Please use the CSV template.");
+      } finally {
+        setIsParsing(false);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function handleImport() {
+    if (validRows.length === 0) { toast.error("No valid rows to import."); return; }
+    const items: CatalogItem[] = validRows.map(r => ({
+      id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      item_code: r.item_code,
+      name: r.name,
+      category: r.category,
+      item_type: r.item_type,
+      budget_type: r.budget_type,
+      budget_head: r.budget_head,
+      unit_price: r.unit_price,
+      unit_of_measure: r.unit_of_measure,
+      reorder_level: r.reorder_level,
+      active: r.active,
+    }));
+    onImport(items);
+    reset();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); reset(); } }}>
+      <DialogContent className="max-w-3xl max-h-[88vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="p-5 pb-3 border-b bg-gradient-to-r from-emerald-500/10 via-cyan-500/5 to-background shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Upload className="h-5 w-5 text-emerald-500" />
+            Bulk Import — Item Catalog
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            Upload a CSV file to import multiple items at once. Download the template to see the expected format.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 overflow-auto">
+          <div className="p-5 space-y-4">
+            {/* Step 1: Download Template */}
+            <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold">Step 1 — Download Template</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Get the CSV template with correct column headers and sample rows.</p>
+              </div>
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 shrink-0" onClick={downloadCatalogTemplate}>
+                <Download className="h-3.5 w-3.5" /> Download CSV Template
+              </Button>
+            </div>
+
+            {/* Step 2: Upload File */}
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Step 2 — Upload Your CSV</p>
+              <div
+                className="rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 transition-colors p-6 text-center cursor-pointer bg-muted/10"
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+              >
+                <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                {fileName
+                  ? <p className="text-sm font-medium text-primary">{fileName}</p>
+                  : <><p className="text-sm text-muted-foreground">Click to browse or drag &amp; drop a CSV file</p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">Supported: .csv (UTF-8)</p></>
+                }
+                <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+              </div>
+            </div>
+
+            {/* Step 3: Preview & Validation */}
+            {rows.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">Step 3 — Preview &amp; Validation</p>
+                  <div className="flex gap-2 text-xs">
+                    <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                      <CheckCircle className="h-3.5 w-3.5" /> {validRows.length} valid
+                    </span>
+                    {invalidRows.length > 0 && (
+                      <span className="flex items-center gap-1 text-red-500 font-medium">
+                        <XCircle className="h-3.5 w-3.5" /> {invalidRows.length} errors
+                      </span>
+                    )}
+                    <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5 gap-1" onClick={reset}>
+                      <X className="h-3 w-3" /> Clear
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 text-xs">
+                        <TableHead className="w-8">#</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Budget</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                        <TableHead>UOM</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map(row => (
+                        <TableRow key={row._rowNum} className={`text-xs ${row._errors.length > 0 ? "bg-red-500/5" : ""}`}>
+                          <TableCell className="text-muted-foreground">{row._rowNum}</TableCell>
+                          <TableCell className="font-mono">{row.item_code || "—"}</TableCell>
+                          <TableCell>{row.name || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{row.category || "—"}</TableCell>
+                          <TableCell>{row.item_type || "—"}</TableCell>
+                          <TableCell>{row.budget_type} · {row.budget_head}</TableCell>
+                          <TableCell className="text-right font-mono">{row.unit_price.toLocaleString()}</TableCell>
+                          <TableCell>{row.unit_of_measure}</TableCell>
+                          <TableCell>
+                            {row._errors.length === 0
+                              ? <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 text-[10px]">Valid</Badge>
+                              : <span title={row._errors.join("; ")}>
+                                  <Badge variant="destructive" className="text-[10px] cursor-help">
+                                    {row._errors.length} error{row._errors.length > 1 ? "s" : ""}
+                                  </Badge>
+                                </span>
+                            }
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {invalidRows.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    ⚠ Hover over error badges to see details. Invalid rows will be skipped on import.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <DialogFooter className="p-4 border-t shrink-0 gap-2">
+          <Button variant="outline" onClick={() => { onClose(); reset(); }}>Cancel</Button>
+          <Button
+            disabled={validRows.length === 0 || isParsing}
+            onClick={handleImport}
+            className="gap-1.5"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import {validRows.length > 0 ? `${validRows.length} Item${validRows.length > 1 ? "s" : ""}` : "Items"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main Procurement Module Component ─────────────────────────────────────────
+
 export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "finance" | "cashier" }) {
   const routerState = useRouterState();
   const searchParams = new URLSearchParams(routerState.location.search);
@@ -436,6 +699,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   const [showNewRFX, setShowNewRFX] = useState(false);
   const [showNewQuote, setShowNewQuote] = useState(false);
   const [showCatalogModal, setShowCatalogModal] = useState(false);
+  const [showBulkCatalogModal, setShowBulkCatalogModal] = useState(false);
   const [showShipmentModal, setShowShipmentModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
@@ -2700,8 +2964,16 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                   <CardTitle className="text-base">Item Master Catalog</CardTitle>
                   <CardDescription>Central register of all inventory items, fixed assets, maintenance spares, and billable services.</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center flex-wrap">
                   <Input placeholder="Search code, name, category..." value={search} onChange={e => setSearch(e.target.value)} className="w-64 text-xs h-8" />
+                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
+                    onClick={() => setShowBulkCatalogModal(true)}>
+                    <Upload className="h-3.5 w-3.5" /> Bulk Import
+                  </Button>
+                  <Button size="sm" className="h-8 text-xs gap-1.5"
+                    onClick={() => setShowCatalogModal(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Add Master Item
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -3451,6 +3723,19 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Modal: Bulk Catalog Import ── */}
+      <BulkCatalogImportModal
+        open={showBulkCatalogModal}
+        onClose={() => setShowBulkCatalogModal(false)}
+        onImport={(newItems) => {
+          const merged = [...catalog, ...newItems];
+          setCatalog(merged);
+          try { localStorage.setItem("proc_catalog_items", JSON.stringify(merged)); } catch {}
+          toast.success(`${newItems.length} item(s) imported to Item Catalog.`);
+          setShowBulkCatalogModal(false);
+        }}
+      />
 
       {/* New PR Dialog */}
       <Dialog open={showNewPR} onOpenChange={setShowNewPR}>

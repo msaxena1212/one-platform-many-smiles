@@ -25,7 +25,7 @@ import {
   fetchInAppNotifications, markNotificationAsRead,
   type ConfigKey, type PlatformIdentityConfig, type LocalizationConfig,
   type EngineAutomationConfig, type NotificationConfig, type SecurityPolicyConfig,
-  type IntegrationConfig, type SystemNotification
+  type IntegrationConfig, type SystemNotification, type CustomAutomationItem
 } from "@/lib/system-config";
 
 export const Route = createFileRoute("/super-admin/config")({

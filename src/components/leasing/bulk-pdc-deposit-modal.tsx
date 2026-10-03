@@ -32,6 +32,8 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  History,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -39,6 +41,58 @@ import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import { supabase } from "@/lib/supabase";
 import { receivePdc } from "@/lib/finance/pdcService";
 import { postLeaseDepositReceipt } from "@/lib/finance/posting-engine";
+import { saveImportBatch, getImportBatchHistory, type AuditLogEntry } from "@/lib/excel-import/storage-service";
+import type { ImportBatch } from "@/lib/excel-import/types";
+import { getCurrentProfile } from "@/lib/auth-guards";
+
+/** Local UUID normalizer — mirrors the private helper in posting-engine.ts */
+function normalizeUuid(value: string | number | null | undefined): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const s = String(value).trim();
+  if (!s) return undefined;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return UUID_RE.test(s) ? s : undefined;
+}
+
+/** Robust Date parser to format DD-MM-YYYY, DD/MM/YYYY, Excel serial numbers, or YYYY-MM-DD to strict ISO YYYY-MM-DD */
+function formatDateToIso(val: any): string {
+  if (val === null || val === undefined || val === "") return new Date().toISOString().split("T")[0];
+  if (typeof val === "number") {
+    // Excel serial date format (approximate to JS date)
+    const excelEpoch = new Date(1899, 11, 30);
+    const dateObj = new Date(excelEpoch.getTime() + val * 86400000);
+    if (!isNaN(dateObj.getTime())) {
+      return dateObj.toISOString().split("T")[0];
+    }
+  }
+  const s = String(val).trim().replace(/\./g, "-").replace(/\//g, "-");
+  
+  // Case: DD-MM-YYYY
+  const ddmmyyyyMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (ddmmyyyyMatch) {
+    const day = ddmmyyyyMatch[1].padStart(2, "0");
+    const month = ddmmyyyyMatch[2].padStart(2, "0");
+    const year = ddmmyyyyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Case: YYYY-MM-DD
+  const yyyymmddMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (yyyymmddMatch) {
+    const year = yyyymmddMatch[1];
+    const month = yyyymmddMatch[2].padStart(2, "0");
+    const day = yyyymmddMatch[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  // Try standard Date parse
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split("T")[0];
+  }
+
+  return s;
+}
 
 export type BulkPdcRow = {
   id: string;
@@ -155,6 +209,40 @@ export function BulkPdcDepositModal({
     success: 0,
     errors: 0,
   });
+  const [failedItemsState, setFailedItemsState] = useState<Array<{ item: any; error: string }>>([]);
+  const [processingProgress, setProcessingProgress] = useState<{
+    total: number;
+    processed: number;
+    success: number;
+    currentItem: string;
+  }>({ total: 0, processed: 0, success: 0, currentItem: "" });
+
+  // Live entry log — grows during execution
+  const [liveLog, setLiveLog] = useState<Array<{
+    index: number;
+    label: string;
+    unit: string;
+    status: "RUNNING" | "SUCCESS" | "ERROR";
+    error?: string;
+  }>>([])
+  const liveLogRef = useRef<HTMLDivElement>(null);
+
+  // Batch Execution History State
+  const [historyBatches, setHistoryBatches] = useState<ImportBatch[]>([]);
+  const [inspectedBatch, setInspectedBatch] = useState<ImportBatch | null>(null);
+  const loadHistory = () => {
+    try {
+      const history = getImportBatchHistory();
+      // Filter for PDC or lease/deposit related batches or general history
+      setHistoryBatches(history.filter(b => (type === "PDC" ? (b.module === "lease" || (b as any).type === "PDC") : true)));
+    } catch {
+      setHistoryBatches([]);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, [type, open]);
 
   // Dynamic masters & options
   const bankOptions = useMemo(() => {
@@ -408,8 +496,6 @@ export function BulkPdcDepositModal({
           "SL.No",
           "Unit Name",
           "Property Code",
-          "Unit Name Check",
-          "Property Code Check",
           "Tenant Name",
           "Cheque Number",
           "Bank",
@@ -423,8 +509,6 @@ export function BulkPdcDepositModal({
           r.slNo,
           r.unitName,
           r.propertyCode,
-          r.unitNameCheck || r.unitName.replace(/\s+/g, "-"),
-          r.propertyCodeCheck || r.propertyCode.replace(/\s+/g, "-"),
           r.tenantName,
           r.chequeNumber,
           r.bank,
@@ -448,11 +532,9 @@ export function BulkPdcDepositModal({
           [],
           ["RULES & INTEGRITY CHECKS:"],
           ["1. Primary Key:", "Cheque Number is mandatory and uniquely identifies each PDC."],
-          ["2. Unit Name Check:", "Double check field matches normalized Unit Name."],
-          ["3. Property Code Check:", "Double check field matches Property Code."],
-          ["4. For CREATE:", "Adds new cheque schedules linked to tenant lease."],
-          ["5. For UPDATE:", "Patches maturity, amount, bank, or rent period."],
-          ["6. For DELETE:", "De-registers PDCs from active holding register."],
+          ["2. For CREATE:", "Adds new cheque schedules linked to tenant lease."],
+          ["3. For UPDATE:", "Patches maturity, amount, bank, or rent period."],
+          ["4. For DELETE:", "De-registers PDCs from active holding register."],
         ]);
         XLSX.utils.book_append_sheet(wb, wsInst, "Instructions");
 
@@ -462,8 +544,6 @@ export function BulkPdcDepositModal({
           "SL.No",
           "Unit Name",
           "Property Code",
-          "Unit Name Check",
-          "Property Code Check",
           "Tenant Name",
           "Receipt Number",
           "Deposit Type",
@@ -478,8 +558,6 @@ export function BulkPdcDepositModal({
           r.slNo,
           r.unitName,
           r.propertyCode,
-          r.unitNameCheck || r.unitName.replace(/\s+/g, "-"),
-          r.propertyCodeCheck || r.propertyCode.replace(/\s+/g, "-"),
           r.tenantName,
           r.receiptNumber,
           r.depositType,
@@ -542,28 +620,40 @@ export function BulkPdcDepositModal({
           return;
         }
 
+        const headerRow = (json[0] || []).map((h: any) => String(h || "").trim().toLowerCase());
         const dataRows = json.slice(1).filter((r: any[]) => r.length > 0 && r[0] != null);
 
-        if (type === "PDC") {
-          const parsed: BulkPdcRow[] = dataRows.map((row: any[], idx: number) => {
-            const slNo = row[0] || idx + 1;
-            const unitName = String(row[1] || `Unit-${idx + 1}`).trim();
-            const propertyCode = String(row[2] || "Wakra - 01").trim();
-            const unitNameCheck = String(row[3] || unitName).trim();
-            const propertyCodeCheck = String(row[4] || propertyCode).trim();
-            const tenantName = String(row[5] || "Tenant").trim();
-            const chequeNumber = String(row[6] || `CHQ-${idx + 100}`).trim();
-            const bank = String(row[7] || "Doha Bank").trim();
-            const maturityDate = String(row[8] || "2026-08-05").trim().replace(/\./g, "-");
-            const amount = String(row[9] || "4700").replace(/,/g, "").trim();
-            const rentFromDate = String(row[10] || "2026-07-15").trim().replace(/\./g, "-");
-            const rentToDate = String(row[11] || "2026-08-14").trim().replace(/\./g, "-");
+        // Helper to find column index by match strings or fallback to default index
+        const findColIdx = (keywords: string[], fallbackIdx: number) => {
+          const idx = headerRow.findIndex((h: string) => keywords.some(k => h.includes(k)));
+          return idx !== -1 ? idx : fallbackIdx;
+        };
 
-            // Integrity verification
-            const unitClean = cleanNormalize(unitName);
-            const unitCheckClean = cleanNormalize(unitNameCheck);
-            const propClean = cleanNormalize(propertyCode);
-            const propCheckClean = cleanNormalize(propertyCodeCheck);
+        if (type === "PDC") {
+          // Detect whether old template format with check columns was uploaded
+          const hasCheckCols = headerRow.some((h: string) => h.includes("check"));
+          const slIdx = findColIdx(["sl", "no", "s.no"], 0);
+          const unitIdx = findColIdx(["unit name", "unit"], 1);
+          const propIdx = findColIdx(["property code", "property"], 2);
+          const tenantIdx = findColIdx(["tenant name", "tenant", "drawer"], hasCheckCols ? 5 : 3);
+          const chqIdx = findColIdx(["cheque number", "cheque no", "cheque", "chq"], hasCheckCols ? 6 : 4);
+          const bankIdx = findColIdx(["bank"], hasCheckCols ? 7 : 5);
+          const matIdx = findColIdx(["maturity date", "maturity", "cheque date", "date"], hasCheckCols ? 8 : 6);
+          const amtIdx = findColIdx(["amount"], hasCheckCols ? 9 : 7);
+          const rentFromIdx = findColIdx(["rent from", "from date", "period start"], hasCheckCols ? 10 : 8);
+          const rentToIdx = findColIdx(["rent to", "to date", "period end"], hasCheckCols ? 11 : 9);
+
+          const parsed: BulkPdcRow[] = dataRows.map((row: any[], idx: number) => {
+            const slNo = row[slIdx] || idx + 1;
+            const unitName = String(row[unitIdx] || `Unit-${idx + 1}`).trim();
+            const propertyCode = String(row[propIdx] || "Wakra - 01").trim();
+            const tenantName = String(row[tenantIdx] || "Tenant").trim();
+            const chequeNumber = String(row[chqIdx] || `CHQ-${idx + 100}`).trim();
+            const bank = String(row[bankIdx] || "Doha Bank").trim();
+            const maturityDate = formatDateToIso(row[matIdx] || "2026-08-05");
+            const amount = String(row[amtIdx] || "4700").replace(/,/g, "").trim();
+            const rentFromDate = formatDateToIso(row[rentFromIdx] || "2026-07-15");
+            const rentToDate = formatDateToIso(row[rentToIdx] || "2026-08-14");
 
             let status: "READY" | "WARNING" | "ERROR" = "READY";
             let errorMessage = "";
@@ -571,12 +661,6 @@ export function BulkPdcDepositModal({
             if (!chequeNumber) {
               status = "ERROR";
               errorMessage = "Cheque Number is mandatory.";
-            } else if (unitClean !== unitCheckClean) {
-              status = "WARNING";
-              errorMessage = `Unit Name mismatch: "${unitName}" vs check "${unitNameCheck}".`;
-            } else if (propClean !== propCheckClean) {
-              status = "WARNING";
-              errorMessage = `Property Code mismatch: "${propertyCode}" vs check "${propertyCodeCheck}".`;
             }
 
             return {
@@ -584,8 +668,6 @@ export function BulkPdcDepositModal({
               slNo,
               unitName,
               propertyCode,
-              unitNameCheck,
-              propertyCodeCheck,
               tenantName,
               chequeNumber,
               bank,
@@ -602,20 +684,31 @@ export function BulkPdcDepositModal({
           setCurrentStep("preview");
           toast.success(`Validated ${parsed.length} PDC rows: ${parsed.filter(r => r.status === 'READY').length} Ready`);
         } else {
+          const hasCheckCols = headerRow.some((h: string) => h.includes("check"));
+          const slIdx = findColIdx(["sl", "no", "s.no"], 0);
+          const unitIdx = findColIdx(["unit name", "unit"], 1);
+          const propIdx = findColIdx(["property code", "property"], 2);
+          const tenantIdx = findColIdx(["tenant name", "tenant"], hasCheckCols ? 5 : 3);
+          const recIdx = findColIdx(["receipt number", "receipt no", "receipt", "voucher"], hasCheckCols ? 6 : 4);
+          const depTypeIdx = findColIdx(["deposit type", "type"], hasCheckCols ? 7 : 5);
+          const payMethodIdx = findColIdx(["payment method", "method"], hasCheckCols ? 8 : 6);
+          const bankRefIdx = findColIdx(["bank or reference", "bank", "reference", "ref"], hasCheckCols ? 9 : 7);
+          const amtIdx = findColIdx(["amount"], hasCheckCols ? 10 : 8);
+          const depDateIdx = findColIdx(["deposit date", "date"], hasCheckCols ? 11 : 9);
+          const remIdx = findColIdx(["remarks", "notes", "narration"], hasCheckCols ? 12 : 10);
+
           const parsed: BulkDepositRow[] = dataRows.map((row: any[], idx: number) => {
-            const slNo = row[0] || idx + 1;
-            const unitName = String(row[1] || `Unit-${idx + 1}`).trim();
-            const propertyCode = String(row[2] || "Wakra - 01").trim();
-            const unitNameCheck = String(row[3] || unitName).trim();
-            const propertyCodeCheck = String(row[4] || propertyCode).trim();
-            const tenantName = String(row[5] || "Tenant").trim();
-            const receiptNumber = String(row[6] || `RV-DEP-${idx + 100}`).trim();
-            const depositType = String(row[7] || "Security Deposit").trim();
-            const paymentMethod = String(row[8] || "Bank Transfer").trim();
-            const bankOrReference = String(row[9] || "REF-001").trim();
-            const amount = String(row[10] || "5000").replace(/,/g, "").trim();
-            const depositDate = String(row[11] || "2026-07-15").trim().replace(/\./g, "-");
-            const remarks = String(row[12] || "Deposit Guarantee").trim();
+            const slNo = row[slIdx] || idx + 1;
+            const unitName = String(row[unitIdx] || `Unit-${idx + 1}`).trim();
+            const propertyCode = String(row[propIdx] || "Wakra - 01").trim();
+            const tenantName = String(row[tenantIdx] || "Tenant").trim();
+            const receiptNumber = String(row[recIdx] || `RV-DEP-${idx + 100}`).trim();
+            const depositType = String(row[depTypeIdx] || "Security Deposit").trim();
+            const paymentMethod = String(row[payMethodIdx] || "Bank Transfer").trim();
+            const bankOrReference = String(row[bankRefIdx] || "REF-001").trim();
+            const amount = String(row[amtIdx] || "5000").replace(/,/g, "").trim();
+            const depositDate = formatDateToIso(row[depDateIdx] || "2026-07-15");
+            const remarks = String(row[remIdx] || "Deposit Guarantee").trim();
 
             let status: "READY" | "WARNING" | "ERROR" = "READY";
             let errorMessage = "";
@@ -630,8 +723,6 @@ export function BulkPdcDepositModal({
               slNo,
               unitName,
               propertyCode,
-              unitNameCheck,
-              propertyCodeCheck,
               tenantName,
               receiptNumber,
               depositType,
@@ -677,6 +768,7 @@ export function BulkPdcDepositModal({
     try {
       setIsProcessing(true);
       setCurrentStep("processing");
+      setLiveLog([]);
 
       const processedItems = type === "PDC" ? pdcRows : depositRows;
       const validItems = processedItems.filter((r) => r.status === "READY" || r.status === "WARNING");
@@ -685,12 +777,33 @@ export function BulkPdcDepositModal({
       let errorCount = 0;
       const failedItems: any[] = [];
 
+      setProcessingProgress({
+        total: validItems.length,
+        processed: 0,
+        success: 0,
+        currentItem: "Initializing batch execution...",
+      });
+
       if (type === "PDC") {
         const pdcList = validItems as BulkPdcRow[];
 
         if (selectedOperation === "CREATE") {
-          // Process in sequential chunks to reliably post GL vouchers
-          for (const item of pdcList) {
+          // Process in sequential chunks with live progress updates
+          for (let i = 0; i < pdcList.length; i++) {
+            const item = pdcList[i];
+            const logLabel = `Cheque #${item.chequeNumber}`;
+            // Mark as RUNNING
+            setLiveLog((prev) => [
+              ...prev,
+              { index: i, label: logLabel, unit: item.unitName, status: "RUNNING" },
+            ]);
+            setTimeout(() => liveLogRef.current?.scrollTo({ top: liveLogRef.current.scrollHeight, behavior: "smooth" }), 30);
+            setProcessingProgress({
+              total: pdcList.length,
+              processed: i + 1,
+              success: successCount,
+              currentItem: `${logLabel} (${item.unitName})`,
+            });
             try {
               const matchedLease = existingLeases.find(
                 (l) =>
@@ -699,34 +812,60 @@ export function BulkPdcDepositModal({
               );
 
               const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
-              const tenantId = matchedLease?.customerId || matchedLease?.id || "00000000-0000-0000-0000-000000000003";
+              const tenantId = matchedLease?.id || "00000000-0000-0000-0000-000000000003";
               const propertyId = matchedLease?.property || item.propertyCode || "00000000-0000-0000-0000-000000000001";
               const unitId = matchedLease?.unit || item.unitName || "00000000-0000-0000-0000-000000000002";
               const leaseId = matchedLease?.id || undefined;
+              const safeMaturityDate = formatDateToIso(item.maturityDate);
+              const safeRentFrom = formatDateToIso(item.rentFromDate);
+              const safeRentTo = formatDateToIso(item.rentToDate);
 
-              // Insert directly into pdcs table first for operational tracking
-              const { error: pdcTableErr } = await supabase.from("pdcs").upsert(
-                {
+              // Check existing PDC by compound key (cheque_number + unit_name) to avoid
+              // overwriting a different unit's PDC that happens to share the same cheque number.
+              const { data: existingPdc } = await supabase
+                .from("pdcs")
+                .select("id")
+                .eq("cheque_number", item.chequeNumber)
+                .eq("unit_name", item.unitName || "")
+                .maybeSingle();
+
+              if (existingPdc?.id) {
+                await supabase
+                  .from("pdcs")
+                  .update({
+                    bank: item.bank,
+                    maturity_date: safeMaturityDate,
+                    amount: numAmount,
+                    tenant_name: item.tenantName,
+                    unit_name: item.unitName,
+                    property_code: item.propertyCode,
+                    rent_from_date: safeRentFrom,
+                    rent_to_date: safeRentTo,
+                    status: "received",
+                    status_pdc: "received",
+                    lease_id: normalizeUuid(leaseId),
+                  })
+                  .eq("id", existingPdc.id);
+              } else {
+                await supabase.from("pdcs").insert({
                   cheque_number: item.chequeNumber,
                   bank: item.bank,
-                  maturity_date: item.maturityDate,
+                  maturity_date: safeMaturityDate,
                   amount: numAmount,
                   tenant_name: item.tenantName,
                   unit_name: item.unitName,
                   property_code: item.propertyCode,
-                  rent_from_date: item.rentFromDate,
-                  rent_to_date: item.rentToDate,
+                  rent_from_date: safeRentFrom,
+                  rent_to_date: safeRentTo,
                   status: "received",
                   status_pdc: "received",
                   lease_id: normalizeUuid(leaseId),
-                },
-                { onConflict: "cheque_number" }
-              );
-              if (pdcTableErr) console.warn("[Bulk PDC] pdcs table upsert warning:", pdcTableErr.message);
+                });
+              }
 
               await receivePdc({
                 cheque_number: item.chequeNumber,
-                cheque_date: item.maturityDate,
+                cheque_date: safeMaturityDate,
                 amount: numAmount,
                 tenant_id: tenantId,
                 property_id: propertyId,
@@ -736,21 +875,34 @@ export function BulkPdcDepositModal({
                 pdcType: "RENT_PDC",
               });
               successCount++;
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "SUCCESS" } : e));
             } catch (err: any) {
               console.warn(`[Bulk PDC] Handled row ${item.chequeNumber}:`, err.message);
               errorCount++;
               failedItems.push({ item, error: err.message });
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "ERROR", error: err.message } : e));
             }
           }
         } else if (selectedOperation === "UPDATE") {
-          for (const item of pdcList) {
+          for (let i = 0; i < pdcList.length; i++) {
+            const item = pdcList[i];
+            const logLabel = `Cheque #${item.chequeNumber}`;
+            setLiveLog((prev) => [...prev, { index: i, label: logLabel, unit: item.unitName, status: "RUNNING" }]);
+            setTimeout(() => liveLogRef.current?.scrollTo({ top: liveLogRef.current.scrollHeight, behavior: "smooth" }), 30);
+            setProcessingProgress({
+              total: pdcList.length,
+              processed: i + 1,
+              success: successCount,
+              currentItem: logLabel,
+            });
             try {
               const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
+              const safeMaturityDate = formatDateToIso(item.maturityDate);
               await supabase
                 .from("fin_pdc_register")
                 .update({
                   amount: numAmount,
-                  cheque_date: item.maturityDate,
+                  cheque_date: safeMaturityDate,
                 })
                 .eq("cheque_number", item.chequeNumber);
 
@@ -758,16 +910,18 @@ export function BulkPdcDepositModal({
                 .from("pdcs")
                 .update({
                   amount: numAmount,
-                  maturity_date: item.maturityDate,
+                  maturity_date: safeMaturityDate,
                   bank: item.bank,
                 })
                 .eq("cheque_number", item.chequeNumber);
 
               successCount++;
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "SUCCESS" } : e));
             } catch (err: any) {
               console.warn(`[Bulk PDC Update] Row ${item.chequeNumber}:`, err.message);
               errorCount++;
               failedItems.push({ item, error: err.message });
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "ERROR", error: err.message } : e));
             }
           }
         } else if (selectedOperation === "DELETE") {
@@ -783,7 +937,17 @@ export function BulkPdcDepositModal({
         const depositList = validItems as BulkDepositRow[];
 
         if (selectedOperation === "CREATE") {
-          for (const item of depositList) {
+          for (let i = 0; i < depositList.length; i++) {
+            const item = depositList[i];
+            const logLabel = `Receipt #${item.receiptNumber}`;
+            setLiveLog((prev) => [...prev, { index: i, label: logLabel, unit: item.unitName, status: "RUNNING" }]);
+            setTimeout(() => liveLogRef.current?.scrollTo({ top: liveLogRef.current.scrollHeight, behavior: "smooth" }), 30);
+            setProcessingProgress({
+              total: depositList.length,
+              processed: i + 1,
+              success: successCount,
+              currentItem: `${logLabel} (${item.unitName})`,
+            });
             try {
               const matchedLease = existingLeases.find(
                 (l) =>
@@ -792,7 +956,7 @@ export function BulkPdcDepositModal({
               );
 
               const numAmount = typeof item.amount === "number" ? item.amount : parseFloat(String(item.amount).replace(/,/g, "")) || 0;
-              const tenantId = matchedLease?.customerId || matchedLease?.id || "00000000-0000-0000-0000-000000000003";
+              const tenantId = matchedLease?.id || "00000000-0000-0000-0000-000000000003";
               const propertyId = matchedLease?.property || item.propertyCode || "00000000-0000-0000-0000-000000000001";
               const unitId = matchedLease?.unit || item.unitName || "00000000-0000-0000-0000-000000000002";
               const mode = item.paymentMethod.toLowerCase().includes("cash") ? "Cash" : "Bank";
@@ -809,10 +973,12 @@ export function BulkPdcDepositModal({
                 matchedLease?.id
               );
               successCount++;
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "SUCCESS" } : e));
             } catch (err: any) {
               console.warn(`[Bulk Deposit] Handled row ${item.receiptNumber}:`, err.message);
               errorCount++;
               failedItems.push({ item, error: err.message });
+              setLiveLog((prev) => prev.map((e) => e.index === i ? { ...e, status: "ERROR", error: err.message } : e));
             }
           }
         }
@@ -823,6 +989,58 @@ export function BulkPdcDepositModal({
         success: successCount,
         errors: errorCount,
       });
+      setFailedItemsState(failedItems);
+
+      // Save batch into persistent storage history for auditing & replay
+      const profile = await getCurrentProfile();
+      const newBatch: ImportBatch = {
+        id: `batch-${Date.now()}`,
+        batchIdentifier: `BATCH-${type}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`,
+        module: type === "PDC" ? "lease" : "lease",
+        operation: selectedOperation,
+        fileName: uploadedFileName || `Bulk_${type}_${selectedOperation}_Manual.xlsx`,
+        fileSize: 1024 * (processedItems.length || 1),
+        uploadedBy: {
+          id: profile?.id || "admin",
+          name: profile?.name || "Operations User",
+          email: profile?.email || "ops@stayhub.qa",
+        },
+        uploadedAt: new Date().toISOString(),
+        status: errorCount === 0 ? "COMPLETED" : successCount > 0 ? "PARTIAL_SUCCESS" : "FAILED",
+        records: (processedItems as any[]).map((r, idx) => ({
+          recordKey: type === "PDC" ? r.chequeNumber : r.receiptNumber,
+          excelRowNumber: Number(r.slNo) || idx + 2,
+          operation: selectedOperation,
+          status: r.status === "READY" ? "VALID" : r.status === "WARNING" ? "WARNING" : "ERROR",
+          normalizedData: r,
+          errors: r.errorMessage && r.status === "ERROR" ? [{ code: "VALIDATION_FAIL", message: r.errorMessage, rowNumber: Number(r.slNo) || idx + 2, severity: "ERROR" }] : [],
+          warnings: r.errorMessage && r.status === "WARNING" ? [{ code: "MISMATCH_WARN", message: r.errorMessage, rowNumber: Number(r.slNo) || idx + 2, severity: "WARNING" }] : [],
+          changes: [],
+          dependencies: [],
+          rawRowData: r,
+        })),
+        summary: {
+          totalRows: processedItems.length,
+          validRows: successCount,
+          errorRows: errorCount,
+          warningRows: summary.warnings,
+          recordsToCreate: selectedOperation === "CREATE" ? successCount : 0,
+          recordsToUpdate: selectedOperation === "UPDATE" ? successCount : 0,
+          recordsToDelete: selectedOperation === "DELETE" ? successCount : 0,
+          noChangeRows: 0,
+          blockedRows: 0,
+          skippedRows: errorCount,
+          successRows: successCount,
+          failedRows: errorCount,
+        },
+      };
+
+      try {
+        saveImportBatch(newBatch);
+        loadHistory();
+      } catch (e) {
+        console.warn("Could not save batch to local storage:", e);
+      }
 
       // Notify App Data Context & Finance modules to refresh
       window.dispatchEvent(new Event("finance_vouchers_updated"));
@@ -873,7 +1091,24 @@ export function BulkPdcDepositModal({
             </div>
 
             <div className="flex items-center gap-2">
-              {currentStep !== "upload" && (
+              <Button
+                variant={currentStep === "history" ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => {
+                  if (currentStep === "history") {
+                    setCurrentStep("upload");
+                  } else {
+                    loadHistory();
+                    setCurrentStep("history");
+                  }
+                }}
+                className="text-xs gap-1.5"
+              >
+                <History className="h-3.5 w-3.5 text-primary" />
+                {currentStep === "history" ? "Back to Studio" : `Execution History (${historyBatches.length})`}
+              </Button>
+
+              {currentStep !== "upload" && currentStep !== "history" && (
                 <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
                   Start New Import
                 </Button>
@@ -894,6 +1129,248 @@ export function BulkPdcDepositModal({
                 <TabsTrigger value="DELETE" className="text-xs font-medium text-destructive">DELETE (Remove)</TabsTrigger>
               </TabsList>
             </Tabs>
+          )}
+
+          {/* STEP: EXECUTION HISTORY VIEW */}
+          {currentStep === "history" && (
+            <Card className="border-border/60">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between border-b bg-muted/20">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <History className="h-4 w-4 text-primary" /> Excel Ingestion Lineage &amp; Execution History
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Persistent ledger of executed PDC &amp; Deposit bulk upload batches with row counts, committed state, and error logs.
+                  </CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
+                  Back to Studio
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0 overflow-y-auto max-h-[420px]">
+                {historyBatches.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-muted-foreground py-12 space-y-2">
+                    <Clock className="h-8 w-8 opacity-30 text-teal-600" />
+                    <p className="text-xs">No previous batch execution history records found in storage.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-muted/90 backdrop-blur-xs z-10">
+                      <TableRow className="text-xs">
+                        <TableHead className="font-semibold">Batch ID</TableHead>
+                        <TableHead className="font-semibold">Operation</TableHead>
+                        <TableHead className="font-semibold">File Name</TableHead>
+                        <TableHead className="font-semibold">Uploaded By</TableHead>
+                        <TableHead className="text-center font-semibold">Total Rows</TableHead>
+                        <TableHead className="text-center font-semibold text-emerald-600">Committed (OK)</TableHead>
+                        <TableHead className="text-center font-semibold text-rose-600">Errors</TableHead>
+                        <TableHead className="font-semibold">Status</TableHead>
+                        <TableHead className="font-semibold">Date &amp; Time</TableHead>
+                        <TableHead className="font-semibold text-center">Details</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {historyBatches.map((b) => {
+                        const totalRows = b.summary?.totalRows || b.records?.length || 0;
+                        const successRows = b.summary?.successRows || 0;
+                        const failedRows = b.summary?.failedRows || 0;
+                        const displayDate = b.uploadedAt ? new Date(b.uploadedAt).toLocaleString() : "Recent";
+
+                        return (
+                          <TableRow key={b.id} className="hover:bg-muted/40 text-xs">
+                            <TableCell className="font-mono font-bold text-primary">{b.batchIdentifier || b.id.slice(0, 10)}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={b.operation === "CREATE" ? "default" : b.operation === "UPDATE" ? "secondary" : "destructive"}
+                                className="text-[10px] uppercase font-bold"
+                              >
+                                {b.operation}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[160px] truncate font-mono text-[11px]" title={b.fileName}>
+                              {b.fileName}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{b.uploadedBy?.name || "Admin"}</TableCell>
+                            <TableCell className="text-center font-mono font-semibold">{totalRows}</TableCell>
+                            <TableCell className="text-center font-mono text-emerald-600 font-bold">{successRows}</TableCell>
+                            <TableCell className="text-center font-mono text-rose-600 font-bold">{failedRows}</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={`text-[10px] font-bold ${
+                                  b.status === "COMPLETED"
+                                    ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                    : b.status === "PARTIAL_SUCCESS"
+                                    ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                                    : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                                }`}
+                                variant="outline"
+                              >
+                                {b.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground whitespace-nowrap">{displayDate}</TableCell>
+                            <TableCell className="text-center">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-[10px] gap-1 text-primary hover:bg-primary/10"
+                                onClick={() => setInspectedBatch(b)}
+                              >
+                                <FileText className="h-3 w-3" />
+                                Inspect
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* BATCH DETAIL INSPECT DIALOG */}
+          {inspectedBatch && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-background border border-border/60 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/20">
+                  <div>
+                    <h3 className="text-sm font-bold font-mono text-primary">{inspectedBatch.batchIdentifier || inspectedBatch.id}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {inspectedBatch.operation} · {inspectedBatch.fileName} · {inspectedBatch.uploadedAt ? new Date(inspectedBatch.uploadedAt).toLocaleString() : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-3 text-xs">
+                      <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {inspectedBatch.summary?.successRows ?? 0} OK
+                      </span>
+                      <span className="flex items-center gap-1 text-rose-600 font-semibold">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {inspectedBatch.summary?.failedRows ?? 0} Errors
+                      </span>
+                      <span className="flex items-center gap-1 text-amber-600 font-semibold">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {inspectedBatch.summary?.warningRows ?? 0} Warnings
+                      </span>
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setInspectedBatch(null)}>
+                      Close
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Summary row */}
+                <div className="flex gap-6 px-6 py-3 bg-muted/10 border-b text-xs text-muted-foreground">
+                  <span>Total Rows: <strong className="text-foreground">{inspectedBatch.summary?.totalRows ?? inspectedBatch.records?.length ?? 0}</strong></span>
+                  <span>Uploaded by: <strong className="text-foreground">{inspectedBatch.uploadedBy?.name || "Admin"}</strong></span>
+                  <Badge
+                    className={`text-[10px] font-bold ${
+                      inspectedBatch.status === "COMPLETED"
+                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                        : inspectedBatch.status === "PARTIAL_SUCCESS"
+                        ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                        : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                    }`}
+                    variant="outline"
+                  >
+                    {inspectedBatch.status}
+                  </Badge>
+                </div>
+
+                {/* Records table */}
+                <div className="overflow-y-auto flex-1">
+                  {(!inspectedBatch.records || inspectedBatch.records.length === 0) ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                      <FileText className="h-8 w-8 opacity-20 mb-2" />
+                      <p className="text-xs">No individual record details stored for this batch.</p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-muted/90 backdrop-blur-xs z-10">
+                        <TableRow className="text-xs">
+                          <TableHead className="font-semibold w-10">#</TableHead>
+                          <TableHead className="font-semibold">Record Key</TableHead>
+                          <TableHead className="font-semibold">Unit</TableHead>
+                          <TableHead className="font-semibold">Cheque / Receipt</TableHead>
+                          <TableHead className="font-semibold text-right">Amount</TableHead>
+                          <TableHead className="font-semibold">Maturity Date</TableHead>
+                          <TableHead className="font-semibold">Status</TableHead>
+                          <TableHead className="font-semibold">Errors / Warnings</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {inspectedBatch.records.map((rec, idx) => {
+                          const raw = (rec as any).rawRowData || (rec as any).normalizedData || {};
+                          const errMsgs = (rec.errors || []).map((e: any) => e.message).filter(Boolean);
+                          const warnMsgs = (rec.warnings || []).map((w: any) => w.message).filter(Boolean);
+                          const statusColor =
+                            rec.status === "VALID" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                            : rec.status === "WARNING" ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                            : "bg-rose-500/10 text-rose-600 border-rose-500/30";
+
+                          return (
+                            <TableRow key={rec.recordKey || idx} className="text-xs hover:bg-muted/30">
+                              <TableCell className="font-mono text-muted-foreground">{rec.excelRowNumber || idx + 2}</TableCell>
+                              <TableCell className="font-mono font-semibold text-primary max-w-[140px] truncate" title={rec.recordKey}>
+                                {rec.recordKey || "—"}
+                              </TableCell>
+                              <TableCell className="max-w-[140px] truncate" title={raw.unitName}>
+                                {raw.unitName || raw.unit_name || "—"}
+                              </TableCell>
+                              <TableCell className="font-mono text-[11px]">
+                                {raw.chequeNumber || raw.cheque_number || raw.receiptNumber || raw.receipt_number || "—"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {raw.amount ? `QR ${Number(raw.amount).toLocaleString("en-QA", { minimumFractionDigits: 2 })}` : "—"}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {raw.maturityDate || raw.maturity_date || raw.cheque_date || "—"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={`text-[10px] font-bold ${statusColor}`} variant="outline">
+                                  {rec.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-[200px]">
+                                {errMsgs.length > 0 && (
+                                  <div className="text-rose-600 text-[10px] space-y-0.5">
+                                    {errMsgs.map((m: string, mi: number) => (
+                                      <div key={mi} className="flex items-start gap-1">
+                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                        <span>{m}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {warnMsgs.length > 0 && (
+                                  <div className="text-amber-600 text-[10px] space-y-0.5 mt-1">
+                                    {warnMsgs.map((m: string, mi: number) => (
+                                      <div key={mi} className="flex items-start gap-1">
+                                        <AlertTriangle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                        <span>{m}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {errMsgs.length === 0 && warnMsgs.length === 0 && (
+                                  <span className="text-emerald-600 text-[10px] flex items-center gap-1">
+                                    <CheckCircle2 className="h-2.5 w-2.5" /> OK
+                                  </span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* STEP 1: UPLOAD & TEMPLATE VIEW */}
@@ -1099,7 +1576,6 @@ export function BulkPdcDepositModal({
                                   <TableHead className="w-28">Status</TableHead>
                                   <TableHead>Unit Name</TableHead>
                                   <TableHead>Property Code</TableHead>
-                                  <TableHead>Unit Check</TableHead>
                                   <TableHead>Tenant Name</TableHead>
                                   <TableHead>Cheque No.</TableHead>
                                   <TableHead>Bank</TableHead>
@@ -1112,7 +1588,7 @@ export function BulkPdcDepositModal({
                               <TableBody>
                                 {paginatedRecords.length === 0 ? (
                                   <TableRow>
-                                    <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
+                                    <TableCell colSpan={11} className="text-center py-8 text-xs text-muted-foreground">
                                       No records match current filter.
                                     </TableCell>
                                   </TableRow>
@@ -1138,7 +1614,6 @@ export function BulkPdcDepositModal({
                                       </TableCell>
                                       <TableCell className="font-semibold text-xs text-foreground">{record.unitName}</TableCell>
                                       <TableCell className="font-mono text-xs text-muted-foreground">{record.propertyCode}</TableCell>
-                                      <TableCell className="font-mono text-[11px] text-muted-foreground">{record.unitNameCheck || record.unitName.replace(/\s+/g, "-")}</TableCell>
                                       <TableCell className="text-xs">{record.tenantName}</TableCell>
                                       <TableCell className="font-mono font-bold text-teal-700 dark:text-teal-300 text-xs">{record.chequeNumber}</TableCell>
                                       <TableCell className="text-xs">{record.bank}</TableCell>
@@ -1328,21 +1803,117 @@ export function BulkPdcDepositModal({
           {/* STEP 3: PROCESSING PROGRESS */}
           {currentStep === "processing" && (
             <Card className="border-border/60">
-              <CardContent className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-                <Loader2 className="h-10 w-10 text-primary animate-spin" />
-                <div>
-                  <h3 className="text-base font-semibold">Ingesting & Committing Records...</h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Applying updates, writing audit logs, and recalculating cache states.
-                  </p>
+              <CardContent className="py-6 flex flex-col items-center justify-center space-y-4 max-w-2xl mx-auto w-full">
+                {/* Header */}
+                <div className="flex items-center gap-3 w-full">
+                  <div className="p-2.5 bg-teal-500/10 text-teal-600 rounded-full shrink-0">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-foreground">Executing Ingestion Pipeline</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Writing GL entries, resolving accounts &amp; updating register.
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-mono font-bold text-emerald-600">{processingProgress.success} Committed</p>
+                    <p className="text-[11px] text-muted-foreground font-mono">{processingProgress.processed} / {processingProgress.total}</p>
+                  </div>
                 </div>
-                <div className="w-full max-w-md bg-muted rounded-full h-2.5 overflow-hidden">
+
+                {/* Progress Bar */}
+                <div className="w-full space-y-1">
+                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-teal-600 to-emerald-500 h-2 rounded-full transition-all duration-150"
+                      style={{
+                        width: `${
+                          processingProgress.total > 0
+                            ? Math.min(100, (processingProgress.processed / processingProgress.total) * 100)
+                            : 4
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  {processingProgress.currentItem && (
+                    <p className="text-[10px] font-mono text-muted-foreground truncate">
+                      <span className="text-teal-600 font-semibold">Active: </span>{processingProgress.currentItem}
+                    </p>
+                  )}
+                </div>
+
+                {/* Live entry log */}
+                <div className="w-full">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Execution Log</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {liveLog.filter(e => e.status === "SUCCESS").length} ok &nbsp;·&nbsp;
+                      {liveLog.filter(e => e.status === "ERROR").length} err
+                    </span>
+                  </div>
                   <div
-                    className="bg-primary h-2.5 rounded-full transition-all duration-300 w-full"
-                  />
+                    ref={liveLogRef}
+                    className="rounded-md border bg-muted/30 overflow-y-auto font-mono text-[11px]"
+                    style={{ maxHeight: "280px", minHeight: "80px" }}
+                  >
+                    {liveLog.length === 0 ? (
+                      <div className="px-3 py-4 text-[11px] text-muted-foreground text-center">
+                        Waiting for first entry...
+                      </div>
+                    ) : (
+                      <table className="w-full border-collapse">
+                        <thead className="sticky top-0 bg-muted/80 border-b border-border/40 z-10">
+                          <tr>
+                            <th className="px-2 py-1 text-left text-[10px] font-bold text-muted-foreground w-8">#</th>
+                            <th className="px-2 py-1 text-left text-[10px] font-bold text-muted-foreground">{type === "PDC" ? "Cheque No." : "Receipt No."}</th>
+                            <th className="px-2 py-1 text-left text-[10px] font-bold text-muted-foreground">Unit</th>
+                            <th className="px-2 py-1 text-left text-[10px] font-bold text-muted-foreground">Status</th>
+                            <th className="px-2 py-1 text-left text-[10px] font-bold text-muted-foreground">Note</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {liveLog.map((entry) => (
+                            <tr
+                              key={entry.index}
+                              className={`border-b border-border/20 ${
+                                entry.status === "RUNNING"
+                                  ? "bg-teal-500/5"
+                                  : entry.status === "SUCCESS"
+                                  ? "bg-emerald-500/5"
+                                  : "bg-rose-500/5"
+                              }`}
+                            >
+                              <td className="px-2 py-0.5 text-muted-foreground">{entry.index + 1}</td>
+                              <td className="px-2 py-0.5 font-semibold text-foreground">{entry.label}</td>
+                              <td className="px-2 py-0.5 text-muted-foreground truncate max-w-[130px]" title={entry.unit}>{entry.unit}</td>
+                              <td className="px-2 py-0.5">
+                                {entry.status === "RUNNING" ? (
+                                  <span className="flex items-center gap-1 text-teal-600">
+                                    <Loader2 className="h-3 w-3 animate-spin" /> Processing
+                                  </span>
+                                ) : entry.status === "SUCCESS" ? (
+                                  <span className="flex items-center gap-1 text-emerald-600">
+                                    <CheckCircle2 className="h-3 w-3" /> Committed
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-rose-600">
+                                    <XCircle className="h-3 w-3" /> Failed
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-2 py-0.5 text-muted-foreground text-[10px] truncate max-w-[140px]" title={entry.error || ""}>
+                                {entry.error ? <span className="text-rose-500">{entry.error.slice(0, 60)}{entry.error.length > 60 ? '…' : ''}</span> : null}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs font-mono text-muted-foreground">
-                  Processing batch execution pipeline...
+
+                <p className="text-[10px] text-muted-foreground self-start">
+                  Please do not close this window while database writes are active.
                 </p>
               </CardContent>
             </Card>
@@ -1353,8 +1924,19 @@ export function BulkPdcDepositModal({
             <Card className="border-border/60">
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                    <FileCheck className="h-6 w-6" />
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    executionStats.errors > 0 && executionStats.success === 0
+                      ? "bg-rose-100 text-rose-600"
+                      : executionStats.errors > 0
+                      ? "bg-amber-100 text-amber-600"
+                      : "bg-emerald-100 text-emerald-600"
+                  }`}>
+                    {executionStats.errors > 0 && executionStats.success === 0
+                      ? <XCircle className="h-6 w-6" />
+                      : executionStats.errors > 0
+                      ? <AlertTriangle className="h-6 w-6" />
+                      : <FileCheck className="h-6 w-6" />
+                    }
                   </div>
                   <div>
                     <CardTitle className="text-base font-bold">Import Execution Finished</CardTitle>
@@ -1364,7 +1946,7 @@ export function BulkPdcDepositModal({
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-lg bg-muted/40 border text-center">
                     <p className="text-xs text-muted-foreground">Total Ingested</p>
@@ -1380,13 +1962,71 @@ export function BulkPdcDepositModal({
                   </div>
                 </div>
 
+                {/* Inline Failed Records Error Detail Table */}
+                {failedItemsState.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                      <h4 className="font-semibold text-xs uppercase tracking-wider text-rose-600">
+                        Failed / Skipped Records — Error Details ({failedItemsState.length} rows)
+                      </h4>
+                    </div>
+                    <div className="rounded-md border border-rose-200 overflow-hidden">
+                      <div className="max-h-[260px] overflow-y-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead className="sticky top-0 bg-rose-50 border-b border-rose-200 z-10">
+                            <tr>
+                              <th className="px-2.5 py-2 text-left text-[10px] font-bold uppercase text-rose-700 whitespace-nowrap">Row</th>
+                              <th className="px-2.5 py-2 text-left text-[10px] font-bold uppercase text-rose-700 whitespace-nowrap">
+                                {type === "PDC" ? "Cheque No." : "Receipt No."}
+                              </th>
+                              <th className="px-2.5 py-2 text-left text-[10px] font-bold uppercase text-rose-700 whitespace-nowrap">Unit / Tenant</th>
+                              <th className="px-2.5 py-2 text-left text-[10px] font-bold uppercase text-rose-700">Error Reason</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-100">
+                            {failedItemsState.map((f, idx) => (
+                              <tr key={idx} className="hover:bg-rose-50/60">
+                                <td className="px-2.5 py-1.5 font-mono font-bold text-rose-700 text-[11px] whitespace-nowrap">
+                                  {f.item?.slNo || idx + 2}
+                                </td>
+                                <td className="px-2.5 py-1.5 font-mono text-[11px]">
+                                  {type === "PDC" ? (f.item?.chequeNumber || "—") : (f.item?.receiptNumber || "—")}
+                                </td>
+                                <td className="px-2.5 py-1.5">
+                                  <span className="text-[11px] block truncate max-w-[140px]" title={f.item?.unitName}>
+                                    {f.item?.unitName || "—"}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground block truncate max-w-[140px]">
+                                    {f.item?.tenantName || ""}
+                                  </span>
+                                </td>
+                                <td className="px-2.5 py-1.5">
+                                  <span className="text-[11px] text-rose-800 block leading-tight" title={f.error}>
+                                    {f.error && f.error.length > 90 ? f.error.slice(0, 90) + "…" : (f.error || "Unknown error")}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {failedItemsState.length > 8 && (
+                        <div className="px-3 py-1.5 bg-rose-50 border-t border-rose-200 text-[10px] text-rose-600 font-medium">
+                          {failedItemsState.length} failed rows — scroll to view all details
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t">
                   <Button variant="outline" size="sm" onClick={resetUploadState} className="text-xs">
                     Import Another File
                   </Button>
 
                   <Button onClick={() => onOpenChange(false)} className="text-xs gap-2">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Done & Close
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Done &amp; Close
                   </Button>
                 </div>
               </CardContent>

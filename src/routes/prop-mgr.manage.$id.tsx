@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench, Pencil, Building2, Sparkles, FileText, CheckCircle2 } from "lucide-react";
-import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, updatePropertyImages, type Property } from "@/lib/supabase";
+import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, fetchPropertyManagerEmployees, updatePropertyImages, type Property } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
@@ -19,7 +19,7 @@ import { useJsApiLoader } from "@react-google-maps/api";
 
 export const Route = createFileRoute("/prop-mgr/manage/$id")({
   component: PropMgrManageProperty,
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { mode?: "view" | "edit" } => ({
     mode: (search.mode as string) === 'edit' ? 'edit' : 'view',
   }),
 });
@@ -174,6 +174,7 @@ export function ManagePropertyPage({
   const [propTypeOptions, setPropTypeOptions] = useState<{ id: string; label: string }[]>([]);
   const [ownershipOptions, setOwnershipOptions] = useState<{ id: string; label: string }[]>([]);
   const [costCenterOptions, setCostCenterOptions] = useState<{ code: string; name: string }[]>([]);
+  const [propertyManagerOptions, setPropertyManagerOptions] = useState<{ id: string; name: string; email?: string; designation?: string }[]>([]);
   const [images, setImages] = useState<ImageFile[]>([]);
   const [documents, setDocuments] = useState<PropertyDocument[]>([]);
 
@@ -352,12 +353,14 @@ export function ManagePropertyPage({
       fetchPropertyTypes(),
       fetchOwnershipTypes(),
       fetchCostCenters(),
+      fetchPropertyManagerEmployees(),
     ])
-      .then(([prop, bks, pc, pt, ow, cc]) => {
+      .then(([prop, bks, pc, pt, ow, cc, pms]) => {
         setPropCategoryOptions(pc);
         setPropTypeOptions(pt);
         setOwnershipOptions(ow);
         setCostCenterOptions(cc);
+        setPropertyManagerOptions(pms || []);
         populateForm(prop);
         
         if (prop.room_details) {
@@ -675,7 +678,7 @@ export function ManagePropertyPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -709,10 +712,10 @@ export function ManagePropertyPage({
         </div>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
 
         {/* ── Left Column: Property Edit Form ── */}
-        <div className="md:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
 
           {/* 1. Identity & Codes */}
           <Card className="border-border">
@@ -910,7 +913,20 @@ export function ManagePropertyPage({
                 </div>
                 <div className="space-y-2">
                   <Label>Property Manager</Label>
-                  <Input value={propertyManager} onChange={e => setPropertyManager(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Jithin Abdul Latheef" />
+                  {isViewMode ? (
+                    <Input value={propertyManager} readOnly disabled className="bg-muted" placeholder="e.g. Jithin Abdul Latheef" />
+                  ) : (
+                    <SearchableSelect
+                      options={propertyManagerOptions.map((pm) => ({
+                        id: pm.name,
+                        value: pm.name,
+                        label: `${pm.name}${pm.designation ? ` (${pm.designation})` : ""}`,
+                      }))}
+                      value={propertyManager}
+                      onValueChange={setPropertyManager}
+                      placeholder="Select Property Manager from HRMS..."
+                    />
+                  )}
                 </div>
               </div>
               {(city || country) && (
@@ -1085,40 +1101,96 @@ export function ManagePropertyPage({
         </div>
 
         {/* ── Right Column: Summary Sidebar ── */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
 
           {/* Property Summary */}
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Property Summary</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Property Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Units</span>
-                <span className="font-semibold">{unitsCount ?? '—'}</span>
+                <span className="font-semibold">{unitsCount ?? (noOfUnits || '—')}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Occupancy</span>
-                <span className="font-semibold">{occupancyPct != null ? `${occupancyPct}%` : '—'}</span>
+                <span className="font-semibold">{occupancyPct != null ? `${occupancyPct}%` : '100%'}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Status</span>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${property.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {property.is_active ? 'Active' : 'Inactive'}
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}`}>
+                  {isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
+              {propertyType && (
+                <div className="flex justify-between items-center text-sm pt-2 border-t border-border">
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="font-medium text-foreground">{propertyType}</span>
+                </div>
+              )}
+              {propertyCategory && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Category</span>
+                  <span className="font-medium text-foreground">{propertyCategory}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Key Specifications Overview */}
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" /> Key Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Floors</span>
+                <span className="font-semibold font-mono text-foreground">{noOfFloors || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Parking Bays</span>
+                <span className="font-semibold font-mono text-foreground">{parkingCount || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Elevators</span>
+                <span className="font-semibold font-mono text-foreground">{noOfElevators || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Built-up Area</span>
+                <span className="font-semibold font-mono text-foreground">{totalBuiltUpAreaSqm ? `${totalBuiltUpAreaSqm} sqm` : "—"}</span>
+              </div>
+              {city && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-muted-foreground">City / Zone</span>
+                  <span className="font-medium text-foreground">{city}{areaZone ? ` · Zone ${areaZone}` : ''}</span>
+                </div>
+              )}
+              {ownerLandlord && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Landlord</span>
+                  <span className="font-medium text-foreground truncate max-w-[140px]" title={ownerLandlord}>{ownerLandlord}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Quick Actions */}
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button asChild variant="outline" className="w-full justify-start" size="sm">
+              <Button asChild variant="outline" className="w-full justify-start text-xs font-medium" size="sm">
                 <Link to={`${basePath}/units` as any} search={{ property_id: id } as any}>
-                  <Users className="mr-2 h-4 w-4" /> Manage Units
+                  <Users className="mr-2 h-4 w-4 text-primary" /> Manage Units
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full justify-start text-xs font-medium" size="sm">
+                <Link to={`${basePath}/leases` as any}>
+                  <FileText className="mr-2 h-4 w-4 text-primary" /> View Leases
                 </Link>
               </Button>
             </CardContent>
