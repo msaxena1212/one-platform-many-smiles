@@ -93,3 +93,53 @@ Thumbs.db
 # ============================================================
 
 .supabase/
+
+# ============================================================
+# Build artifacts — should NEVER be committed
+# ============================================================
+
+.vercel/
+.output/
+.nitro/
+
+# ============================================================
+# API / server-side files with credentials (use env vars)
+# ============================================================
+
+api/
+
+# ============================================================
+# Sensitive root-level files
+# ============================================================
+
+.claude-url.txt
+*.claude-url*
+
+# ============================================================
+# Root-level ad-hoc / debug scripts (not part of the app)
+# ============================================================
+
+check-*.js
+check-*.mjs
+check_*.mjs
+add-*.js
+alter-*.js
+audit-*.mjs
+fix-*.js
+inspect_*.mjs
+inspect_*.ts
+normalize_*.mjs
+parse_*.mjs
+run_*.mjs
+import_*.mjs
+analyze_*.mjs
+clear_*.mjs
+final_*.ts
+truncate_*.ts
+scratch_*.js
+verify-*.js
+*_out.txt
+*_out_*.json
+db_check_out.txt
+coa_detailed_parse.json
+migration_coa_hierarchy.sql
