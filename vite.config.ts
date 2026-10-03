@@ -7,7 +7,6 @@ export default defineConfig({
       host: "0.0.0.0",
     },
   },
-  // Use Nitro's Vercel preset so the deployment exposes the SSR handler
-  // instead of generating a Cloudflare worker that Vercel cannot route to.
-  nitro: { preset: "vercel" },
+  // Use Nitro Netlify preset for Netlify deployment
+  nitro: { preset: "netlify" },
 });
