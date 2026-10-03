@@ -143,3 +143,5 @@ verify-*.js
 db_check_out.txt
 coa_detailed_parse.json
 migration_coa_hierarchy.sql
+.netlify/
+

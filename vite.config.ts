@@ -8,6 +8,6 @@ export default defineConfig({
     },
   },
   // Default: vercel preset for Lovable/Vercel deployments.
-  // Override via NITRO_PRESET env var (e.g. NITRO_PRESET=static for Netlify).
-  nitro: { preset: (process.env.NITRO_PRESET as any) || "vercel" },
+  // Override via NITRO_PRESET env var (e.g. NITRO_PRESET=netlify for Netlify).
+  nitro: { preset: (process.env.NITRO_PRESET?.toLowerCase() as any) || "vercel" },
 });

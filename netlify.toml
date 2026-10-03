@@ -1,17 +1,8 @@
 [build]
   command = "npm run build"
-  publish = ".output/public"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
-  # Override Nitro preset to static for Netlify — outputs to .output/public/
-  # with no SSR functions, which is correct for a React SPA on Netlify.
-  # (vite.config.ts keeps preset="vercel" for Lovable/Vercel compatibility)
-  NITRO_PRESET = "static"
+  NITRO_PRESET = "netlify"
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY,VITE_GOOGLE_MAPS_API_KEY,SUPABASE_SERVICE_ROLE_KEY,DATABASE_URL"
-
-# SPA fallback — all routes served by index.html for client-side routing
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
