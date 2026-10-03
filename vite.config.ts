@@ -7,6 +7,7 @@ export default defineConfig({
       host: "0.0.0.0",
     },
   },
-  // Use Nitro Netlify preset for Netlify deployment
-  nitro: { preset: "netlify" },
+  // Vercel preset for Lovable/Vercel deployments (default)
+  // Netlify uses plain vite build which outputs to dist/client
+  nitro: { preset: "vercel" },
 });
