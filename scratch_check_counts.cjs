@@ -1,97 +1,54 @@
-const { Client } = require('pg');
+const fs = require('fs');
+const https = require('https');
+const path = require('path');
 
-// Tables to keep untouched:
-// 1. fin_financial_years (Financial Year)
-// 2. fin_regions (Region)
-// 3. fin_cost_centers (Cost Center)
-// 4. Budget Head & Type (if any specific budget master tables exist, or cost center budget configurations)
-// 5. fin_posting_periods (Posting Period)
-// 6. Chart Of Accounts: fin_coa_accounts, erp_chart_of_accounts
-// 7. System / Configuration Masters & Metadata: modules, role_permissions, profiles, spatial_ref_sys, geography_columns, geometry_columns, mst_* (master dropdowns)
-
-// Tables to TRUNCATE / WIPE FRESH:
-const tablesToClear = [
-  // Leasing & PMS operational
-  "leases",
-  "reservations",
-  "bookings",
-  "pdcs",
-  "fin_pdc_register",
-  "key_handovers",
-  "inspection_reports",
-  "collection_receipts",
-  
-  // Units & Properties
-  "property_amenities",
-  "property_images",
-  "unit_amenities",
-  "unit_rooms",
-  "unit_coas",
-  "units",
-  "properties",
-
-  // Customers & Vendors
-  "customers",
-  "fin_customers",
-  "fin_vendors",
-
-  // Assets & Maintenance
-  "assets",
-  "fixed_assets",
-  "hrms_asset_allocations",
-  "inventory_parts",
-  "material_usage",
-
-  // Financial vouchers & transactional postings
-  "fin_voucher_lines",
-  "fin_vouchers",
-  "erp_vouchers",
-  "erp_journal_entries",
-  "fin_accounting_event_lines",
-  "fin_accounting_events",
-  "fin_payment_allocations",
-  "fin_bank_reconciliations",
-  "fin_legal_receivables",
-  "fin_deposits",
-  "fin_contracts",
-  "fin_payroll_syncs",
-  "fin_unit_sl_accounts",
-
-  // Procurement transactions
-  "proc_customs_clearances",
-  "proc_gate_inwards",
-  "proc_goods_receipts",
-  "proc_grn_lines",
-  "proc_imports",
-  "proc_negotiations",
-  "proc_purchase_order_lines",
-  "proc_purchase_orders",
-  "proc_purchase_request_lines",
-  "proc_purchase_requests",
-  "proc_rfx",
-  "proc_rfx_lines",
-  "proc_rfx_vendors",
-  "proc_shipments",
-  "proc_transports",
-  "proc_vendor_quote_lines",
-  "proc_vendor_quotes"
-];
-
-async function countAndClear() {
-  const client = new Client({ connectionString: "postgresql://postgres.rnebpqnzignwjeukgztz:A6TeHnuvQfFqMHMZ@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres" });
-  await client.connect();
-
-  console.log("=== Checking current row counts before reset ===");
-  for (const t of tablesToClear) {
-    try {
-      const res = await client.query(`SELECT count(*) FROM "${t}";`);
-      console.log(`${t}: ${res.rows[0].count} rows`);
-    } catch (e) {
-      console.log(`${t}: error checking count (${e.message})`);
+const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8');
+const env = {};
+envFile.split('\n').forEach(line => {
+  const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+  if (match) {
+    let val = match[2] ? match[2].trim() : '';
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
     }
+    env[match[1]] = val;
   }
+});
 
-  await client.end();
+const supabaseUrl = env.VITE_SUPABASE_URL;
+const key = env.SUPABASE_SERVICE_ROLE_KEY || env.VITE_SUPABASE_ANON_KEY;
+const url = new URL(supabaseUrl);
+
+function checkTable(table) {
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: url.hostname,
+      path: `/rest/v1/${table}?select=count`,
+      method: 'HEAD',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Prefer': 'count=exact'
+      }
+    }, res => {
+      resolve({ table, range: res.headers['content-range'] || `Status: ${res.statusCode}` });
+    });
+    req.on('error', e => resolve({ table, error: e.message }));
+    req.end();
+  });
 }
 
-countAndClear().catch(console.error);
+async function run() {
+  const tables = [
+    'properties', 'units', 'leases', 'customers', 'reservations', 
+    'pdcs', 'fin_pdc_register', 'fin_vouchers', 'fin_journal_entries',
+    'key_handovers', 'inspection_reports', 'documents', 'tickets', 
+    'maintenance_requests', 'assets', 'profiles', 'excel_import_batches'
+  ];
+  for (const t of tables) {
+    const res = await checkTable(t);
+    console.log(`${t.padEnd(25)} : ${res.range || res.error}`);
+  }
+}
+
+run();
