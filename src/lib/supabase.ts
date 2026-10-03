@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 
 const supabaseUrl =
   import.meta.env.VITE_SUPABASE_URL ||
@@ -11,7 +12,8 @@ const supabaseAnonKey =
 
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder'
+  supabaseAnonKey || 'placeholder',
+  import.meta.env.SSR ? { realtime: { transport: WebSocket as never } } : undefined,
 );
 
 
@@ -1600,4 +1602,3 @@ export async function fetchPropertyManagerEmployees(): Promise<{ id: string; nam
     ];
   }
 }
-
