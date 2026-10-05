@@ -15,6 +15,8 @@ export interface MasterGroupDefinition {
   category: 'Asset' | 'Employee' | 'Property' | 'Unit' | 'Lease' | 'System';
   description?: string;
   isMandatoryField?: boolean; // Can mark the field itself as mandatory
+  /** When true the UI renders a Roles multi-select in the add/edit dialog */
+  supportsRoles?: boolean;
   initialValues: string[];
 }
 
@@ -32,6 +34,7 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
     label: 'Department',
     category: 'Employee',
     isMandatoryField: false,
+    supportsRoles: true,
     initialValues: [
       'Commercial & Leasing',
       'Finance & Accounts',
@@ -52,6 +55,7 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
     label: 'Designation',
     category: 'Employee',
     isMandatoryField: false,
+    supportsRoles: true,
     initialValues: [
       'Director',
       'General Manager',
@@ -756,6 +760,45 @@ export class DynamicMastersService {
     this.setStoredData(stored);
     return newEntry;
   }
+
+  public static addMasterValueWithRoles(masterKey: string, name: string, roles: string[]): MasterEntry {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('Name cannot be empty');
+
+    const stored = this.getStoredData();
+    const current = this.getMasterValues(masterKey);
+
+    if (current.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new Error(`Item "${trimmed}" already exists in ${masterKey}.`);
+    }
+
+    const newEntry: MasterEntry = {
+      id: `${masterKey}-${Date.now()}`,
+      name: trimmed,
+      extra: { roles },
+    };
+
+    stored[masterKey] = [...current, newEntry];
+    this.setStoredData(stored);
+    return newEntry;
+  }
+
+  public static updateMasterValueRoles(masterKey: string, id: string, newName: string, roles: string[]): void {
+    const trimmed = newName.trim();
+    if (!trimmed) throw new Error('Name cannot be empty');
+
+    const stored = this.getStoredData();
+    const current = this.getMasterValues(masterKey);
+
+    const updated = current.map(item =>
+      item.id === id
+        ? { ...item, name: trimmed, extra: { ...(item.extra ?? {}), roles } }
+        : item
+    );
+    stored[masterKey] = updated;
+    this.setStoredData(stored);
+  }
+
 
   public static updateMasterValue(masterKey: string, id: string, newName: string): void {
     const trimmed = newName.trim();

@@ -818,7 +818,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             items: [
               { to: "/admin/hrms", search: { tab: "dashboard" }, label: "Dashboard", icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
               { to: "/admin/hrms", search: { tab: "employees" }, label: "Employees", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/hrms", search: { tab: "organization" }, label: "Org Masters", icon: <Building2 className="h-3.5 w-3.5" /> },
             ],
           },
           {

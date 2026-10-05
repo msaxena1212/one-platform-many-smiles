@@ -62,7 +62,6 @@ const HRMS_TABS = [
   { key: "performance", label: "Performance / KPA", icon: Award, color: "text-rose-500", bg: "bg-rose-500/10" },
   { key: "expenses", label: "Expenses & Claims", icon: Receipt, color: "text-indigo-500", bg: "bg-indigo-500/10" },
   { key: "exit_lifecycle", label: "Exit & FNF", icon: LogOut, color: "text-red-500", bg: "bg-red-500/10" },
-  { key: "organization", label: "Org Masters", icon: Building2, color: "text-sky-500", bg: "bg-sky-500/10" },
   { key: "services", label: "Help Desk & Notices", icon: Megaphone, color: "text-orange-500", bg: "bg-orange-500/10" }
 ];
 

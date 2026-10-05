@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Plus, Loader2, Trash2, Pencil, Search, Users, Package, Building2, DoorOpen, Settings2, FileSignature
+  Plus, Loader2, Trash2, Pencil, Search, Users, Package, Building2, DoorOpen, Settings2, FileSignature, ShieldCheck
 } from "lucide-react";
 import {
   DynamicMastersService,
@@ -22,6 +22,12 @@ import { toast } from "sonner";
 export interface MastersModuleProps {
   role: "admin";
 }
+
+const AVAILABLE_ROLES = [
+  "Admin", "Executive", "Manager", "HR", "Finance",
+  "Sales", "Operations", "Procurement", "IT",
+  "Maintenance", "Customer Service", "Legal", "Compliance",
+];
 
 const NAV_GROUPS = [
   {
@@ -81,8 +87,8 @@ interface DynamicMasterPanelProps {
   items: MasterEntry[];
   isMandatory: boolean;
   onToggleMandatory: (val: boolean) => void;
-  onAdd: (name: string) => void;
-  onEdit: (id: string, name: string) => void;
+  onAdd: (name: string, roles: string[]) => void;
+  onEdit: (id: string, name: string, roles: string[]) => void;
   onDelete: (id: string) => void;
 }
 
@@ -99,6 +105,9 @@ function DynamicMasterPanel({
   const [showDialog, setShowDialog] = useState(false);
   const [editItem, setEditItem] = useState<MasterEntry | null>(null);
   const [value, setValue] = useState("");
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+
+  const supportsRoles = !!definition.supportsRoles;
 
   const filtered = items.filter(i =>
     i.name.toLowerCase().includes(search.toLowerCase())
@@ -107,23 +116,31 @@ function DynamicMasterPanel({
   function openAdd() {
     setEditItem(null);
     setValue("");
+    setSelectedRoles([]);
     setShowDialog(true);
   }
 
   function openEdit(item: MasterEntry) {
     setEditItem(item);
     setValue(item.name);
+    setSelectedRoles(item.extra?.roles ?? []);
     setShowDialog(true);
+  }
+
+  function toggleRole(role: string) {
+    setSelectedRoles(prev =>
+      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+    );
   }
 
   function handleSave() {
     if (!value.trim()) return;
     try {
       if (editItem) {
-        onEdit(editItem.id, value.trim());
+        onEdit(editItem.id, value.trim(), selectedRoles);
         toast.success(`Updated "${value.trim()}" in ${definition.label}`);
       } else {
-        onAdd(value.trim());
+        onAdd(value.trim(), selectedRoles);
         toast.success(`Added "${value.trim()}" to ${definition.label}`);
       }
       setShowDialog(false);
@@ -153,7 +170,7 @@ function DynamicMasterPanel({
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Category: <span className="font-semibold text-foreground">{definition.category}</span> — Synchronized with Excel upload & manual dropdowns.
+            Category: <span className="font-semibold text-foreground">{definition.category}</span> — Synchronized with Excel upload &amp; manual dropdowns.
           </p>
         </div>
 
@@ -193,27 +210,44 @@ function DynamicMasterPanel({
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {filtered.map(item => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between px-3.5 py-2.5 rounded-lg border bg-card hover:bg-muted/40 transition-colors group"
-            >
-              <span className="text-sm font-medium">{item.name}</span>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(item.id, item.name)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+          {filtered.map(item => {
+            const roles: string[] = item.extra?.roles ?? [];
+            return (
+              <div
+                key={item.id}
+                className="flex items-start justify-between px-3.5 py-2.5 rounded-lg border bg-card hover:bg-muted/40 transition-colors group"
+              >
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-sm font-medium">{item.name}</span>
+                  {supportsRoles && roles.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {roles.map(r => (
+                        <span
+                          key={r}
+                          className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 font-medium"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2 mt-0.5">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(item)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:text-destructive"
+                    onClick={() => handleDelete(item.id, item.name)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -222,17 +256,48 @@ function DynamicMasterPanel({
           <DialogHeader>
             <DialogTitle>{editItem ? `Edit ${definition.label}` : `Add New ${definition.label}`}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>{definition.label} Name / Value</Label>
               <Input
                 placeholder={`Enter ${definition.label.toLowerCase()} value...`}
                 value={value}
                 onChange={e => setValue(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSave()}
+                onKeyDown={e => !supportsRoles && e.key === "Enter" && handleSave()}
                 autoFocus
               />
             </div>
+
+            {supportsRoles && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5 text-sm font-semibold">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  Assign Roles
+                  <span className="text-muted-foreground font-normal text-xs">(select all that apply)</span>
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  {AVAILABLE_ROLES.map(role => (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => toggleRole(role)}
+                      className={`text-[11px] px-2.5 py-1 rounded-full border font-medium transition-all ${
+                        selectedRoles.includes(role)
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : "bg-muted text-muted-foreground border-border hover:border-emerald-400 hover:text-emerald-700"
+                      }`}
+                    >
+                      {selectedRoles.includes(role) ? "✓ " : ""}{role}
+                    </button>
+                  ))}
+                </div>
+                {selectedRoles.length > 0 && (
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    Selected: {selectedRoles.join(", ")}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
@@ -271,7 +336,7 @@ export function MastersModule({ role }: MastersModuleProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Masters & Configuration</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Masters &amp; Configuration</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Configure dynamic master reference values for Properties, Units, Assets, and Employees with full Excel sync and mandatory controls.
         </p>
@@ -306,12 +371,20 @@ export function MastersModule({ role }: MastersModuleProps) {
                     DynamicMastersService.setMandatoryFlag(activeDef.key, val);
                     setIsMandatory(val);
                   }}
-                  onAdd={(name) => {
-                    DynamicMastersService.addMasterValue(activeDef.key, name);
+                  onAdd={(name, roles) => {
+                    if (activeDef.supportsRoles && roles.length > 0) {
+                      DynamicMastersService.addMasterValueWithRoles(activeDef.key, name, roles);
+                    } else {
+                      DynamicMastersService.addMasterValue(activeDef.key, name);
+                    }
                     refreshActive();
                   }}
-                  onEdit={(id, name) => {
-                    DynamicMastersService.updateMasterValue(activeDef.key, id, name);
+                  onEdit={(id, name, roles) => {
+                    if (activeDef.supportsRoles) {
+                      DynamicMastersService.updateMasterValueRoles(activeDef.key, id, name, roles);
+                    } else {
+                      DynamicMastersService.updateMasterValue(activeDef.key, id, name);
+                    }
                     refreshActive();
                   }}
                   onDelete={(id) => {
