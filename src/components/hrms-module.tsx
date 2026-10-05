@@ -136,6 +136,9 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   const [newMasterName, setNewMasterName] = useState<string>("");
   const [newMasterCode, setNewMasterCode] = useState<string>("");
   const [newMasterDesc, setNewMasterDesc] = useState<string>("");
+  const [newMasterRoles, setNewMasterRoles] = useState<string[]>([]);
+  const [editRolesItemId, setEditRolesItemId] = useState<string | null>(null);
+  const [editRolesValue, setEditRolesValue] = useState<string[]>([]);
 
   // Form State Containers
   const [newEmp, setNewEmp] = useState({
@@ -314,16 +317,30 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     const created = await HrmsMastersApi.addMasterItem(selectedMasterKey, {
       name: newMasterName.trim(),
       code: newMasterCode.trim() || undefined,
-      description: newMasterDesc.trim() || undefined
+      description: newMasterDesc.trim() || undefined,
+      extra: newMasterRoles.length > 0 ? { roles: newMasterRoles } : undefined,
     });
+    // Persist roles directly on the item
+    if (created && newMasterRoles.length > 0) {
+      await HrmsMastersApi.updateMasterItem(selectedMasterKey, created.id, { roles: newMasterRoles });
+    }
     if (created) {
       toast.success(`Record added to ${selectedMasterKey}!`);
       setNewMasterName("");
       setNewMasterCode("");
       setNewMasterDesc("");
+      setNewMasterRoles([]);
       const items = await HrmsMastersApi.getMasterItems(selectedMasterKey);
       setCurrentMasterItems(items);
     }
+  };
+
+  const handleUpdateItemRoles = async (itemId: string, roles: string[]) => {
+    await HrmsMastersApi.updateMasterItem(selectedMasterKey, itemId, { roles });
+    const items = await HrmsMastersApi.getMasterItems(selectedMasterKey);
+    setCurrentMasterItems(items);
+    setEditRolesItemId(null);
+    toast.success("Roles updated successfully");
   };
 
   const handleDeleteMasterRecord = async (id: string) => {
@@ -1777,7 +1794,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       { key: "branches", label: "Branches & Site Offices" },
                       { key: "entities", label: "Entity Master (Primary/Regional)" },
                       { key: "business_units", label: "Business Units (BU / Tower)" },
-                      { key: "departments", label: "Functional Departments" },
+                      { key: "departments", label: "Functional Departments", hasRoles: true },
                       { key: "sub_departments", label: "Sub-Departments" },
                     ],
                   },
@@ -1786,7 +1803,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                     icon: UserCheck,
                     color: "text-emerald-500",
                     items: [
-                      { key: "designations", label: "Designations & Positions" },
+                      { key: "designations", label: "Designations & Positions", hasRoles: true },
                       { key: "grades", label: "Grade Bands (G1 - Executive)" },
                       { key: "employment_types", label: "Employment Types" },
                       { key: "contract_types", label: "Contract Types & Tenancy" },
@@ -1863,7 +1880,12 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                                 <span className="text-[10px] opacity-70">├─</span>
                                 <span className="truncate">{leaf.label}</span>
                               </div>
-                              <ChevronRight className={`h-3 w-3 shrink-0 ${isSelected ? "opacity-100" : "opacity-40"}`} />
+                              <div className="flex items-center gap-1 shrink-0">
+                                {(leaf as any).hasRoles && (
+                                  <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${isSelected ? "bg-white/20" : "bg-emerald-500/10 text-emerald-600"}`}>Roles</span>
+                                )}
+                                <ChevronRight className={`h-3 w-3 ${isSelected ? "opacity-100" : "opacity-40"}`} />
+                              </div>
                             </button>
                           );
                         })}
@@ -1876,6 +1898,21 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
 
             {/* Right: Master Data Table & Creation Form */}
             <div className="lg:col-span-8 space-y-6">
+              {/* ── Roles info banner (only for dept / designation) ── */}
+              {MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles && (
+                <div className="flex items-start gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-4 py-3">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-emerald-700">Role Assignment Enabled</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Each entry in <span className="font-medium">{MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.label}</span> can be
+                      assigned one or more functional roles. Roles define what system permissions and workflows are linked to this {selectedMasterKey === "departments" ? "department" : "designation"}.
+                      Click the <span className="font-medium">Edit Roles</span> button on any row to manage its roles.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-6 md:grid-cols-1">
                 {/* Master Records Table Card */}
                 <Card>
@@ -1900,34 +1937,118 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                             <TableHead className="text-xs">Record Name</TableHead>
                             <TableHead className="text-xs">Code</TableHead>
                             <TableHead className="text-xs">Description</TableHead>
+                            {MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles && (
+                              <TableHead className="text-xs">Roles</TableHead>
+                            )}
                             <TableHead className="text-xs text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {currentMasterItems.map((item) => (
-                            <TableRow key={item.id} className="hover:bg-muted/40 transition-colors">
-                              <TableCell className="font-semibold text-sm">{item.name}</TableCell>
-                              <TableCell className="font-mono text-xs text-primary font-medium">
-                                {item.code || "—"}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
-                                {item.description || "—"}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-500/10"
-                                  onClick={() => handleDeleteMasterRecord(item.id)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                          {currentMasterItems.map((item) => {
+                            const supportsRoles = MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles;
+                            const isEditingRoles = editRolesItemId === item.id;
+                            return (
+                              <TableRow key={item.id} className="hover:bg-muted/40 transition-colors">
+                                <TableCell className="font-semibold text-sm">{item.name}</TableCell>
+                                <TableCell className="font-mono text-xs text-primary font-medium">
+                                  {item.code || "—"}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                                  {item.description || "—"}
+                                </TableCell>
+                                {supportsRoles && (
+                                  <TableCell className="text-xs min-w-[200px]">
+                                    {isEditingRoles ? (
+                                      <div className="space-y-2">
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {[
+                                            "Admin", "Executive", "Manager", "HR", "Finance",
+                                            "Sales", "Operations", "Procurement", "IT",
+                                            "Maintenance", "Customer Service", "Legal", "Compliance",
+                                          ].map((role) => (
+                                            <button
+                                              key={role}
+                                              type="button"
+                                              onClick={() =>
+                                                setEditRolesValue((prev) =>
+                                                  prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+                                                )
+                                              }
+                                              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                                                editRolesValue.includes(role)
+                                                  ? "bg-emerald-600 text-white border-emerald-600"
+                                                  : "bg-muted text-muted-foreground border-border hover:border-emerald-400 hover:text-emerald-700"
+                                              }`}
+                                            >
+                                              {role}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                          <Button
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-700"
+                                            onClick={() => handleUpdateItemRoles(item.id, editRolesValue)}
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px]"
+                                            onClick={() => setEditRolesItemId(null)}
+                                          >
+                                            Cancel
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        {(item.roles || []).length > 0 ? (
+                                          (item.roles || []).map((r) => (
+                                            <span
+                                              key={r}
+                                              className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 font-medium"
+                                            >
+                                              {r}
+                                            </span>
+                                          ))
+                                        ) : (
+                                          <span className="text-[10px] text-muted-foreground italic">No roles</span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          className="ml-1 text-[9px] px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-emerald-500 hover:text-emerald-600 transition-colors"
+                                          onClick={() => {
+                                            setEditRolesItemId(item.id);
+                                            setEditRolesValue(item.roles || []);
+                                          }}
+                                        >
+                                          <Edit3 className="h-2.5 w-2.5 inline mr-0.5" />Edit
+                                        </button>
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                )}
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-500/10"
+                                    onClick={() => handleDeleteMasterRecord(item.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                           {currentMasterItems.length === 0 && (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground">
+                              <TableCell
+                                colSpan={MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles ? 5 : 4}
+                                className="text-center py-8 text-xs text-muted-foreground"
+                              >
                                 No records registered in this master category yet. Use the form below to add entries.
                               </TableCell>
                             </TableRow>
@@ -1942,40 +2063,89 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                         <Plus className="h-3.5 w-3.5 text-emerald-600" />
                         Add New Entry into {MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.label}
                       </h4>
-                      <form onSubmit={handleAddMasterRecord} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <Label className="text-[11px] font-semibold">Record Name *</Label>
-                          <Input
-                            placeholder="Title / Name"
-                            required
-                            className="h-8 text-xs mt-1"
-                            value={newMasterName}
-                            onChange={(e) => setNewMasterName(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[11px] font-semibold">Identifier Code</Label>
-                          <Input
-                            placeholder={`e.g. ${MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.codePrefix}-01`}
-                            className="h-8 text-xs mt-1 font-mono"
-                            value={newMasterCode}
-                            onChange={(e) => setNewMasterCode(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-[11px] font-semibold">Description</Label>
-                          <div className="flex gap-2 mt-1">
+                      <form onSubmit={handleAddMasterRecord} className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[11px] font-semibold">Record Name *</Label>
                             <Input
-                              placeholder="Brief metadata"
-                              className="h-8 text-xs"
-                              value={newMasterDesc}
-                              onChange={(e) => setNewMasterDesc(e.target.value)}
+                              placeholder="Title / Name"
+                              required
+                              className="h-8 text-xs mt-1"
+                              value={newMasterName}
+                              onChange={(e) => setNewMasterName(e.target.value)}
                             />
-                            <Button type="submit" size="sm" className="h-8 px-3 text-xs gap-1 shrink-0">
-                              <Plus className="h-3.5 w-3.5" /> Add
-                            </Button>
+                          </div>
+                          <div>
+                            <Label className="text-[11px] font-semibold">Identifier Code</Label>
+                            <Input
+                              placeholder={`e.g. ${MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.codePrefix}-01`}
+                              className="h-8 text-xs mt-1 font-mono"
+                              value={newMasterCode}
+                              onChange={(e) => setNewMasterCode(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[11px] font-semibold">Description</Label>
+                            <div className="flex gap-2 mt-1">
+                              <Input
+                                placeholder="Brief metadata"
+                                className="h-8 text-xs"
+                                value={newMasterDesc}
+                                onChange={(e) => setNewMasterDesc(e.target.value)}
+                              />
+                              {!MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles && (
+                                <Button type="submit" size="sm" className="h-8 px-3 text-xs gap-1 shrink-0">
+                                  <Plus className="h-3.5 w-3.5" /> Add
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Roles selector — only shown for dept / designation */}
+                        {MASTER_CATEGORIES_CONFIG.find((c) => c.key === selectedMasterKey)?.supportsRoles && (
+                          <div className="rounded-lg border bg-card p-3 space-y-2">
+                            <Label className="text-[11px] font-semibold flex items-center gap-1.5">
+                              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              Assign Roles
+                              <span className="text-muted-foreground font-normal">(select all that apply)</span>
+                            </Label>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                "Admin", "Executive", "Manager", "HR", "Finance",
+                                "Sales", "Operations", "Procurement", "IT",
+                                "Maintenance", "Customer Service", "Legal", "Compliance",
+                              ].map((role) => (
+                                <button
+                                  key={role}
+                                  type="button"
+                                  onClick={() =>
+                                    setNewMasterRoles((prev) =>
+                                      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+                                    )
+                                  }
+                                  className={`text-[10px] px-2.5 py-1 rounded-full border font-medium transition-all ${
+                                    newMasterRoles.includes(role)
+                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                                      : "bg-muted text-muted-foreground border-border hover:border-emerald-400 hover:text-emerald-700"
+                                  }`}
+                                >
+                                  {newMasterRoles.includes(role) ? "✓ " : ""}{role}
+                                </button>
+                              ))}
+                            </div>
+                            {newMasterRoles.length > 0 && (
+                              <p className="text-[10px] text-emerald-700 font-medium">
+                                Selected: {newMasterRoles.join(", ")}
+                              </p>
+                            )}
+                            <div className="flex justify-end pt-1">
+                              <Button type="submit" size="sm" className="h-8 px-4 text-xs gap-1">
+                                <Plus className="h-3.5 w-3.5" /> Add Entry with Roles
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </form>
                     </div>
                   </CardContent>

@@ -6,6 +6,8 @@ export interface MasterItem {
   code?: string;
   category?: string;
   description?: string;
+  /** Roles attached to this department or designation (e.g. ["Finance", "Admin"]) */
+  roles?: string[];
   extra?: Record<string, any>;
   is_active?: boolean;
 }
@@ -54,7 +56,9 @@ export const MASTER_CATEGORIES_CONFIG: {
   label: string;
   group: "Organization" | "Location" | "HR & Workforce" | "Payroll & Finance" | "System & Service";
   codePrefix: string;
-  defaultItems: { name: string; code?: string; description?: string }[];
+  /** When true the UI renders a Roles editor column for this category */
+  supportsRoles?: boolean;
+  defaultItems: { name: string; code?: string; description?: string; roles?: string[] }[];
 }[] = [
   // ── Organization ──
   {
@@ -110,17 +114,18 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Department",
     group: "Organization",
     codePrefix: "DEP",
+    supportsRoles: true,
     defaultItems: [
-      { name: "Management", code: "MGMT" },
-      { name: "Finance & Accounts", code: "FIN" },
-      { name: "HR & Administration", code: "HR" },
-      { name: "Sales & Marketing", code: "SALES" },
-      { name: "Operations", code: "OPS" },
-      { name: "Procurement", code: "PROC" },
-      { name: "Information Technology", code: "IT" },
-      { name: "Customer Service", code: "CS" },
-      { name: "Maintenance / Technical", code: "TECH" },
-      { name: "Warehouse", code: "WH" },
+      { name: "Management", code: "MGMT", roles: ["Admin", "Executive"] },
+      { name: "Finance & Accounts", code: "FIN", roles: ["Finance"] },
+      { name: "HR & Administration", code: "HR", roles: ["HR"] },
+      { name: "Sales & Marketing", code: "SALES", roles: ["Sales"] },
+      { name: "Operations", code: "OPS", roles: ["Operations"] },
+      { name: "Procurement", code: "PROC", roles: ["Procurement"] },
+      { name: "Information Technology", code: "IT", roles: ["IT"] },
+      { name: "Customer Service", code: "CS", roles: ["Customer Service"] },
+      { name: "Maintenance / Technical", code: "TECH", roles: ["Maintenance"] },
+      { name: "Warehouse", code: "WH", roles: ["Operations"] },
     ],
   },
   {
@@ -142,23 +147,24 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Designation Master",
     group: "HR & Workforce",
     codePrefix: "DSG",
+    supportsRoles: true,
     defaultItems: [
-      { name: "Director", code: "DIR" },
-      { name: "General Manager", code: "GM" },
-      { name: "Manager", code: "MGR" },
-      { name: "Assistant Manager", code: "AM" },
-      { name: "Accountant", code: "ACC" },
-      { name: "HR Executive", code: "HR-EXEC" },
-      { name: "Admin Executive", code: "ADMIN-EXEC" },
-      { name: "Sales Executive", code: "SALES-EXEC" },
-      { name: "Operations Executive", code: "OPS-EXEC" },
-      { name: "Procurement Executive", code: "PROC-EXEC" },
-      { name: "IT Support", code: "IT-SUPPORT" },
-      { name: "Customer Service Executive", code: "CS-EXEC" },
-      { name: "Supervisor", code: "SUP" },
-      { name: "Technician", code: "TECH" },
-      { name: "Driver", code: "DRIVER" },
-      { name: "Office Assistant", code: "OFFICE-ASST" },
+      { name: "Director", code: "DIR", roles: ["Executive", "Admin"] },
+      { name: "General Manager", code: "GM", roles: ["Executive", "Manager"] },
+      { name: "Manager", code: "MGR", roles: ["Manager"] },
+      { name: "Assistant Manager", code: "AM", roles: ["Manager"] },
+      { name: "Accountant", code: "ACC", roles: ["Finance"] },
+      { name: "HR Executive", code: "HR-EXEC", roles: ["HR"] },
+      { name: "Admin Executive", code: "ADMIN-EXEC", roles: ["Admin"] },
+      { name: "Sales Executive", code: "SALES-EXEC", roles: ["Sales"] },
+      { name: "Operations Executive", code: "OPS-EXEC", roles: ["Operations"] },
+      { name: "Procurement Executive", code: "PROC-EXEC", roles: ["Procurement"] },
+      { name: "IT Support", code: "IT-SUPPORT", roles: ["IT"] },
+      { name: "Customer Service Executive", code: "CS-EXEC", roles: ["Customer Service"] },
+      { name: "Supervisor", code: "SUP", roles: ["Operations", "Manager"] },
+      { name: "Technician", code: "TECH", roles: ["Maintenance"] },
+      { name: "Driver", code: "DRIVER", roles: ["Operations"] },
+      { name: "Office Assistant", code: "OFFICE-ASST", roles: ["Admin"] },
     ],
   },
   {
