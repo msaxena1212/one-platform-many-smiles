@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Plus, Loader2, Trash2, Pencil, Search, Users, Package, Building2, DoorOpen, Settings2, FileSignature, ShieldCheck
+  Plus, Trash2, Pencil, Search, Users, Package, Building2, DoorOpen, FileSignature, ShieldCheck
 } from "lucide-react";
 import {
   DynamicMastersService,
@@ -23,7 +23,8 @@ export interface MastersModuleProps {
   role: "admin";
 }
 
-const AVAILABLE_ROLES = [
+/** Fallback in case the Roles master has not been seeded yet */
+const FALLBACK_ROLES = [
   "Admin", "Executive", "Manager", "HR", "Finance",
   "Sales", "Operations", "Procurement", "IT",
   "Maintenance", "Customer Service", "Legal", "Compliance",
@@ -86,6 +87,8 @@ interface DynamicMasterPanelProps {
   definition: MasterGroupDefinition;
   items: MasterEntry[];
   isMandatory: boolean;
+  /** List of role names available for assignment — sourced from the Roles master */
+  availableRoles: string[];
   onToggleMandatory: (val: boolean) => void;
   onAdd: (name: string, roles: string[]) => void;
   onEdit: (id: string, name: string, roles: string[]) => void;
@@ -96,6 +99,7 @@ function DynamicMasterPanel({
   definition,
   items,
   isMandatory,
+  availableRoles,
   onToggleMandatory,
   onAdd,
   onEdit,
@@ -108,6 +112,7 @@ function DynamicMasterPanel({
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
 
   const supportsRoles = !!definition.supportsRoles;
+  const roleOptions = availableRoles.length > 0 ? availableRoles : FALLBACK_ROLES;
 
   const filtered = items.filter(i =>
     i.name.toLowerCase().includes(search.toLowerCase())
@@ -276,7 +281,7 @@ function DynamicMasterPanel({
                   <span className="text-muted-foreground font-normal text-xs">(select all that apply)</span>
                 </Label>
                 <div className="flex flex-wrap gap-2">
-                  {AVAILABLE_ROLES.map(role => (
+                  {roleOptions.map(role => (
                     <button
                       key={role}
                       type="button"
@@ -317,6 +322,7 @@ export function MastersModule({ role }: MastersModuleProps) {
 
   const [items, setItems] = useState<MasterEntry[]>([]);
   const [isMandatory, setIsMandatory] = useState<boolean>(false);
+  const [roleMasterItems, setRoleMasterItems] = useState<MasterEntry[]>([]);
 
   const activeDef = MASTER_DEFINITIONS.find(d => d.key === activeKey) || MASTER_DEFINITIONS[0];
 
@@ -325,11 +331,18 @@ export function MastersModule({ role }: MastersModuleProps) {
       setItems(DynamicMastersService.getMasterValues(activeDef.key));
       setIsMandatory(DynamicMastersService.isMasterMandatory(activeDef.key));
     }
+    // Always keep roles list fresh
+    setRoleMasterItems(DynamicMastersService.getMasterValues('role'));
   }, [activeDef]);
 
   useEffect(() => {
     refreshActive();
   }, [activeKey, refreshActive]);
+
+  const availableRoles = useMemo(
+    () => roleMasterItems.map(r => r.name),
+    [roleMasterItems]
+  );
 
   const activeGroup = NAV_GROUPS.find(g => g.items.some(i => i.key === activeKey));
 
@@ -367,6 +380,7 @@ export function MastersModule({ role }: MastersModuleProps) {
                   definition={activeDef}
                   items={items}
                   isMandatory={isMandatory}
+                  availableRoles={availableRoles}
                   onToggleMandatory={(val) => {
                     DynamicMastersService.setMandatoryFlag(activeDef.key, val);
                     setIsMandatory(val);

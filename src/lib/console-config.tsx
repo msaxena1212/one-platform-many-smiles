@@ -867,6 +867,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-blue-500/10",
             items: [
               { to: "/admin/masters", search: { tab: "gender" }, label: "Gender", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/admin/masters", search: { tab: "role" }, label: "Roles", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
               { to: "/admin/masters", search: { tab: "department" }, label: "Department", icon: <Building2 className="h-3.5 w-3.5" /> },
               { to: "/admin/masters", search: { tab: "designation" }, label: "Designation", icon: <UserCheck className="h-3.5 w-3.5" /> },
               { to: "/admin/masters", search: { tab: "employment_type" }, label: "Employment Type", icon: <Award className="h-3.5 w-3.5" /> },
