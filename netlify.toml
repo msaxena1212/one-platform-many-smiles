@@ -2,7 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[dev]
+  targetPort = 8080
+
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
   NITRO_PRESET = "netlify"
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY,VITE_GOOGLE_MAPS_API_KEY,SUPABASE_SERVICE_ROLE_KEY,DATABASE_URL"

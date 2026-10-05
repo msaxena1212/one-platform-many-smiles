@@ -9,11 +9,24 @@ type ServerEntry = {
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
+async function ensureServerWebSocketSupport(): Promise<void> {
+  if (typeof globalThis.WebSocket !== "undefined" || typeof process === "undefined") return;
+
+  const { default: WebSocket } = await import("ws");
+  Object.defineProperty(globalThis, "WebSocket", {
+    configurable: true,
+    value: WebSocket,
+    writable: true,
+  });
+}
+
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
-    serverEntryPromise = import("@tanstack/react-start/server-entry").then(
-      (m) => (m.default ?? m) as ServerEntry,
-    );
+    serverEntryPromise = (async () => {
+      await ensureServerWebSocketSupport();
+      const module = await import("@tanstack/react-start/server-entry");
+      return (module.default ?? module) as ServerEntry;
+    })();
   }
   return serverEntryPromise;
 }
