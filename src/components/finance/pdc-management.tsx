@@ -318,7 +318,7 @@ export function PdcManagement() {
 
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [addPdcLoading, setAddPdcLoading] = useState(false);
-  const [collectionType, setCollectionType] = useState<"PDC" | "Security Deposit" | "Other Amount">("PDC");
+  const [collectionType, setCollectionType] = useState<"PDC" | "Other Amount">("PDC");
   const [otherCollectionAmount, setOtherCollectionAmount] = useState("");
   const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
   const [batchPdcFile, setBatchPdcFile] = useState<File | null>(null);
@@ -1114,7 +1114,7 @@ export function PdcManagement() {
           unit_id: unitId,
           lease_id: lease.id,
           mode: "Cash",
-          depositType: collectionType === "Security Deposit" ? "SECURITY" : "SERVICE_FEE",
+          depositType: "SERVICE_FEE",
           ref: otherCollectionDescription.trim() || `${collectionType} collected by Cashier`,
           unit_name: lease.unit,
         });
@@ -1124,7 +1124,9 @@ export function PdcManagement() {
           date: new Date().toISOString().split("T")[0],
           name: `${collectionType} - ${lease.tenantName}`,
           debit: "Cash / Bank Collection",
-          credit: collectionType === "Security Deposit" ? "Security Deposit Liability" : "Tenant Receivable",
+          debit_code: "12100",
+          credit: "Tenant Receivable",
+          credit_code: "12413",
           amount,
           method: "Cashier Collection",
           property_name: lease.property,
@@ -1846,7 +1848,6 @@ export function PdcManagement() {
                 <SelectTrigger className="mt-1 h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PDC">Post-Dated Cheques (PDC)</SelectItem>
-                  <SelectItem value="Security Deposit">Security Deposit</SelectItem>
                   <SelectItem value="Other Amount">Other Amount / Service Fee</SelectItem>
                 </SelectContent>
               </Select>

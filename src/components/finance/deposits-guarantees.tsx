@@ -5,17 +5,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2 } from "lucide-react";
+import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2, Plus, ShieldCheck, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { settleDeposit } from "@/lib/finance/depositService";
+import { settleDeposit, collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
@@ -44,10 +47,7 @@ export interface DepositRecord {
   category?: "Reservation Advance" | "Qatar Cool" | "Kahramaa" | "Service Fee" | "Guarantee Cheque" | "Unclaimed Deposit" | "Unit Deposit";
 }
 
-function isSettledStatus(status: string | undefined): boolean {
-  const s = (status || "").toLowerCase();
-  return s === "settled" || s === "refunded";
-}
+
 
 // ── Helper to normalize deposit category for signature matching ────────────────
 function getDepositTypeKey(type: string): string {
@@ -233,6 +233,18 @@ export function DepositsGuarantees() {
   const [settleTarget, setSettleTarget] = useState<DepositRecord | null>(null);
   const [settleDeductions, setSettleDeductions] = useState("0");
   const [settleLoading, setSettleLoading] = useState(false);
+
+  // ── Collect Security Deposit modal state ─────────────────────────────────
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [collectLoading, setCollectLoading] = useState(false);
+  const [collectLeaseId, setCollectLeaseId] = useState("");
+  const [collectDepositType, setCollectDepositType] = useState<
+    "SECURITY" | "GUARANTEE" | "QATAR_COOL" | "KAHRAMAA" | "SERVICE_FEE" | "RESERVATION"
+  >("SECURITY");
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectMode, setCollectMode] = useState<"Cash" | "Bank Transfer" | "Cheque">("Bank Transfer");
+  const [collectRef, setCollectRef] = useState("");
+  const [collectDate, setCollectDate] = useState(new Date().toISOString().split("T")[0]);
 
   useEffect(() => {
     load();
@@ -512,6 +524,94 @@ export function DepositsGuarantees() {
     }
   }
 
+  // ── Collect a new security deposit ───────────────────────────────────────
+  async function handleCollectDeposit() {
+    const lease = leases?.find((l) => l.id === collectLeaseId);
+    const amount = parseFloat(collectAmount);
+    if (!lease) { toast.error("Please select a lease / tenant."); return; }
+    if (!amount || amount <= 0) { toast.error("Enter a valid amount."); return; }
+
+    setCollectLoading(true);
+    try {
+      const customerId = (lease as any).customerId || "";
+      const propertyId = (lease as any).propertyId || lease.property;
+      const unitId     = (lease as any).unitId || lease.unit;
+
+      await collectSecurityDeposit({
+        amount,
+        tenant_id:   customerId,
+        property_id: propertyId,
+        unit_id:     unitId,
+        lease_id:    lease.id,
+        mode:        collectMode === "Cash" ? "Cash" : "Bank",
+        depositType: collectDepositType,
+        ref:         collectRef.trim() || `${collectDepositType} deposit collected`,
+        unit_name:   lease.unit,
+      });
+
+      addFinanceStoreVoucher({
+        voucher_no:   `VCH-DEP-${Date.now()}`,
+        voucher_type: "Receipt Voucher",
+        date:         collectDate,
+        name:         `Security Deposit (${collectDepositType}) - ${lease.tenantName}`,
+        debit:        collectMode === "Cash" ? "Cash In Hand" : "Bank Operating Account",
+        debit_code:   collectMode === "Cash" ? "12100" : "12000",
+        credit:       "Security Deposit Liability",
+        credit_code:  collectDepositType === "SECURITY" ? "21500" : "21100",
+        amount,
+        method:       collectMode,
+        property_name: lease.property,
+        unit_ref:      lease.unit,
+        tenant_name:   lease.tenantName,
+      });
+
+      const receipt: TenantReceiptDetails = {
+        receiptNo:        `REC-DEP-${Date.now().toString().slice(-6)}`,
+        acknowledgementNo:`ACK-DEP-${lease.unit}-${Date.now().toString().slice(-4)}`,
+        date:             collectDate,
+        tenantName:       lease.tenantName || "Valued Tenant",
+        propertyName:     lease.property  || "Property",
+        unitRef:          lease.unit       || "Unit",
+        leaseStartDate:   lease.startDate  || collectDate,
+        leaseEndDate:     lease.endDate    || collectDate,
+        monthlyRent:      lease.monthlyRent || 0,
+        totalContractRent: lease.monthlyRent ? lease.monthlyRent * 12 : 0,
+        depositAmount:    amount,
+        depositMode:      collectMode,
+        pdcCount:         0,
+        pdcs:             [],
+        vouchers: [{
+          receiptNo: `DEP-RV-${Date.now().toString().slice(-4)}`,
+          name:      `${collectDepositType} Security Deposit Receipt`,
+          amount,
+          method:    collectMode,
+          debit:     collectMode === "Cash" ? "Cash In Hand (12100)" : "Bank Operating Account (12000)",
+          credit:    collectDepositType === "SECURITY" ? "Security Deposit Liability (21500)" : "Refundable Deposit Liability (21100)",
+        }],
+        totalCollected: amount,
+        cashierName:    "Finance Department",
+        notes: `Security Deposit collected: ${collectDepositType} — QAR ${amount.toLocaleString()} via ${collectMode}. Lease: ${lease.tenantName} | ${lease.property} | ${lease.unit}. ${collectRef ? `Ref: ${collectRef}` : ""}`,
+      };
+      setReceiptData(receipt);
+      setReceiptOpen(true);
+
+      // Reset form
+      setCollectOpen(false);
+      setCollectLeaseId("");
+      setCollectAmount("");
+      setCollectRef("");
+      setCollectDepositType("SECURITY");
+      setCollectMode("Bank Transfer");
+
+      toast.success(`Security Deposit of QAR ${amount.toLocaleString()} collected for ${lease.tenantName} · ${lease.unit}.`);
+      await load(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to collect deposit.");
+    } finally {
+      setCollectLoading(false);
+    }
+  }
+
   function handleViewReceipt(dep: DepositRecord) {
     const isSettled = dep.status === "Settled";
     const grossAmt = Number(dep.amount) || 0;
@@ -597,7 +697,16 @@ export function DepositsGuarantees() {
               Reservation Advances, Kahramaa, Qatar Cool, Service Fee Deposits, Unclaimed Deposits &amp; Guarantee Cheques Received ({deposits.length} records)
             </p>
           </div>
-          <Badge variant="outline">{deposits.length} Total</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{deposits.length} Total</Badge>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+              onClick={() => setCollectOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" /> Collect Security Deposit
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="mb-4 flex items-start gap-2.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/50 p-3 text-xs">
@@ -713,6 +822,117 @@ export function DepositsGuarantees() {
         onCancel={() => setSettleTarget(null)}
         loading={settleLoading}
       />
+
+      {/* ── COLLECT SECURITY DEPOSIT MODAL ─────────────────────────────── */}
+      <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
+        <DialogContent className="sm:max-w-[680px] max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" /> Collect Security Deposit
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Record a new security deposit payment. Posts double-entry GL and issues an official receipt.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1 text-xs">
+            {/* Lease / Tenant */}
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <Label className="text-[11px] font-semibold">Lease / Tenant Agreement <span className="text-destructive">*</span></Label>
+              <Select value={collectLeaseId} onValueChange={setCollectLeaseId}>
+                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select tenant lease" /></SelectTrigger>
+                <SelectContent>
+                  {(leases || []).map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Deposit type + amount row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Deposit Type <span className="text-destructive">*</span></Label>
+                <Select value={collectDepositType} onValueChange={(v) => setCollectDepositType(v as typeof collectDepositType)}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SECURITY">Security Deposit (GL 21500)</SelectItem>
+                    <SelectItem value="GUARANTEE">Guarantee Cheque (GL 21200)</SelectItem>
+                    <SelectItem value="RESERVATION">Reservation Advance (GL 21100001)</SelectItem>
+                    <SelectItem value="QATAR_COOL">Qatar Cool Deposit (GL 21100003)</SelectItem>
+                    <SelectItem value="KAHRAMAA">Kahramaa Deposit (GL 21100004)</SelectItem>
+                    <SelectItem value="SERVICE_FEE">Service Fee Deposit (GL 21100005)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Amount (QAR) <span className="text-destructive">*</span></Label>
+                <Input type="number" min="0" step="0.01" className="h-8 text-xs font-mono" placeholder="e.g. 8500" value={collectAmount} onChange={(e) => setCollectAmount(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Mode + Date row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Payment Mode</Label>
+                <Select value={collectMode} onValueChange={(v) => setCollectMode(v as typeof collectMode)}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Collection Date</Label>
+                <Input type="date" className="h-8 text-xs" value={collectDate} onChange={(e) => setCollectDate(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Reference note */}
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Reference / Notes (Optional)</Label>
+              <Textarea className="text-xs resize-none" rows={2} placeholder="e.g. Cheque No. QNB-00123, Bank transfer ref…" value={collectRef} onChange={(e) => setCollectRef(e.target.value)} />
+            </div>
+
+            {/* GL Preview */}
+            <div className="rounded-lg border bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/40 p-3 space-y-2">
+              <p className="text-[10px] font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider">Automatic Double-Entry GL Posting</p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 bg-background/80 rounded px-2 py-1.5 border">
+                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Debit</span>
+                  <span className="font-mono text-[10px] font-bold text-blue-700">{collectMode === "Cash" ? "GL 12100" : "GL 12000"}</span>
+                  <span className="text-xs">{collectMode === "Cash" ? "Cash In Hand" : "Bank Operating Account"}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-background/80 rounded px-2 py-1.5 border">
+                  <ArrowDownLeft className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Credit</span>
+                  <span className="font-mono text-[10px] font-bold text-blue-700">{collectDepositType === "SECURITY" ? "GL 21500" : collectDepositType === "GUARANTEE" ? "GL 21200" : "GL 21100"}</span>
+                  <span className="text-xs">{collectDepositType === "SECURITY" ? "Security Deposit Liability" : collectDepositType === "GUARANTEE" ? "Guarantee Cheque Liability" : "Refundable Deposit Liability"}</span>
+                </div>
+              </div>
+              {collectAmount && parseFloat(collectAmount) > 0 && (
+                <p className="text-[11px] text-blue-700 font-mono font-bold text-right">QAR {parseFloat(collectAmount).toLocaleString()}</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-3">
+            <Button variant="outline" onClick={() => setCollectOpen(false)} disabled={collectLoading}>Cancel</Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={handleCollectDeposit}
+              disabled={collectLoading || !collectLeaseId || !collectAmount}
+            >
+              {collectLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />Posting…</> : <><ShieldCheck className="h-3.5 w-3.5" /> Collect &amp; Issue Receipt</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} data={receiptData} />
     </>
