@@ -199,190 +199,56 @@ function AuthPage() {
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl font-bold tracking-tight">Welcome to ZYNO</CardTitle>
               <CardDescription>
-                Sign in with your enterprise account, OTP magic link, or register
+                Sign in to your account to continue
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="login" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 mb-6">
-                  <TabsTrigger id="tab-login" value="login">Password</TabsTrigger>
-                  <TabsTrigger value="otp">Magic Link</TabsTrigger>
-                  <TabsTrigger value="register">Register</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="login" className="space-y-4">
-                  <form onSubmit={handleSignIn} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          id="email" 
-                          type="email" 
-                          placeholder="name@example.com" 
-                          className="pl-9"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="password">Password</Label>
-                        <Link to="/auth" className="text-xs font-medium text-primary hover:underline">
-                          Forgot password?
-                        </Link>
-                      </div>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          id="password" 
-                          type={showPassword ? "text" : "password"} 
-                          className="pl-9 pr-9"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    <Button type="submit" className="w-full h-11" disabled={loading}>
-                      {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Sign in"}
-                    </Button>
-                  </form>
-                </TabsContent>
-
-                <TabsContent value="otp" className="space-y-4">
-                  {otpSent ? (
-                    <div className="text-center py-6 space-y-3">
-                      <Sparkles className="h-10 w-10 text-primary mx-auto" />
-                      <h3 className="font-semibold text-lg">Check your email</h3>
-                      <p className="text-sm text-muted-foreground">
-                        We sent a magic sign-in link to <span className="font-medium text-foreground">{email}</span>. Click the link in your email to log in instantly.
-                      </p>
-                      <Button variant="outline" size="sm" onClick={() => setOtpSent(false)} className="mt-2">
-                        Use different email
-                      </Button>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSendOtp} className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="otp-email">Email Address</Label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                          <Input 
-                            id="otp-email" 
-                            type="email" 
-                            placeholder="name@example.com" 
-                            className="pl-9"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <Button type="submit" className="w-full h-11" disabled={loading}>
-                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Send Magic Sign-in Link"}
-                      </Button>
-                    </form>
-                  )}
-                </TabsContent>
-                
-                <TabsContent value="register" className="space-y-4">
-                  <form onSubmit={handleSignUp} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-name">Full Name</Label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          id="signup-name" 
-                          placeholder="John Doe" 
-                          className="pl-9"
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          id="signup-email" 
-                          type="email" 
-                          placeholder="name@example.com" 
-                          className="pl-9"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password">Password</Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          id="signup-password" 
-                          type={showPassword ? "text" : "password"} 
-                          className="pl-9 pr-9"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                          minLength={6}
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-3 pt-2">
-                      <Label>I want to use ZYNO as a:</Label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Button
-                          type="button"
-                          variant={role === "GUEST" ? "default" : "outline"}
-                          className={`h-auto py-3 justify-start ${role === "GUEST" ? "ring-2 ring-primary ring-offset-1" : ""}`}
-                          onClick={() => setRole("GUEST")}
-                        >
-                          <div className="flex flex-col items-start gap-1">
-                            <span className="font-semibold text-sm">Tenant</span>
-                            <span className="text-xs font-normal opacity-80">Book & manage</span>
-                          </div>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={role === "HOST" ? "default" : "outline"}
-                          className={`h-auto py-3 justify-start ${role === "HOST" ? "ring-2 ring-primary ring-offset-1" : ""}`}
-                          onClick={() => setRole("HOST")}
-                        >
-                          <div className="flex flex-col items-start gap-1">
-                            <span className="font-semibold text-sm">Host</span>
-                            <span className="text-xs font-normal opacity-80">List properties</span>
-                          </div>
-                        </Button>
-                      </div>
-                    </div>
-                    
-                    <Button type="submit" className="w-full h-11 mt-4" disabled={loading}>
-                      {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create account"}
-                    </Button>
-                  </form>
-                </TabsContent>
-              </Tabs>
+              <form onSubmit={handleSignIn} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      id="email" 
+                      type="email" 
+                      placeholder="name@example.com" 
+                      className="pl-9"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <Link to="/auth" className="text-xs font-medium text-primary hover:underline">
+                      Forgot password?
+                    </Link>
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      id="password" 
+                      type={showPassword ? "text" : "password"} 
+                      className="pl-9 pr-9"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <Button type="submit" className="w-full h-11" disabled={loading}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Sign in"}
+                </Button>
+              </form>
 
               <div className="mt-8 pt-6 border-t border-border">
                 <div className="relative mb-6">
