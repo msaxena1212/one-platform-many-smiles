@@ -171,7 +171,8 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             bg: "bg-sky-500/10",
             items: [
               { to: "/portal", label: "Overview", icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
-              { to: "/portal/payments", label: "Payments", icon: <CreditCard className="h-3.5 w-3.5" /> },
+              { to: "/portal/lease", label: "My Lease", icon: <FileSignature className="h-3.5 w-3.5" /> },
+              { to: "/portal/payments", label: "Payments & Invoices", icon: <CreditCard className="h-3.5 w-3.5" /> },
               { to: "/portal/documents", label: "Documents", icon: <FileText className="h-3.5 w-3.5" /> },
             ],
           },
@@ -185,14 +186,13 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
         activeBg: "bg-orange-500",
         groups: [
           {
-            group: "Requests",
+            group: "Building Services",
             icon: <Wrench className="h-3.5 w-3.5" />,
             color: "text-orange-500",
             bg: "bg-orange-500/10",
             items: [
-              { to: "/portal/tickets", label: "Maintenance Tickets", icon: <Ticket className="h-3.5 w-3.5" /> },
-              { to: "/portal/bookings", label: "Bookings", icon: <FileSignature className="h-3.5 w-3.5" /> },
-              { to: "/portal/community", label: "Community", icon: <Users className="h-3.5 w-3.5" /> },
+              { to: "/portal/tickets", label: "Maintenance", icon: <Ticket className="h-3.5 w-3.5" /> },
+              { to: "/portal/bookings", label: "Facility Bookings", icon: <Calendar className="h-3.5 w-3.5" /> },
             ],
           },
         ],
@@ -205,7 +205,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
         activeBg: "bg-slate-500",
         groups: [
           {
-            group: "Account Settings",
+            group: "Account",
             icon: <Settings className="h-3.5 w-3.5" />,
             color: "text-slate-500",
             bg: "bg-slate-500/10",
@@ -217,13 +217,13 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       },
     ],
     titleRules: [
-      { match: "/portal", title: "Tenant Overview" },
-      { match: "/portal/tickets", title: "Maintenance Tickets" },
-      { match: "/portal/payments", title: "Payments" },
+      { match: "/portal", title: "My Home" },
+      { match: "/portal/lease", title: "My Lease" },
+      { match: "/portal/payments", title: "Payments & Invoices" },
       { match: "/portal/documents", title: "Documents" },
+      { match: "/portal/tickets", title: "Maintenance Tickets" },
+      { match: "/portal/bookings", title: "Facility Bookings" },
       { match: "/portal/settings", title: "Account Settings" },
-      { match: "/portal/bookings", title: "Bookings" },
-      { match: "/portal/community", title: "Community" },
     ],
   },
 

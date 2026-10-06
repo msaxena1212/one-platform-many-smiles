@@ -33,14 +33,14 @@ function AdminDashboard() {
           unitsRes,
           leasesRes,
           { data: ticketsData, count: ticketCount },
-          { data: paymentsData },
+          { data: pdcsData },
           { data: expiringData }
         ] = await Promise.all([
           fetchAllProperties().catch(() => []),
           supabase.from("units").select("id, unit_ref, unit_name, status, lease_status, current_tenant, contract_no, contract_start_date, contract_end_date, current_rent, price, property_id"),
           supabase.from("leases").select("*, properties(title), units(unit_number), customers:customer_id(full_name)"),
           supabase.from("maintenance_tickets").select("*", { count: "exact" }).in("status", ["OPEN", "IN_PROGRESS", "ASSIGNED", "new", "assigned", "in_progress"]).order("created_at", { ascending: false }).limit(5),
-          supabase.from("payments").select("amount, paid_at, created_at").limit(100),
+          supabase.from("pdcs").select("amount, status, deposit_date, maturity_date, collection_date, created_at").limit(1000),
           supabase.from("leases").select("*, properties(title)").in("lease_status", ["ACTIVE", "active"]).order("end_date", { ascending: true }).limit(5),
         ]);
 
@@ -117,15 +117,28 @@ function AdminDashboard() {
           }
         });
 
-        // Calculate MTD collections
+        // Calculate MTD collections (from cleared PDCs or occupied rent roll)
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+        
         let mtdTotal = 0;
-        if (paymentsData && paymentsData.length > 0) {
-          mtdTotal = paymentsData.reduce((sum, p) => {
-            const pTime = new Date(p.paid_at || p.created_at).getTime();
-            return pTime >= startOfMonth ? sum + Number(p.amount || 0) : sum;
-          }, 0);
+        if (pdcsData && pdcsData.length > 0) {
+          const clearedPdcs = pdcsData.filter((p: any) => {
+            const dateStr = p.collection_date || p.deposit_date || p.maturity_date || p.created_at;
+            if (!dateStr) return false;
+            const pTime = new Date(dateStr).getTime();
+            const isMtd = pTime >= startOfMonth && pTime <= endOfMonth;
+            const isCleared = ["cleared", "deposited", "collected", "received"].includes((p.status || "").toLowerCase());
+            return isMtd && isCleared;
+          });
+
+          mtdTotal = clearedPdcs.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+        }
+
+        // If no explicit PDCs match current month, calculate from active occupied monthly rent
+        if (mtdTotal === 0 && occupiedUnits.length > 0) {
+          mtdTotal = occupiedUnits.reduce((sum: number, u: any) => sum + Number(u.current_rent || u.price || 0), 0);
         }
 
         setProperties(props);

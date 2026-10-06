@@ -63,8 +63,8 @@ import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approval
 import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
 import { Route as PortalSettingsRouteImport } from './routes/portal.settings'
 import { Route as PortalPaymentsRouteImport } from './routes/portal.payments'
+import { Route as PortalLeaseRouteImport } from './routes/portal.lease'
 import { Route as PortalDocumentsRouteImport } from './routes/portal.documents'
-import { Route as PortalCommunityRouteImport } from './routes/portal.community'
 import { Route as PortalBookingsRouteImport } from './routes/portal.bookings'
 import { Route as OwnerStatementsRouteImport } from './routes/owner.statements'
 import { Route as OwnerPropertiesRouteImport } from './routes/owner.properties'
@@ -105,8 +105,6 @@ import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
 import { Route as AdminLeasesIndexRouteImport } from './routes/admin.leases.index'
 import { Route as PropMgrUnitsPricingRouteImport } from './routes/prop-mgr.units.pricing'
 import { Route as PropMgrManageIdRouteImport } from './routes/prop-mgr.manage.$id'
-import { Route as PortalCommunityReviewsRouteImport } from './routes/portal.community.reviews'
-import { Route as PortalCommunityEventsRouteImport } from './routes/portal.community.events'
 import { Route as OwnerManageIdRouteImport } from './routes/owner.manage.$id'
 import { Route as AdminManageIdRouteImport } from './routes/admin.manage.$id'
 import { Route as AdminLeasesNewRouteImport } from './routes/admin.leases.new'
@@ -382,14 +380,14 @@ const PortalPaymentsRoute = PortalPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => PortalRoute,
 } as any)
+const PortalLeaseRoute = PortalLeaseRouteImport.update({
+  id: '/lease',
+  path: '/lease',
+  getParentRoute: () => PortalRoute,
+} as any)
 const PortalDocumentsRoute = PortalDocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
-  getParentRoute: () => PortalRoute,
-} as any)
-const PortalCommunityRoute = PortalCommunityRouteImport.update({
-  id: '/community',
-  path: '/community',
   getParentRoute: () => PortalRoute,
 } as any)
 const PortalBookingsRoute = PortalBookingsRouteImport.update({
@@ -592,16 +590,6 @@ const PropMgrManageIdRoute = PropMgrManageIdRouteImport.update({
   path: '/manage/$id',
   getParentRoute: () => PropMgrRoute,
 } as any)
-const PortalCommunityReviewsRoute = PortalCommunityReviewsRouteImport.update({
-  id: '/reviews',
-  path: '/reviews',
-  getParentRoute: () => PortalCommunityRoute,
-} as any)
-const PortalCommunityEventsRoute = PortalCommunityEventsRouteImport.update({
-  id: '/events',
-  path: '/events',
-  getParentRoute: () => PortalCommunityRoute,
-} as any)
 const OwnerManageIdRoute = OwnerManageIdRouteImport.update({
   id: '/manage/$id',
   path: '/manage/$id',
@@ -675,8 +663,8 @@ export interface FileRoutesByFullPath {
   '/owner/properties': typeof OwnerPropertiesRoute
   '/owner/statements': typeof OwnerStatementsRoute
   '/portal/bookings': typeof PortalBookingsRoute
-  '/portal/community': typeof PortalCommunityRouteWithChildren
   '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
@@ -721,8 +709,6 @@ export interface FileRoutesByFullPath {
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
-  '/portal/community/events': typeof PortalCommunityEventsRoute
-  '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/leases/': typeof AdminLeasesIndexRoute
@@ -770,8 +756,8 @@ export interface FileRoutesByTo {
   '/owner/properties': typeof OwnerPropertiesRoute
   '/owner/statements': typeof OwnerStatementsRoute
   '/portal/bookings': typeof PortalBookingsRoute
-  '/portal/community': typeof PortalCommunityRouteWithChildren
   '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
@@ -816,8 +802,6 @@ export interface FileRoutesByTo {
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
-  '/portal/community/events': typeof PortalCommunityEventsRoute
-  '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/leases': typeof AdminLeasesIndexRoute
@@ -875,8 +859,8 @@ export interface FileRoutesById {
   '/owner/properties': typeof OwnerPropertiesRoute
   '/owner/statements': typeof OwnerStatementsRoute
   '/portal/bookings': typeof PortalBookingsRoute
-  '/portal/community': typeof PortalCommunityRouteWithChildren
   '/portal/documents': typeof PortalDocumentsRoute
+  '/portal/lease': typeof PortalLeaseRoute
   '/portal/payments': typeof PortalPaymentsRoute
   '/portal/settings': typeof PortalSettingsRoute
   '/portal/tickets': typeof PortalTicketsRoute
@@ -921,8 +905,6 @@ export interface FileRoutesById {
   '/admin/leases/new': typeof AdminLeasesNewRoute
   '/admin/manage/$id': typeof AdminManageIdRoute
   '/owner/manage/$id': typeof OwnerManageIdRoute
-  '/portal/community/events': typeof PortalCommunityEventsRoute
-  '/portal/community/reviews': typeof PortalCommunityReviewsRoute
   '/prop-mgr/manage/$id': typeof PropMgrManageIdRoute
   '/prop-mgr/units/pricing': typeof PropMgrUnitsPricingRoute
   '/admin/leases/': typeof AdminLeasesIndexRoute
@@ -981,8 +963,8 @@ export interface FileRouteTypes {
     | '/owner/properties'
     | '/owner/statements'
     | '/portal/bookings'
-    | '/portal/community'
     | '/portal/documents'
+    | '/portal/lease'
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
@@ -1027,8 +1009,6 @@ export interface FileRouteTypes {
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
-    | '/portal/community/events'
-    | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
     | '/admin/leases/'
@@ -1076,8 +1056,8 @@ export interface FileRouteTypes {
     | '/owner/properties'
     | '/owner/statements'
     | '/portal/bookings'
-    | '/portal/community'
     | '/portal/documents'
+    | '/portal/lease'
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
@@ -1122,8 +1102,6 @@ export interface FileRouteTypes {
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
-    | '/portal/community/events'
-    | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
     | '/admin/leases'
@@ -1180,8 +1158,8 @@ export interface FileRouteTypes {
     | '/owner/properties'
     | '/owner/statements'
     | '/portal/bookings'
-    | '/portal/community'
     | '/portal/documents'
+    | '/portal/lease'
     | '/portal/payments'
     | '/portal/settings'
     | '/portal/tickets'
@@ -1226,8 +1204,6 @@ export interface FileRouteTypes {
     | '/admin/leases/new'
     | '/admin/manage/$id'
     | '/owner/manage/$id'
-    | '/portal/community/events'
-    | '/portal/community/reviews'
     | '/prop-mgr/manage/$id'
     | '/prop-mgr/units/pricing'
     | '/admin/leases/'
@@ -1631,18 +1607,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalPaymentsRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/lease': {
+      id: '/portal/lease'
+      path: '/lease'
+      fullPath: '/portal/lease'
+      preLoaderRoute: typeof PortalLeaseRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/portal/documents': {
       id: '/portal/documents'
       path: '/documents'
       fullPath: '/portal/documents'
       preLoaderRoute: typeof PortalDocumentsRouteImport
-      parentRoute: typeof PortalRoute
-    }
-    '/portal/community': {
-      id: '/portal/community'
-      path: '/community'
-      fullPath: '/portal/community'
-      preLoaderRoute: typeof PortalCommunityRouteImport
       parentRoute: typeof PortalRoute
     }
     '/portal/bookings': {
@@ -1925,20 +1901,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropMgrManageIdRouteImport
       parentRoute: typeof PropMgrRoute
     }
-    '/portal/community/reviews': {
-      id: '/portal/community/reviews'
-      path: '/reviews'
-      fullPath: '/portal/community/reviews'
-      preLoaderRoute: typeof PortalCommunityReviewsRouteImport
-      parentRoute: typeof PortalCommunityRoute
-    }
-    '/portal/community/events': {
-      id: '/portal/community/events'
-      path: '/events'
-      fullPath: '/portal/community/events'
-      preLoaderRoute: typeof PortalCommunityEventsRouteImport
-      parentRoute: typeof PortalCommunityRoute
-    }
     '/owner/manage/$id': {
       id: '/owner/manage/$id'
       path: '/manage/$id'
@@ -2123,24 +2085,10 @@ const OwnerRouteChildren: OwnerRouteChildren = {
 
 const OwnerRouteWithChildren = OwnerRoute._addFileChildren(OwnerRouteChildren)
 
-interface PortalCommunityRouteChildren {
-  PortalCommunityEventsRoute: typeof PortalCommunityEventsRoute
-  PortalCommunityReviewsRoute: typeof PortalCommunityReviewsRoute
-}
-
-const PortalCommunityRouteChildren: PortalCommunityRouteChildren = {
-  PortalCommunityEventsRoute: PortalCommunityEventsRoute,
-  PortalCommunityReviewsRoute: PortalCommunityReviewsRoute,
-}
-
-const PortalCommunityRouteWithChildren = PortalCommunityRoute._addFileChildren(
-  PortalCommunityRouteChildren,
-)
-
 interface PortalRouteChildren {
   PortalBookingsRoute: typeof PortalBookingsRoute
-  PortalCommunityRoute: typeof PortalCommunityRouteWithChildren
   PortalDocumentsRoute: typeof PortalDocumentsRoute
+  PortalLeaseRoute: typeof PortalLeaseRoute
   PortalPaymentsRoute: typeof PortalPaymentsRoute
   PortalSettingsRoute: typeof PortalSettingsRoute
   PortalTicketsRoute: typeof PortalTicketsRoute
@@ -2149,8 +2097,8 @@ interface PortalRouteChildren {
 
 const PortalRouteChildren: PortalRouteChildren = {
   PortalBookingsRoute: PortalBookingsRoute,
-  PortalCommunityRoute: PortalCommunityRouteWithChildren,
   PortalDocumentsRoute: PortalDocumentsRoute,
+  PortalLeaseRoute: PortalLeaseRoute,
   PortalPaymentsRoute: PortalPaymentsRoute,
   PortalSettingsRoute: PortalSettingsRoute,
   PortalTicketsRoute: PortalTicketsRoute,
