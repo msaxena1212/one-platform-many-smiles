@@ -99,25 +99,46 @@ export function getEssNavModule(baseRoute: string): NavModule {
     activeBg: "bg-teal-500",
     groups: [
       {
-        group: "Employee Self-Service (ESS)",
-        icon: <UserCheck className="h-3.5 w-3.5" />,
+        group: "Profile & Security",
+        icon: <Users className="h-3.5 w-3.5" />,
         color: "text-teal-500",
         bg: "bg-teal-500/10",
         items: [
           { to: baseRoute as any, search: { tab: "my_details" }, label: "My Profile Details", icon: <Users className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "change_password" }, label: "Change Password", icon: <Key className="h-3.5 w-3.5" /> },
+        ],
+      },
+      {
+        group: "Attendance & Leaves",
+        icon: <Clock className="h-3.5 w-3.5" />,
+        color: "text-blue-500",
+        bg: "bg-blue-500/10",
+        items: [
           { to: baseRoute as any, search: { tab: "attendance" }, label: "Punch Attendance", icon: <Clock className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "leaves" }, label: "Apply Leave", icon: <Calendar className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "cancel_leave" }, label: "Cancel Leave", icon: <MinusCircle className="h-3.5 w-3.5" /> },
+        ],
+      },
+      {
+        group: "Payroll & Claims",
+        icon: <DollarSign className="h-3.5 w-3.5" />,
+        color: "text-emerald-500",
+        bg: "bg-emerald-500/10",
+        items: [
           { to: baseRoute as any, search: { tab: "payslips" }, label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "tax_declaration" }, label: "Tax Declaration", icon: <FileText className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "expenses" }, label: "Claim Expense", icon: <Receipt className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "loans" }, label: "Apply Loan", icon: <CreditCard className="h-3.5 w-3.5" /> },
-          { to: baseRoute as any, search: { tab: "appraisal" }, label: "Self Assessment", icon: <Award className="h-3.5 w-3.5" /> },
-          { to: baseRoute as any, search: { tab: "learning" }, label: "Learning Gallery", icon: <BookOpen className="h-3.5 w-3.5" /> },
+        ],
+      },
+      {
+        group: "Support & Exit",
+        icon: <HelpCircle className="h-3.5 w-3.5" />,
+        color: "text-rose-500",
+        bg: "bg-rose-500/10",
+        items: [
           { to: baseRoute as any, search: { tab: "helpdesk" }, label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-          { to: baseRoute as any, search: { tab: "templates" }, label: "Templates & Letters", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "resignation" }, label: "Notice & Exit", icon: <LogOut className="h-3.5 w-3.5" /> },
-          { to: baseRoute as any, search: { tab: "change_password" }, label: "Change Password", icon: <Key className="h-3.5 w-3.5" /> },
         ],
       },
     ],

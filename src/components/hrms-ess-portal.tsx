@@ -319,10 +319,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
     tax_declaration: { title: "Tax & Statutory Declaration", subtitle: "Annual tax regime declaration, HRA rent receipts, and investment proofs", icon: FileText },
     expenses: { title: "Claim Expense", subtitle: "Submit travel reimbursements, client entertainment, and petty claims", icon: Receipt },
     loans: { title: "Apply Loan & Advances", subtitle: "Staff emergency advances, loan requests, and EMI recovery schedules", icon: CreditCard },
-    appraisal: { title: "Self Assessment", subtitle: "Annual KPA appraisal evaluation, self-reflection remarks, and goal tracking", icon: Award },
-    learning: { title: "Learning Gallery", subtitle: "Professional real estate, ERP training, and regulatory compliance courses", icon: BookOpen },
     helpdesk: { title: "Help Desk", subtitle: "HR service tickets, IT requests, and workplace grievance management", icon: HelpCircle },
-    templates: { title: "Templates & Letters", subtitle: "Download official salary certificates, NOC letters, and policy templates", icon: Download },
     resignation: { title: "Notice & Exit", subtitle: "Formal resignation notice, handover checklist, and gratuity tracking", icon: LogOut },
     change_password: { title: "Change Password", subtitle: "Account credentials, login security, and two-factor authentication", icon: Key },
   };
@@ -958,112 +955,9 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
         </Card>
       )}
 
-      {/* ── TAB 9: SELF ASSESSMENT & REVIEWS ──────────────────────────────────── */}
-      {activeTab === "appraisal" && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Self Assessment & Annual KPA Evaluation</CardTitle>
-              <CardDescription>Complete your personal appraisal score and review key performance areas</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 rounded-xl border bg-card space-y-3">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-bold text-sm">2026 Annual Appraisal Cycle</h4>
-                    <p className="text-xs text-muted-foreground">Self-assessment phase open until 30 Sept 2026</p>
-                  </div>
-                  <Badge className="bg-emerald-600 text-white">Active Review</Badge>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
-                  <div className="p-3 rounded border">
-                    <span className="text-muted-foreground block">Key Goal 1</span>
-                    <span className="font-semibold">Lease Renewals & Tenant Retention</span>
-                    <span className="block text-emerald-600 text-[11px] mt-1">Status: Exceeded Target (98%)</span>
-                  </div>
-                  <div className="p-3 rounded border">
-                    <span className="text-muted-foreground block">Key Goal 2</span>
-                    <span className="font-semibold">Move-In Inspection Turnaround</span>
-                    <span className="block text-emerald-600 text-[11px] mt-1">Status: On Track (&lt;24h)</span>
-                  </div>
-                  <div className="p-3 rounded border">
-                    <span className="text-muted-foreground block">Key Goal 3</span>
-                    <span className="font-semibold">Audit & Lease Archival Compliance</span>
-                    <span className="block text-blue-600 text-[11px] mt-1">Status: 100% Compliant</span>
-                  </div>
-                </div>
 
-                <div className="pt-2">
-                  <Label className="text-xs font-semibold">Employee Self-Reflection Summary</Label>
-                  <Textarea
-                    rows={3}
-                    placeholder="Document your key achievements, challenges solved, and development goals..."
-                    className="mt-1 text-xs"
-                    defaultValue="Achieved 104% of quarterly leasing target and assisted with ERP automation onboarding."
-                  />
-                  <div className="flex justify-end mt-2">
-                    <Button size="sm" onClick={() => toast.success("Self assessment remarks saved!")}>
-                      Save Assessment Draft
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── TAB 10: LEARNING GALLERY ───────────────────────────────────────────── */}
-      {activeTab === "learning" && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base font-semibold">Learning Gallery & Course Enrollments</CardTitle>
-              <CardDescription>Professional real estate, ERP, and compliance training modules</CardDescription>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => toast.info("Browsing course catalog...")}>
-              Browse Full Catalog
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {myCourses.map((c) => (
-                <div key={c.id} className="p-4 rounded-xl border bg-card space-y-2 hover:border-primary/50 transition-colors flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-start">
-                      <Badge variant="outline" className="text-[10px]">{c.category}</Badge>
-                      <Badge variant={c.status === "Completed" ? "default" : "secondary"} className="text-[10px]">
-                        {c.status}
-                      </Badge>
-                    </div>
-                    <h4 className="font-bold text-xs leading-snug line-clamp-2">{c.title}</h4>
-                  </div>
-                  <div className="space-y-2 pt-2">
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>Progress:</span>
-                      <span className="font-semibold text-primary">{c.progress}</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                      <div className="bg-primary h-1.5 rounded-full" style={{ width: c.progress }} />
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full text-xs mt-2"
-                      onClick={() => toast.info(`Resuming ${c.title}...`)}
-                    >
-                      Resume Course
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── TAB 11: HELP DESK & COMPLAINTS ─────────────────────────────────────── */}
+      {/* ── HELP DESK & TICKETS ────────────────────────────────────────── */}
       {activeTab === "helpdesk" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -1108,43 +1002,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
         </Card>
       )}
 
-      {/* ── TAB 12: TEMPLATES & LETTERS ────────────────────────────────────────── */}
-      {activeTab === "templates" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base font-semibold">Official HR Templates & Letters</CardTitle>
-            <CardDescription>Download company letters, salary certificates, NOCs, and official declaration forms</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { title: "Standard Salary Certificate & Embassy NOC", code: "TMPL-NOC", type: "Word / PDF", desc: "For bank loans, credit cards, and international embassy visa applications" },
-                { title: "Annual Income Tax & Remittance Declaration Form", code: "FORM-TAX-2026", type: "PDF Form", desc: "Statutory tax deduction and home country remittance exemption proof" },
-                { title: "Company Asset & IT Equipment Clearance Handover", code: "FORM-ASSET-CL", type: "PDF Form", desc: "Official clearance template for laptop, monitors, and access keyfobs" },
-                { title: "Employee Health & Group Insurance Claim Form", code: "FORM-INSUR-MED", type: "PDF Form", desc: "Reimbursement form for medical diagnostics and hospital treatments" },
-              ].map((doc, idx) => (
-                <div key={idx} className="p-4 rounded-xl border bg-card flex justify-between items-center gap-4">
-                  <div>
-                    <h4 className="font-bold text-xs">{doc.title}</h4>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{doc.desc}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono mt-1">{doc.code} • {doc.type}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => toast.success(`Downloaded ${doc.title}`)}
-                    className="h-8 text-xs gap-1 shrink-0"
-                  >
-                    <Download className="h-3.5 w-3.5" /> Download
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── TAB 13: RESIGNATION & NOTICE ───────────────────────────────────────── */}
+      {/* ── RESIGNATION & NOTICE ───────────────────────────────────────── */}
       {activeTab === "resignation" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
