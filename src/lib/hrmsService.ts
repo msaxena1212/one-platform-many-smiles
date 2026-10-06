@@ -714,14 +714,18 @@ export const HrmsApi = {
         const overtimeMinutes = empAttendance.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
         const overtimeHours = Math.round((overtimeMinutes / 60) * 10) / 10;
         
-        // OT hourly rate: (Basic / 240 hours) * 1.25 standard Qatar labor multiplier
+        // OT hourly rate: (Basic / 240 hours) * 1.25 standard Qatar labor law multiplier
         const hourlyRate = (basic / 240);
         const overtimePay = Math.round(overtimeHours * hourlyRate * 1.25);
 
         const gross = basic + allowances + overtimePay;
-        const statutory = gross > 5000 ? Math.round(gross * 0.05) : 0;
         
-        // Loan deductions
+        // Qatar Tax System: 0% Personal Income Tax / 0% TDS
+        // Only Qatari Nationals have statutory GRSA Pension deduction (5% employee share on Basic+Social), expats have 0 statutory tax deductions
+        const isQatari = String(emp.nationality || '').toLowerCase().includes('qatar');
+        const statutory = isQatari ? Math.round((basic + hra) * 0.05) : 0;
+        
+        // Loan / Advance deductions
         const empLoan = activeLoans?.find(l => l.employee_id === emp.id);
         const loanDeduction = Number(empLoan?.monthly_deduction) || 0;
 

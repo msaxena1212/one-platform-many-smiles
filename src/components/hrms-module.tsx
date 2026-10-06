@@ -1806,6 +1806,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       { key: "grades", label: "Grade Bands (G1 - Executive)" },
                       { key: "employment_types", label: "Employment Types" },
                       { key: "contract_types", label: "Contract Types & Tenancy" },
+                      { key: "leave_types", label: "Leave Types & Quotas" },
+                      { key: "document_types", label: "Document Types & Verification" },
                       { key: "recruitment_reasons", label: "Recruitment Reasons" },
                       { key: "notice_periods", label: "Notice Period Rules" },
                       { key: "kt_masters", label: "Knowledge Transfer (KT)" },
@@ -1834,6 +1836,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       { key: "statutory_components", label: "Statutory Deductions & EOSG" },
                       { key: "salary_templates", label: "Salary Structure Templates" },
                       { key: "tax_slabs", label: "Tax Slabs & Exemptions" },
+                      { key: "loan_types", label: "Staff Loan & Advance Types" },
                     ],
                   },
                   {

@@ -126,7 +126,7 @@ export function getEssNavModule(baseRoute: string): NavModule {
         bg: "bg-emerald-500/10",
         items: [
           { to: baseRoute as any, search: { tab: "payslips" }, label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-          { to: baseRoute as any, search: { tab: "tax_declaration" }, label: "Tax Declaration", icon: <FileText className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "statutory_gratuity" }, label: "Statutory & Gratuity", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "expenses" }, label: "Claim Expense", icon: <Receipt className="h-3.5 w-3.5" /> },
           { to: baseRoute as any, search: { tab: "loans" }, label: "Apply Loan", icon: <CreditCard className="h-3.5 w-3.5" /> },
         ],

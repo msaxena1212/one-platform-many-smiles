@@ -72,6 +72,8 @@ export function EmployeeOnboardingWizard({
     banks: MasterItem[];
     genders: MasterItem[];
     employeeStatuses: MasterItem[];
+    documentTypes: MasterItem[];
+    leaveTypes: MasterItem[];
   }>({
     companies: [],
     branches: [],
@@ -89,6 +91,8 @@ export function EmployeeOnboardingWizard({
     banks: [],
     genders: [],
     employeeStatuses: [],
+    documentTypes: [],
+    leaveTypes: [],
   });
 
   // Step 1: Basic Information
@@ -1526,13 +1530,22 @@ export function EmployeeOnboardingWizard({
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="QID / National ID">QID / National ID</SelectItem>
-                        <SelectItem value="Passport Copy">Passport Copy</SelectItem>
-                        <SelectItem value="Driving License">Driving License</SelectItem>
-                        <SelectItem value="Educational Certificate">Educational Certificate</SelectItem>
-                        <SelectItem value="Previous Experience Letter">Previous Experience Letter</SelectItem>
-                        <SelectItem value="Police Clearance Certificate">Police Clearance Certificate</SelectItem>
+                      <SelectContent className="max-h-56">
+                        {(masters.documentTypes || []).map((d) => (
+                          <SelectItem key={d.id} value={d.name}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                        {(!masters.documentTypes || masters.documentTypes.length === 0) && (
+                          <>
+                            <SelectItem value="Qatar ID (QID / Residence Card)">Qatar ID (QID / Residence Card)</SelectItem>
+                            <SelectItem value="Passport & Bio Page">Passport & Bio Page</SelectItem>
+                            <SelectItem value="Qatar Driving License">Qatar Driving License</SelectItem>
+                            <SelectItem value="Academic & Degree Certificate">Academic & Degree Certificate</SelectItem>
+                            <SelectItem value="Ministry Attested Labor Contract">Ministry Attested Labor Contract</SelectItem>
+                            <SelectItem value="Police Clearance Certificate (PCC)">Police Clearance Certificate (PCC)</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

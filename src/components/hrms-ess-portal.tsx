@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { HrmsApi, type HrmsLeaveType } from "@/lib/hrmsService";
+import { HrmsMastersApi, type MasterItem } from "@/lib/hrmsMastersService";
 
 export interface HrmsEssPortalProps {
   currentEmployee?: any;
@@ -63,6 +64,10 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
   }, [activeTabProp]);
 
   const [leaveTypes, setLeaveTypes] = useState<HrmsLeaveType[]>([]);
+  const [masterLeaveTypes, setMasterLeaveTypes] = useState<MasterItem[]>([]);
+  const [masterExpenseTypes, setMasterExpenseTypes] = useState<MasterItem[]>([]);
+  const [masterLoanTypes, setMasterLoanTypes] = useState<MasterItem[]>([]);
+  const [masterTicketCategories, setMasterTicketCategories] = useState<MasterItem[]>([]);
   const [myLeaves, setMyLeaves] = useState<any[]>([]);
   const [myAttendance, setMyAttendance] = useState<any[]>([]);
   const [myPayslips, setMyPayslips] = useState<any[]>([]);
@@ -91,14 +96,15 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
 
   // Forms
   const [leaveForm, setLeaveForm] = useState({
-    leave_type: "Annual Leave",
+    leave_type: "Annual Leave (30 Calendar Days)",
     start_date: new Date().toISOString().split("T")[0],
     end_date: new Date().toISOString().split("T")[0],
+    days_count: 1,
     reason: "",
   });
 
   const [expenseForm, setExpenseForm] = useState({
-    type: "Travel Expense",
+    type: "Local Travel & Inspection Fuel (Travel Expense)",
     title: "",
     amount: 150,
     date: new Date().toISOString().split("T")[0],
@@ -107,6 +113,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
   });
 
   const [loanForm, setLoanForm] = useState({
+    loan_type: "Annual Housing Advance Loan",
     amount: 5000,
     tenure_months: 6,
     reason: "Personal Emergency / Relocation",
@@ -119,7 +126,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
   });
 
   const [ticketForm, setTicketForm] = useState({
-    category: "HR Letters",
+    category: "HR & Salary Certificate Requests",
     subject: "",
     description: "",
   });
@@ -151,8 +158,19 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
 
   const loadEssData = async () => {
     try {
-      const types = await HrmsApi.getLeaveTypes();
+      const [types, mLeaves, mExpenses, mLoans, mTickets] = await Promise.all([
+        HrmsApi.getLeaveTypes(),
+        HrmsMastersApi.getMasterItems("leave_types"),
+        HrmsMastersApi.getMasterItems("expense_types"),
+        HrmsMastersApi.getMasterItems("loan_types"),
+        HrmsMastersApi.getMasterItems("ticket_categories")
+      ]);
+
       setLeaveTypes(types);
+      setMasterLeaveTypes(mLeaves);
+      setMasterExpenseTypes(mExpenses);
+      setMasterLoanTypes(mLoans);
+      setMasterTicketCategories(mTickets);
 
       // Seeded mock user data
       setMyLeaves([
@@ -314,7 +332,8 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
     leaves: { title: "Apply Leave", subtitle: "Submit leave requests and track leave balance quotas across cycles", icon: Calendar },
     cancel_leave: { title: "Cancel Leave", subtitle: "Cancel pending or approved leave requests before commencement", icon: XCircle },
     payslips: { title: "My Payslips", subtitle: "Disbursed monthly payroll slips with component breakdown and PDF receipts", icon: DollarSign },
-    tax_declaration: { title: "Tax & Statutory Declaration", subtitle: "Annual tax regime declaration, HRA rent receipts, and investment proofs", icon: FileText },
+    statutory_gratuity: { title: "Statutory & Gratuity", subtitle: "Qatar Labor Law compliance, 0% Tax, WPS, and EOSB Gratuity accrual", icon: ShieldCheck },
+    tax_declaration: { title: "Statutory & Gratuity", subtitle: "Qatar Labor Law compliance, 0% Tax, WPS, and EOSB Gratuity accrual", icon: ShieldCheck },
     expenses: { title: "Claim Expense", subtitle: "Submit travel reimbursements, client entertainment, and petty claims", icon: Receipt },
     loans: { title: "Apply Loan & Advances", subtitle: "Staff emergency advances, loan requests, and EMI recovery schedules", icon: CreditCard },
     helpdesk: { title: "Help Desk", subtitle: "HR service tickets, IT requests, and workplace grievance management", icon: HelpCircle },
@@ -760,105 +779,104 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
         </Card>
       )}
 
-      {/* ── TAB 6: TAX DECLARATION ─────────────────────────────────────────────── */}
-      {activeTab === "tax_declaration" && (
+      {/* ── TAB 6: QATAR STATUTORY & GRATUITY DETAILS ─────────────────────────────── */}
+      {(activeTab === "statutory_gratuity" || activeTab === "tax_declaration") && (
         <div className="space-y-6">
           <Card>
             <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
               <div>
-                <CardTitle className="text-base font-semibold">Income Tax & Statutory Declarations (FY 2026-27)</CardTitle>
-                <CardDescription>Submit investment proof, housing rent receipts, and select your tax calculation regime</CardDescription>
+                <CardTitle className="text-base font-semibold">Qatar Statutory & End-of-Service Gratuity Entitlements</CardTitle>
+                <CardDescription>
+                  Qatar Labor Law compliance overview: 0% Personal Income Tax, WPS certification, and EOSB Gratuity accruals
+                </CardDescription>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => toast.success("Downloaded Annual Tax Computation Summary (Form 16 Preview)")}
+                onClick={() => toast.success("Downloaded Qatar WPS Statutory & Gratuity Statement")}
                 className="gap-1.5 text-xs"
               >
-                <Download className="h-3.5 w-3.5" /> Download Tax Statement
+                <Download className="h-3.5 w-3.5" /> Download Statutory Statement
               </Button>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Regime Selector */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div
-                  onClick={() => setTaxRegime("Standard Regime")}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                    taxRegime === "Standard Regime"
-                      ? "border-teal-500 bg-teal-50/30 dark:bg-teal-950/20 ring-1 ring-teal-500"
-                      : "bg-card hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-sm">Standard Deduction Regime</span>
-                    {taxRegime === "Standard Regime" && <Check className="h-4 w-4 text-teal-600" />}
+              {/* Qatar Tax-Free & WPS Badges */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl border bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-500/30">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    <span className="font-bold text-sm text-emerald-900 dark:text-emerald-200">0% Personal Income Tax</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Automatic standard statutory deductions with simplified slab computations.
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Under State of Qatar Tax Law, individual salaries and allowances are 100% tax-free with no income tax or TDS deductions.
                   </p>
                 </div>
 
-                <div
-                  onClick={() => setTaxRegime("Investment Proof Regime")}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                    taxRegime === "Investment Proof Regime"
-                      ? "border-teal-500 bg-teal-50/30 dark:bg-teal-950/20 ring-1 ring-teal-500"
-                      : "bg-card hover:bg-muted/30"
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-sm">Itemized Investment Proof Regime</span>
-                    {taxRegime === "Investment Proof Regime" && <Check className="h-4 w-4 text-teal-600" />}
+                <div className="p-4 rounded-xl border bg-teal-50/40 dark:bg-teal-950/20 border-teal-500/30">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-teal-600" />
+                    <span className="font-bold text-sm text-teal-900 dark:text-teal-200">WPS Wage Protection</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Claim deductions for HRA Rent, Life Insurance, Medical Health Policy, and Pension Fund.
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Direct electronic salary transfer compliant with Qatar Ministry of Labour Wage Protection System via Qatar National Bank.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl border bg-blue-50/40 dark:bg-blue-950/20 border-blue-500/30">
+                  <div className="flex items-center gap-2">
+                    <Award className="h-5 w-5 text-blue-600" />
+                    <span className="font-bold text-sm text-blue-900 dark:text-blue-200">End-of-Service Gratuity</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Accrual rate of 21 basic days per continuous year of service in accordance with Article 54 of Qatar Labor Law No. 14.
                   </p>
                 </div>
               </div>
 
-              {/* Declaration Fields */}
+              {/* Statutory Computation Summary */}
+              <div className="p-4 rounded-xl border bg-card/60 space-y-4">
+                <h4 className="text-sm font-bold flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-primary" /> End-of-Service Benefit (EOSB) Accrual Snapshot
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+                  <div className="p-3 rounded-lg border bg-muted/20">
+                    <span className="text-[11px] text-muted-foreground block font-medium">Basic Pay Base</span>
+                    <span className="font-bold text-sm">8,500 QAR</span>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/20">
+                    <span className="text-[11px] text-muted-foreground block font-medium">Completed Service</span>
+                    <span className="font-bold text-sm">2 Years, 4 Months</span>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/20">
+                    <span className="text-[11px] text-muted-foreground block font-medium">Annual Accrual Basis</span>
+                    <span className="font-bold text-sm text-primary">21 Days / Year</span>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-emerald-500/10 border-emerald-500/30">
+                    <span className="text-[11px] text-muted-foreground block font-medium">Accrued Gratuity</span>
+                    <span className="font-bold text-sm text-emerald-600">13,883 QAR</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statutory Registration & Social Insurance */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Annual House Rent Paid (for HRA Exemption)</Label>
-                  <Input
-                    type="number"
-                    value={taxDeclarations.hraRent}
-                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, hraRent: Number(e.target.value) })}
-                  />
+                <div className="p-4 rounded-xl border bg-card/60 space-y-2">
+                  <h5 className="font-bold text-xs">QID & Work Permit Clearance</h5>
+                  <div className="space-y-1 text-muted-foreground">
+                    <p>• QID / Residence Permit: <strong className="text-foreground font-mono">QID-29463401928</strong></p>
+                    <p>• Ministry of Labour Contract: <strong className="text-foreground">Unlimited Term Verified</strong></p>
+                    <p>• Sponsor / Establishment: <strong className="text-foreground">Zyno Property Management W.L.L</strong></p>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Life Insurance Premiums (80C / Statutory)</Label>
-                  <Input
-                    type="number"
-                    value={taxDeclarations.lifeInsurance}
-                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, lifeInsurance: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Medical & Family Health Insurance (80D)</Label>
-                  <Input
-                    type="number"
-                    value={taxDeclarations.medicalInsurance}
-                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, medicalInsurance: Number(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Voluntary Pension / Retirement Fund Contribution</Label>
-                  <Input
-                    type="number"
-                    value={taxDeclarations.npsContribution}
-                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, npsContribution: Number(e.target.value) })}
-                  />
-                </div>
-              </div>
 
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="text-xs text-muted-foreground">
-                  Status: <strong className="text-emerald-600">Declaration Submitted & Verified for Payroll</strong>
-                </span>
-                <Button size="sm" onClick={() => toast.success("Tax declaration updated and submitted for Finance payroll audit!")}>
-                  Save & Submit Declaration
-                </Button>
+                <div className="p-4 rounded-xl border bg-card/60 space-y-2">
+                  <h5 className="font-bold text-xs">Social Insurance / GRSA Pension</h5>
+                  <div className="space-y-1 text-muted-foreground">
+                    <p>• Expatriate Staff: <strong className="text-emerald-600">Exempt (0% deduction)</strong></p>
+                    <p>• Qatari Nationals: <strong>GRSA Law (5% Employee / 15% Employer)</strong></p>
+                    <p>• Current Deduction: <strong className="text-foreground font-mono">0.00 QAR</strong></p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1090,58 +1108,110 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
 
       {/* Apply Leave Modal */}
       <Dialog open={applyLeaveModal} onOpenChange={setApplyLeaveModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Apply for Leave</DialogTitle>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold border border-blue-500/20 shadow-xs">
+                <Calendar className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Apply for Leave</DialogTitle>
+                <p className="text-xs text-muted-foreground">Select leave quota category and requested vacation period</p>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleApplyLeave} className="space-y-4">
+          <form onSubmit={handleApplyLeave} className="space-y-4 pt-2">
             <div>
-              <Label>Leave Type</Label>
+              <Label className="text-xs font-semibold">Leave Quota Category *</Label>
               <Select
                 value={leaveForm.leave_type}
                 onValueChange={(val) => setLeaveForm({ ...leaveForm, leave_type: val })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Annual Leave">Annual Leave</SelectItem>
-                  <SelectItem value="Casual Leave">Casual & Emergency</SelectItem>
-                  <SelectItem value="Sick Leave">Sick / Medical Leave</SelectItem>
+                <SelectContent className="max-h-56">
+                  {masterLeaveTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.name}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                  {masterLeaveTypes.length === 0 && (
+                    <>
+                      <SelectItem value="Annual Leave (30 Calendar Days)">Annual Leave (30 Calendar Days)</SelectItem>
+                      <SelectItem value="Casual & Emergency Leave (7 Days)">Casual & Emergency Leave (7 Days)</SelectItem>
+                      <SelectItem value="Sick Leave (Fully Paid 14 Days)">Sick Leave (Fully Paid 14 Days)</SelectItem>
+                      <SelectItem value="Maternity Leave (50 Paid Days)">Maternity Leave (50 Paid Days)</SelectItem>
+                      <SelectItem value="Hajj Pilgrimage Leave (20 Days Unpaid)">Hajj Pilgrimage Leave (20 Days Unpaid)</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+
+            <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border">
               <div>
-                <Label>Start Date</Label>
+                <Label className="text-xs font-semibold">Start Date</Label>
                 <Input
                   type="date"
+                  className="mt-1 text-xs bg-background"
                   value={leaveForm.start_date}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                  onChange={(e) => {
+                    const start = e.target.value;
+                    const end = leaveForm.end_date;
+                    let days = 1;
+                    if (start && end) {
+                      const diff = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 3600 * 24) + 1;
+                      days = Math.max(1, Math.round(diff));
+                    }
+                    setLeaveForm({ ...leaveForm, start_date: start, days_count: days });
+                  }}
                 />
               </div>
               <div>
-                <Label>End Date</Label>
+                <Label className="text-xs font-semibold">End Date</Label>
                 <Input
                   type="date"
+                  className="mt-1 text-xs bg-background"
                   value={leaveForm.end_date}
-                  onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                  onChange={(e) => {
+                    const end = e.target.value;
+                    const start = leaveForm.start_date;
+                    let days = 1;
+                    if (start && end) {
+                      const diff = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 3600 * 24) + 1;
+                      days = Math.max(1, Math.round(diff));
+                    }
+                    setLeaveForm({ ...leaveForm, end_date: end, days_count: days });
+                  }}
                 />
               </div>
             </div>
+
+            <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-blue-500/5 border border-blue-500/20 text-xs">
+              <span className="text-muted-foreground font-medium">Requested Duration:</span>
+              <span className="font-bold text-blue-600 font-mono text-sm">{leaveForm.days_count || 1} Calendar Days</span>
+            </div>
+
             <div>
-              <Label>Reason for Leave *</Label>
+              <Label className="text-xs font-semibold">Reason for Leave & Travel Destination *</Label>
               <Textarea
                 required
+                rows={3}
+                className="mt-1 text-xs"
+                placeholder="Specify purpose of leave, travel details or medical remarks..."
                 value={leaveForm.reason}
                 onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setApplyLeaveModal(false)}>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setApplyLeaveModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Submit Request</Button>
+              <Button type="submit" size="sm" className="bg-primary text-primary-foreground">
+                Submit Request
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1151,62 +1221,85 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       <Dialog open={applyExpenseModal} onOpenChange={setApplyExpenseModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Submit Expense Claim</DialogTitle>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold border border-amber-500/20 shadow-xs">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Submit Out-of-Pocket Expense Claim</DialogTitle>
+                <p className="text-xs text-muted-foreground">Log expense reimbursement request with invoice & receipt</p>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleSubmitExpense} className="space-y-4">
+          <form onSubmit={handleSubmitExpense} className="space-y-4 pt-2">
             <div>
-              <Label>Expense Category</Label>
+              <Label className="text-xs font-semibold">Expense Classification</Label>
               <Select
                 value={expenseForm.type}
                 onValueChange={(val) => setExpenseForm({ ...expenseForm, type: val })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Travel Expense">Travel & Fuel Expense</SelectItem>
-                  <SelectItem value="Reimbursement Expense">Food & Client Hospitality</SelectItem>
-                  <SelectItem value="Other Expense">Petty Purchases / Supplies</SelectItem>
+                <SelectContent className="max-h-56">
+                  {masterExpenseTypes.map((exp) => (
+                    <SelectItem key={exp.id} value={exp.name}>
+                      {exp.name}
+                    </SelectItem>
+                  ))}
+                  {masterExpenseTypes.length === 0 && (
+                    <>
+                      <SelectItem value="Local Travel & Inspection Fuel (Travel Expense)">Local Travel & Inspection Fuel</SelectItem>
+                      <SelectItem value="Official Food & Refreshments (Reimbursement Expense)">Official Food & Client Hospitality</SelectItem>
+                      <SelectItem value="Office Supplies & Urgent Spares (Other Expense)">Office Supplies & Urgent Spares</SelectItem>
+                      <SelectItem value="Visa & Government Labor Attestation Fees">Visa & Government Labor Attestation Fees</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Claim Title *</Label>
+              <Label className="text-xs font-semibold">Claim Title / Purpose *</Label>
               <Input
                 required
-                placeholder="e.g. Fuel for 4 Property Inspections"
+                className="mt-1 text-xs"
+                placeholder="e.g. Property Inspection Fuel & Parking - West Bay"
                 value={expenseForm.title}
                 onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border">
               <div>
-                <Label>Amount (QAR) *</Label>
+                <Label className="text-xs font-semibold">Amount (QAR) *</Label>
                 <Input
                   type="number"
                   required
+                  className="mt-1 text-xs bg-background"
                   value={expenseForm.amount}
                   onChange={(e) => setExpenseForm({ ...expenseForm, amount: Number(e.target.value) })}
                 />
               </div>
               <div>
-                <Label>Expense Date</Label>
+                <Label className="text-xs font-semibold">Expense Date</Label>
                 <Input
                   type="date"
+                  className="mt-1 text-xs bg-background"
                   value={expenseForm.date}
                   onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
                 />
               </div>
             </div>
             <div>
-              <Label>Attach Receipt File</Label>
-              <Input type="file" className="text-xs" />
+              <Label className="text-xs font-semibold">Attach Receipt / Tax Invoice</Label>
+              <Input type="file" className="mt-1 text-xs" />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setApplyExpenseModal(false)}>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setApplyExpenseModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Submit Claim</Button>
+              <Button type="submit" size="sm" className="bg-primary text-primary-foreground">
+                Submit Claim
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1216,49 +1309,97 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       <Dialog open={applyLoanModal} onOpenChange={setApplyLoanModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Apply for Salary Advance / Loan</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmitLoan} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-violet-500/10 text-violet-600 flex items-center justify-center font-bold border border-violet-500/20 shadow-xs">
+                <CreditCard className="h-5 w-5" />
+              </div>
               <div>
-                <Label>Loan Amount (QAR) *</Label>
+                <DialogTitle className="text-base font-bold">Apply for Salary Advance / Loan</DialogTitle>
+                <p className="text-xs text-muted-foreground">Emergency advances, housing loans, and automated EMI recovery</p>
+              </div>
+            </div>
+          </DialogHeader>
+          <form onSubmit={handleSubmitLoan} className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-semibold">Loan / Advance Category *</Label>
+              <Select
+                value={loanForm.loan_type}
+                onValueChange={(val) => setLoanForm({ ...loanForm, loan_type: val })}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-56">
+                  {masterLoanTypes.map((lt) => (
+                    <SelectItem key={lt.id} value={lt.name}>
+                      {lt.name}
+                    </SelectItem>
+                  ))}
+                  {masterLoanTypes.length === 0 && (
+                    <>
+                      <SelectItem value="Annual Housing Advance Loan">Annual Housing Advance Loan</SelectItem>
+                      <SelectItem value="Emergency Medical & Family Loan">Emergency Medical & Family Loan</SelectItem>
+                      <SelectItem value="Annual Air Ticket Advance">Annual Air Ticket Advance</SelectItem>
+                      <SelectItem value="Vehicle / Transportation Advance">Vehicle / Transportation Advance</SelectItem>
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border">
+              <div>
+                <Label className="text-xs font-semibold">Loan Principal (QAR) *</Label>
                 <Input
                   type="number"
                   required
+                  className="mt-1 text-xs bg-background"
                   value={loanForm.amount}
                   onChange={(e) => setLoanForm({ ...loanForm, amount: Number(e.target.value) })}
                 />
               </div>
               <div>
-                <Label>Tenure (Months)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={loanForm.tenure_months}
-                  onChange={(e) => setLoanForm({ ...loanForm, tenure_months: Number(e.target.value) })}
-                />
+                <Label className="text-xs font-semibold">Repayment Tenure</Label>
+                <Select
+                  value={String(loanForm.tenure_months)}
+                  onValueChange={(val) => setLoanForm({ ...loanForm, tenure_months: Number(val) })}
+                >
+                  <SelectTrigger className="mt-1 bg-background text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="3">3 Months</SelectItem>
+                    <SelectItem value="6">6 Months</SelectItem>
+                    <SelectItem value="10">10 Months</SelectItem>
+                    <SelectItem value="12">12 Months (1 Year)</SelectItem>
+                    <SelectItem value="24">24 Months (2 Years)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="p-3 rounded bg-muted/40 text-xs">
-              <span className="text-muted-foreground">Calculated Monthly Recovery:</span>
-              <span className="font-bold text-primary block mt-0.5">
+            <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs flex justify-between items-center">
+              <span className="text-muted-foreground font-medium">Monthly Payroll Deduction:</span>
+              <span className="font-bold text-emerald-600 text-sm font-mono">
                 {Math.round(loanForm.amount / (loanForm.tenure_months || 1)).toLocaleString()} QAR / Month
               </span>
             </div>
             <div>
-              <Label>Reason / Purpose *</Label>
+              <Label className="text-xs font-semibold">Purpose / Justification *</Label>
               <Textarea
                 required
+                rows={2}
+                className="mt-1 text-xs"
+                placeholder="State your reason for advance..."
                 value={loanForm.reason}
                 onChange={(e) => setLoanForm({ ...loanForm, reason: e.target.value })}
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setApplyLoanModal(false)}>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setApplyLoanModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Submit Loan Application</Button>
+              <Button type="submit" size="sm" className="bg-primary text-primary-foreground">
+                Submit Loan Application
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1268,41 +1409,62 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       <Dialog open={applyOvertimeModal} onOpenChange={setApplyOvertimeModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Log Overtime Work Request</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmitOvertime} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center font-bold border border-purple-500/20 shadow-xs">
+                <Clock className="h-5 w-5" />
+              </div>
               <div>
-                <Label>Date of Overtime</Label>
+                <DialogTitle className="text-base font-bold">Log Overtime Work Request</DialogTitle>
+                <p className="text-xs text-muted-foreground">Log extra operational hours for approval & payroll payout</p>
+              </div>
+            </div>
+          </DialogHeader>
+          <form onSubmit={handleSubmitOvertime} className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-xl border">
+              <div>
+                <Label className="text-xs font-semibold">Date of Overtime</Label>
                 <Input
                   type="date"
+                  className="mt-1 text-xs bg-background"
                   value={overtimeForm.date}
                   onChange={(e) => setOvertimeForm({ ...overtimeForm, date: e.target.value })}
                 />
               </div>
               <div>
-                <Label>Hours (e.g. 3.5)</Label>
+                <Label className="text-xs font-semibold">Extra Hours (e.g. 3.5)</Label>
                 <Input
                   type="number"
                   step="0.5"
+                  className="mt-1 text-xs bg-background"
                   value={overtimeForm.hours}
                   onChange={(e) => setOvertimeForm({ ...overtimeForm, hours: Number(e.target.value) })}
                 />
               </div>
             </div>
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs flex justify-between items-center">
+              <span className="text-muted-foreground font-medium">Estimated OT Rate (Qatar Law 1.25x):</span>
+              <span className="font-bold text-blue-600 font-mono text-sm">
+                ~{Math.round((overtimeForm.hours || 0) * (8500 / 240) * 1.25).toLocaleString()} QAR
+              </span>
+            </div>
             <div>
-              <Label>Work Scope / Justification *</Label>
+              <Label className="text-xs font-semibold">Work Scope / Project Justification *</Label>
               <Textarea
                 required
+                rows={3}
+                className="mt-1 text-xs"
+                placeholder="Explain the urgent task (e.g. tenant move-in inspection, chiller maintenance)..."
                 value={overtimeForm.reason}
                 onChange={(e) => setOvertimeForm({ ...overtimeForm, reason: e.target.value })}
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setApplyOvertimeModal(false)}>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setApplyOvertimeModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Submit Overtime</Button>
+              <Button type="submit" size="sm" className="bg-primary text-primary-foreground">
+                Submit Overtime
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1312,49 +1474,71 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       <Dialog open={submitTicketModal} onOpenChange={setSubmitTicketModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Log Help Desk / Grievance Ticket</DialogTitle>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-orange-500/10 text-orange-600 flex items-center justify-center font-bold border border-orange-500/20 shadow-xs">
+                <HelpCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Log Help Desk / Grievance Ticket</DialogTitle>
+                <p className="text-xs text-muted-foreground">Raise HR, IT, Payroll, or Facility support query</p>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleSubmitTicket} className="space-y-4">
+          <form onSubmit={handleSubmitTicket} className="space-y-4 pt-2">
             <div>
-              <Label>Category</Label>
+              <Label className="text-xs font-semibold">Ticket Category</Label>
               <Select
                 value={ticketForm.category}
                 onValueChange={(val) => setTicketForm({ ...ticketForm, category: val })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="HR Letters">HR & Letters</SelectItem>
-                  <SelectItem value="IT Hardware">IT & Hardware</SelectItem>
-                  <SelectItem value="Payroll Discrepancy">Payroll & Accounts</SelectItem>
-                  <SelectItem value="Workplace Ethics">Workplace & Facility</SelectItem>
+                <SelectContent className="max-h-56">
+                  {masterTicketCategories.map((t) => (
+                    <SelectItem key={t.id} value={t.name}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                  {masterTicketCategories.length === 0 && (
+                    <>
+                      <SelectItem value="HR & Salary Certificate Requests">HR & Salary Certificate Requests</SelectItem>
+                      <SelectItem value="IT & System Access Support">IT & System Access Support</SelectItem>
+                      <SelectItem value="Payroll & Reimbursement Discrepancy">Payroll & Reimbursement Discrepancy</SelectItem>
+                      <SelectItem value="Facility & Workplace Assets">Facility & Workplace Assets</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Subject *</Label>
+              <Label className="text-xs font-semibold">Subject / Short Summary *</Label>
               <Input
                 required
-                placeholder="e.g. Embassy NOC Letter Request"
+                className="mt-1 text-xs"
+                placeholder="e.g. Salary Certificate with bank seal for visa renewal"
                 value={ticketForm.subject}
                 onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
               />
             </div>
             <div>
-              <Label>Details *</Label>
+              <Label className="text-xs font-semibold">Detailed Description & Reference *</Label>
               <Textarea
                 required
                 rows={3}
+                className="mt-1 text-xs"
+                placeholder="Provide full details and any reference numbers..."
                 value={ticketForm.description}
                 onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })}
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSubmitTicketModal(false)}>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setSubmitTicketModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Submit Ticket</Button>
+              <Button type="submit" size="sm" className="bg-primary text-primary-foreground">
+                Submit Ticket
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1364,32 +1548,44 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       <Dialog open={submitResignationModal} onOpenChange={setSubmitResignationModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Formal Notice & Resignation</DialogTitle>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold border border-rose-500/20 shadow-xs">
+                <LogOut className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Formal Notice & Resignation</DialogTitle>
+                <p className="text-xs text-muted-foreground">Initiates 30-day notice period and departmental clearance</p>
+              </div>
+            </div>
           </DialogHeader>
-          <form onSubmit={handleSubmitResignation} className="space-y-4">
+          <form onSubmit={handleSubmitResignation} className="space-y-4 pt-2">
             <div>
-              <Label>Requested Last Working Day</Label>
+              <Label className="text-xs font-semibold">Requested Last Working Day</Label>
               <Input
                 type="date"
+                className="mt-1 text-xs"
                 value={resignationForm.requested_lwd}
                 onChange={(e) => setResignationForm({ ...resignationForm, requested_lwd: e.target.value })}
               />
             </div>
             <div>
-              <Label>Reason for Separation *</Label>
+              <Label className="text-xs font-semibold">Reason for Separation & Exit Feedback *</Label>
               <Textarea
                 required
                 rows={3}
-                placeholder="State your reason for resigning..."
+                className="mt-1 text-xs"
+                placeholder="State your reason for separation..."
                 value={resignationForm.reason}
                 onChange={(e) => setResignationForm({ ...resignationForm, reason: e.target.value })}
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSubmitResignationModal(false)}>
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setSubmitResignationModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="destructive">Submit Notice</Button>
+              <Button type="submit" size="sm" variant="destructive">
+                Submit Formal Notice
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

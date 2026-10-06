@@ -49,7 +49,10 @@ export type MasterCategoryKey =
   | "notice_periods"
   | "genders"
   | "employee_statuses"
-  | "business_units";
+  | "business_units"
+  | "leave_types"
+  | "document_types"
+  | "loan_types";
 
 export const MASTER_CATEGORIES_CONFIG: {
   key: MasterCategoryKey;
@@ -232,6 +235,35 @@ export const MASTER_CATEGORIES_CONFIG: {
     ],
   },
   {
+    key: "leave_types",
+    label: "Leave Types & Quotas",
+    group: "HR & Workforce",
+    codePrefix: "LTYP",
+    defaultItems: [
+      { name: "Annual Leave (30 Calendar Days)", code: "AL", description: "Standard Paid Annual Vacation under Qatar Labor Law" },
+      { name: "Sick Leave (Fully Paid 14 Days)", code: "SL", description: "Certified Medical Leave with Primary Health Centre slip" },
+      { name: "Casual & Emergency Leave (7 Days)", code: "CL", description: "Short urgent leaves for family or personal needs" },
+      { name: "Maternity Leave (50 Paid Days)", code: "ML", description: "Statutory maternity leave for female employees" },
+      { name: "Hajj Pilgrimage Leave (20 Days Unpaid)", code: "HAJJ", description: "Once in service pilgrimage leave" },
+      { name: "Compensatory Off / Duty Leave", code: "COMP-OFF", description: "Granted in lieu of weekend or holiday duty" },
+    ],
+  },
+  {
+    key: "document_types",
+    label: "Document Types & Verification",
+    group: "HR & Workforce",
+    codePrefix: "DOC-TYP",
+    defaultItems: [
+      { name: "Qatar ID (QID / Residence Card)", code: "DOC-QID", description: "Official Ministry of Interior Civil ID" },
+      { name: "Passport & Bio Page", code: "DOC-PPT", description: "International travel passport copy" },
+      { name: "Ministry Attested Labor Contract", code: "DOC-MOL", description: "ADLSA / Labor department authenticated contract" },
+      { name: "Academic & Degree Certificate", code: "DOC-EDU", description: "Higher education qualification document" },
+      { name: "Qatar Driving License", code: "DOC-DL", description: "Valid Qatar Traffic Department license" },
+      { name: "Police Clearance Certificate (PCC)", code: "DOC-PCC", description: "Good conduct background clearance" },
+      { name: "Health Card & Medical Commission Fit", code: "DOC-MED", description: "Hamad Medical / Public Health certification" },
+    ],
+  },
+  {
     key: "recruitment_reasons",
     label: "Reason For Recruitment",
     group: "HR & Workforce",
@@ -404,8 +436,20 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Payroll & Finance",
     codePrefix: "TAX",
     defaultItems: [
-      { name: "Qatar Exemption (0% Personal Income Tax)", code: "QA-TAX-FREE", description: "No personal income tax under Qatar Law" },
-      { name: "Standard Foreign Remittance Reporting", code: "INT-REMIT", description: "Cross-border tax declaration compliance" },
+      { name: "Qatar Exemption (0% Personal Income Tax)", code: "QA-TAX-FREE", description: "100% Tax-Free Personal Income under State of Qatar Law" },
+      { name: "Standard Foreign Remittance Reporting", code: "INT-REMIT", description: "Cross-border compliance documentation" },
+    ],
+  },
+  {
+    key: "loan_types",
+    label: "Staff Loan & Advance Types",
+    group: "Payroll & Finance",
+    codePrefix: "LOAN-TYP",
+    defaultItems: [
+      { name: "Annual Housing Advance Loan", code: "LN-HOUSE", description: "Advance for annual house rental cheques" },
+      { name: "Emergency Medical & Family Loan", code: "LN-EMERG", description: "Zero-interest staff emergency assistance" },
+      { name: "Annual Air Ticket Advance", code: "LN-TICKET", description: "Advance against annual leave flight entitlement" },
+      { name: "Vehicle / Transportation Advance", code: "LN-VEH", description: "Transportation acquisition loan" },
     ],
   },
 
@@ -680,6 +724,8 @@ export const HrmsMastersApi = {
       banks,
       genders,
       employeeStatuses,
+      documentTypes,
+      leaveTypes,
     ] = await Promise.all([
       this.getMasterItems("companies"),
       this.getMasterItems("branches"),
@@ -697,6 +743,8 @@ export const HrmsMastersApi = {
       this.getMasterItems("banks"),
       this.getMasterItems("genders"),
       this.getMasterItems("employee_statuses"),
+      this.getMasterItems("document_types"),
+      this.getMasterItems("leave_types"),
     ]);
 
     return {
@@ -716,6 +764,8 @@ export const HrmsMastersApi = {
       banks,
       genders,
       employeeStatuses,
+      documentTypes,
+      leaveTypes,
     };
   },
 
