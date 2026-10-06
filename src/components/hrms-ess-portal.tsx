@@ -88,7 +88,6 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
   const [applyOvertimeModal, setApplyOvertimeModal] = useState(false);
   const [submitTicketModal, setSubmitTicketModal] = useState(false);
   const [submitResignationModal, setSubmitResignationModal] = useState(false);
-  const [passwordModal, setPasswordModal] = useState(false);
 
   // Forms
   const [leaveForm, setLeaveForm] = useState({
@@ -306,7 +305,6 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
       return;
     }
     toast.success("Password updated successfully!");
-    setPasswordModal(false);
     setPasswords({ current: "", new_pass: "", confirm: "" });
   };
 
@@ -353,7 +351,15 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="hidden sm:flex flex-col text-right text-xs">
+            <span className="text-muted-foreground text-[11px]">Shift & Schedule</span>
+            <span className="font-semibold text-foreground">General (08:00 – 17:00)</span>
+          </div>
+          <div className="hidden md:flex flex-col text-right text-xs border-l pl-3">
+            <span className="text-muted-foreground text-[11px]">Reporting Manager</span>
+            <span className="font-semibold text-foreground">Sarah Jenkins (VP Ops)</span>
+          </div>
           <div className="px-3 py-1.5 rounded-xl border bg-muted/30 text-xs flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${isPunchedIn ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
             <span className="text-muted-foreground text-[11px]">Today:</span>
@@ -363,16 +369,10 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
             variant="outline"
             size="sm"
             onClick={handlePunchToggle}
-            className={`gap-1.5 text-xs font-semibold ${isPunchedIn ? "border-amber-500/40 text-amber-600 hover:bg-amber-50" : "border-emerald-500/40 text-emerald-600 hover:bg-emerald-50"}`}
+            className={`gap-1.5 text-xs font-semibold ${isPunchedIn ? "border-amber-500/40 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20" : "border-emerald-500/40 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"}`}
           >
             <Fingerprint className="h-3.5 w-3.5" />
             {isPunchedIn ? "Punch Out" : "Punch In"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setPasswordModal(true)} className="gap-1.5 text-xs">
-            <Lock className="h-3.5 w-3.5" /> Change Password
-          </Button>
-          <Button size="sm" onClick={() => setApplyLeaveModal(true)} className="gap-1.5 bg-primary text-xs">
-            <Plus className="h-3.5 w-3.5" /> Apply Leave
           </Button>
         </div>
       </div>
@@ -1390,50 +1390,6 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
                 Cancel
               </Button>
               <Button type="submit" variant="destructive">Submit Notice</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Change Password Modal */}
-      <Dialog open={passwordModal} onOpenChange={setPasswordModal}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Change Account Password</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div>
-              <Label>Current Password</Label>
-              <Input
-                type="password"
-                required
-                value={passwords.current}
-                onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>New Password</Label>
-              <Input
-                type="password"
-                required
-                value={passwords.new_pass}
-                onChange={(e) => setPasswords({ ...passwords, new_pass: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Confirm New Password</Label>
-              <Input
-                type="password"
-                required
-                value={passwords.confirm}
-                onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setPasswordModal(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">Update Password</Button>
             </DialogFooter>
           </form>
         </DialogContent>
