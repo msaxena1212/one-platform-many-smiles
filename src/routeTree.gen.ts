@@ -92,6 +92,7 @@ import { Route as AdminLeasesRouteImport } from './routes/admin.leases'
 import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminHrmsRouteImport } from './routes/admin.hrms'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
+import { Route as AdminEssRouteImport } from './routes/admin.ess'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
 import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
@@ -520,6 +521,11 @@ const AdminFinanceRoute = AdminFinanceRouteImport.update({
   path: '/finance',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEssRoute = AdminEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -599,6 +605,7 @@ export interface FileRoutesByFullPath {
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
   '/admin/imports': typeof AdminImportsRoute
@@ -688,6 +695,7 @@ export interface FileRoutesByTo {
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
   '/admin/imports': typeof AdminImportsRoute
@@ -785,6 +793,7 @@ export interface FileRoutesById {
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/hrms': typeof AdminHrmsRoute
   '/admin/imports': typeof AdminImportsRoute
@@ -884,6 +893,7 @@ export interface FileRouteTypes {
     | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
+    | '/admin/ess'
     | '/admin/finance'
     | '/admin/hrms'
     | '/admin/imports'
@@ -973,6 +983,7 @@ export interface FileRouteTypes {
     | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
+    | '/admin/ess'
     | '/admin/finance'
     | '/admin/hrms'
     | '/admin/imports'
@@ -1069,6 +1080,7 @@ export interface FileRouteTypes {
     | '/admin/assets'
     | '/admin/audit-logs'
     | '/admin/dashboard'
+    | '/admin/ess'
     | '/admin/finance'
     | '/admin/hrms'
     | '/admin/imports'
@@ -1750,6 +1762,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFinanceRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/ess': {
+      id: '/admin/ess'
+      path: '/ess'
+      fullPath: '/admin/ess'
+      preLoaderRoute: typeof AdminEssRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/dashboard': {
       id: '/admin/dashboard'
       path: '/dashboard'
@@ -1857,6 +1876,7 @@ interface AdminRouteChildren {
   AdminAssetsRoute: typeof AdminAssetsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminEssRoute: typeof AdminEssRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminHrmsRoute: typeof AdminHrmsRoute
   AdminImportsRoute: typeof AdminImportsRoute
@@ -1878,6 +1898,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAssetsRoute: AdminAssetsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminEssRoute: AdminEssRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminHrmsRoute: AdminHrmsRoute,
   AdminImportsRoute: AdminImportsRoute,
