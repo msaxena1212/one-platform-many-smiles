@@ -53,6 +53,7 @@ import {
   RefreshCw,
   GitBranch,
   FileSpreadsheet,
+  HelpCircle,
 } from "lucide-react";
 import type { NavGroup, NavItem, NavModule } from "@/components/app-shell";
 import type { Profile } from "@/lib/supabase";
