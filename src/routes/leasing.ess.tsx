@@ -6,15 +6,15 @@ const HrmsEssPortal = lazy(() =>
   import("@/components/hrms-ess-portal").then((m) => ({ default: m.HrmsEssPortal }))
 );
 
-export const Route = createFileRoute("/admin/ess")({
+export const Route = createFileRoute("/leasing/ess")({
   validateSearch: (search: Record<string, unknown>) => ({
     tab: (search.tab as string) || "my_details",
   }),
-  head: () => ({ meta: [{ title: "My HR Self-Service (ESS)" }] }),
-  component: AdminEssPage,
+  head: () => ({ meta: [{ title: "My Self-Service (ESS) - Leasing" }] }),
+  component: LeasingEssPage,
 });
 
-function AdminEssPage() {
+function LeasingEssPage() {
   const { tab } = Route.useSearch();
   return (
     <ModuleSuspense>

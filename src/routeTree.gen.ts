@@ -38,6 +38,7 @@ import { Route as SuperAdminPermissionsRouteImport } from './routes/super-admin.
 import { Route as SuperAdminNotificationsRouteImport } from './routes/super-admin.notifications'
 import { Route as SuperAdminInvoicesRouteImport } from './routes/super-admin.invoices'
 import { Route as SuperAdminHealthRouteImport } from './routes/super-admin.health'
+import { Route as SuperAdminEssRouteImport } from './routes/super-admin.ess'
 import { Route as SuperAdminConfigRouteImport } from './routes/super-admin.config'
 import { Route as SuperAdminBillingRouteImport } from './routes/super-admin.billing'
 import { Route as SuperAdminAnalyticsRouteImport } from './routes/super-admin.analytics'
@@ -56,6 +57,7 @@ import { Route as PropMgrLeasingRouteImport } from './routes/prop-mgr.leasing'
 import { Route as PropMgrLeasesRouteImport } from './routes/prop-mgr.leases'
 import { Route as PropMgrImportsRouteImport } from './routes/prop-mgr.imports'
 import { Route as PropMgrFinanceRouteImport } from './routes/prop-mgr.finance'
+import { Route as PropMgrEssRouteImport } from './routes/prop-mgr.ess'
 import { Route as PropMgrAssetsRouteImport } from './routes/prop-mgr.assets'
 import { Route as PropMgrApprovalsRouteImport } from './routes/prop-mgr.approvals'
 import { Route as PortalTicketsRouteImport } from './routes/portal.tickets'
@@ -70,15 +72,19 @@ import { Route as OwnerDistributionsRouteImport } from './routes/owner.distribut
 import { Route as OwnerApprovalsRouteImport } from './routes/owner.approvals'
 import { Route as MaintenanceTicketsRouteImport } from './routes/maintenance.tickets'
 import { Route as MaintenanceInventoryRouteImport } from './routes/maintenance.inventory'
+import { Route as MaintenanceEssRouteImport } from './routes/maintenance.ess'
 import { Route as LeasingManageRouteImport } from './routes/leasing.manage'
+import { Route as LeasingEssRouteImport } from './routes/leasing.ess'
 import { Route as LeasingCreateRouteImport } from './routes/leasing.create'
 import { Route as FinanceReceivablesRouteImport } from './routes/finance.receivables'
 import { Route as FinanceProcurementRouteImport } from './routes/finance.procurement'
 import { Route as FinanceLedgerRouteImport } from './routes/finance.ledger'
 import { Route as FinanceJournalRouteImport } from './routes/finance.journal'
+import { Route as FinanceEssRouteImport } from './routes/finance.ess'
 import { Route as EmployeePortalRouteImport } from './routes/employee.portal'
 import { Route as CashierReceiptsRouteImport } from './routes/cashier.receipts'
 import { Route as CashierPdcRouteImport } from './routes/cashier.pdc'
+import { Route as CashierEssRouteImport } from './routes/cashier.ess'
 import { Route as AdminVendorsRouteImport } from './routes/admin.vendors'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
@@ -251,6 +257,11 @@ const SuperAdminHealthRoute = SuperAdminHealthRouteImport.update({
   path: '/health',
   getParentRoute: () => SuperAdminRoute,
 } as any)
+const SuperAdminEssRoute = SuperAdminEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
+  getParentRoute: () => SuperAdminRoute,
+} as any)
 const SuperAdminConfigRoute = SuperAdminConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -341,6 +352,11 @@ const PropMgrFinanceRoute = PropMgrFinanceRouteImport.update({
   path: '/finance',
   getParentRoute: () => PropMgrRoute,
 } as any)
+const PropMgrEssRoute = PropMgrEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
+  getParentRoute: () => PropMgrRoute,
+} as any)
 const PropMgrAssetsRoute = PropMgrAssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
@@ -411,9 +427,19 @@ const MaintenanceInventoryRoute = MaintenanceInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => MaintenanceRoute,
 } as any)
+const MaintenanceEssRoute = MaintenanceEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
+  getParentRoute: () => MaintenanceRoute,
+} as any)
 const LeasingManageRoute = LeasingManageRouteImport.update({
   id: '/manage',
   path: '/manage',
+  getParentRoute: () => LeasingRoute,
+} as any)
+const LeasingEssRoute = LeasingEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
   getParentRoute: () => LeasingRoute,
 } as any)
 const LeasingCreateRoute = LeasingCreateRouteImport.update({
@@ -441,6 +467,11 @@ const FinanceJournalRoute = FinanceJournalRouteImport.update({
   path: '/journal',
   getParentRoute: () => FinanceRoute,
 } as any)
+const FinanceEssRoute = FinanceEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
+  getParentRoute: () => FinanceRoute,
+} as any)
 const EmployeePortalRoute = EmployeePortalRouteImport.update({
   id: '/employee/portal',
   path: '/employee/portal',
@@ -454,6 +485,11 @@ const CashierReceiptsRoute = CashierReceiptsRouteImport.update({
 const CashierPdcRoute = CashierPdcRouteImport.update({
   id: '/pdc',
   path: '/pdc',
+  getParentRoute: () => CashierRoute,
+} as any)
+const CashierEssRoute = CashierEssRouteImport.update({
+  id: '/ess',
+  path: '/ess',
   getParentRoute: () => CashierRoute,
 } as any)
 const AdminVendorsRoute = AdminVendorsRouteImport.update({
@@ -619,15 +655,19 @@ export interface FileRoutesByFullPath {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/employee/portal': typeof EmployeePortalRoute
+  '/finance/ess': typeof FinanceEssRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/ess': typeof LeasingEssRoute
   '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/ess': typeof MaintenanceEssRoute
   '/maintenance/inventory': typeof MaintenanceInventoryRoute
   '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
@@ -642,6 +682,7 @@ export interface FileRoutesByFullPath {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/ess': typeof PropMgrEssRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
@@ -660,6 +701,7 @@ export interface FileRoutesByFullPath {
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/ess': typeof SuperAdminEssRoute
   '/super-admin/health': typeof SuperAdminHealthRoute
   '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
@@ -708,15 +750,19 @@ export interface FileRoutesByTo {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/employee/portal': typeof EmployeePortalRoute
+  '/finance/ess': typeof FinanceEssRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/ess': typeof LeasingEssRoute
   '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/ess': typeof MaintenanceEssRoute
   '/maintenance/inventory': typeof MaintenanceInventoryRoute
   '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
@@ -731,6 +777,7 @@ export interface FileRoutesByTo {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/ess': typeof PropMgrEssRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
@@ -749,6 +796,7 @@ export interface FileRoutesByTo {
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/ess': typeof SuperAdminEssRoute
   '/super-admin/health': typeof SuperAdminHealthRoute
   '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
@@ -807,15 +855,19 @@ export interface FileRoutesById {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
   '/employee/portal': typeof EmployeePortalRoute
+  '/finance/ess': typeof FinanceEssRoute
   '/finance/journal': typeof FinanceJournalRoute
   '/finance/ledger': typeof FinanceLedgerRoute
   '/finance/procurement': typeof FinanceProcurementRoute
   '/finance/receivables': typeof FinanceReceivablesRoute
   '/leasing/create': typeof LeasingCreateRoute
+  '/leasing/ess': typeof LeasingEssRoute
   '/leasing/manage': typeof LeasingManageRoute
+  '/maintenance/ess': typeof MaintenanceEssRoute
   '/maintenance/inventory': typeof MaintenanceInventoryRoute
   '/maintenance/tickets': typeof MaintenanceTicketsRoute
   '/owner/approvals': typeof OwnerApprovalsRoute
@@ -830,6 +882,7 @@ export interface FileRoutesById {
   '/portal/tickets': typeof PortalTicketsRoute
   '/prop-mgr/approvals': typeof PropMgrApprovalsRoute
   '/prop-mgr/assets': typeof PropMgrAssetsRoute
+  '/prop-mgr/ess': typeof PropMgrEssRoute
   '/prop-mgr/finance': typeof PropMgrFinanceRoute
   '/prop-mgr/imports': typeof PropMgrImportsRoute
   '/prop-mgr/leases': typeof PropMgrLeasesRoute
@@ -848,6 +901,7 @@ export interface FileRoutesById {
   '/super-admin/analytics': typeof SuperAdminAnalyticsRoute
   '/super-admin/billing': typeof SuperAdminBillingRoute
   '/super-admin/config': typeof SuperAdminConfigRoute
+  '/super-admin/ess': typeof SuperAdminEssRoute
   '/super-admin/health': typeof SuperAdminHealthRoute
   '/super-admin/invoices': typeof SuperAdminInvoicesRoute
   '/super-admin/notifications': typeof SuperAdminNotificationsRoute
@@ -907,15 +961,19 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
     | '/employee/portal'
+    | '/finance/ess'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
+    | '/leasing/ess'
     | '/leasing/manage'
+    | '/maintenance/ess'
     | '/maintenance/inventory'
     | '/maintenance/tickets'
     | '/owner/approvals'
@@ -930,6 +988,7 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
+    | '/prop-mgr/ess'
     | '/prop-mgr/finance'
     | '/prop-mgr/imports'
     | '/prop-mgr/leases'
@@ -948,6 +1007,7 @@ export interface FileRouteTypes {
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/ess'
     | '/super-admin/health'
     | '/super-admin/invoices'
     | '/super-admin/notifications'
@@ -996,15 +1056,19 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
     | '/employee/portal'
+    | '/finance/ess'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
+    | '/leasing/ess'
     | '/leasing/manage'
+    | '/maintenance/ess'
     | '/maintenance/inventory'
     | '/maintenance/tickets'
     | '/owner/approvals'
@@ -1019,6 +1083,7 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
+    | '/prop-mgr/ess'
     | '/prop-mgr/finance'
     | '/prop-mgr/imports'
     | '/prop-mgr/leases'
@@ -1037,6 +1102,7 @@ export interface FileRouteTypes {
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/ess'
     | '/super-admin/health'
     | '/super-admin/invoices'
     | '/super-admin/notifications'
@@ -1094,15 +1160,19 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
     | '/employee/portal'
+    | '/finance/ess'
     | '/finance/journal'
     | '/finance/ledger'
     | '/finance/procurement'
     | '/finance/receivables'
     | '/leasing/create'
+    | '/leasing/ess'
     | '/leasing/manage'
+    | '/maintenance/ess'
     | '/maintenance/inventory'
     | '/maintenance/tickets'
     | '/owner/approvals'
@@ -1117,6 +1187,7 @@ export interface FileRouteTypes {
     | '/portal/tickets'
     | '/prop-mgr/approvals'
     | '/prop-mgr/assets'
+    | '/prop-mgr/ess'
     | '/prop-mgr/finance'
     | '/prop-mgr/imports'
     | '/prop-mgr/leases'
@@ -1135,6 +1206,7 @@ export interface FileRouteTypes {
     | '/super-admin/analytics'
     | '/super-admin/billing'
     | '/super-admin/config'
+    | '/super-admin/ess'
     | '/super-admin/health'
     | '/super-admin/invoices'
     | '/super-admin/notifications'
@@ -1384,6 +1456,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuperAdminHealthRouteImport
       parentRoute: typeof SuperAdminRoute
     }
+    '/super-admin/ess': {
+      id: '/super-admin/ess'
+      path: '/ess'
+      fullPath: '/super-admin/ess'
+      preLoaderRoute: typeof SuperAdminEssRouteImport
+      parentRoute: typeof SuperAdminRoute
+    }
     '/super-admin/config': {
       id: '/super-admin/config'
       path: '/config'
@@ -1510,6 +1589,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PropMgrFinanceRouteImport
       parentRoute: typeof PropMgrRoute
     }
+    '/prop-mgr/ess': {
+      id: '/prop-mgr/ess'
+      path: '/ess'
+      fullPath: '/prop-mgr/ess'
+      preLoaderRoute: typeof PropMgrEssRouteImport
+      parentRoute: typeof PropMgrRoute
+    }
     '/prop-mgr/assets': {
       id: '/prop-mgr/assets'
       path: '/assets'
@@ -1608,11 +1694,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MaintenanceInventoryRouteImport
       parentRoute: typeof MaintenanceRoute
     }
+    '/maintenance/ess': {
+      id: '/maintenance/ess'
+      path: '/ess'
+      fullPath: '/maintenance/ess'
+      preLoaderRoute: typeof MaintenanceEssRouteImport
+      parentRoute: typeof MaintenanceRoute
+    }
     '/leasing/manage': {
       id: '/leasing/manage'
       path: '/manage'
       fullPath: '/leasing/manage'
       preLoaderRoute: typeof LeasingManageRouteImport
+      parentRoute: typeof LeasingRoute
+    }
+    '/leasing/ess': {
+      id: '/leasing/ess'
+      path: '/ess'
+      fullPath: '/leasing/ess'
+      preLoaderRoute: typeof LeasingEssRouteImport
       parentRoute: typeof LeasingRoute
     }
     '/leasing/create': {
@@ -1650,6 +1750,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FinanceJournalRouteImport
       parentRoute: typeof FinanceRoute
     }
+    '/finance/ess': {
+      id: '/finance/ess'
+      path: '/ess'
+      fullPath: '/finance/ess'
+      preLoaderRoute: typeof FinanceEssRouteImport
+      parentRoute: typeof FinanceRoute
+    }
     '/employee/portal': {
       id: '/employee/portal'
       path: '/employee/portal'
@@ -1669,6 +1776,13 @@ declare module '@tanstack/react-router' {
       path: '/pdc'
       fullPath: '/cashier/pdc'
       preLoaderRoute: typeof CashierPdcRouteImport
+      parentRoute: typeof CashierRoute
+    }
+    '/cashier/ess': {
+      id: '/cashier/ess'
+      path: '/ess'
+      fullPath: '/cashier/ess'
+      preLoaderRoute: typeof CashierEssRouteImport
       parentRoute: typeof CashierRoute
     }
     '/admin/vendors': {
@@ -1919,12 +2033,14 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface CashierRouteChildren {
+  CashierEssRoute: typeof CashierEssRoute
   CashierPdcRoute: typeof CashierPdcRoute
   CashierReceiptsRoute: typeof CashierReceiptsRoute
   CashierIndexRoute: typeof CashierIndexRoute
 }
 
 const CashierRouteChildren: CashierRouteChildren = {
+  CashierEssRoute: CashierEssRoute,
   CashierPdcRoute: CashierPdcRoute,
   CashierReceiptsRoute: CashierReceiptsRoute,
   CashierIndexRoute: CashierIndexRoute,
@@ -1934,6 +2050,7 @@ const CashierRouteWithChildren =
   CashierRoute._addFileChildren(CashierRouteChildren)
 
 interface FinanceRouteChildren {
+  FinanceEssRoute: typeof FinanceEssRoute
   FinanceJournalRoute: typeof FinanceJournalRoute
   FinanceLedgerRoute: typeof FinanceLedgerRoute
   FinanceProcurementRoute: typeof FinanceProcurementRoute
@@ -1942,6 +2059,7 @@ interface FinanceRouteChildren {
 }
 
 const FinanceRouteChildren: FinanceRouteChildren = {
+  FinanceEssRoute: FinanceEssRoute,
   FinanceJournalRoute: FinanceJournalRoute,
   FinanceLedgerRoute: FinanceLedgerRoute,
   FinanceProcurementRoute: FinanceProcurementRoute,
@@ -1954,12 +2072,14 @@ const FinanceRouteWithChildren =
 
 interface LeasingRouteChildren {
   LeasingCreateRoute: typeof LeasingCreateRoute
+  LeasingEssRoute: typeof LeasingEssRoute
   LeasingManageRoute: typeof LeasingManageRoute
   LeasingIndexRoute: typeof LeasingIndexRoute
 }
 
 const LeasingRouteChildren: LeasingRouteChildren = {
   LeasingCreateRoute: LeasingCreateRoute,
+  LeasingEssRoute: LeasingEssRoute,
   LeasingManageRoute: LeasingManageRoute,
   LeasingIndexRoute: LeasingIndexRoute,
 }
@@ -1968,12 +2088,14 @@ const LeasingRouteWithChildren =
   LeasingRoute._addFileChildren(LeasingRouteChildren)
 
 interface MaintenanceRouteChildren {
+  MaintenanceEssRoute: typeof MaintenanceEssRoute
   MaintenanceInventoryRoute: typeof MaintenanceInventoryRoute
   MaintenanceTicketsRoute: typeof MaintenanceTicketsRoute
   MaintenanceIndexRoute: typeof MaintenanceIndexRoute
 }
 
 const MaintenanceRouteChildren: MaintenanceRouteChildren = {
+  MaintenanceEssRoute: MaintenanceEssRoute,
   MaintenanceInventoryRoute: MaintenanceInventoryRoute,
   MaintenanceTicketsRoute: MaintenanceTicketsRoute,
   MaintenanceIndexRoute: MaintenanceIndexRoute,
@@ -2053,6 +2175,7 @@ const PropMgrUnitsRouteWithChildren = PropMgrUnitsRoute._addFileChildren(
 interface PropMgrRouteChildren {
   PropMgrApprovalsRoute: typeof PropMgrApprovalsRoute
   PropMgrAssetsRoute: typeof PropMgrAssetsRoute
+  PropMgrEssRoute: typeof PropMgrEssRoute
   PropMgrFinanceRoute: typeof PropMgrFinanceRoute
   PropMgrImportsRoute: typeof PropMgrImportsRoute
   PropMgrLeasesRoute: typeof PropMgrLeasesRoute
@@ -2070,6 +2193,7 @@ interface PropMgrRouteChildren {
 const PropMgrRouteChildren: PropMgrRouteChildren = {
   PropMgrApprovalsRoute: PropMgrApprovalsRoute,
   PropMgrAssetsRoute: PropMgrAssetsRoute,
+  PropMgrEssRoute: PropMgrEssRoute,
   PropMgrFinanceRoute: PropMgrFinanceRoute,
   PropMgrImportsRoute: PropMgrImportsRoute,
   PropMgrLeasesRoute: PropMgrLeasesRoute,
@@ -2108,6 +2232,7 @@ interface SuperAdminRouteChildren {
   SuperAdminAnalyticsRoute: typeof SuperAdminAnalyticsRoute
   SuperAdminBillingRoute: typeof SuperAdminBillingRoute
   SuperAdminConfigRoute: typeof SuperAdminConfigRoute
+  SuperAdminEssRoute: typeof SuperAdminEssRoute
   SuperAdminHealthRoute: typeof SuperAdminHealthRoute
   SuperAdminInvoicesRoute: typeof SuperAdminInvoicesRoute
   SuperAdminNotificationsRoute: typeof SuperAdminNotificationsRoute
@@ -2123,6 +2248,7 @@ const SuperAdminRouteChildren: SuperAdminRouteChildren = {
   SuperAdminAnalyticsRoute: SuperAdminAnalyticsRoute,
   SuperAdminBillingRoute: SuperAdminBillingRoute,
   SuperAdminConfigRoute: SuperAdminConfigRoute,
+  SuperAdminEssRoute: SuperAdminEssRoute,
   SuperAdminHealthRoute: SuperAdminHealthRoute,
   SuperAdminInvoicesRoute: SuperAdminInvoicesRoute,
   SuperAdminNotificationsRoute: SuperAdminNotificationsRoute,

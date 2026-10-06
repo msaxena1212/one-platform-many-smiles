@@ -3,7 +3,8 @@ import {
   User, Calendar, Clock, DollarSign, Award, Receipt, FileText, Send,
   Plus, CheckCircle2, XCircle, AlertTriangle, Download, Eye, Lock,
   BookOpen, HelpCircle, LogOut, MessageSquare, Briefcase, RefreshCw,
-  Search, Shield, Layers, UploadCloud, ChevronRight, CreditCard, Key
+  Search, Shield, Layers, UploadCloud, ChevronRight, CreditCard, Key,
+  MapPin, Fingerprint, Building2, Check, Sparkles, ShieldCheck, ArrowRight
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,13 +17,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { HrmsApi, type HrmsLeaveType } from "@/lib/hrmsService";
-import { HrmsMastersApi } from "@/lib/hrmsMastersService";
 
 export interface HrmsEssPortalProps {
   currentEmployee?: any;
+  activeTabProp?: string;
 }
 
-export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
+export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalProps) {
   // Mock current employee fallback if not provided
   const employee = currentEmployee || {
     id: "emp-demo-01",
@@ -45,7 +46,22 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
     status: "ACTIVE",
   };
 
-  const [activeTab, setActiveTab] = useState<string>("my_details");
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (activeTabProp) return activeTabProp;
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      const tab = search.get("tab");
+      if (tab) return tab;
+    }
+    return "my_details";
+  });
+
+  useEffect(() => {
+    if (activeTabProp && activeTabProp !== activeTab) {
+      setActiveTab(activeTabProp);
+    }
+  }, [activeTabProp]);
+
   const [leaveTypes, setLeaveTypes] = useState<HrmsLeaveType[]>([]);
   const [myLeaves, setMyLeaves] = useState<any[]>([]);
   const [myAttendance, setMyAttendance] = useState<any[]>([]);
@@ -54,6 +70,16 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
   const [myLoans, setMyLoans] = useState<any[]>([]);
   const [myTickets, setMyTickets] = useState<any[]>([]);
   const [myCourses, setMyCourses] = useState<any[]>([]);
+
+  // Punch attendance state
+  const [isPunchedIn, setIsPunchedIn] = useState(true);
+  const [lastPunchTime, setLastPunchTime] = useState("07:55 AM");
+  const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Modals state
   const [applyLeaveModal, setApplyLeaveModal] = useState(false);
@@ -94,7 +120,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
   });
 
   const [ticketForm, setTicketForm] = useState({
-    category: "HR",
+    category: "HR Letters",
     subject: "",
     description: "",
   });
@@ -110,6 +136,16 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
     confirm: "",
   });
 
+  // Tax declaration state
+  const [taxRegime, setTaxRegime] = useState("Standard Regime");
+  const [taxDeclarations, setTaxDeclarations] = useState({
+    hraRent: 30000,
+    lifeInsurance: 15000,
+    medicalInsurance: 5000,
+    npsContribution: 50000,
+    homeLoanInterest: 0,
+  });
+
   useEffect(() => {
     loadEssData();
   }, []);
@@ -123,6 +159,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
       setMyLeaves([
         { id: "l-1", type: "Annual Leave", start: "2026-08-10", end: "2026-08-15", days: 5, status: "Approved", reason: "Annual family holiday" },
         { id: "l-2", type: "Casual Leave", start: "2026-09-02", end: "2026-09-02", days: 1, status: "Pending", reason: "Personal bank documentation" },
+        { id: "l-3", type: "Sick Leave", start: "2026-06-12", end: "2026-06-13", days: 2, status: "Approved", reason: "Viral fever & rest" },
       ]);
 
       setMyAttendance([
@@ -130,17 +167,20 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         { date: "2026-09-06", inTime: "08:02 AM", outTime: "05:00 PM", hours: 8.9, status: "PRESENT", punchSource: "Face Recognition" },
         { date: "2026-09-05", inTime: "07:50 AM", outTime: "05:15 PM", hours: 9.4, status: "PRESENT", punchSource: "Biometric Doha HQ" },
         { date: "2026-09-04", inTime: "—", outTime: "—", hours: 0, status: "WEEK_OFF", punchSource: "System Schedule" },
+        { date: "2026-09-03", inTime: "08:00 AM", outTime: "05:10 PM", hours: 9.1, status: "PRESENT", punchSource: "Web Punch Portal" },
       ]);
 
       setMyPayslips([
         { month: "August 2026", basic: 8500, allowances: 3500, gross: 12000, deductions: 0, net: 12000, status: "Paid", paidAt: "2026-08-31" },
         { month: "July 2026", basic: 8500, allowances: 3500, gross: 12000, deductions: 0, net: 12000, status: "Paid", paidAt: "2026-07-31" },
         { month: "June 2026", basic: 8500, allowances: 3500, gross: 12000, deductions: 0, net: 12000, status: "Paid", paidAt: "2026-06-30" },
+        { month: "May 2026", basic: 8500, allowances: 3500, gross: 12000, deductions: 0, net: 12000, status: "Paid", paidAt: "2026-05-31" },
       ]);
 
       setMyExpenses([
         { id: "exp-1", title: "Property Inspection Fuel & Parking", amount: 180, type: "Travel Expense", date: "2026-09-01", status: "Approved" },
         { id: "exp-2", title: "Tenant Welcome Hospitality Box", amount: 250, type: "Reimbursement Expense", date: "2026-08-25", status: "Reimbursed" },
+        { id: "exp-3", title: "Site Key Duplication & Courier", amount: 95, type: "Other Expense", date: "2026-08-14", status: "Approved" },
       ]);
 
       setMyLoans([
@@ -156,9 +196,23 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         { id: "c-1", title: "Qatar Real Estate Regulatory Law & Tenancy Standards", category: "Property Management", progress: "85%", status: "In Progress" },
         { id: "c-2", title: "Fire Safety & Facility Emergency Procedures", category: "Health & Safety", progress: "100%", status: "Completed" },
         { id: "c-3", title: "Advanced Financial Ledger Posting & AP Workflow", category: "ERP Training", progress: "40%", status: "In Progress" },
+        { id: "c-4", title: "Anti-Money Laundering & Real Estate KYC Compliance", category: "Compliance", progress: "60%", status: "In Progress" },
       ]);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handlePunchToggle = () => {
+    const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isPunchedIn) {
+      setIsPunchedIn(false);
+      setLastPunchTime(timeNow);
+      toast.success(`Successfully Punched OUT at ${timeNow}. Have a good evening!`);
+    } else {
+      setIsPunchedIn(true);
+      setLastPunchTime(timeNow);
+      toast.success(`Successfully Punched IN at ${timeNow}. Work hours are being recorded.`);
     }
   };
 
@@ -247,39 +301,51 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
       toast.error("New passwords do not match");
       return;
     }
+    if (passwords.new_pass.length < 6) {
+      toast.error("Password must be at least 6 characters long");
+      return;
+    }
     toast.success("Password updated successfully!");
     setPasswordModal(false);
+    setPasswords({ current: "", new_pass: "", confirm: "" });
   };
 
-  const ESS_NAV_TABS = [
-    { key: "my_details", label: "My Profile Details", icon: User },
-    { key: "attendance", label: "Punch Attendance", icon: Clock },
-    { key: "leaves", label: "Apply Leave", icon: Calendar },
-    { key: "cancel_leave", label: "Cancel Leave", icon: XCircle },
-    { key: "payslips", label: "My Payslips", icon: DollarSign },
-    { key: "tax_declaration", label: "Tax Declaration", icon: FileText },
-    { key: "expenses", label: "Claim Expense", icon: Receipt },
-    { key: "loans", label: "Apply Loan", icon: CreditCard },
-    { key: "appraisal", label: "Self Assessment", icon: Award },
-    { key: "learning", label: "Learning Gallery", icon: BookOpen },
-    { key: "helpdesk", label: "Help Desk", icon: HelpCircle },
-    { key: "templates", label: "Templates & Letters", icon: Download },
-    { key: "resignation", label: "Notice & Exit", icon: LogOut },
-    { key: "change_password", label: "Change Password", icon: Key }
-  ];
+  const TAB_LABELS: Record<string, { title: string; subtitle: string; icon: React.ElementType }> = {
+    my_details: { title: "My Profile Details", subtitle: "Verified personal dossier, employment records, and compensation snapshot", icon: User },
+    attendance: { title: "Punch Attendance & Timesheet", subtitle: "Live biometric / web punch clock, work hour calculations, and overtime tracking", icon: Clock },
+    leaves: { title: "Apply Leave", subtitle: "Submit leave requests and track leave balance quotas across cycles", icon: Calendar },
+    cancel_leave: { title: "Cancel Leave", subtitle: "Cancel pending or approved leave requests before commencement", icon: XCircle },
+    payslips: { title: "My Payslips", subtitle: "Disbursed monthly payroll slips with component breakdown and PDF receipts", icon: DollarSign },
+    tax_declaration: { title: "Tax & Statutory Declaration", subtitle: "Annual tax regime declaration, HRA rent receipts, and investment proofs", icon: FileText },
+    expenses: { title: "Claim Expense", subtitle: "Submit travel reimbursements, client entertainment, and petty claims", icon: Receipt },
+    loans: { title: "Apply Loan & Advances", subtitle: "Staff emergency advances, loan requests, and EMI recovery schedules", icon: CreditCard },
+    appraisal: { title: "Self Assessment", subtitle: "Annual KPA appraisal evaluation, self-reflection remarks, and goal tracking", icon: Award },
+    learning: { title: "Learning Gallery", subtitle: "Professional real estate, ERP training, and regulatory compliance courses", icon: BookOpen },
+    helpdesk: { title: "Help Desk", subtitle: "HR service tickets, IT requests, and workplace grievance management", icon: HelpCircle },
+    templates: { title: "Templates & Letters", subtitle: "Download official salary certificates, NOC letters, and policy templates", icon: Download },
+    resignation: { title: "Notice & Exit", subtitle: "Formal resignation notice, handover checklist, and gratuity tracking", icon: LogOut },
+    change_password: { title: "Change Password", subtitle: "Account credentials, login security, and two-factor authentication", icon: Key },
+  };
+
+  const currentTabMeta = TAB_LABELS[activeTab] || TAB_LABELS.my_details;
+  const CurrentTabIcon = currentTabMeta.icon;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Employee Top Hero Profile Card */}
-      <div className="bg-card border rounded-2xl p-6 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="bg-card border rounded-2xl p-6 shadow-xs flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center font-bold text-primary text-2xl border border-primary/20">
+          <div className="h-16 w-16 rounded-2xl bg-teal-500/10 flex items-center justify-center font-bold text-teal-600 text-2xl border border-teal-500/20 shadow-xs shrink-0">
             {employee.first_name[0]}{employee.last_name[0]}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-bold tracking-tight">{employee.first_name} {employee.last_name}</h2>
-              <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs">Active Staff</Badge>
+              <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs text-white">Active Staff</Badge>
+              <Badge variant="outline" className="border-teal-500/40 text-teal-600 bg-teal-50/50 dark:bg-teal-950/20 text-xs font-semibold gap-1.5">
+                <CurrentTabIcon className="h-3 w-3" />
+                {currentTabMeta.title}
+              </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               {employee.designation} • {employee.department} • <span className="font-mono font-semibold text-primary">{employee.employee_id_code}</span>
@@ -290,7 +356,21 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="px-3 py-1.5 rounded-xl border bg-muted/30 text-xs flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full ${isPunchedIn ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+            <span className="text-muted-foreground text-[11px]">Today:</span>
+            <span className="font-bold">{isPunchedIn ? `In at ${lastPunchTime}` : `Out at ${lastPunchTime}`}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePunchToggle}
+            className={`gap-1.5 text-xs font-semibold ${isPunchedIn ? "border-amber-500/40 text-amber-600 hover:bg-amber-50" : "border-emerald-500/40 text-emerald-600 hover:bg-emerald-50"}`}
+          >
+            <Fingerprint className="h-3.5 w-3.5" />
+            {isPunchedIn ? "Punch Out" : "Punch In"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setPasswordModal(true)} className="gap-1.5 text-xs">
             <Lock className="h-3.5 w-3.5" /> Change Password
           </Button>
@@ -298,28 +378,6 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
             <Plus className="h-3.5 w-3.5" /> Apply Leave
           </Button>
         </div>
-      </div>
-
-      {/* ESS Navigation Bar */}
-      <div className="flex overflow-x-auto pb-1 gap-1.5 border-b no-scrollbar">
-        {ESS_NAV_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                isActive
-                  ? "bg-primary text-primary-foreground shadow-xs font-semibold"
-                  : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
       </div>
 
       {/* ── TAB 1: MY PROFILE / DOSSIER ────────────────────────────────────────── */}
@@ -403,7 +461,101 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </div>
       )}
 
-      {/* ── TAB 2: LEAVE APPLY & STATUS ────────────────────────────────────────── */}
+      {/* ── TAB 2: PUNCH ATTENDANCE & TIMESHEET ─────────────────────────────────── */}
+      {activeTab === "attendance" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Live Punch Clock Card */}
+            <Card className="md:col-span-1 bg-gradient-to-br from-card to-muted/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Fingerprint className="h-4 w-4 text-teal-600" /> Web & Biometric Punch Clock
+                </CardTitle>
+                <CardDescription>Real-time attendance punch</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 rounded-xl border bg-background/80 text-center space-y-1">
+                  <span className="text-xs text-muted-foreground">Current Live Time</span>
+                  <div className="text-2xl font-mono font-bold text-primary">{currentTime}</div>
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1 mt-1">
+                    <MapPin className="h-3 w-3 text-teal-500" /> Doha HQ • GPS Validated
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Current Punch Status:</span>
+                    <Badge variant={isPunchedIn ? "default" : "secondary"}>
+                      {isPunchedIn ? "Punched In" : "Punched Out"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Last Timestamp:</span>
+                    <span className="font-semibold">{lastPunchTime}</span>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handlePunchToggle}
+                  className={`w-full py-5 text-sm font-bold gap-2 shadow-xs ${
+                    isPunchedIn ? "bg-amber-600 hover:bg-amber-700 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  }`}
+                >
+                  <Fingerprint className="h-4 w-4" />
+                  {isPunchedIn ? "Punch Out Now" : "Punch In Now"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Attendance Overview Card */}
+            <Card className="md:col-span-2">
+              <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                  <CardTitle className="text-base font-semibold">Attendance Log & Timesheet</CardTitle>
+                  <CardDescription>Daily punch timestamps, working hours, and overtime requests</CardDescription>
+                </div>
+                <Button onClick={() => setApplyOvertimeModal(true)} variant="outline" size="sm" className="gap-2 text-xs">
+                  <Plus className="h-3.5 w-3.5" /> Request Overtime
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>First In</TableHead>
+                        <TableHead>Last Out</TableHead>
+                        <TableHead>Hours</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {myAttendance.map((a, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-semibold text-xs">{a.date}</TableCell>
+                          <TableCell className="font-mono text-xs text-emerald-600">{a.inTime}</TableCell>
+                          <TableCell className="font-mono text-xs text-blue-600">{a.outTime}</TableCell>
+                          <TableCell className="text-xs font-bold">{a.hours}h</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{a.punchSource}</TableCell>
+                          <TableCell>
+                            <Badge variant={a.status === "PRESENT" ? "default" : "secondary"}>
+                              {a.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 3: LEAVE APPLICATIONS ──────────────────────────────────────────── */}
       {activeTab === "leaves" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -489,47 +641,67 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 3: ATTENDANCE & OT PUNCH ───────────────────────────────────────── */}
-      {activeTab === "attendance" && (
+      {/* ── TAB 4: CANCEL LEAVE ─────────────────────────────────────────────────── */}
+      {activeTab === "cancel_leave" && (
         <div className="space-y-6">
           <Card>
-            <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-              <div>
-                <CardTitle className="text-base font-semibold">Attendance Log & Overtime</CardTitle>
-                <CardDescription>Daily punch timestamps, working hours, and overtime requests</CardDescription>
-              </div>
-              <Button onClick={() => setApplyOvertimeModal(true)} variant="outline" className="gap-2">
-                <Plus className="h-4 w-4" /> Request Overtime
-              </Button>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-rose-500" /> Cancel Leave Applications
+              </CardTitle>
+              <CardDescription>Review and cancel pending or upcoming approved leave requests</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <div className="p-4 rounded-xl border bg-amber-50/50 dark:bg-amber-950/20 text-xs space-y-1 text-amber-800 dark:text-amber-300">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Leave Cancellation Policy
+                </div>
+                <p className="text-[11px] opacity-90">
+                  Pending leaves can be cancelled directly by you. For already approved leaves that have commenced, an HR cancellation ticket must be filed.
+                </p>
+              </div>
+
               <div className="rounded-lg border overflow-hidden">
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>First In Punch</TableHead>
-                      <TableHead>Last Out Punch</TableHead>
-                      <TableHead>Hours Logged</TableHead>
-                      <TableHead>Source / Device</TableHead>
+                      <TableHead>Leave Type</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Days</TableHead>
+                      <TableHead>Reason</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {myAttendance.map((a, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-semibold text-xs">{a.date}</TableCell>
-                        <TableCell className="font-mono text-xs text-emerald-600">{a.inTime}</TableCell>
-                        <TableCell className="font-mono text-xs text-blue-600">{a.outTime}</TableCell>
-                        <TableCell className="text-xs font-bold">{a.hours}h</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{a.punchSource}</TableCell>
+                    {myLeaves.filter(l => l.status !== "Cancelled").map((l) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-semibold text-xs">{l.type}</TableCell>
+                        <TableCell className="text-xs">{l.start} to {l.end}</TableCell>
+                        <TableCell className="text-xs font-bold">{l.days} Days</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{l.reason}</TableCell>
                         <TableCell>
-                          <Badge variant={a.status === "PRESENT" ? "default" : "secondary"}>
-                            {a.status}
-                          </Badge>
+                          <Badge variant={l.status === "Approved" ? "default" : "outline"}>{l.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleCancelLeave(l.id)}
+                            className="h-7 text-xs gap-1"
+                          >
+                            <XCircle className="h-3.5 w-3.5" /> Cancel Leave
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
+                    {myLeaves.filter(l => l.status !== "Cancelled").length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">
+                          No active or pending leaves available to cancel.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -538,7 +710,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </div>
       )}
 
-      {/* ── TAB 4: SALARY PAYSLIPS ──────────────────────────────────────────────── */}
+      {/* ── TAB 5: SALARY PAYSLIPS ──────────────────────────────────────────────── */}
       {activeTab === "payslips" && (
         <Card>
           <CardHeader>
@@ -570,7 +742,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
                       <TableCell className="text-xs text-rose-600">-{p.deductions.toLocaleString()} QAR</TableCell>
                       <TableCell className="text-xs font-bold text-primary">{p.net.toLocaleString()} QAR</TableCell>
                       <TableCell>
-                        <Badge className="bg-emerald-600 hover:bg-emerald-700">{p.status}</Badge>
+                        <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white">{p.status}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -579,7 +751,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
                           onClick={() => toast.success(`Downloaded payslip for ${p.month}`)}
                           className="h-7 text-xs gap-1"
                         >
-                          <Download className="h-3 w-3" /> Download
+                          <Download className="h-3 w-3" /> Download PDF
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -591,7 +763,112 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 5: TRAVEL & REIMBURSEMENTS ─────────────────────────────────────── */}
+      {/* ── TAB 6: TAX DECLARATION ─────────────────────────────────────────────── */}
+      {activeTab === "tax_declaration" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <CardTitle className="text-base font-semibold">Income Tax & Statutory Declarations (FY 2026-27)</CardTitle>
+                <CardDescription>Submit investment proof, housing rent receipts, and select your tax calculation regime</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => toast.success("Downloaded Annual Tax Computation Summary (Form 16 Preview)")}
+                className="gap-1.5 text-xs"
+              >
+                <Download className="h-3.5 w-3.5" /> Download Tax Statement
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Regime Selector */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div
+                  onClick={() => setTaxRegime("Standard Regime")}
+                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                    taxRegime === "Standard Regime"
+                      ? "border-teal-500 bg-teal-50/30 dark:bg-teal-950/20 ring-1 ring-teal-500"
+                      : "bg-card hover:bg-muted/30"
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-sm">Standard Deduction Regime</span>
+                    {taxRegime === "Standard Regime" && <Check className="h-4 w-4 text-teal-600" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Automatic standard statutory deductions with simplified slab computations.
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => setTaxRegime("Investment Proof Regime")}
+                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                    taxRegime === "Investment Proof Regime"
+                      ? "border-teal-500 bg-teal-50/30 dark:bg-teal-950/20 ring-1 ring-teal-500"
+                      : "bg-card hover:bg-muted/30"
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-sm">Itemized Investment Proof Regime</span>
+                    {taxRegime === "Investment Proof Regime" && <Check className="h-4 w-4 text-teal-600" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Claim deductions for HRA Rent, Life Insurance, Medical Health Policy, and Pension Fund.
+                  </p>
+                </div>
+              </div>
+
+              {/* Declaration Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Annual House Rent Paid (for HRA Exemption)</Label>
+                  <Input
+                    type="number"
+                    value={taxDeclarations.hraRent}
+                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, hraRent: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Life Insurance Premiums (80C / Statutory)</Label>
+                  <Input
+                    type="number"
+                    value={taxDeclarations.lifeInsurance}
+                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, lifeInsurance: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Medical & Family Health Insurance (80D)</Label>
+                  <Input
+                    type="number"
+                    value={taxDeclarations.medicalInsurance}
+                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, medicalInsurance: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Voluntary Pension / Retirement Fund Contribution</Label>
+                  <Input
+                    type="number"
+                    value={taxDeclarations.npsContribution}
+                    onChange={(e) => setTaxDeclarations({ ...taxDeclarations, npsContribution: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t">
+                <span className="text-xs text-muted-foreground">
+                  Status: <strong className="text-emerald-600">Declaration Submitted & Verified for Payroll</strong>
+                </span>
+                <Button size="sm" onClick={() => toast.success("Tax declaration updated and submitted for Finance payroll audit!")}>
+                  Save & Submit Declaration
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TAB 7: TRAVEL & REIMBURSEMENTS ─────────────────────────────────────── */}
       {activeTab === "expenses" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -636,7 +913,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 6: APPLY LOANS & ADVANCES ──────────────────────────────────────── */}
+      {/* ── TAB 8: APPLY LOANS & ADVANCES ──────────────────────────────────────── */}
       {activeTab === "loans" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -681,13 +958,13 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 7: SELF ASSESSMENT & REVIEWS ──────────────────────────────────── */}
+      {/* ── TAB 9: SELF ASSESSMENT & REVIEWS ──────────────────────────────────── */}
       {activeTab === "appraisal" && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-semibold">Self Assessment & Annual KPA Evaluation</CardTitle>
-              <CardDescription>Complete your personal appraisal score and peer review questions</CardDescription>
+              <CardDescription>Complete your personal appraisal score and review key performance areas</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-4 rounded-xl border bg-card space-y-3">
@@ -696,7 +973,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
                     <h4 className="font-bold text-sm">2026 Annual Appraisal Cycle</h4>
                     <p className="text-xs text-muted-foreground">Self-assessment phase open until 30 Sept 2026</p>
                   </div>
-                  <Badge className="bg-emerald-600">Active Review</Badge>
+                  <Badge className="bg-emerald-600 text-white">Active Review</Badge>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
@@ -737,7 +1014,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </div>
       )}
 
-      {/* ── TAB 8: LEARNING GALLERY ────────────────────────────────────────────── */}
+      {/* ── TAB 10: LEARNING GALLERY ───────────────────────────────────────────── */}
       {activeTab === "learning" && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -750,17 +1027,19 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {myCourses.map((c) => (
-                <div key={c.id} className="p-4 rounded-xl border bg-card space-y-2 hover:border-primary/50 transition-colors">
-                  <div className="flex justify-between items-start">
-                    <Badge variant="outline" className="text-[10px]">{c.category}</Badge>
-                    <Badge variant={c.status === "Completed" ? "default" : "secondary"} className="text-[10px]">
-                      {c.status}
-                    </Badge>
+                <div key={c.id} className="p-4 rounded-xl border bg-card space-y-2 hover:border-primary/50 transition-colors flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <Badge variant="outline" className="text-[10px]">{c.category}</Badge>
+                      <Badge variant={c.status === "Completed" ? "default" : "secondary"} className="text-[10px]">
+                        {c.status}
+                      </Badge>
+                    </div>
+                    <h4 className="font-bold text-xs leading-snug line-clamp-2">{c.title}</h4>
                   </div>
-                  <h4 className="font-bold text-xs leading-snug line-clamp-2">{c.title}</h4>
-                  <div className="space-y-1 pt-2">
+                  <div className="space-y-2 pt-2">
                     <div className="flex justify-between text-[10px] text-muted-foreground">
                       <span>Progress:</span>
                       <span className="font-semibold text-primary">{c.progress}</span>
@@ -768,15 +1047,15 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
                     <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                       <div className="bg-primary h-1.5 rounded-full" style={{ width: c.progress }} />
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs mt-2"
+                      onClick={() => toast.info(`Resuming ${c.title}...`)}
+                    >
+                      Resume Course
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full text-xs mt-2"
-                    onClick={() => toast.info(`Resuming ${c.title}...`)}
-                  >
-                    Resume Course
-                  </Button>
                 </div>
               ))}
             </div>
@@ -784,7 +1063,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 9: HELP DESK & COMPLAINTS ──────────────────────────────────────── */}
+      {/* ── TAB 11: HELP DESK & COMPLAINTS ─────────────────────────────────────── */}
       {activeTab === "helpdesk" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -829,31 +1108,32 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 10: MY TEMPLATES & FORMS ───────────────────────────────────────── */}
-      {activeTab === "documents" && (
+      {/* ── TAB 12: TEMPLATES & LETTERS ────────────────────────────────────────── */}
+      {activeTab === "templates" && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base font-semibold">Official HR Templates & Declaration Forms</CardTitle>
-            <CardDescription>Download company letters, tax declarations, and signed employee forms</CardDescription>
+            <CardTitle className="text-base font-semibold">Official HR Templates & Letters</CardTitle>
+            <CardDescription>Download company letters, salary certificates, NOCs, and official declaration forms</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
-                { title: "Standard Salary Certificate & Embassy NOC", code: "TMPL-NOC", type: "Word / PDF" },
-                { title: "Annual Income Tax & Remittance Declaration Form", code: "FORM-TAX-2026", type: "PDF Form" },
-                { title: "Company Asset & IT Equipment Clearance Handover", code: "FORM-ASSET-CL", type: "PDF Form" },
-                { title: "Employee Health & Group Insurance Claim Form", code: "FORM-INSUR-MED", type: "PDF Form" },
+                { title: "Standard Salary Certificate & Embassy NOC", code: "TMPL-NOC", type: "Word / PDF", desc: "For bank loans, credit cards, and international embassy visa applications" },
+                { title: "Annual Income Tax & Remittance Declaration Form", code: "FORM-TAX-2026", type: "PDF Form", desc: "Statutory tax deduction and home country remittance exemption proof" },
+                { title: "Company Asset & IT Equipment Clearance Handover", code: "FORM-ASSET-CL", type: "PDF Form", desc: "Official clearance template for laptop, monitors, and access keyfobs" },
+                { title: "Employee Health & Group Insurance Claim Form", code: "FORM-INSUR-MED", type: "PDF Form", desc: "Reimbursement form for medical diagnostics and hospital treatments" },
               ].map((doc, idx) => (
-                <div key={idx} className="p-4 rounded-xl border bg-card flex justify-between items-center">
+                <div key={idx} className="p-4 rounded-xl border bg-card flex justify-between items-center gap-4">
                   <div>
                     <h4 className="font-bold text-xs">{doc.title}</h4>
-                    <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{doc.code} • {doc.type}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{doc.desc}</p>
+                    <p className="text-[10px] text-muted-foreground font-mono mt-1">{doc.code} • {doc.type}</p>
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => toast.success(`Downloaded ${doc.title}`)}
-                    className="h-8 text-xs gap-1"
+                    className="h-8 text-xs gap-1 shrink-0"
                   >
                     <Download className="h-3.5 w-3.5" /> Download
                   </Button>
@@ -864,7 +1144,7 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
         </Card>
       )}
 
-      {/* ── TAB 11: RESIGNATION & NOTICE ───────────────────────────────────────── */}
+      {/* ── TAB 13: RESIGNATION & NOTICE ───────────────────────────────────────── */}
       {activeTab === "resignation" && (
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -885,6 +1165,65 @@ export function HrmsEssPortal({ currentEmployee }: HrmsEssPortalProps) {
                 will be initiated automatically.
               </p>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── TAB 14: CHANGE PASSWORD ────────────────────────────────────────────── */}
+      {activeTab === "change_password" && (
+        <Card className="max-w-xl">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Key className="h-4 w-4 text-teal-600" /> Change Account Password & Security
+            </CardTitle>
+            <CardDescription>Update your portal access credentials and security settings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Current Password *</Label>
+                <Input
+                  type="password"
+                  required
+                  placeholder="Enter current password"
+                  value={passwords.current}
+                  onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">New Password *</Label>
+                <Input
+                  type="password"
+                  required
+                  placeholder="Minimum 6 characters"
+                  value={passwords.new_pass}
+                  onChange={(e) => setPasswords({ ...passwords, new_pass: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Confirm New Password *</Label>
+                <Input
+                  type="password"
+                  required
+                  placeholder="Re-enter new password"
+                  value={passwords.confirm}
+                  onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                />
+              </div>
+
+              <div className="p-3 rounded-lg border bg-muted/30 text-xs space-y-1">
+                <div className="flex items-center gap-2 font-semibold">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Two-Factor Authentication
+                </div>
+                <p className="text-muted-foreground text-[11px]">
+                  Two-factor authentication is active on your official company email ({employee.email}).
+                </p>
+              </div>
+
+              <Button type="submit" className="w-full">
+                Update Account Password
+              </Button>
+            </form>
           </CardContent>
         </Card>
       )}

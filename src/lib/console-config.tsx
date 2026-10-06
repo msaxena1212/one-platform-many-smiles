@@ -90,6 +90,40 @@ type ConsoleConfig = {
   titleRules: TitleRule[];
 };
 
+export function getEssNavModule(baseRoute: string): NavModule {
+  return {
+    module: "My Self-Service",
+    icon: <UserCheck className="h-4 w-4" />,
+    color: "text-teal-500",
+    bg: "bg-teal-500/10",
+    activeBg: "bg-teal-500",
+    groups: [
+      {
+        group: "Employee Self-Service (ESS)",
+        icon: <UserCheck className="h-3.5 w-3.5" />,
+        color: "text-teal-500",
+        bg: "bg-teal-500/10",
+        items: [
+          { to: baseRoute as any, search: { tab: "my_details" }, label: "My Profile Details", icon: <Users className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "attendance" }, label: "Punch Attendance", icon: <Clock className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "leaves" }, label: "Apply Leave", icon: <Calendar className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "cancel_leave" }, label: "Cancel Leave", icon: <MinusCircle className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "payslips" }, label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "tax_declaration" }, label: "Tax Declaration", icon: <FileText className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "expenses" }, label: "Claim Expense", icon: <Receipt className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "loans" }, label: "Apply Loan", icon: <CreditCard className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "appraisal" }, label: "Self Assessment", icon: <Award className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "learning" }, label: "Learning Gallery", icon: <BookOpen className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "helpdesk" }, label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "templates" }, label: "Templates & Letters", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "resignation" }, label: "Notice & Exit", icon: <LogOut className="h-3.5 w-3.5" /> },
+          { to: baseRoute as any, search: { tab: "change_password" }, label: "Change Password", icon: <Key className="h-3.5 w-3.5" /> },
+        ],
+      },
+    ],
+  };
+}
+
 const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
   // ── Tenant Portal ──────────────────────────────────────────────────────────
   portal: {
@@ -486,32 +520,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Attendance & Punch", icon: <Clock className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Loans & Advances", icon: <CreditCard className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Appraisal & KPA", icon: <Award className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Notice & Exit", icon: <LogOut className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/prop-mgr/ess"),
     ],
     titleRules: [
       { match: "/prop-mgr", title: "Operations Dashboard" },
@@ -526,7 +535,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/prop-mgr/maintenance", title: "Maintenance" },
       { match: "/prop-mgr/approvals", title: "Approvals" },
       { match: "/prop-mgr/users", title: "Users" },
-      { match: "/admin/ess", title: "My Self-Service (ESS)" },
+      { match: "/prop-mgr/ess", title: "My Self-Service (ESS)" },
     ],
   },
 
@@ -881,32 +890,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Attendance & Punch", icon: <Clock className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Loans & Advances", icon: <CreditCard className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Appraisal & KPA", icon: <Award className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Notice & Exit", icon: <LogOut className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/admin/ess"),
       {
         module: "System & Config",
         icon: <Settings className="h-4 w-4" />,
@@ -1103,6 +1087,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
+      getEssNavModule("/super-admin/ess"),
     ],
     titleRules: [
       { match: "/super-admin", title: "Platform Overview" },
@@ -1116,6 +1101,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/super-admin/config", title: "Global Configuration" },
       { match: "/super-admin/alerts", title: "In-App & Alerts Governance" },
       { match: "/super-admin/security", title: "System Audit Trail & Notification Analytics" },
+      { match: "/super-admin/ess", title: "My Self-Service (ESS)" },
     ],
   },
 
@@ -1156,34 +1142,13 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/leasing/ess"),
     ],
     titleRules: [
       { match: "/leasing", title: "Leasing Overview" },
       { match: "/leasing/manage", title: "Manage Leases" },
       { match: "/leasing/create", title: "Create Lease" },
-      { match: "/admin/ess", title: "My Self-Service (ESS)" },
+      { match: "/leasing/ess", title: "My Self-Service (ESS)" },
     ],
   },
 
@@ -1300,32 +1265,11 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/finance/ess"),
     ],
     titleRules: [
       { match: "/finance", title: "Finance" },
-      { match: "/admin/ess", title: "My Self-Service (ESS)" },
+      { match: "/finance/ess", title: "My Self-Service (ESS)" },
     ],
   },
   // ── Cashier Console ───────────────────────────────────────────────────────
@@ -1363,34 +1307,13 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/cashier/ess"),
     ],
     titleRules: [
       { match: "/cashier", title: "Cashier Overview" },
       { match: "/cashier/receipts", title: "Receipts" },
       { match: "/cashier/pdc", title: "PDC Register" },
-      { match: "/admin/ess", title: "My Self-Service (ESS)" },
+      { match: "/cashier/ess", title: "My Self-Service (ESS)" },
     ],
   },
 
@@ -1429,34 +1352,13 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      {
-        module: "My Self-Service",
-        icon: <UserCheck className="h-4 w-4" />,
-        color: "text-teal-500",
-        bg: "bg-teal-500/10",
-        activeBg: "bg-teal-500",
-        groups: [
-          {
-            group: "Employee Self-Service (ESS)",
-            icon: <UserCheck className="h-3.5 w-3.5" />,
-            color: "text-teal-500",
-            bg: "bg-teal-500/10",
-            items: [
-              { to: "/admin/ess", label: "My Profile & Details", icon: <Users className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Leave Applications", icon: <Calendar className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "My Payslips", icon: <DollarSign className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Expense Claims", icon: <Receipt className="h-3.5 w-3.5" /> },
-              { to: "/admin/ess", label: "Help Desk", icon: <HelpCircle className="h-3.5 w-3.5" /> },
-            ],
-          },
-        ],
-      },
+      getEssNavModule("/maintenance/ess"),
     ],
     titleRules: [
       { match: "/maintenance", title: "Maintenance Overview" },
       { match: "/maintenance/tickets", title: "Tickets" },
       { match: "/maintenance/inventory", title: "Inventory" },
-      { match: "/admin/ess", title: "My Self-Service (ESS)" },
+      { match: "/maintenance/ess", title: "My Self-Service (ESS)" },
     ],
   },
 };
