@@ -203,11 +203,7 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
           </div>
         </div>
 
-        {role === "cashier" && collectionContext && (
-          <div className="mx-6 mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            <span className="font-semibold">Collection target:</span> {collectionContext.tenantName} · {collectionContext.property} · {collectionContext.unit}
-          </div>
-        )}
+
 
         {/* Content */}
         <ScrollArea className="flex-1">
@@ -1866,8 +1862,8 @@ function ChartOfAccountsSubModule() {
                       {isTypeExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       <span className="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary">{type.code}</span>
                       <span className="font-bold text-sm text-foreground">{type.name}</span>
-                      <Badge variant="outline" className={`text-[10px] uppercase font-bold ${type.financial_statement === 'BS' ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-purple-300 text-purple-700 bg-purple-50'}`}>
-                        {type.financial_statement === 'BS' ? 'Balance Sheet' : 'Profit & Loss'}
+                      <Badge variant="outline" className={`text-[10px] uppercase font-bold ${(type as any).financial_statement === 'BS' ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-purple-300 text-purple-700 bg-purple-50'}`}>
+                        {(type as any).financial_statement === 'BS' ? 'Balance Sheet' : 'Profit & Loss'}
                       </Badge>
                     </div>
                     <Badge variant={type.normal_balance === 'Debit' ? 'default' : 'secondary'} className="text-[10px]">
@@ -6494,8 +6490,8 @@ function GeneralLedgerReportSubModule() {
           </div>
         </div>
 
-        {/* Sub-row: Search + Date Range + Sort toggle */}
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
+        {/* Sub-row: Search + Date Range with Current Date (Today) shortcuts + Sort toggle */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1 items-center">
           <div className="sm:col-span-4 relative">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -6506,28 +6502,109 @@ function GeneralLedgerReportSubModule() {
             />
           </div>
           <div className="sm:col-span-3 flex items-center gap-1.5">
-            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">From Date:</Label>
-            <Input
-              type="date"
-              className="h-8 text-xs bg-background"
-              value={startDate}
-              onChange={e => { setStartDate(e.target.value); setPage(1); }}
-            />
+            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">From:</Label>
+            <div className="relative flex-1">
+              <Input
+                type="date"
+                className="h-8 text-xs bg-background pr-7"
+                value={startDate}
+                onChange={e => { setStartDate(e.target.value); setPage(1); }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const todayStr = new Date().toISOString().split("T")[0];
+                  setStartDate(todayStr);
+                  setPage(1);
+                }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-primary hover:text-primary/80 font-bold px-1 py-0.5 rounded bg-muted/60"
+                title="Set From Date to Current Date (Today)"
+              >
+                Now
+              </button>
+            </div>
           </div>
           <div className="sm:col-span-3 flex items-center gap-1.5">
-            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">To Date:</Label>
-            <Input
-              type="date"
-              className="h-8 text-xs bg-background"
-              value={endDate}
-              onChange={e => { setEndDate(e.target.value); setPage(1); }}
-            />
+            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">To:</Label>
+            <div className="relative flex-1">
+              <Input
+                type="date"
+                className="h-8 text-xs bg-background pr-7"
+                value={endDate}
+                onChange={e => { setEndDate(e.target.value); setPage(1); }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const todayStr = new Date().toISOString().split("T")[0];
+                  setEndDate(todayStr);
+                  setPage(1);
+                }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-primary hover:text-primary/80 font-bold px-1 py-0.5 rounded bg-muted/60"
+                title="Set To Date to Current Date (Today)"
+              >
+                Now
+              </button>
+            </div>
           </div>
           <div className="sm:col-span-2 flex items-center gap-1.5 justify-end">
             <Button size="sm" variant="outline" className="h-8 text-xs w-full gap-1" onClick={() => { setSortAsc(!sortAsc); setPage(1); }}>
-              <ArrowUpDown className="h-3 w-3" />{sortAsc ? "Ascending ↑" : "Descending ↓"}
+              <ArrowUpDown className="h-3 w-3" />{sortAsc ? "Asc ↑" : "Desc ↓"}
             </Button>
           </div>
+        </div>
+
+        {/* Quick Date Presets Row */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pt-0.5 border-t border-border/40 text-[11px]">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-muted-foreground font-semibold flex items-center gap-1">
+              <Calendar className="h-3 w-3 text-primary" /> Date Presets:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const todayStr = new Date().toISOString().split("T")[0];
+                setStartDate(todayStr);
+                setEndDate(todayStr);
+                setPage(1);
+              }}
+              className="px-2 py-0.5 rounded-md border text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 border-primary/30 transition-colors shadow-xs"
+            >
+              📅 Select Current Date (Today)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const now = new Date();
+                const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+                const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+                setStartDate(firstDay);
+                setEndDate(lastDay);
+                setPage(1);
+              }}
+              className="px-2 py-0.5 rounded-md border text-xs font-medium bg-background hover:bg-muted text-foreground transition-colors"
+            >
+              This Month
+            </button>
+            {(startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                  setPage(1);
+                }}
+                className="px-2 py-0.5 rounded-md text-xs text-muted-foreground hover:text-destructive underline"
+              >
+                Clear Date Range
+              </button>
+            )}
+          </div>
+          {startDate && endDate && (
+            <span className="font-mono text-[10px] text-muted-foreground bg-background px-2 py-0.5 rounded border">
+              Active Range: {startDate} → {endDate}
+            </span>
+          )}
         </div>
       </div>
 

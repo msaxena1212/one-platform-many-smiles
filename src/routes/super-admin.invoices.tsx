@@ -134,66 +134,7 @@ export function InvoicesPage() {
       if (!error && data && data.length > 0) {
         setInvoices(data as SubscriptionInvoice[]);
       } else {
-        // Fallback default sample records
-        setInvoices([
-          {
-            id: "1",
-            invoice_number: "INV-SUB-90214",
-            tenant_key: "tenant-pearl-real-estate",
-            tenant_name: "Pearl Island Properties W.L.L.",
-            plan: "Enterprise",
-            billing_cycle: "monthly",
-            subtotal_amount: 2499,
-            tax_amount: 0,
-            discount_amount: 0,
-            total_amount: 2499,
-            currency: "QAR",
-            status: "Paid",
-            issue_date: "2026-09-01",
-            due_date: "2026-09-15",
-            payment_date: "2026-09-01T09:30:00Z",
-            payment_method: "QPAY / NAPS",
-            transaction_ref: "TXN-QPAY-882104",
-          },
-          {
-            id: "2",
-            invoice_number: "INV-SUB-90215",
-            tenant_key: "tenant-lusail-towers",
-            tenant_name: "Lusail Marina Towers Management",
-            plan: "Professional",
-            billing_cycle: "monthly",
-            subtotal_amount: 999,
-            tax_amount: 0,
-            discount_amount: 0,
-            total_amount: 999,
-            currency: "QAR",
-            status: "Paid",
-            issue_date: "2026-09-01",
-            due_date: "2026-09-15",
-            payment_date: "2026-09-01T10:15:00Z",
-            payment_method: "Direct Wire (QNB)",
-            transaction_ref: "QNB-WIRE-092144",
-          },
-          {
-            id: "3",
-            invoice_number: "INV-SUB-90216",
-            tenant_key: "tenant-albaraka-properties",
-            tenant_name: "Al Baraka Properties LLC",
-            plan: "Professional",
-            billing_cycle: "annual",
-            subtotal_amount: 9990,
-            tax_amount: 0,
-            discount_amount: 0,
-            total_amount: 9990,
-            currency: "QAR",
-            status: "Paid",
-            issue_date: "2026-08-15",
-            due_date: "2026-08-30",
-            payment_date: "2026-08-15T14:20:00Z",
-            payment_method: "Credit Card",
-            transaction_ref: "CC-VISA-440219",
-          },
-        ]);
+        setInvoices([]);
       }
     } catch (err: any) {
       toast.error("Failed to load subscription invoices: " + err.message);

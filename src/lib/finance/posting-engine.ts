@@ -1010,10 +1010,11 @@ export async function postPdcDepositToBank(
   chequeNumber: string,
   unitCode?: string,
   pdcType: PdcType = 'RENT_PDC',
+  bankAccount?: { code?: string; name?: string; id?: string },
 ): Promise<PostingResult> {
 
   // Entry A ONLY: Dr 12000 Bank / Cr 12900 PDC In Hand
-  // The physical cheque moves from PDC custody into the bank account.
+  // The physical cheque moves from PDC custody into the selected bank account.
   // The AR settlement (Dr 21400 / Cr 12413) happens at CLEAR time, not Deposit time.
   const { debit: drA, credit: crA } = await resolveAccountingAccounts({
     transactionType: 'PDC_DEPOSIT_BANK',
@@ -1024,16 +1025,21 @@ export async function postPdcDepositToBank(
     unitName: unitCode,
   });
 
+  const drAccountCode = bankAccount?.code || drA.slCode || '12000001';
+  const drAccountName = bankAccount?.name
+    ? `${drA.glName} / ${bankAccount.name}`
+    : `${drA.glName} / ${drA.slName}`;
+
   return postVoucher({
     voucher_type: 'Receipt',
     voucher_date: new Date().toISOString().split('T')[0],
     reference_no: chequeNumber,
-    description: `PDC Deposited to Bank – ${chequeNumber}${unitCode ? ` – ${unitCode}` : ''}`,
+    description: `PDC Deposited to ${bankAccount?.name || 'Bank'} – ${chequeNumber}${unitCode ? ` – ${unitCode}` : ''}`,
     tenant_id: tenantId,
     property_id: propertyId,
     unit_id: unitId,
     lines: [
-      { account_code: drA.slCode, account_name: `${drA.glName} / ${drA.slName}`, debit: amount, credit: 0, description: drA.slName },
+      { account_code: drAccountCode, account_name: drAccountName, debit: amount, credit: 0, description: bankAccount?.name || drA.slName },
       { account_code: crA.slCode, account_name: `${crA.glName} / ${crA.slName}`, debit: 0, credit: amount, description: crA.slName },
     ],
   });

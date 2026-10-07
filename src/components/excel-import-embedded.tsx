@@ -61,7 +61,7 @@ import type { ImportModule, ImportOperation, ImportBatch, ImportParsedRecord, Im
 import { ExcelImportEngine } from "@/lib/excel-import/engine";
 import { generateTemplateWorkbook, downloadTemplateFile } from "@/lib/excel-import/template-generator";
 import { ResultExcelGenerator } from "@/lib/excel-import/result-generator";
-import { getImportBatchHistory, getAuditLogs } from "@/lib/excel-import/storage-service";
+import { getImportBatchHistory, getAuditLogs, clearAllImportHistory } from "@/lib/excel-import/storage-service";
 import { getCurrentProfile } from "@/lib/auth-guards";
 
 interface ExcelImportEmbeddedProps {
@@ -813,9 +813,26 @@ export function ExcelImportEmbedded({
                 Complete historical record of all bulk operations performed on {module} master data.
               </CardDescription>
             </div>
-            <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
-              Back to Upload
-            </Button>
+            <div className="flex items-center gap-2">
+              {historyBatches.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!window.confirm("⚠️ Are you sure you want to clear all bulk import execution history?")) return;
+                    clearAllImportHistory();
+                    setHistoryBatches([]);
+                    toast.success("Execution history cleared successfully.");
+                  }}
+                  className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                >
+                  Clear History
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
+                Back to Upload
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {historyBatches.length === 0 ? (

@@ -1087,14 +1087,81 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           return merged;
         });
       } catch { /* ignore */ }
+      // Trigger a full supabase re-fetch so any PDC/deposit written by any module
+      // (pdc-manager, leasing, cashier) shows up in GL immediately
+      void fetchSupabaseData(false);
     };
     window.addEventListener("finance_vouchers_updated", handleVoucherSync);
     // Run once on mount to pick up any payments made before this render
     handleVoucherSync();
 
+    // ── Realtime: pdcs table (INSERT + UPDATE) ──────────────────────────────
+    // Any module that writes a PDC (pdc-manager, leasing-module addVoucher,
+    // cashier, bulk-pdc-deposit-modal) triggers this. We immediately synthesize
+    // Entry 1 (PDC Received: Dr 12900001 PDC In Hand / Cr 21400001 Customer PDC
+    // Liability) so the GL & Trial Balance update without needing a manual refresh.
+    const pdcChannel = supabase
+      .channel("finance-store:pdcs")
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "pdcs" },
+        (payload: any) => {
+          const r = payload.new;
+          if (!r?.id || Number(r.amount || 0) <= 0) return;
+
+          const chequeNo     = String(r.cheque_number || r.id);
+          const amount       = Number(r.amount || 0);
+          const chqDate      = r.maturity_date || r.cheque_date ||
+            (r.created_at ? String(r.created_at).split("T")[0] : new Date().toISOString().split("T")[0]);
+          const tenantName   = r.tenant_name || r.drawer_name || "";
+          const unitRef      = r.unit_name   || r.unit_ref    || "";
+          const propertyName = r.property_code || r.property_name || "";
+          const desc         = unitRef ? `${tenantName} (${unitRef})` : tenantName || `Cheque #${chequeNo}`;
+          const rcvNo        = `VCH-PDC-RCV-${chequeNo}`;
+
+          setVouchers(prev => {
+            if (prev.some(v => v.voucher_no === rcvNo)) return prev;
+            const newVch: FinanceVoucher = {
+              id:            `pdc-rcv-${r.id}`,
+              voucher_no:    rcvNo,
+              voucher_type:  "Receipt Voucher",
+              date:          chqDate,
+              name:          `PDC Received — ${desc} [Cheque #${chequeNo}]`,
+              debit:         "Rent PDC In Hand",
+              debit_code:    "12900001",
+              credit:        "Customer PDC Liability",
+              credit_code:   "21400001",
+              amount,
+              method:        "PDC",
+              status:        "Posted",
+              property_name: propertyName,
+              unit_ref:      unitRef,
+              tenant_name:   tenantName,
+            };
+            return [newVch, ...prev];
+          });
+        }
+      )
+      .subscribe();
+
+    // ── Realtime: fin_accounting_events UPDATE ──────────────────────────────
+    // Security deposit settlements and PDC status changes produce UPDATEs on
+    // existing event rows. The INSERT listener above doesn't catch these,
+    // so we trigger a silent re-fetch on any event update.
+    const eventUpdateChannel = supabase
+      .channel("finance-store:fin_accounting_events:update")
+      .on(
+        "postgres_changes" as any,
+        { event: "UPDATE", schema: "public", table: "fin_accounting_events" },
+        () => { void fetchSupabaseData(false); }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(voucherChannel);
       supabase.removeChannel(eventChannel);
+      supabase.removeChannel(pdcChannel);
+      supabase.removeChannel(eventUpdateChannel);
       window.removeEventListener("finance_vouchers_updated", handleVoucherSync);
     };
   }, []);

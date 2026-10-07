@@ -73,7 +73,7 @@ function NewLeaseForm() {
       if (leaseError) throw leaseError;
 
       toast.success("Lease draft created successfully!");
-      navigate({ to: "/admin/leases" });
+      navigate({ to: "/admin/leases", search: { tab: "agreement" } });
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to create lease.");
@@ -142,7 +142,7 @@ function NewLeaseForm() {
           </form>
         </CardContent>
         <CardFooter className="flex justify-between border-t border-border pt-6">
-          <Button variant="outline" onClick={() => navigate({ to: "/admin/leases" })} disabled={loading}>
+          <Button variant="outline" onClick={() => navigate({ to: "/admin/leases", search: { tab: "agreement" } })} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" form="new-lease-form" disabled={loading}>

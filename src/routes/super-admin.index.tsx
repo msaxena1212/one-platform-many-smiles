@@ -65,6 +65,7 @@ function SuperAdminDashboard() {
     totalUsers: 0,
     totalRevenue: 0,
     subscriptionMRR: 0,
+    activePdcs: 0,
   });
   const [recentTenants, setRecentTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,12 +77,13 @@ function SuperAdminDashboard() {
   async function loadDashboardStats() {
     setLoading(true);
     try {
-      const [orgsRes, propsRes, unitsRes, leasesRes, profilesRes] = await Promise.all([
+      const [orgsRes, propsRes, unitsRes, leasesRes, profilesRes, pdcRes] = await Promise.all([
         supabase.from("tenant_organisations").select("*").order("created_at", { ascending: false }),
         supabase.from("properties").select("id, host_id, title, city, is_active"),
         supabase.from("units").select("id, status, current_rent, price"),
         supabase.from("leases").select("id, lease_status, rental_amount"),
         supabase.from("profiles").select("id, full_name, role, created_at"),
+        supabase.from("payments").select("id").eq("payment_method", "Cheque").eq("payment_status", "Pending"),
       ]);
 
       const orgs = orgsRes.data || [];
@@ -89,23 +91,25 @@ function SuperAdminDashboard() {
       const units = unitsRes.data || [];
       const leases = leasesRes.data || [];
       const profiles = profilesRes.data || [];
+      const pdcs = pdcRes.data || [];
 
       // Calculate totals
       const activeOrgs = orgs.filter((o) => o.status === "Active");
       const activeLeases = leases.filter((l) => ["active", "Active", "fully_signed", "Renewed"].includes(l.lease_status));
       const leaseRevenue = activeLeases.reduce((s, l) => s + (Number(l.rental_amount) || 0), 0);
-      const subMRR = orgs.reduce((s, o) => s + (Number(o.subscription_amount) || 999), 0);
+      const subMRR = orgs.reduce((s, o) => s + (Number(o.subscription_amount) || 0), 0);
 
       setStats({
-        totalTenants: orgs.length || 2,
-        activeTenants: activeOrgs.length || 2,
-        totalProperties: properties.length || 12,
-        totalUnits: units.length || 148,
-        totalLeases: leases.length || 42,
-        activeLeases: activeLeases.length || 38,
-        totalUsers: profiles.length || 507,
-        totalRevenue: leaseRevenue || 342000,
-        subscriptionMRR: subMRR || 4331,
+        totalTenants: orgs.length,
+        activeTenants: activeOrgs.length,
+        totalProperties: properties.length,
+        totalUnits: units.length,
+        totalLeases: leases.length,
+        activeLeases: activeLeases.length,
+        totalUsers: profiles.length,
+        totalRevenue: leaseRevenue,
+        subscriptionMRR: subMRR,
+        activePdcs: pdcs.length,
       });
 
       setRecentTenants(orgs.slice(0, 5));
@@ -150,6 +154,66 @@ function SuperAdminDashboard() {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (!window.confirm("⚠️ DANGER: This will permanently delete ALL platform data — properties, units, leases, payments, employees, HRMS records, audit logs, subscriptions, and tenant organisations.\n\nThis action CANNOT be undone. Are you absolutely sure?")) {
+                  return;
+                }
+                if (!window.confirm("⚠️ SECOND CONFIRMATION: Last chance. Wipe EVERYTHING and start fresh?")) {
+                  return;
+                }
+                try {
+                  toast.loading("Wiping all platform data...", { id: "wipe-all" });
+
+                  // Order matters — delete child tables first to avoid FK constraint errors
+                  const tables = [
+                    "tenant_subscription_invoices",
+                    "journal_entry_lines",
+                    "journal_entries",
+                    "payments",
+                    "leases",
+                    "reservations",
+                    "units",
+                    "properties",
+                    "employees",
+                    "leave_applications",
+                    "attendance_records",
+                    "payroll_cycles",
+                    "payslips",
+                    "expense_claims",
+                    "fnf_settlements",
+                    "resignation_requests",
+                    "helpdesk_tickets",
+                    "maintenance_tickets",
+                    "security_deposits",
+                    "security_audit_logs",
+                    "tenant_organisations",
+                  ];
+
+                  for (const table of tables) {
+                    try {
+                      await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+                    } catch {
+                      // Silently continue if table doesn't exist
+                    }
+                  }
+
+                  // Clear localStorage audit cache too
+                  localStorage.removeItem("pms_security_audit_logs");
+
+                  toast.success("✅ All platform data wiped. Ready for fresh tenant onboarding!", { id: "wipe-all" });
+                  loadDashboardStats();
+                } catch (e: any) {
+                  toast.error("Failed to wipe data: " + e.message, { id: "wipe-all" });
+                }
+              }}
+              disabled={loading}
+              className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border-rose-500/40 text-xs h-9 gap-1.5 font-semibold"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-rose-300" /> Wipe ALL Data
+            </Button>
           </div>
         </div>
 
@@ -186,7 +250,7 @@ function SuperAdminDashboard() {
           hint="Recurring platform revenue"
           icon={<Wallet className="h-4 w-4" />}
           tone="success"
-          delta="▲ 14% MoM"
+          delta={stats.subscriptionMRR > 0 ? "▲ Active" : "No active subs"}
         />
       </div>
 
@@ -208,10 +272,10 @@ function SuperAdminDashboard() {
         />
         <StatCard
           label="Active PDCs in Clearing"
-          value="24"
+          value={String(stats.activePdcs)}
           hint="Automated clearing at 00:05 AST"
           icon={<Clock className="h-4 w-4" />}
-          tone="warning"
+          tone={stats.activePdcs > 0 ? "warning" : "default"}
         />
         <StatCard
           label="Zero-Trust Security"

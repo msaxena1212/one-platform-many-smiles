@@ -246,7 +246,7 @@ function AdminDashboard() {
               All approval queues are clear.
             </div>
             <Button asChild variant="outline" className="mt-5 w-full">
-              <Link to="/admin/leases">Open Lease Registry</Link>
+              <Link to="/admin/leases" search={{ tab: "agreement" }}>Open Lease Registry</Link>
             </Button>
           </CardContent>
         </Card>
@@ -258,7 +258,7 @@ function AdminDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold">Active Service Tickets</h3>
               <Button asChild variant="ghost" size="sm">
-                <Link to="/admin/maintenance">View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                <Link to="/admin/maintenance" search={{ tab: "tickets" }}>View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
               </Button>
             </div>
             {recentTickets.length === 0 ? (
@@ -289,7 +289,7 @@ function AdminDashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold">Upcoming Lease Expirations</h3>
               <Button asChild variant="ghost" size="sm">
-                <Link to="/admin/leases">All leases <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                <Link to="/admin/leases" search={{ tab: "agreement" }}>All leases <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
               </Button>
             </div>
             {expiringLeases.length === 0 ? (

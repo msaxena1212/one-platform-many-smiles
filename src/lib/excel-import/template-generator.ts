@@ -152,7 +152,7 @@ export async function generateTemplateWorkbook(module: ImportModule, operation: 
 
 export function downloadTemplateFile(module: ImportModule, operation: ImportOperation, fileData: Uint8Array) {
   const fileName = `${module.charAt(0).toUpperCase() + module.slice(1)}_${operation}_Template.xlsx`;
-  const blob = new Blob([fileData], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const blob = new Blob([fileData.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

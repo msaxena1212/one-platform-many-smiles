@@ -61,7 +61,7 @@ import type { ImportModule, ImportOperation, ImportBatch, ImportParsedRecord, Im
 import { ExcelImportEngine } from "@/lib/excel-import/engine";
 import { generateTemplateWorkbook, downloadTemplateFile } from "@/lib/excel-import/template-generator";
 import { ResultExcelGenerator } from "@/lib/excel-import/result-generator";
-import { getImportBatchHistory, getAuditLogs } from "@/lib/excel-import/storage-service";
+import { getImportBatchHistory, getAuditLogs, clearAllImportHistory } from "@/lib/excel-import/storage-service";
 import { getCurrentProfile } from "@/lib/auth-guards";
 
 export const Route = createFileRoute("/admin/imports")({
@@ -352,9 +352,26 @@ export function AdminExcelImportPage() {
               <CardTitle className="text-sm font-semibold">Excel Ingestion Lineage & Audit History</CardTitle>
               <CardDescription className="text-xs">Immutable ledger of executed batch files, mutations, and generated outcome sheets.</CardDescription>
             </div>
-            <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
-              Back to Studio
-            </Button>
+            <div className="flex items-center gap-2">
+              {historyBatches.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!window.confirm("⚠️ Are you sure you want to clear all bulk import execution history?")) return;
+                    clearAllImportHistory();
+                    setHistoryBatches([]);
+                    toast.success("Execution history cleared successfully.");
+                  }}
+                  className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10"
+                >
+                  Clear History
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => setCurrentStep("upload")} className="h-7 text-xs">
+                Back to Studio
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0 flex-1 min-h-0 overflow-y-auto">
             {historyBatches.length === 0 ? (

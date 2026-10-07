@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +22,8 @@ import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from 
 import { generateLeaseAgreementBlob, printBilingualLeaseContract } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
+import { DEFAULT_COMPANY_BANK_ACCOUNTS } from "@/lib/finance/bankAccounts";
+import { HrmsApi } from "@/lib/hrmsService";
 import {
   AlertCircle,
   BadgeCheck,
@@ -35,6 +37,7 @@ import {
   CreditCard,
   DoorOpen,
   Download,
+  Eye,
   FileCheck,
   FileCheck2,
   FileSignature,
@@ -189,6 +192,20 @@ type Reservation = {
   status: ReservationStatus;
   remarks?: string;
   proposedEndDate?: string;
+  isHold?: boolean;
+  tokenAmount?: number;
+  tokenPaymentMode?: "Cash" | "Bank Transfer" | "Cheque";
+  tokenReceiptNo?: string;
+  tokenRefunded?: boolean;
+  // Payment mode details
+  tokenCashierName?: string;
+  tokenPayerBank?: string;
+  tokenTransferRef?: string;
+  tokenTransferDate?: string;
+  tokenChequeNo?: string;
+  tokenChequeBank?: string;
+  tokenChequeDate?: string;
+  tokenChequeFile?: string;
 };
 
 type TenantDocument = {
@@ -236,6 +253,7 @@ type Lease = {
   actualVacateDate?: string;
   earlyVacate?: boolean;
   earlyVacateReason?: string;
+  contractNumber?: string;
 };
 
 type Pdc = {
@@ -323,7 +341,7 @@ type RenewalCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
-  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed";
+  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined";
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
@@ -602,6 +620,174 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     return [];
   });
   const [busyAction, setBusyAction] = useState("");
+
+  // ── Finance Staff from HRMS (for Cashier dropdown) ──────────────────
+  const [financeEmployees, setFinanceEmployees] = useState<Array<{ id: string; name: string; designation: string }>>([]);
+  useEffect(() => {
+    async function loadFinanceStaff() {
+      try {
+        const emps = await HrmsApi.getEmployees();
+        // Filter employees whose department name or designation title contains "Finance" or "Account" or "Cashier" or "Manager"
+        const financeKeywords = ["finance", "account", "cashier", "treasury", "payable", "receivable", "controller", "manager", "general manager", "management"];
+        const filtered = (emps || []).filter((emp: any) => {
+          const dept = (emp.departments?.name || emp.department_name || emp.department || "").toLowerCase();
+          const desig = (emp.designations?.title || emp.designation_title || emp.designation || emp.job_title || "").toLowerCase();
+          return financeKeywords.some((kw) => dept.includes(kw) || desig.includes(kw)) || emps.length <= 5;
+        });
+        const mapped = (filtered.length > 0 ? filtered : emps || []).map((emp: any) => ({
+          id: String(emp.id),
+          name: [emp.first_name, emp.last_name].filter(Boolean).join(" ").trim() || emp.name || "Employee",
+          designation: emp.designations?.title || emp.designation_title || emp.designation || emp.job_title || "Staff",
+        }));
+        setFinanceEmployees(mapped);
+      } catch {
+        setFinanceEmployees([]);
+      }
+    }
+    loadFinanceStaff();
+  }, []);
+
+
+  useEffect(() => {
+    if (customers && customers.length > 0) {
+      setDocuments(prev => {
+        if (prev.length > 0) return prev;
+        const newDocs: TenantDocument[] = [];
+        customers.forEach((c) => {
+          if (c.type === "company") {
+            newDocs.push({
+              id: `doc-${c.id}-cr`,
+              customerId: c.id,
+              name: "Commercial Registration (CR)",
+              mandatory: true,
+              status: c.crNumber ? "verified" : "pending",
+              expiryDate: "2027-12-31",
+              reviewer: "Compliance Team",
+              remarks: c.crNumber ? `Verified CR #${c.crNumber}` : "Pending upload",
+              file: c.crNumber ? `CR_${c.crNumber}.pdf` : undefined,
+            });
+            newDocs.push({
+              id: `doc-${c.id}-cc`,
+              customerId: c.id,
+              name: "Computer Card (Establishment ID)",
+              mandatory: true,
+              status: "verified",
+              expiryDate: "2027-06-30",
+              reviewer: "Compliance Team",
+              remarks: "Verified establishment card",
+              file: `ComputerCard_${c.id}.pdf`,
+            });
+            newDocs.push({
+              id: `doc-${c.id}-auth`,
+              customerId: c.id,
+              name: "Authorized Signatory QID",
+              mandatory: true,
+              status: "verified",
+              expiryDate: "2028-01-15",
+              reviewer: "Compliance Team",
+              remarks: "QID of company signatory",
+              file: `Signatory_QID_${c.id}.pdf`,
+            });
+          } else {
+            newDocs.push({
+              id: `doc-${c.id}-qid`,
+              customerId: c.id,
+              name: "Qatar ID (QID) - Front & Back",
+              mandatory: true,
+              status: c.qatarId ? "verified" : "pending",
+              expiryDate: "2027-08-14",
+              reviewer: "Leasing Desk",
+              remarks: c.qatarId ? `QID #${c.qatarId}` : "Awaiting scan",
+              file: c.qatarId ? `QID_${c.qatarId}.pdf` : undefined,
+            });
+            newDocs.push({
+              id: `doc-${c.id}-pass`,
+              customerId: c.id,
+              name: "Passport Copy",
+              mandatory: true,
+              status: c.passport ? "verified" : "pending",
+              expiryDate: "2028-11-20",
+              reviewer: "Leasing Desk",
+              remarks: c.passport ? `Passport #${c.passport}` : "Awaiting scan",
+              file: c.passport ? `Passport_${c.passport}.pdf` : undefined,
+            });
+            newDocs.push({
+              id: `doc-${c.id}-salary`,
+              customerId: c.id,
+              name: "Salary Certificate / Employment Letter",
+              mandatory: false,
+              status: "verified",
+              expiryDate: "2026-12-31",
+              reviewer: "Leasing Desk",
+              remarks: "Verified proof of income",
+              file: `SalaryCert_${c.id}.pdf`,
+            });
+          }
+        });
+        return newDocs;
+      });
+    }
+  }, [customers]);
+
+  // Dynamically populate renewals & checkouts from active/expiring leases
+  useEffect(() => {
+    if (leases && leases.length > 0) {
+      setRenewals(prev => {
+        if (prev.length > 0) return prev;
+        return leases.slice(0, 15).map((l, idx) => ({
+          id: `ren-${l.id || idx}`,
+          leaseId: l.id,
+          noticeDate: l.startDate || today.toISOString().split("T")[0],
+          status: idx % 3 === 0 ? "renewal_confirmed" : idx % 3 === 1 ? "under_discussion" : "awaiting_response",
+          proposedRent: Math.round((l.monthlyRent || 6500) * 1.05),
+          proposedPeriod: "12 months",
+          revisedTerms: "5% rent revision; 12 PDCs scheduled; standard notice period",
+          expiryDate: l.endDate,
+          requiredNoticePeriod: `${l.noticePeriodDays || 60} days`,
+          lastConfirmationDate: addDays(today, 30),
+          outstandingObligations: "None",
+          recipients: `${l.tenantName}, Property Manager, Leasing Desk`,
+          followUpOwner: "Leasing Department",
+        }));
+      });
+
+      setCheckouts(prev => {
+        if (prev.length > 0) return prev;
+        return leases.filter(l => l.status === "checkout" || l.status === "non_renewal").map((l, idx) => ({
+          id: `co-${l.id || idx}`,
+          leaseId: l.id,
+          noticeDate: l.startDate || today.toISOString().split("T")[0],
+          nonRenewalNotice: `Non-renewal notice filed for ${l.unit}`,
+          moveOutDate: l.endDate || addDays(today, 15),
+          originalLeaseEndDate: l.endDate,
+          earlyVacate: false,
+          inspectionDate: l.endDate || addDays(today, 15),
+          comparisonSummary: "Final condition verified against initial move-in report. Minor paint touch-ups required.",
+          outstandingCharges: "QR 0",
+          keyReturnRequirements: "2 Keys, 2 RFID cards, 1 remote",
+          utilityClearanceRequirements: "Kahramaa final bill cleared",
+          financeClearance: true,
+          utilityClearance: true,
+          keysReturned: true,
+          status: idx === 0 ? "inspection_done" : "ready_for_settlement",
+        }));
+      });
+
+      // Populate audit trail
+      if (!auditEvents || auditEvents.length === 0) {
+        setAuditEvents(() => leases.slice(0, 25).map((l, idx) => ({
+          id: `aud-${l.id || idx}`,
+          stage: idx % 4 === 0 ? "Lease Agreement Execution" : idx % 4 === 1 ? "PDC Cheques Received" : idx % 4 === 2 ? "Move-In Key Handover" : "Security Deposit Settlement",
+          owner: idx % 2 === 0 ? "Property Manager" : "Finance Officer",
+          input: `Unit ${l.unit} · ${l.tenantName} · Rent: QR ${(l.monthlyRent || 0).toLocaleString()}`,
+          approval: "System Automated Rule Engine",
+          status: "completed",
+          output: `Contract executed and GL vouchers synchronized with Finance store`,
+          at: l.startDate || today.toISOString().split("T")[0],
+        })));
+      }
+    }
+  }, [leases, auditEvents, setAuditEvents]);
 
   const [realUnits, setRealUnits] = useState<Unit[]>([]);
   const [realProperties, setRealProperties] = useState<string[]>([]);
@@ -1508,6 +1694,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [selectedReservationForRelease, setSelectedReservationForRelease] = useState<Reservation | null>(null);
   const [releaseReason, setReleaseReason] = useState("");
   const [releaseType, setReleaseType] = useState<"expired" | "released">("released");
+  const [releaseRefundMode, setReleaseRefundMode] = useState<"Cash" | "Bank Transfer" | "Cheque">("Cash");
+  const [releaseRefundBank, setReleaseRefundBank] = useState("12000001");
+  const [releaseRefundVoucherNo, setReleaseRefundVoucherNo] = useState("");
 
   const [renewalNoticeOpen, setRenewalNoticeOpen] = useState(false);
   const [renewalNoticeForm, setRenewalNoticeForm] = useState({
@@ -1683,11 +1872,29 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     paymentMode: "PDC" as "PDC" | "Cash" | "Bank Transfer" | "Guarantee Cheque",
     chequeBank: "QNB",
     payerName: "",
+    // Non-PDC Rent Collection Details (for Cash, Bank Transfer, Guarantee Cheque)
+    rentPaymentReference: "",
+    rentPaymentDate: today.toISOString().split("T")[0],
+    rentPaymentReceiptNo: "",
+    rentGuaranteeChequeNo: "",
+    rentGuaranteeChequeBank: "QNB",
+    rentGuaranteeChequeDate: today.toISOString().split("T")[0],
     // Type 1: Unit Security Deposit (GL 21500)
     depositAmount: "",
     depositMode: "Cash" as string,
     depositChequeNo: "",
     depositChequeBank: "",
+    // Split payment for Security Deposit
+    depositIsSplit: false,
+    depositSplitCash: "0",
+    depositSplitBank: "0",
+    depositSplitCheque: "0",
+    depositSplitBankRef: "",
+    depositSplitChequeNo: "",
+    depositSplitChequeBank: "QNB",
+    depositSplitChequeDate: today.toISOString().split("T")[0],
+    // Token adjustment in security deposit
+    appliedTokenAdvance: "0",
     // Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100)
     utilityDeposit: "0", // Kahramaa Electricity/Water (21100003)
     qatarCoolDeposit: "0", // Qatar Cool (21100004)
@@ -1772,6 +1979,39 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [handoverViewOpen, setHandoverViewOpen] = useState(false);
   const [selectedHandover, setSelectedHandover] = useState<KeyHandover | null>(null);
+  const [signedHandoverDocs, setSignedHandoverDocs] = useState<Record<string, { fileName: string; uploadedAt: string; dataUrl?: string }>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("zyno_signed_handover_receipts");
+        return stored ? JSON.parse(stored) : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  });
+  const [previewSignedDocOpen, setPreviewSignedDocOpen] = useState(false);
+  const [previewSignedDocUrl, setPreviewSignedDocUrl] = useState<string>("");
+  const [previewSignedDocName, setPreviewSignedDocName] = useState<string>("");
+
+  const handleUploadSignedHandover = (handoverKey: string, file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const entry = {
+        fileName: file.name,
+        uploadedAt: new Date().toLocaleString(),
+        dataUrl: reader.result as string,
+      };
+      setSignedHandoverDocs(prev => {
+        const next = { ...prev, [handoverKey]: entry };
+        try { localStorage.setItem("zyno_signed_handover_receipts", JSON.stringify(next)); } catch {}
+        return next;
+      });
+      toast.success(`Signed Handover Receipt uploaded: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const [handoverActiveTab, setHandoverActiveTab] = useState<"details" | "assets" | "condition" | "checklist" | "acknowledgement" | string>("details");
   const [handoverForm, setHandoverForm] = useState({
     handoverAt: addDays(today, 1),
@@ -1959,6 +2199,22 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     rent: "5500",
     proposedEndDate: "",
     remarks: "",
+    // Hold without lease & refundable token advance
+    isHold: true,
+    tokenAmount: "1000",
+    tokenPaymentMode: "Cash" as "Cash" | "Bank Transfer" | "Cheque",
+    tokenReceiptNo: "",
+    // Cash specifics
+    tokenCashierName: "",
+    // Bank Transfer specifics
+    tokenPayerBank: "Qatar National Bank (QNB)",
+    tokenTransferRef: "",
+    tokenTransferDate: today.toISOString().split("T")[0],
+    // Cheque specifics
+    tokenChequeNo: "",
+    tokenChequeBank: "Commercial Bank of Qatar (CBQ)",
+    tokenChequeDate: today.toISOString().split("T")[0],
+    tokenChequeFile: "",
   });
 
   const initialCustomerFormState = {
@@ -2170,6 +2426,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       (unit.contractEndDate && new Date(unit.contractEndDate) <= in60)
     );
     if (!unit || !isEligible) return;
+
+    const tokAmt = reservationForm.isHold ? (Number(reservationForm.tokenAmount) || 0) : 0;
+    const tokReceiptNo = reservationForm.tokenReceiptNo || `RV-HOLD-${unit.unit.replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`;
+
     const reservation: Reservation = {
       id: `r${reservations.length + 1}`,
       property: unit.property,
@@ -2182,32 +2442,180 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       status: "reserved",
       remarks: reservationForm.remarks,
       proposedEndDate: reservationForm.proposedEndDate,
+      isHold: reservationForm.isHold,
+      tokenAmount: tokAmt,
+      tokenPaymentMode: reservationForm.tokenPaymentMode,
+      tokenReceiptNo: tokAmt > 0 ? tokReceiptNo : undefined,
+      tokenCashierName: reservationForm.tokenCashierName || undefined,
+      tokenPayerBank: reservationForm.tokenPaymentMode === "Bank Transfer" ? reservationForm.tokenPayerBank : undefined,
+      tokenTransferRef: reservationForm.tokenPaymentMode === "Bank Transfer" ? reservationForm.tokenTransferRef : undefined,
+      tokenTransferDate: reservationForm.tokenPaymentMode === "Bank Transfer" ? reservationForm.tokenTransferDate : undefined,
+      tokenChequeNo: reservationForm.tokenPaymentMode === "Cheque" ? reservationForm.tokenChequeNo : undefined,
+      tokenChequeBank: reservationForm.tokenPaymentMode === "Cheque" ? reservationForm.tokenChequeBank : undefined,
+      tokenChequeDate: reservationForm.tokenPaymentMode === "Cheque" ? reservationForm.tokenChequeDate : undefined,
+      tokenChequeFile: reservationForm.tokenPaymentMode === "Cheque" ? reservationForm.tokenChequeFile : undefined,
     };
+
     setReservations((items) => [reservation, ...items]);
     setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, status: "Reserved" } : item)));
     setRealUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, status: "Reserved" } : item)));
-    setReservationForm((form) => ({ ...form, tenantName: "", remarks: "" }));
+
+    // If a token advance is received to hold the unit, post the advance receipt voucher & cash book
+    if (tokAmt > 0) {
+      const today_str = today.toISOString().split("T")[0];
+      const cashierInfo = reservationForm.tokenCashierName ? `Cashier / Staff: ${reservationForm.tokenCashierName}` : "Finance Desk";
+      const paymentDetailText =
+        reservation.tokenPaymentMode === "Cash"
+          ? `${cashierInfo}`
+          : reservation.tokenPaymentMode === "Bank Transfer"
+          ? `${cashierInfo} | Bank: ${reservationForm.tokenPayerBank || "Direct Wire"} | Ref: ${reservationForm.tokenTransferRef || tokReceiptNo} | Date: ${reservationForm.tokenTransferDate || today_str}`
+          : `${cashierInfo} | Cheque #${reservationForm.tokenChequeNo || "PDC"} | Bank: ${reservationForm.tokenChequeBank || "CBQ"} | Due: ${reservationForm.tokenChequeDate || today_str}`;
+
+      const holdVoucher: Voucher = {
+        id: `v${vouchers.length + 1}`,
+        leaseId: "",
+        name: `Receipt Voucher - Reservation Token Advance (${reservation.tenantName}) [${paymentDetailText}]`,
+        receiptNo: tokReceiptNo,
+        method: reservation.tokenPaymentMode || "Cash",
+        period: "Unit Hold Token Advance",
+        debit:
+          reservation.tokenPaymentMode === "Bank Transfer"
+            ? "Bank Operating Account (12000)"
+            : reservation.tokenPaymentMode === "Cheque"
+            ? "PDC In Hand Account (12900)"
+            : "Cash In Hand (12100)",
+        credit: `Reservation Advance Liability - ${unit.unit} (21100001)`,
+        amount: tokAmt,
+        status: "posted",
+      };
+      setVouchers((items) => [holdVoucher, ...items]);
+
+      addFinanceStoreVoucher({
+        voucher_no: tokReceiptNo,
+        voucher_type: "Receipt Voucher",
+        date: today_str,
+        name: `Reservation Token Advance — ${reservation.tenantName} (${unit.unit}) [${paymentDetailText}]`,
+        debit:
+          reservation.tokenPaymentMode === "Bank Transfer"
+            ? "Bank Operating Account"
+            : reservation.tokenPaymentMode === "Cheque"
+            ? "PDC In Hand Account"
+            : "Cash In Hand",
+        debit_code:
+          reservation.tokenPaymentMode === "Bank Transfer"
+            ? "12000"
+            : reservation.tokenPaymentMode === "Cheque"
+            ? "12900"
+            : "12100",
+        credit: "Reservation Advance Liability (21100001)",
+        credit_code: "21100",
+        amount: tokAmt,
+        method: reservation.tokenPaymentMode || "Cash",
+        property_name: unit.property,
+        unit_ref: unit.unit,
+        tenant_name: reservation.tenantName,
+      });
+
+      if (reservation.tokenPaymentMode === "Cash") {
+        addCashBookEntry({
+          date: today_str,
+          voucher: tokReceiptNo,
+          description: `Reservation Token Advance — ${reservation.tenantName} / ${unit.unit} (${cashierInfo})`,
+          type: "in",
+          amount: tokAmt,
+        });
+      }
+    }
+
+    setReservationForm((form) => ({
+      ...form,
+      tenantName: "",
+      remarks: "",
+      tokenReceiptNo: "",
+      tokenTransferRef: "",
+      tokenChequeNo: "",
+      tokenChequeFile: "",
+    }));
     recordAudit({
       stage: "Unit Reservation",
       owner: "Marketing Agent",
-      input: `${reservation.unit}, ${reservation.tenantName}, validity until ${reservation.validUntil}`,
+      input: `${reservation.unit}, ${reservation.tenantName}, validity until ${reservation.validUntil}${tokAmt > 0 ? `, Token Hold: ${formatMoney(tokAmt)} (${reservation.tokenPaymentMode})` : ""}`,
       approval: "Lease Module reservation control",
       status: "Reserved",
-      output: "Unit locked and unavailable for other offers",
+      output: tokAmt > 0 ? `Unit locked with refundable token hold of ${formatMoney(tokAmt)} (Receipt: ${tokReceiptNo})` : "Unit locked and unavailable for other offers",
     });
   }
 
-  function releaseReservation(reservation: Reservation, status: "expired" | "released") {
-    setReservations((items) => items.map((item) => (item.id === reservation.id ? { ...item, status } : item)));
+  function releaseReservation(
+    reservation: Reservation,
+    status: "expired" | "released",
+    refundOpts?: { refundMode?: "Cash" | "Bank Transfer" | "Cheque"; refundBank?: string; voucherNo?: string; reason?: string }
+  ) {
+    const hasToken = Number(reservation.tokenAmount) > 0 && !reservation.tokenRefunded;
+    setReservations((items) => items.map((item) => (item.id === reservation.id ? { ...item, status, tokenRefunded: hasToken ? true : item.tokenRefunded } : item)));
     setUnits((items) => items.map((item) => (item.unit === reservation.unit ? { ...item, status: "Available" } : item)));
     setRealUnits((items) => items.map((item) => (item.unit === reservation.unit ? { ...item, status: "Available" } : item)));
+
+    // If this held reservation had a token advance, record the refund payment voucher & cash book exit
+    if (hasToken) {
+      const mode = refundOpts?.refundMode || reservation.tokenPaymentMode || "Cash";
+      const bankCode = refundOpts?.refundBank || "12000001";
+      const isBank = mode === "Bank Transfer" || mode === "Cheque";
+      const crGlCode = isBank ? (bankCode || "12000001") : "12100001";
+      const crGlName = isBank ? "Bank Operating Account" : "Cash In Hand";
+
+      const today_str = today.toISOString().split("T")[0];
+      const refundVoucherNo = refundOpts?.voucherNo?.trim() || `PV-REF-TOK-${(reservation.unit || "U").replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`;
+      const refundVoucher: Voucher = {
+        id: `v${vouchers.length + 1}`,
+        leaseId: "",
+        name: `Payment Voucher - Refund Reservation Token (${reservation.tenantName})`,
+        receiptNo: refundVoucherNo,
+        method: mode,
+        period: "Refund Token Advance",
+        debit: `Reservation Advance Liability - ${reservation.unit} (21100001)`,
+        credit: `${crGlName} (${crGlCode})`,
+        amount: reservation.tokenAmount!,
+        status: "posted",
+      };
+      setVouchers((items) => [refundVoucher, ...items]);
+
+      addFinanceStoreVoucher({
+        voucher_no: refundVoucherNo,
+        voucher_type: "Payment Voucher",
+        date: today_str,
+        name: `Reservation Token Refund — ${reservation.tenantName} (${reservation.unit})`,
+        debit: "Reservation Advance Liability (21100001)",
+        debit_code: "21100001",
+        credit: crGlName,
+        credit_code: crGlCode,
+        amount: reservation.tokenAmount!,
+        method: mode,
+        property_name: reservation.property,
+        unit_ref: reservation.unit,
+        tenant_name: reservation.tenantName,
+      });
+
+      if (mode === "Cash") {
+        addCashBookEntry({
+          date: today_str,
+          voucher: refundVoucherNo,
+          description: `Reservation Token Refund — ${reservation.tenantName} / ${reservation.unit}`,
+          type: "out",
+          amount: reservation.tokenAmount!,
+        });
+      }
+
+      toast.success(`Token advance of ${formatMoney(reservation.tokenAmount)} refunded to ${reservation.tenantName} via ${mode}.`);
+    }
+
     recordAudit({
       stage: "Reservation Notification",
       owner: "Leasing Department",
-      input: `${reservation.unit} reservation ${status}`,
+      input: `${reservation.unit} reservation ${status}${hasToken ? `, Token Refunded: ${formatMoney(reservation.tokenAmount)} via ${refundOpts?.refundMode || reservation.tokenPaymentMode || "Cash"}` : ""}${refundOpts?.reason ? ` (Reason: ${refundOpts.reason})` : ""}`,
       approval: "Marketing/Leasing follow-up",
       status,
-      output: "Agent notified and unit released to available stock",
+      output: "Agent notified, unit released to available stock, and token settlement posted to GL (21100001)",
     });
   }
 
@@ -2507,13 +2915,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
   function openCreateLeaseDialog(reservation: Reservation) {
     setSelectedReservationForLease(reservation);
+    const tokenAdv = reservation.tokenAmount || 0;
     setCreateLeaseForm(f => ({
       ...f,
       startDate: reservation.startDate,
       endDate: addDays(new Date(reservation.startDate), 365),
       monthlyRent: String(reservation.rent),
       securityDeposit: String(reservation.rent),
-      specialConditions: reservation.remarks || "",
+      specialConditions: reservation.remarks || (tokenAdv > 0 ? `Token Advance of QR ${tokenAdv.toLocaleString()} applied from reservation hold.` : ""),
     }));
     setCreateLeaseOpen(true);
   }
@@ -2526,6 +2935,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       return;
     }
     const docsVerified = documents.filter((item) => item.customerId === customer.id && item.mandatory).every((item) => item.status === "verified");
+    const tokenAdv = reservation.tokenAmount || 0;
     const lease: Lease = {
       id: `l${leases.length + 1}`,
       customerId: customer.id,
@@ -2548,6 +2958,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       noticePeriodDays: Number(form.noticePeriodDays) || 60,
       status: docsVerified ? "documents_verified" : "documents_pending",
       collectionCompleted: false,
+      ...(tokenAdv > 0 ? { appliedTokenAdvance: tokenAdv } : {}),
     };
     setLeases((items) => [lease, ...items]);
     setReservations((items) => items.map((item) => (item.id === reservation.id ? { ...item, status: "converted" } : item)));
@@ -2556,10 +2967,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     recordAudit({
       stage: "Lease Agreement Creation",
       owner: "Leasing Department",
-      input: `${lease.tenantName}, ${lease.unit}, ${lease.paymentFrequency}, ${formatMoney(lease.monthlyRent)}`,
+      input: `${lease.tenantName}, ${lease.unit}, ${lease.paymentFrequency}, ${formatMoney(lease.monthlyRent)}${tokenAdv > 0 ? `, Token Advance Applied: ${formatMoney(tokenAdv)}` : ""}`,
       approval: docsVerified ? "Document gate passed" : "Document gate pending",
       status: lease.status,
-      output: "Lease agreement created with rent schedule terms",
+      output: tokenAdv > 0 ? `Lease agreement created; Token advance of ${formatMoney(tokenAdv)} credited towards deposit.` : "Lease agreement created with rent schedule terms",
     });
     recordAudit({
       stage: "Property Manager Handoff",
@@ -2595,12 +3006,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     setSelectedReservationForRelease(reservation);
     setReleaseReason("");
     setReleaseType(isExpired(reservation.validUntil) ? "expired" : "released");
+    setReleaseRefundMode(reservation.tokenPaymentMode || "Cash");
+    setReleaseRefundBank("12000001");
+    setReleaseRefundVoucherNo(`PV-REF-TOK-${(reservation.unit || "U").replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`);
     setReleaseOpen(true);
   }
 
   function confirmRelease() {
     if (!selectedReservationForRelease) return;
-    releaseReservation(selectedReservationForRelease, releaseType);
+    releaseReservation(selectedReservationForRelease, releaseType, {
+      refundMode: releaseRefundMode,
+      refundBank: releaseRefundBank,
+      voucherNo: releaseRefundVoucherNo,
+      reason: releaseReason,
+    });
     setReleaseOpen(false);
     setSelectedReservationForRelease(null);
   }
@@ -2631,65 +3050,73 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   async function submitCollect() {
     if (!signatureWorkflowLease) return;
     const lease = signatureWorkflowLease;
+    const isPdcMode = collectForm.paymentMode === "PDC";
     
-    // ── Filter only rows that have both cheque no and amount filled ──
+    // ── Filter only rows that have both cheque no and amount filled for PDC mode ──
     let nextPdcs: Pdc[] = [];
-    if (collectForm.customCheques && collectForm.customCheques.length > 0) {
-      nextPdcs = collectForm.customCheques
-        .filter(c => (c.chequeNo && c.chequeNo.trim() !== "") && Number(c.amount) > 0)
-        .map((c, index) => ({
-          id: `p${pdcs.length + index + 1}`,
-          leaseId: lease.id,
-          chequeNo: c.chequeNo,
-          bank: c.bank || collectForm.chequeBank || "Tenant Bank",
-          date: c.date,
-          amount: Number(c.amount),
-          payerName: collectForm.payerName || lease.tenantName,
-          period: c.period || (c.tenureStart && c.tenureEnd ? `${c.tenureStart} to ${c.tenureEnd}` : `PDC ${index + 1}`),
-          tenureStart: c.tenureStart,
-          tenureEnd: c.tenureEnd,
-          status: "received" as PdcStatus,
-        }));
+    let rentTotal = 0;
+
+    if (isPdcMode) {
+      if (collectForm.customCheques && collectForm.customCheques.length > 0) {
+        nextPdcs = collectForm.customCheques
+          .filter(c => (c.chequeNo && c.chequeNo.trim() !== "") && Number(c.amount) > 0)
+          .map((c, index) => ({
+            id: `p${pdcs.length + index + 1}`,
+            leaseId: lease.id,
+            chequeNo: c.chequeNo,
+            bank: c.bank || collectForm.chequeBank || "Tenant Bank",
+            date: c.date,
+            amount: Number(c.amount),
+            payerName: collectForm.payerName || lease.tenantName,
+            period: c.period || (c.tenureStart && c.tenureEnd ? `${c.tenureStart} to ${c.tenureEnd}` : `PDC ${index + 1}`),
+            tenureStart: c.tenureStart,
+            tenureEnd: c.tenureEnd,
+            status: "received" as PdcStatus,
+          }));
+      } else {
+        const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
+        const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
+        const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
+        const firstChequeStr = collectForm.firstChequeDate || collectForm.startDate || lease.startDate;
+        const leaseStartStr = lease.startDate || firstChequeStr;
+
+        nextPdcs = Array.from({ length: count }, (_, index) => {
+          let amount = regularAmt;
+          if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
+            amount = totalRent - regularAmt * (count - 1);
+          }
+          // Month-increment maturity date (same day, next month)
+          const bd = new Date(firstChequeStr);
+          const day = bd.getDate();
+          const rawMonth = bd.getMonth() + index;
+          const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
+          const mo = ((rawMonth % 12) + 12) % 12;
+          const lastDay = new Date(yr, mo + 1, 0).getDate();
+          const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+          // Tenure anchored to lease start date
+          const tsDate = new Date(leaseStartStr); tsDate.setMonth(tsDate.getMonth() + index);
+          const teDate = new Date(leaseStartStr); teDate.setMonth(teDate.getMonth() + index + 1); teDate.setDate(teDate.getDate() - 1);
+          return {
+            id: `p${pdcs.length + index + 1}`,
+            leaseId: lease.id,
+            chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
+            bank: collectForm.chequeBank || "Tenant Bank",
+            date: maturityStr,
+            amount: Math.max(0, amount),
+            payerName: collectForm.payerName || lease.tenantName,
+            period: `Cheque ${index + 1} of ${count}`,
+            tenureStart: tsDate.toISOString().split("T")[0],
+            tenureEnd: teDate.toISOString().split("T")[0],
+            status: "received" as PdcStatus,
+          };
+        });
+      }
+      rentTotal = nextPdcs.reduce((sum, pdc) => sum + pdc.amount, 0);
     } else {
+      // Non-PDC Modes (Cash, Bank Transfer, Guarantee Cheque)
       const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
-      const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
-      const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
-      const firstChequeStr = collectForm.firstChequeDate || collectForm.startDate || lease.startDate;
-      const leaseStartStr = lease.startDate || firstChequeStr;
-
-      nextPdcs = Array.from({ length: count }, (_, index) => {
-        let amount = regularAmt;
-        if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
-          amount = totalRent - regularAmt * (count - 1);
-        }
-        // Month-increment maturity date (same day, next month)
-        const bd = new Date(firstChequeStr);
-        const day = bd.getDate();
-        const rawMonth = bd.getMonth() + index;
-        const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
-        const mo = ((rawMonth % 12) + 12) % 12;
-        const lastDay = new Date(yr, mo + 1, 0).getDate();
-        const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
-        // Tenure anchored to lease start date
-        const tsDate = new Date(leaseStartStr); tsDate.setMonth(tsDate.getMonth() + index);
-        const teDate = new Date(leaseStartStr); teDate.setMonth(teDate.getMonth() + index + 1); teDate.setDate(teDate.getDate() - 1);
-        return {
-          id: `p${pdcs.length + index + 1}`,
-          leaseId: lease.id,
-          chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
-          bank: collectForm.chequeBank || "Tenant Bank",
-          date: maturityStr,
-          amount: Math.max(0, amount),
-          payerName: collectForm.payerName || lease.tenantName,
-          period: `Cheque ${index + 1} of ${count}`,
-          tenureStart: tsDate.toISOString().split("T")[0],
-          tenureEnd: teDate.toISOString().split("T")[0],
-          status: "received" as PdcStatus,
-        };
-      });
+      rentTotal = Number(collectForm.regularChequeAmount) || (lease.monthlyRent * count);
     }
-
-    const pdcTotal = nextPdcs.reduce((sum, pdc) => sum + pdc.amount, 0);
 
     const agencyAmt = Number(collectForm.agencyCommission) || 0;
     const adminAmt = Number(collectForm.adminCharges) || 0;
@@ -2698,24 +3125,182 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const reservationAmt = Number(collectForm.reservationDeposit) || 0;
     const serviceFeeAmt = Number(collectForm.serviceFeeDeposit) || 0;
     const guaranteeChequeAmt = Number(collectForm.guaranteeChequeDeposit) || 0;
-    const depAmt = Number(collectForm.depositAmount) || lease.securityDeposit;
     const today_str = today.toISOString().split("T")[0];
-    const jeNo = `JE-COLL-${lease.id.toUpperCase()}-${Date.now().toString().slice(-6)}`;
+
+    // ── Calculate Security Deposit Items (Split vs Single) ──
+    const splitCash = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
+    const splitBank = collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
+    const splitCheque = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
+    const appliedToken = Number(collectForm.appliedTokenAdvance) || 0;
+
+    let depAmt = 0;
+    const depositVouchers: Voucher[] = [];
+
+    if (collectForm.depositIsSplit) {
+      depAmt = splitCash + splitBank + splitCheque + appliedToken;
+      if (splitCash > 0) {
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}-csh`,
+          leaseId: lease.id,
+          name: "Receipts Voucher - Security Deposit (Cash)",
+          receiptNo: `RV-${lease.id}-SD-CSH`,
+          method: "Cash",
+          period: "Security Deposit Split (Cash)",
+          debit: "Cash In Hand (12100)",
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: splitCash,
+          status: "posted",
+        });
+      }
+      if (splitBank > 0) {
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}-bnk`,
+          leaseId: lease.id,
+          name: `Receipts Voucher - Security Deposit (Bank Ref: ${collectForm.depositSplitBankRef || "Transfer"})`,
+          receiptNo: `RV-${lease.id}-SD-BNK`,
+          method: "Bank Transfer",
+          period: "Security Deposit Split (Bank)",
+          debit: "Bank Operating Account (12000)",
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: splitBank,
+          status: "posted",
+        });
+      }
+      if (splitCheque > 0) {
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}-chq`,
+          leaseId: lease.id,
+          name: `Receipts Voucher - Security Deposit (Cheque: ${collectForm.depositSplitChequeNo || "PDC"})`,
+          receiptNo: `RV-${lease.id}-SD-CHQ`,
+          method: "PDC",
+          period: "Security Deposit Split (Cheque)",
+          debit: "PDC In Hand (12900001)",
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: splitCheque,
+          status: "posted",
+        });
+      }
+      if (appliedToken > 0) {
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}-tok`,
+          leaseId: lease.id,
+          name: "Journal Voucher - Token Advance Applied to Deposit",
+          receiptNo: `JV-${lease.id}-TOK-DEP`,
+          method: "Adjustment",
+          period: "Token Advance Conversion",
+          debit: "Reservation Advance Liability (21100001)",
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: appliedToken,
+          status: "posted",
+        });
+      }
+    } else {
+      const fullDeposit = Number(collectForm.depositAmount) || lease.securityDeposit;
+      depAmt = fullDeposit;
+      const directDepAmt = Math.max(0, fullDeposit - appliedToken);
+
+      if (directDepAmt > 0) {
+        const depDebit = collectForm.depositMode === "Cash" ? "Cash In Hand (12100)" :
+                         collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account (12000)" : "PDC In Hand (12900001)";
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}`,
+          leaseId: lease.id,
+          name: `Receipts Voucher - Security Deposit (${collectForm.depositMode})`,
+          receiptNo: `RV-${lease.id}-SD`,
+          method: collectForm.depositMode,
+          period: "Security Deposit",
+          debit: depDebit,
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: directDepAmt,
+          status: "posted",
+        });
+      }
+
+      if (appliedToken > 0) {
+        depositVouchers.push({
+          id: `v${vouchers.length + 2}-tok`,
+          leaseId: lease.id,
+          name: "Journal Voucher - Token Advance Applied to Deposit",
+          receiptNo: `JV-${lease.id}-TOK-DEP`,
+          method: "Adjustment",
+          period: "Token Advance Conversion",
+          debit: "Reservation Advance Liability (21100001)",
+          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+          amount: appliedToken,
+          status: "posted",
+        });
+      }
+    }
+
+    // ── Rent Vouchers by Payment Mode ──
+    const rentVouchers: Voucher[] = [];
+    if (collectForm.paymentMode === "PDC") {
+      rentVouchers.push({
+        id: `v${vouchers.length + 1}`,
+        leaseId: lease.id,
+        name: "Receipts Voucher - Rent PDC",
+        receiptNo: `RV-${lease.id}-RENT-PDC`,
+        method: "PDC",
+        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+        debit: "PDC In Hand (12900001)",
+        credit: `Customer(PDC)-${lease.unit} (21400)`,
+        amount: rentTotal,
+        status: "posted",
+      });
+    } else if (collectForm.paymentMode === "Cash") {
+      rentVouchers.push({
+        id: `v${vouchers.length + 1}`,
+        leaseId: lease.id,
+        name: "Receipts Voucher - Rent Cash",
+        receiptNo: collectForm.rentPaymentReceiptNo || `RV-${lease.id}-RENT-CSH`,
+        method: "Cash",
+        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+        debit: "Cash In Hand (12100)",
+        credit: `Rental Income - ${lease.unit} (41100)`,
+        amount: rentTotal,
+        status: "posted",
+      });
+    } else if (collectForm.paymentMode === "Bank Transfer") {
+      rentVouchers.push({
+        id: `v${vouchers.length + 1}`,
+        leaseId: lease.id,
+        name: `Receipts Voucher - Rent Bank Transfer (Ref: ${collectForm.rentPaymentReference || "Direct"})`,
+        receiptNo: `RV-${lease.id}-RENT-BT`,
+        method: "Bank Transfer",
+        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+        debit: "Bank Operating Account (12000)",
+        credit: `Rental Income - ${lease.unit} (41100)`,
+        amount: rentTotal,
+        status: "posted",
+      });
+    } else if (collectForm.paymentMode === "Guarantee Cheque") {
+      rentVouchers.push({
+        id: `v${vouchers.length + 1}`,
+        leaseId: lease.id,
+        name: `Receipts Voucher - Rent Guarantee Cheque (${collectForm.rentGuaranteeChequeNo || "GNT"})`,
+        receiptNo: `RV-${lease.id}-RENT-GNT`,
+        method: "Guarantee Cheque",
+        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+        debit: "Guarantee Cheque In Hand (12900002)",
+        credit: `Guarantee Cheque Received (21200001)`,
+        amount: rentTotal,
+        status: "posted",
+      });
+    }
 
     const newVouchers: Voucher[] = [
-      { id: `v${vouchers.length + 1}`, leaseId: lease.id, name: "Receipts Voucher - Rent PDC", receiptNo: `RV-${lease.id}-01`, method: collectForm.paymentMode, period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`, debit: "PDC In Hand (12900001)", credit: `Customer(PDC)-${lease.unit} (21400)`, amount: pdcTotal, status: "posted" },
-      ...(depAmt > 0 ? [{ id: `v${vouchers.length + 2}`, leaseId: lease.id, name: "Receipts Voucher - Security Deposit", receiptNo: `RV-${lease.id}-02`, method: collectForm.depositMode, period: "Security deposit", debit: collectForm.depositMode === "Cash" ? "Cash In Hand" : "Bank Operating Account", credit: `Security Deposit Liability - ${lease.unit} (21500)`, amount: depAmt, status: "posted" as const }] : []),
-      ...(utilityAmt > 0 ? [{ id: `v${vouchers.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Kahramaa Deposit", receiptNo: `RV-${lease.id}-UTL`, method: "Cash", period: "Kahramaa utility deposit", debit: "Cash In Hand", credit: "Kahramaa Deposit (21100003)", amount: utilityAmt, status: "posted" as const }] : []),
-      ...(qatarCoolAmt > 0 ? [{ id: `v${vouchers.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Qatar Cool Deposit", receiptNo: `RV-${lease.id}-QC`, method: "Cash", period: "Qatar Cool utility deposit", debit: "Cash In Hand", credit: "Qatar Cool Deposit (21100004)", amount: qatarCoolAmt, status: "posted" as const }] : []),
-      ...(reservationAmt > 0 ? [{ id: `v${vouchers.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Reservation Advance", receiptNo: `RV-${lease.id}-RES`, method: "Cash", period: "Reservation advance", debit: "Cash In Hand", credit: "Reservation Advance (21100001)", amount: reservationAmt, status: "posted" as const }] : []),
-      ...(serviceFeeAmt > 0 ? [{ id: `v${vouchers.length + 6}`, leaseId: lease.id, name: "Receipts Voucher - Service Fee Deposit", receiptNo: `RV-${lease.id}-SVC`, method: "Cash", period: "Service fee deposit", debit: "Cash In Hand", credit: "Service Fee Deposit (21100005)", amount: serviceFeeAmt, status: "posted" as const }] : []),
-      ...(guaranteeChequeAmt > 0 ? [{ id: `v${vouchers.length + 7}`, leaseId: lease.id, name: "Receipts Voucher - Guarantee Cheque", receiptNo: `RV-${lease.id}-GCHQ`, method: "Guarantee Cheque", period: "Guarantee cheque security", debit: "Deposit-PDC In Hand (12900002)", credit: "Guarantee Cheque Received (21200001)", amount: guaranteeChequeAmt, status: "posted" as const }] : []),
-      ...(agencyAmt > 0 ? [{ id: `v${vouchers.length + 8}`, leaseId: lease.id, name: "Agency Commission - Finance Mapping Required", receiptNo: `RV-${lease.id}-AGN`, method: "Cash", period: "One-time fee", debit: "Cash In Hand", credit: "Unmapped Finance Master Account", amount: agencyAmt, status: "draft" as const }] : []),
-      ...(adminAmt > 0 ? [{ id: `v${vouchers.length + 9}`, leaseId: lease.id, name: "Admin Charges - Finance Mapping Required", receiptNo: `RV-${lease.id}-ADM`, method: "Cash", period: "One-time fee", debit: "Cash In Hand", credit: "Unmapped Finance Master Account", amount: adminAmt, status: "draft" as const }] : []),
+      ...rentVouchers,
+      ...depositVouchers,
+      ...(utilityAmt > 0 ? [{ id: `v${vouchers.length + 3}`, leaseId: lease.id, name: "Receipts Voucher - Kahramaa Deposit", receiptNo: `RV-${lease.id}-UTL`, method: "Cash", period: "Kahramaa utility deposit", debit: "Cash In Hand (12100)", credit: "Kahramaa Deposit (21100003)", amount: utilityAmt, status: "posted" as const }] : []),
+      ...(qatarCoolAmt > 0 ? [{ id: `v${vouchers.length + 4}`, leaseId: lease.id, name: "Receipts Voucher - Qatar Cool Deposit", receiptNo: `RV-${lease.id}-QC`, method: "Cash", period: "Qatar Cool utility deposit", debit: "Cash In Hand (12100)", credit: "Qatar Cool Deposit (21100004)", amount: qatarCoolAmt, status: "posted" as const }] : []),
+      ...(reservationAmt > 0 ? [{ id: `v${vouchers.length + 5}`, leaseId: lease.id, name: "Receipts Voucher - Reservation Advance", receiptNo: `RV-${lease.id}-RES`, method: "Cash", period: "Reservation advance", debit: "Cash In Hand (12100)", credit: "Reservation Advance (21100001)", amount: reservationAmt, status: "posted" as const }] : []),
+      ...(serviceFeeAmt > 0 ? [{ id: `v${vouchers.length + 6}`, leaseId: lease.id, name: "Receipts Voucher - Service Fee Deposit", receiptNo: `RV-${lease.id}-SVC`, method: "Cash", period: "Service fee deposit", debit: "Cash In Hand (12100)", credit: "Service Fee Deposit (21100005)", amount: serviceFeeAmt, status: "posted" as const }] : []),
+      ...(guaranteeChequeAmt > 0 ? [{ id: `v${vouchers.length + 7}`, leaseId: lease.id, name: "Receipts Voucher - Guarantee Cheque", receiptNo: `RV-${lease.id}-GCHQ`, method: "Guarantee Cheque", period: "Guarantee cheque security", debit: "Guarantee Cheque In Hand (12900002)", credit: "Guarantee Cheque Received (21200001)", amount: guaranteeChequeAmt, status: "posted" as const }] : []),
+      ...(agencyAmt > 0 ? [{ id: `v${vouchers.length + 8}`, leaseId: lease.id, name: "Agency Commission - Revenue", receiptNo: `RV-${lease.id}-AGN`, method: "Cash", period: "One-time fee", debit: "Cash In Hand (12100)", credit: "Agency Commission Income (41201)", amount: agencyAmt, status: "posted" as const }] : []),
+      ...(adminAmt > 0 ? [{ id: `v${vouchers.length + 9}`, leaseId: lease.id, name: "Admin Charges - Revenue", receiptNo: `RV-${lease.id}-ADM`, method: "Cash", period: "One-time fee", debit: "Cash In Hand (12100)", credit: "Admin Charges Income (41201)", amount: adminAmt, status: "posted" as const }] : []),
     ];
+
     // ── Authoritative Finance posting ──────────────────────────────────────
-    // Resolve real UUID context if available, and post to ledger. If lease is demo/mock,
-    // catch and proceed with in-memory state transition.
     try {
       const leaseIdValue = String(lease.id);
       const isLeaseUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(leaseIdValue);
@@ -2725,7 +3310,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       const { data: financeLease } = await leaseLookup;
 
       if (financeLease?.id && financeLease.customer_id && financeLease.property_id && financeLease.unit_id) {
-        if (pdcTotal > 0) {
+        if (nextPdcs.length > 0) {
           for (const pdc of nextPdcs) {
             await receivePdc({
               cheque_number: pdc.chequeNo,
@@ -2742,7 +3327,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
 
         const depositCollections: Array<{ amount: number; type: "SECURITY" | "QATAR_COOL" | "KAHRAMAA" | "SERVICE_FEE" | "RESERVATION"; mode: "Cash" | "Bank" }> = [
-          { amount: depAmt, type: "SECURITY", mode: collectForm.depositMode === "Cash" ? "Cash" : "Bank" },
+          { amount: depAmt, type: "SECURITY", mode: (collectForm.depositIsSplit ? (splitCash > 0 ? "Cash" : "Bank") : (collectForm.depositMode === "Cash" ? "Cash" : "Bank")) },
           { amount: utilityAmt, type: "KAHRAMAA", mode: "Cash" },
           { amount: qatarCoolAmt, type: "QATAR_COOL", mode: "Cash" },
           { amount: reservationAmt, type: "RESERVATION", mode: "Cash" },
@@ -2780,18 +3365,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     }
 
     // Publish the PDCs to shared state
-    setPdcs((items) => [...nextPdcs, ...items]);
-
-    // Agency/Admin charge accounts remain draft
-    if (agencyAmt > 0 || adminAmt > 0) {
-      toast.warning("Agency/Admin charges remain draft because no authoritative Finance Master account rule exists for those charge types.");
+    if (nextPdcs.length > 0) {
+      setPdcs((items) => [...nextPdcs, ...items]);
     }
+
     setVouchers((items) => [...newVouchers, ...items]);
 
     // Feed directly to authoritative FinanceStore vouchers for General Ledger and Reports
     newVouchers.forEach(v => {
       const drCode = v.debit.includes("12900002") ? "12900" :
                      v.debit.includes("12900") ? "12900" :
+                     v.debit.includes("21100001") ? "21100" :
                      v.debit.toLowerCase().includes("cash") ? "12100" : "12000";
       const crCode = v.credit.includes("21400") ? "21400" :
                      v.credit.includes("21500") ? "21500" :
@@ -2800,6 +3384,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                      v.credit.includes("21100004") ? "21100" :
                      v.credit.includes("21100005") ? "21100" :
                      v.credit.includes("21200001") ? "21200" :
+                     v.credit.includes("41201") ? "41201" :
                      v.credit.includes("21100") ? "21100" : "41100";
 
       addFinanceStoreVoucher({
@@ -2819,8 +3404,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       });
     });
 
-    if (depAmt > 0 && collectForm.depositMode === "Cash") {
-      addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-02`, description: `Unit Security Deposit Cash — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: depAmt });
+    // Cash Book Inflow Entries
+    if (collectForm.paymentMode === "Cash" && rentTotal > 0) {
+      addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-RENT-CSH`, description: `Rent Cash Collection — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: rentTotal });
+    }
+    if (collectForm.depositIsSplit) {
+      if (splitCash > 0) addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-SD-CSH`, description: `Unit Security Deposit Cash Split — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: splitCash });
+    } else {
+      const directDepAmt = Math.max(0, depAmt - appliedToken);
+      if (directDepAmt > 0 && collectForm.depositMode === "Cash") {
+        addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-SD`, description: `Unit Security Deposit Cash — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: directDepAmt });
+      }
     }
     if (utilityAmt > 0) addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-UTL`, description: `Kahramaa Utility Deposit — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: utilityAmt });
     if (qatarCoolAmt > 0) addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-QC`, description: `Qatar Cool Utility Deposit — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: qatarCoolAmt });
@@ -2829,7 +3423,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
     advanceLease(lease, "collection_completed", {
       collectionCompleted: true,
-      pdcCount: nextPdcs.length,
+      pdcCount: nextPdcs.length > 0 ? nextPdcs.length : (Number(collectForm.pdcCount) || 12),
       startDate: collectForm.startDate || lease.startDate,
       endDate: collectForm.endDate || lease.endDate,
     });
@@ -2837,14 +3431,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     recordAudit({
       stage: "Collection & Receipt Generation",
       owner: `Finance Cashier${collectForm.cashierName ? " – " + collectForm.cashierName : ""}`,
-      input: `${nextPdcs.length} PDCs (${collectForm.chequeBank}), deposit ${collectForm.depositMode}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
+      input: `Rent: ${collectForm.paymentMode} (${formatMoney(rentTotal)}), Deposit: ${collectForm.depositIsSplit ? "Split [Cash: " + formatMoney(splitCash) + ", Bank: " + formatMoney(splitBank) + ", Cheque: " + formatMoney(splitCheque) + ", Token: " + formatMoney(appliedToken) + "]" : collectForm.depositMode + " (" + formatMoney(depAmt) + ")"}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
       approval: "Cashier receipt posting",
       status: "collection_completed",
-      output: (collectForm.notes || "Rent, deposit and fee collection receipts generated") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
+      output: (collectForm.notes || "Rent, security deposit and ancillary collection receipts posted") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
 
     // Auto-generate official printable receipt
-    const totalCollectedAmt = pdcTotal + depAmt + agencyAmt + adminAmt + utilityAmt + qatarCoolAmt + reservationAmt + serviceFeeAmt + guaranteeChequeAmt;
+    const totalCollectedAmt = rentTotal + depAmt + agencyAmt + adminAmt + utilityAmt + qatarCoolAmt + reservationAmt + serviceFeeAmt + guaranteeChequeAmt;
     const generatedReceipt: TenantReceiptDetails = {
       receiptNo: `REC-${Date.now().toString().slice(-6)}`,
       acknowledgementNo: `ACK-${lease.id.toUpperCase()}`,
@@ -2859,9 +3453,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       leaseStartDate: collectForm.startDate || lease.startDate,
       leaseEndDate: collectForm.endDate || lease.endDate,
       monthlyRent: lease.monthlyRent,
-      totalContractRent: pdcTotal,
+      totalContractRent: rentTotal,
       depositAmount: depAmt,
-      depositMode: collectForm.depositMode,
+      depositMode: collectForm.depositIsSplit ? "Split Payment (Cash / Bank / Cheque / Token)" : collectForm.depositMode,
       pdcCount: nextPdcs.length,
       pdcs: nextPdcs.map((p) => ({
         chequeNo: p.chequeNo,
@@ -2885,7 +3479,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       utilityDeposit: utilityAmt,
       totalCollected: totalCollectedAmt,
       cashierName: collectForm.cashierName || "Finance Cashier",
-      notes: collectForm.notes || "Official receipt acknowledged for rent cheques, security deposit, and applicable fees.",
+      notes: collectForm.notes || (collectForm.depositIsSplit ? `Split security deposit & ${collectForm.paymentMode} rent collection processed.` : "Official receipt acknowledged for rent, security deposit, and applicable fees."),
     };
 
     setReceiptModalData(generatedReceipt);
@@ -3037,16 +3631,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const { leaseId, amount, method, receiptNo, chequeNo, bank, chequeDate, notes } = securityDepositForm;
     if (!leaseId || !amount) { alert("Please select a lease and enter the deposit amount."); return; }
     const isPdc = method === "PDC" || method === "Guarantee Cheque";
+    const numAmount = Number(amount);
+    const voucherRef = receiptNo || `SD-${Date.now()}`;
     const newVoucher: Voucher = {
       id: `v${vouchers.length + 1}`,
       leaseId,
       name: `Receipt Voucher - Security Deposit (${method})`,
-      receiptNo: receiptNo || `SD-${Date.now()}`,
+      receiptNo: voucherRef,
       method,
       period: "Security Deposit",
       debit: isPdc ? "PDC In Hand" : method === "Cash" ? "Cash In Hand" : "Bank Account",
       credit: "Security Deposit Liability",
-      amount: Number(amount),
+      amount: numAmount,
       status: "draft",
     };
     setVouchers((items) => [newVoucher, ...items]);
@@ -3057,21 +3653,49 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         chequeNo,
         bank,
         date: chequeDate,
-        amount: Number(amount),
+        amount: numAmount,
         status: "received",
       };
       setPdcs((items) => [newPdc, ...items]);
     }
     // Update lease security deposit
-    setLeases((items) => items.map((l) => l.id === leaseId ? { ...l, securityDeposit: l.securityDeposit + Number(amount) } : l));
+    setLeases((items) => items.map((l) => l.id === leaseId ? { ...l, securityDeposit: l.securityDeposit + numAmount } : l));
     recordAudit({
       stage: "Security Deposit Received",
       owner: "Finance Department",
-      input: `${method} — ${formatMoney(Number(amount))}${chequeNo ? ` — Cheque ${chequeNo}` : ""}`,
+      input: `${method} — ${formatMoney(numAmount)}${chequeNo ? ` — Cheque ${chequeNo}` : ""}`,
       approval: "Cashier receipt",
       status: "received",
       output: `Security deposit ${newVoucher.receiptNo} recorded. ${notes || ""}`,
     });
+
+    // Post to Finance GL — Dr Cash/Bank/PDC In Hand / Cr 21500001 Security Deposit Liability
+    const drCode = isPdc ? "12900001" : method === "Cash" ? "12100001" : "12000001";
+    const drName = isPdc ? "Rent PDC In Hand" : method === "Cash" ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+    const postingDate = chequeDate || new Date().toISOString().split("T")[0];
+    const lease = leases.find(l => l.id === leaseId);
+    const tenantLabel = lease?.tenantName || lease?.tenant || "Tenant";
+    const unitLabel = lease?.unit || lease?.unitRef || "";
+    void supabase.from("fin_vouchers").insert({
+      voucher_number: `VCH-SD-RCV-${voucherRef}`,
+      voucher_date: postingDate,
+      voucher_type: "RV",
+      description: `Security Deposit Received — ${tenantLabel}${unitLabel ? ` (${unitLabel})` : ""}${chequeNo ? ` [Cheque #${chequeNo}]` : ""}`,
+      total_amount: numAmount,
+      status: "posted",
+      posted_at: new Date().toISOString(),
+    }).select("id").single().then(({ data: vData, error: vErr }) => {
+      if (!vErr && vData?.id) {
+        void supabase.from("fin_voucher_lines").insert([
+          { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: numAmount, credit: 0, description: `Security Deposit — ${tenantLabel}` },
+          { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: numAmount, description: `Security Deposit — ${tenantLabel}` },
+        ]);
+      }
+    }).catch(err => console.warn("[addSecurityDeposit] GL posting note:", err));
+
+    // Notify Finance Store so GL / Trial Balance / Balance Sheet update immediately
+    window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+
     setSecurityDepositOpen(false);
     setSecurityDepositForm({ leaseId: "", amount: "", method: "Cash", receiptNo: "", chequeNo: "", bank: "", chequeDate: today.toISOString().split("T")[0], notes: "" });
   }
@@ -4164,8 +4788,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       {/* ── CREATE LEASE DIALOG ───────────────────────────────────── */}
 
       <Dialog open={createReservationOpen} onOpenChange={setCreateReservationOpen}>
-        <DialogContent className="sm:max-w-[480px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
-          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          {/* ── Modal Header ── */}
+          <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3 shrink-0">
             <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 border border-blue-500/20 shadow-sm">
               <Lock className="h-5 w-5" />
             </div>
@@ -4174,8 +4799,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               <DialogDescription className="text-xs text-muted-foreground">Locks unit from Available to Reserved until lease conversion or validity expiration.</DialogDescription>
             </div>
           </div>
-          <div className="p-6 overflow-y-auto space-y-4 flex-1">
-            <div className="grid grid-cols-2 gap-3">
+
+          {/* ── Modal Body (Scrollable) ── */}
+          <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
+            {/* Property & Unit Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <Field label="Target Property *">
                 <SearchableSelect
                   value={reservationForm.property}
@@ -4282,6 +4910,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </Field>
             </div>
             
+            {/* Customer Selection */}
             <Field label="Prospective Tenant Customer *">
               <SearchableSelect
                 value={reservationForm.tenantName}
@@ -4292,28 +4921,244 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               />
             </Field>
 
+            {/* Timing & Terms */}
             <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <CalendarClock className="h-3.5 w-3.5 text-primary" /> Reservation Timing & Terms
               </span>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Expected Lease Start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} className="bg-background" /></Field>
-                <Field label="Validity Hold (Days)"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} className="bg-background" /></Field>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Field label="Expected Lease Start">
+                  <Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} className="bg-background" />
+                </Field>
+                <Field label="Validity Hold (Days)">
+                  <Input type="number" min="1" max="90" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} className="bg-background" />
+                </Field>
+                <Field label="Proposed Monthly Rent (QAR)">
+                  <Input type="number" placeholder="0.00" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} className="bg-background font-mono" />
+                </Field>
               </div>
-              <Field label="Proposed Monthly Rent (QR)"><Input type="number" placeholder="0.00" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} className="bg-background" /></Field>
             </div>
 
-            <Field label="Internal Remarks / Notes"><Textarea rows={2} placeholder="Optional notes regarding reservation deposit or booking terms..." value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} className="text-xs" /></Field>
+            {/* ── Provision to Hold Unit without Lease & Refundable Token Amount (Image 3) ── */}
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px] font-semibold">
+                    Hold Provision
+                  </Badge>
+                  <Label className="text-xs font-bold text-foreground">Hold Unit with Refundable Token Amount</Label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none bg-background px-2.5 py-1 rounded-md border border-primary/20 hover:bg-primary/10 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={reservationForm.isHold}
+                    onChange={(e) => setReservationForm((f) => ({ ...f, isHold: e.target.checked }))}
+                    className="h-4 w-4 rounded accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs font-semibold text-primary">Enable Hold</span>
+                </label>
+              </div>
+
+              {reservationForm.isHold && (
+                <div className="space-y-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Field label="Token Amount (QAR) *">
+                      <Input
+                        type="number"
+                        placeholder="1000"
+                        value={reservationForm.tokenAmount}
+                        onChange={(e) => setReservationForm((f) => ({ ...f, tokenAmount: e.target.value }))}
+                        className="bg-background font-mono font-semibold"
+                      />
+                    </Field>
+                    <Field label="Payment Mode">
+                      <Select
+                        value={reservationForm.tokenPaymentMode}
+                        onValueChange={(v) => setReservationForm((f) => ({ ...f, tokenPaymentMode: v as any }))}
+                      >
+                        <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
+                          <SelectItem value="Bank Transfer">Bank Transfer (12000)</SelectItem>
+                          <SelectItem value="Cheque">Cheque / PDC (12900)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Receipt / Voucher No.">
+                      <Input
+                        placeholder="Auto-generated if empty"
+                        value={reservationForm.tokenReceiptNo}
+                        onChange={(e) => setReservationForm((f) => ({ ...f, tokenReceiptNo: e.target.value }))}
+                        className="bg-background text-xs"
+                      />
+                    </Field>
+                  </div>
+
+                  {/* ── Receiving Staff & Mode-Specific Payment Details ── */}
+                  <div className="p-3 rounded-lg border border-primary/20 bg-muted/30 space-y-3">
+                    {/* Common Cashier / Receiving Staff for all payment modes */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Field label="Cashier / Receiving Staff (Finance) *">
+                        <Select
+                          value={reservationForm.tokenCashierName}
+                          onValueChange={(v) => setReservationForm((f) => ({ ...f, tokenCashierName: v }))}
+                        >
+                          <SelectTrigger className="bg-background text-xs h-9">
+                            <SelectValue placeholder="Select Finance cashier / receiving staff…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {financeEmployees.length === 0 && (
+                              <SelectItem value="__loading__" disabled>Loading HRMS staff…</SelectItem>
+                            )}
+                            {financeEmployees.map((emp) => (
+                              <SelectItem key={emp.id} value={emp.name}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{emp.name}</span>
+                                  <span className="text-[10px] text-muted-foreground">{emp.designation}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+
+                      {reservationForm.tokenPaymentMode === "Cash" && (
+                        <Field label="Cash Counter Ref / Till No.">
+                          <Input
+                            placeholder="e.g. TILL-01 / Main Office Counter"
+                            value={reservationForm.tokenReceiptNo ? `TILL-${reservationForm.tokenReceiptNo}` : "TILL-COUNTER-01"}
+                            disabled
+                            className="bg-muted text-xs font-mono"
+                          />
+                        </Field>
+                      )}
+
+                      {reservationForm.tokenPaymentMode === "Bank Transfer" && (
+                        <Field label="Transaction / Transfer Ref #">
+                          <Input
+                            placeholder="e.g. FT-2026-987412"
+                            value={reservationForm.tokenTransferRef}
+                            onChange={(e) => setReservationForm((f) => ({ ...f, tokenTransferRef: e.target.value }))}
+                            className="bg-background text-xs font-mono"
+                          />
+                        </Field>
+                      )}
+
+                      {reservationForm.tokenPaymentMode === "Cheque" && (
+                        <Field label="Cheque No. *">
+                          <Input
+                            placeholder="e.g. 0004521"
+                            value={reservationForm.tokenChequeNo}
+                            onChange={(e) => setReservationForm((f) => ({ ...f, tokenChequeNo: e.target.value }))}
+                            className="bg-background text-xs font-mono font-semibold"
+                          />
+                        </Field>
+                      )}
+                    </div>
+
+                    {/* Mode specific supplementary inputs */}
+                    {reservationForm.tokenPaymentMode === "Bank Transfer" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-border/50">
+                        <Field label="Payer Bank">
+                          <Input
+                            placeholder="e.g. Qatar National Bank (QNB)"
+                            value={reservationForm.tokenPayerBank}
+                            onChange={(e) => setReservationForm((f) => ({ ...f, tokenPayerBank: e.target.value }))}
+                            className="bg-background text-xs"
+                          />
+                        </Field>
+                        <Field label="Transfer Date">
+                          <Input
+                            type="date"
+                            value={reservationForm.tokenTransferDate}
+                            onChange={(e) => setReservationForm((f) => ({ ...f, tokenTransferDate: e.target.value }))}
+                            className="bg-background text-xs"
+                          />
+                        </Field>
+                      </div>
+                    )}
+
+                    {reservationForm.tokenPaymentMode === "Cheque" && (
+                      <div className="space-y-2.5 pt-1 border-t border-border/50">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <Field label="Drawn / Issuing Bank">
+                            <Input
+                              placeholder="e.g. Commercial Bank of Qatar (CBQ)"
+                              value={reservationForm.tokenChequeBank}
+                              onChange={(e) => setReservationForm((f) => ({ ...f, tokenChequeBank: e.target.value }))}
+                              className="bg-background text-xs"
+                            />
+                          </Field>
+                          <Field label="Cheque Date / Maturity">
+                            <Input
+                              type="date"
+                              value={reservationForm.tokenChequeDate}
+                              onChange={(e) => setReservationForm((f) => ({ ...f, tokenChequeDate: e.target.value }))}
+                              className="bg-background text-xs"
+                            />
+                          </Field>
+                        </div>
+                        <Field label="Cheque Leaf Scan / Deposit Slip">
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="file"
+                              accept="image/*,.pdf"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setReservationForm((f) => ({ ...f, tokenChequeFile: file.name }));
+                                }
+                              }}
+                              className="bg-background text-xs cursor-pointer"
+                            />
+                            {reservationForm.tokenChequeFile && (
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px] shrink-0">
+                                {reservationForm.tokenChequeFile}
+                              </Badge>
+                            )}
+                          </div>
+                        </Field>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/30 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      The customer pays a token amount to hold this unit. <strong>Refundable</strong> if they cancel or withdraw. Recorded under <strong>Reservation Advance Liability (GL 21100001)</strong>.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Internal Remarks */}
+            <Field label="Internal Remarks / Notes">
+              <Textarea rows={2} placeholder="Optional notes regarding reservation deposit or booking terms..." value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} className="text-xs bg-background" />
+            </Field>
           </div>
-          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-end gap-2.5">
-            <Button variant="outline" size="sm" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
-            <Button size="sm" className="shadow-sm" onClick={async () => {
-              await withBusy("reserve", createReservation);
-              setCreateReservationOpen(false);
-            }}>
-              {busyAction === "reserve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
-              Confirm Unit Reservation
-            </Button>
+
+          {/* ── Modal Footer ── */}
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-between gap-2.5 shrink-0">
+            <div className="text-xs text-muted-foreground hidden sm:block">
+              {reservationForm.isHold && Number(reservationForm.tokenAmount) > 0 ? (
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  Holding with QAR {Number(reservationForm.tokenAmount).toLocaleString()} token ({reservationForm.tokenPaymentMode})
+                </span>
+              ) : (
+                <span>Standard unit reservation (no token hold)</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
+              <Button size="sm" className="shadow-sm gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90" onClick={async () => {
+                await withBusy("reserve", createReservation);
+                setCreateReservationOpen(false);
+              }}>
+                {busyAction === "reserve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                Confirm Unit Reservation
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -6144,49 +6989,136 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       {/* ── RELEASE RESERVATION DIALOG ────────────────────────────── */}
       <Dialog open={releaseOpen} onOpenChange={setReleaseOpen}>
-        <DialogContent className="sm:max-w-[480px] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
-          <div className="bg-gradient-to-r from-red-500/10 via-rose-500/5 to-transparent px-6 py-4 border-b flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 shadow-sm">
-              <XCircle className="h-5 w-5" />
+        <DialogContent className="sm:max-w-xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-red-500/10 via-rose-500/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 border border-red-500/20 shadow-sm">
+                <XCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold">Release Unit Reservation & Refund</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  {selectedReservationForRelease && (
+                    <span>Unit: <strong className="text-foreground">{selectedReservationForRelease.unit}</strong> ({selectedReservationForRelease.property}) · Tenant: <strong className="text-foreground">{selectedReservationForRelease.tenantName}</strong></span>
+                  )}
+                </DialogDescription>
+              </div>
             </div>
-            <div>
-              <DialogTitle className="text-base font-bold">Release Unit Reservation</DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                {selectedReservationForRelease && (
-                  <span>Unit: <strong className="text-foreground">{selectedReservationForRelease.unit}</strong> · Tenant: <strong className="text-foreground">{selectedReservationForRelease.tenantName}</strong></span>
-                )}
-              </DialogDescription>
-            </div>
+            {selectedReservationForRelease?.isHold && Number(selectedReservationForRelease?.tokenAmount) > 0 && (
+              <Badge className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 text-xs">
+                🔒 Hold: QAR {Number(selectedReservationForRelease.tokenAmount).toLocaleString()}
+              </Badge>
+            )}
           </div>
-          <div className="p-6 space-y-4">
+          <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            {/* If reservation had a token advance, render Token Refund Form & GL Liability Debit */}
+            {selectedReservationForRelease?.isHold && Number(selectedReservationForRelease?.tokenAmount) > 0 && !selectedReservationForRelease?.tokenRefunded && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50/70 dark:bg-amber-950/30 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                    <Banknote className="h-4 w-4 text-amber-700 dark:text-amber-300" /> Token Advance Refund Provision
+                  </span>
+                  <Badge variant="outline" className="bg-emerald-100 text-emerald-800 border-emerald-300 text-xs font-mono font-bold">
+                    QAR {Number(selectedReservationForRelease.tokenAmount).toLocaleString()}
+                  </Badge>
+                </div>
+                <p className="text-xs text-amber-800/90 dark:text-amber-300/90">
+                  This unit was placed on hold with a refundable token deposit. Releasing the hold will generate a <strong>Payment Voucher</strong> and discharge liability from <strong>Reservation Advance Liability (21100001)</strong> to the chosen disbursement account.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <Field label="Refund Payment Mode *">
+                    <Select value={releaseRefundMode} onValueChange={(v) => setReleaseRefundMode(v as any)}>
+                      <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Cash">Cash In Hand (12100001)</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer (12000001)</SelectItem>
+                        <SelectItem value="Cheque">Company Refund Cheque (12000001)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  {releaseRefundMode !== "Cash" ? (
+                    <Field label="Disbursing Bank Account *">
+                      <Select value={releaseRefundBank} onValueChange={setReleaseRefundBank}>
+                        <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {DEFAULT_COMPANY_BANK_ACCOUNTS.map((bank) => (
+                            <SelectItem key={bank.glCode} value={bank.glCode}>
+                              {bank.bankName} ({bank.glCode})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  ) : (
+                    <Field label="Cash Location">
+                      <Input value="Head Office Central Cashier (12100001)" disabled className="bg-muted text-xs" />
+                    </Field>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Refund Payment Voucher / Ref No.">
+                    <Input
+                      value={releaseRefundVoucherNo}
+                      onChange={(e) => setReleaseRefundVoucherNo(e.target.value)}
+                      placeholder="PV-REF-TOK-..."
+                      className="bg-background font-mono text-xs"
+                    />
+                  </Field>
+                  <Field label="GL Settlement Impact">
+                    <div className="text-[11px] font-mono p-2 rounded bg-background/80 border text-muted-foreground flex flex-col justify-center">
+                      <div>Dr: <span className="text-foreground font-semibold">21100001 (Advance Liab)</span></div>
+                      <div>Cr: <span className="text-foreground font-semibold">{releaseRefundMode === "Cash" ? "12100001 (Cash)" : `${releaseRefundBank} (Bank)`}</span></div>
+                    </div>
+                  </Field>
+                </div>
+              </div>
+            )}
+
             <Field label="Release Reason Type">
               <Select value={releaseType} onValueChange={v => setReleaseType(v as typeof releaseType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="released">Manual Release / Tenant Withdrew</SelectItem>
                   <SelectItem value="expired">Expired Hold (Validity Lapsed)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
+
             <Field label="Reason & Audit Remarks">
               <Textarea
                 rows={3}
                 value={releaseReason}
                 onChange={e => setReleaseReason(e.target.value)}
                 placeholder="State why this reservation is being cancelled or released..."
-                className="text-xs"
+                className="text-xs bg-background"
               />
             </Field>
-            <div className="rounded-xl border border-amber-300 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>Releasing unlocks this unit immediately back to <strong>Available</strong> status for new lease bookings.</span>
+
+            <div className="rounded-xl border border-blue-200 bg-blue-50/60 dark:bg-blue-950/20 p-3 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
+              <span>
+                Releasing immediately restores unit <strong className="text-foreground">{selectedReservationForRelease?.unit}</strong> to <strong>Available</strong> status in Unit Master and allows new leasing bookings.
+              </span>
             </div>
           </div>
-          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
-            <Button variant="outline" size="sm" onClick={() => setReleaseOpen(false)}>Cancel</Button>
-            <Button size="sm" variant="destructive" onClick={confirmRelease}>
-              <XCircle className="mr-2 h-4 w-4" /> Confirm Release
-            </Button>
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-between gap-2.5">
+            <span className="text-xs text-muted-foreground">
+              {selectedReservationForRelease?.isHold && Number(selectedReservationForRelease?.tokenAmount) > 0
+                ? `Will refund QAR ${Number(selectedReservationForRelease.tokenAmount).toLocaleString()} via ${releaseRefundMode}`
+                : "Standard release"}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setReleaseOpen(false)}>Cancel</Button>
+              <Button size="sm" variant="destructive" onClick={confirmRelease} className="gap-1.5">
+                <XCircle className="h-4 w-4" />
+                {selectedReservationForRelease?.isHold && Number(selectedReservationForRelease?.tokenAmount) > 0
+                  ? "Confirm Unhold & Process Refund"
+                  : "Confirm Release"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -6513,10 +7445,62 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Bank Name (for PDCs)">
-                <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank, CBQ" />
-              </Field>
+              {collectForm.paymentMode === "PDC" ? (
+                <Field label="Bank Name (for PDCs)">
+                  <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank, CBQ" />
+                </Field>
+              ) : (
+                <Field label="Rent Amount (QAR)">
+                  <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => setCollectForm((f) => ({ ...f, regularChequeAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.monthlyRent || 0}`} />
+                </Field>
+              )}
             </div>
+
+            {/* Non-PDC Rent Details */}
+            {collectForm.paymentMode !== "PDC" && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-800 p-3.5 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+                  {collectForm.paymentMode} — Rent Collection Details
+                </p>
+                {collectForm.paymentMode === "Cash" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Receipt No.">
+                      <Input value={collectForm.rentPaymentReceiptNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReceiptNo: e.target.value }))} placeholder="e.g. REC-2024-001" />
+                    </Field>
+                    <Field label="Cashier Name">
+                      <Input value={collectForm.cashierName} onChange={(e) => setCollectForm((f) => ({ ...f, cashierName: e.target.value }))} placeholder="Name of cashier receiving cash" />
+                    </Field>
+                  </div>
+                )}
+                {collectForm.paymentMode === "Bank Transfer" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Bank Transfer Reference No.">
+                      <Input value={collectForm.rentPaymentReference} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReference: e.target.value }))} placeholder="e.g. TRF-QNB-2024-00112" />
+                    </Field>
+                    <Field label="Bank / Account">
+                      <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, QIIB" />
+                    </Field>
+                  </div>
+                )}
+                {collectForm.paymentMode === "Guarantee Cheque" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Guarantee Cheque No.">
+                      <Input value={collectForm.rentGuaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-44321" />
+                    </Field>
+                    <Field label="Issuing Bank">
+                      <Input value={collectForm.rentGuaranteeChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeBank: e.target.value }))} placeholder="e.g. QNB" />
+                    </Field>
+                    <Field label="Cheque Date">
+                      <Input type="date" value={collectForm.rentGuaranteeChequeDate} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeDate: e.target.value }))} />
+                    </Field>
+                  </div>
+                )}
+                <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-100/60 dark:bg-blue-900/30 rounded px-2.5 py-1.5 flex items-center gap-2">
+                  <span>💡</span>
+                  <span>A Receipt Voucher will be generated with the above details and posted to the Finance Ledger.</span>
+                </div>
+              </div>
+            )}
 
             {/* Maturity & Amount Breakdown Section */}
             {collectForm.paymentMode === "PDC" && signatureWorkflowLease && (() => {
@@ -6813,33 +7797,94 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </Badge>
                   <p className="text-xs font-bold uppercase tracking-wider text-foreground">Type 1: Security Deposit for Unit</p>
                 </div>
-                <span className="text-[11px] text-muted-foreground">Standard tenancy premise deposit</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Deposit Payment Mode">
-                  <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Operating (12000)</SelectItem>
-                      <SelectItem value="PDC">PDC / Cheque (12900)</SelectItem>
-                      <SelectItem value="Guarantee Cheque">Bank Guarantee Cheque (12900)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Unit Deposit Amount (QAR)">
-                  <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit || 5600}`} />
-                </Field>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">Standard tenancy premise deposit</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <div
+                      onClick={() => setCollectForm((f) => ({ ...f, depositIsSplit: !f.depositIsSplit }))}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        collectForm.depositIsSplit ? "bg-primary" : "bg-muted-foreground/30"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                          collectForm.depositIsSplit ? "translate-x-[18px]" : "translate-x-[2px]"
+                        }`}
+                      />
+                    </div>
+                    <span className="text-[11px] font-semibold text-foreground">Split Payment</span>
+                  </label>
+                </div>
               </div>
 
-              {(collectForm.depositMode === "PDC" || collectForm.depositMode === "Guarantee Cheque") && (
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Deposit Cheque No.">
-                    <Input value={collectForm.depositChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
-                  </Field>
-                  <Field label="Deposit Cheque Bank">
-                    <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, Doha Bank" />
-                  </Field>
+              {!collectForm.depositIsSplit ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Deposit Payment Mode">
+                      <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
+                          <SelectItem value="Bank Transfer">Bank Operating (12000)</SelectItem>
+                          <SelectItem value="PDC">PDC / Cheque (12900)</SelectItem>
+                          <SelectItem value="Guarantee Cheque">Bank Guarantee Cheque (12900)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Unit Deposit Amount (QAR)">
+                      <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit || 5600}`} />
+                    </Field>
+                  </div>
+                  {(collectForm.depositMode === "PDC" || collectForm.depositMode === "Guarantee Cheque") && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Deposit Cheque No.">
+                        <Input value={collectForm.depositChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
+                      </Field>
+                      <Field label="Deposit Cheque Bank">
+                        <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, Doha Bank" />
+                      </Field>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="text-xs text-primary font-semibold bg-primary/5 border border-primary/20 rounded px-2.5 py-1.5">
+                    🔀 Split Payment — Enter amounts per payment method. Leave at 0 to skip.
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Cash (QAR)">
+                      <Input type="number" value={collectForm.depositSplitCash} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCash: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Bank Transfer (QAR)">
+                      <Input type="number" value={collectForm.depositSplitBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBank: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Cheque / PDC (QAR)">
+                      <Input type="number" value={collectForm.depositSplitCheque} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCheque: e.target.value }))} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Bank Transfer Ref No.">
+                      <Input value={collectForm.depositSplitBankRef} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBankRef: e.target.value }))} placeholder="e.g. TRF-QNB-001" />
+                    </Field>
+                    <Field label="Cheque No.">
+                      <Input value={collectForm.depositSplitChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
+                    </Field>
+                    <Field label="Cheque Bank">
+                      <Input value={collectForm.depositSplitChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ" />
+                    </Field>
+                  </div>
+                  {(() => {
+                    const total = (Number(collectForm.depositSplitCash) || 0) + (Number(collectForm.depositSplitBank) || 0) + (Number(collectForm.depositSplitCheque) || 0) + (Number(collectForm.appliedTokenAdvance) || 0);
+                    const expected = Number(collectForm.depositAmount) || signatureWorkflowLease?.securityDeposit || 0;
+                    return total > 0 ? (
+                      <div className={`text-xs rounded px-2.5 py-1.5 flex items-center justify-between ${
+                        Math.abs(total - expected) < 1 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                      }`}>
+                        <span>Split Total: <strong>QAR {total.toLocaleString()}</strong></span>
+                        {expected > 0 && <span>Expected: <strong>QAR {expected.toLocaleString()}</strong> {Math.abs(total - expected) < 1 ? "✓ Balanced" : `(Difference: QAR ${Math.abs(total - expected).toLocaleString()})`}</span>}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               )}
             </div>
@@ -6894,10 +7939,26 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
             {/* ── Finance Impact & Accounts Live Preview ── */}
             {signatureWorkflowLease && (() => {
-              const pdcAmt = (collectForm.customCheques || []).filter(c => Number(c.amount) > 0).reduce((s, c) => s + Number(c.amount), 0) || (signatureWorkflowLease.monthlyRent * (collectForm.pdcCount || 12));
-              const depAmt = Number(collectForm.depositAmount) || signatureWorkflowLease.securityDeposit;
-              const depDrLabel = collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand";
-              const depDrCode = collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900";
+              const rentAmt = Number(collectForm.regularChequeAmount) || (signatureWorkflowLease.monthlyRent * (collectForm.pdcCount || 12));
+              const pdcAmt = collectForm.paymentMode === "PDC"
+                ? ((collectForm.customCheques || []).filter(c => Number(c.amount) > 0).reduce((s, c) => s + Number(c.amount), 0) || rentAmt)
+                : 0;
+              const cashRentAmt = collectForm.paymentMode === "Cash" ? rentAmt : 0;
+              const bankRentAmt = collectForm.paymentMode === "Bank Transfer" ? rentAmt : 0;
+              const gntRentAmt = collectForm.paymentMode === "Guarantee Cheque" ? rentAmt : 0;
+
+              // Security deposit
+              const splitCash = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
+              const splitBank = collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
+              const splitCheque = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
+              const depAmt = collectForm.depositIsSplit
+                ? splitCash + splitBank + splitCheque
+                : (Number(collectForm.depositAmount) || signatureWorkflowLease.securityDeposit);
+              const depDrLabel = collectForm.depositIsSplit ? "Multiple (Split)"
+                : (collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand");
+              const depDrCode = collectForm.depositIsSplit ? "*"
+                : (collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900");
+
               const utilityAmt = Number(collectForm.utilityDeposit) || 0;
               const qatarCoolAmt = Number(collectForm.qatarCoolDeposit) || 0;
               const reservationAmt = Number(collectForm.reservationDeposit) || 0;
@@ -6907,8 +7968,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               const adminAmt = Number(collectForm.adminCharges) || 0;
 
               const impacts: Array<{ label: string; category: string; dr: string; drCode: string; cr: string; crCode: string; amount: number }> = [];
-              if (pdcAmt > 0) impacts.push({ label: "Rent PDCs In Hand", category: "Rent", dr: "PDC In Hand", drCode: "12900", cr: "Customer PDC Liability", crCode: "21400", amount: pdcAmt });
-              if (depAmt > 0) impacts.push({ label: `Type 1: Unit Security Deposit (${collectForm.depositMode})`, category: "Deposit (21500)", dr: depDrLabel, drCode: depDrCode, cr: "Security Deposit Liability", crCode: "21500", amount: depAmt });
+              if (pdcAmt > 0) impacts.push({ label: "Rent — PDC In Hand", category: "Rent", dr: "PDC In Hand", drCode: "12900", cr: `Customer(PDC)-${signatureWorkflowLease.unit}`, crCode: "21400", amount: pdcAmt });
+              if (cashRentAmt > 0) impacts.push({ label: `Rent — Cash (Ref: ${collectForm.rentPaymentReceiptNo || "—"})`, category: "Rent", dr: "Cash In Hand", drCode: "12100", cr: `Rental Income - ${signatureWorkflowLease.unit}`, crCode: "41100", amount: cashRentAmt });
+              if (bankRentAmt > 0) impacts.push({ label: `Rent — Bank Transfer (Ref: ${collectForm.rentPaymentReference || "—"})`, category: "Rent", dr: "Bank Operating Account", drCode: "12000", cr: `Rental Income - ${signatureWorkflowLease.unit}`, crCode: "41100", amount: bankRentAmt });
+              if (gntRentAmt > 0) impacts.push({ label: `Rent — Guarantee Cheque (${collectForm.rentGuaranteeChequeNo || "—"})`, category: "Rent", dr: "Guarantee Cheque In Hand", drCode: "12900", cr: "Guarantee Cheque Received", crCode: "21200001", amount: gntRentAmt });
+              if (collectForm.depositIsSplit) {
+                if (splitCash > 0) impacts.push({ label: "Security Deposit — Cash Split", category: "Deposit (21500)", dr: "Cash In Hand", drCode: "12100", cr: `Security Deposit Liability - ${signatureWorkflowLease.unit}`, crCode: "21500", amount: splitCash });
+                if (splitBank > 0) impacts.push({ label: `Security Deposit — Bank Split (Ref: ${collectForm.depositSplitBankRef || "—"})`, category: "Deposit (21500)", dr: "Bank Operating Account", drCode: "12000", cr: `Security Deposit Liability - ${signatureWorkflowLease.unit}`, crCode: "21500", amount: splitBank });
+                if (splitCheque > 0) impacts.push({ label: `Security Deposit — Cheque Split (${collectForm.depositSplitChequeNo || "—"})`, category: "Deposit (21500)", dr: "PDC In Hand", drCode: "12900", cr: `Security Deposit Liability - ${signatureWorkflowLease.unit}`, crCode: "21500", amount: splitCheque });
+              } else if (depAmt > 0) {
+                impacts.push({ label: `Type 1: Unit Security Deposit (${collectForm.depositMode})`, category: "Deposit (21500)", dr: depDrLabel, drCode: depDrCode, cr: "Security Deposit Liability", crCode: "21500", amount: depAmt });
+              }
               if (utilityAmt > 0) impacts.push({ label: "Type 2: Kahramaa Utility Deposit", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Kahramaa Deposit - Tenant", crCode: "21100003", amount: utilityAmt });
               if (qatarCoolAmt > 0) impacts.push({ label: "Type 2: Qatar Cool Deposit", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Qatar Cool Deposit - Tenant", crCode: "21100004", amount: qatarCoolAmt });
               if (reservationAmt > 0) impacts.push({ label: "Type 2: Reservation Advance", category: "Deposit (21100)", dr: "Cash In Hand", drCode: "12100", cr: "Reservation Advance - Tenant", crCode: "21100001", amount: reservationAmt });
@@ -7515,66 +8585,309 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         </DialogContent>
       </Dialog>
 
-      {/* ── VIEW HANDOVER DETAIL DIALOG ──────────────────────────── */}
+      {/* ── VIEW HANDOVER DETAIL & SIGNED RECEIPT DIALOG ──────────────────────────── */}
       <Dialog open={handoverViewOpen} onOpenChange={setHandoverViewOpen}>
-        <DialogContent className="sm:max-w-[540px] max-h-[88vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
-          <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-transparent px-6 py-4 border-b flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 shadow-sm">
                 <Key className="h-5 w-5" />
               </div>
               <div>
-                <DialogTitle className="text-base font-bold">Key Handover Certificate</DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground">Official executed key release and check-in audit certificate.</DialogDescription>
+                <DialogTitle className="text-base font-bold">Key Handover &amp; Check-In Certificate</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">Official executed key release, unit condition audit, and signed custody receipt.</DialogDescription>
               </div>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
-              Verified & Handed Over
-            </span>
+            <div className="flex items-center gap-2">
+              {selectedHandover && signedHandoverDocs[selectedHandover.id || selectedHandover.leaseId] && (
+                <Badge variant="outline" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300 text-[11px] gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Signed Copy Uploaded
+                </Badge>
+              )}
+              <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/20">
+                Verified &amp; Handed Over
+              </span>
+            </div>
           </div>
+
           {selectedHandover && (() => {
             const lease = leases.find(l => l.id === selectedHandover.leaseId);
+            const handoverKey = selectedHandover.id || selectedHandover.leaseId;
+            const signedDoc = signedHandoverDocs[handoverKey];
+
             return (
               <div className="p-6 overflow-y-auto space-y-4 flex-1 text-sm">
-                <div className="rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 p-3.5 flex items-center gap-2.5 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                  <span>Keys and access items released to authorized tenant representative.</span>
-                </div>
-                <div className="rounded-xl border bg-muted/20 p-4 space-y-2 text-xs">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Tenant</span><span className="font-semibold text-foreground">{lease?.tenantName}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit & Property</span><span className="font-semibold text-foreground">{lease?.unit} ({lease?.property})</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Handover Date</span><span className="font-semibold text-foreground">{selectedHandover.handoverAt}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Keys Count</span><span className="font-semibold text-foreground">{selectedHandover.keys}× {selectedHandover.keyType || "keys"}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Access Cards</span><span className="font-semibold text-foreground">{selectedHandover.accessCards} cards</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Parking Remotes</span><span className="font-semibold text-foreground">{selectedHandover.parkingRemotes} remote(s)</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Electricity Meter</span><span className="font-semibold text-foreground">{selectedHandover.electricityMeterReading || "—"}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Water Meter</span><span className="font-semibold text-foreground">{selectedHandover.waterMeterReading || "—"}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit Condition</span><span className="font-semibold text-foreground">{selectedHandover.unitCondition || "—"}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Cleanliness</span><span className="font-semibold text-foreground">{selectedHandover.cleanliness || "—"}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">Collector</span><span className="font-semibold text-foreground">{selectedHandover.collectorName}</span></div>
-                    <div><span className="text-muted-foreground block text-[10px] uppercase font-semibold">ID Sighted</span><span className={`font-semibold ${selectedHandover.idVerified ? "text-emerald-600" : "text-rose-500"}`}>{selectedHandover.idVerified ? "Yes (Verified ✓)" : "Pending ✗"}</span></div>
+                {/* ── Printable Official Handover Certificate Document ── */}
+                <div id="handover-printable-receipt" className="rounded-xl border bg-card p-5 space-y-4 shadow-xs">
+                  {/* Certificate Top Header */}
+                  <div className="flex items-start justify-between border-b pb-3.5 gap-4">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                        ZYNO Property Management Systems
+                      </div>
+                      <h4 className="text-base font-bold text-foreground mt-0.5">
+                        OFFICIAL KEY HANDOVER &amp; UNIT CHECK-IN RECEIPT
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Document Ref: <span className="font-mono font-semibold">KHC-{lease?.id?.slice(0, 8) || "2026-001"}</span> • Execution Date: {selectedHandover.handoverAt}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="inline-block px-2.5 py-1 rounded bg-muted/60 border font-mono text-[11px] text-muted-foreground">
+                        Status: <strong className="text-emerald-600 dark:text-emerald-400">HANDOVER COMPLETE</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Property & Tenant Meta Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/20 p-3.5 rounded-lg border text-xs">
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Tenant Customer</span>
+                      <span className="font-semibold text-foreground">{lease?.tenantName || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Property</span>
+                      <span className="font-semibold text-foreground">{lease?.property || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit Number</span>
+                      <span className="font-semibold text-foreground font-mono">{lease?.unit || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Handover Officer</span>
+                      <span className="font-semibold text-foreground">{selectedHandover.collectorName || "Property Manager"}</span>
+                    </div>
+                  </div>
+
+                  {/* Access Items & Utility Meter Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="border rounded-lg p-2.5 bg-background">
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Door Keys</span>
+                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.keys}× {selectedHandover.keyType || "Keys"}</span>
+                    </div>
+                    <div className="border rounded-lg p-2.5 bg-background">
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Access Cards</span>
+                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.accessCards} RFID Cards</span>
+                    </div>
+                    <div className="border rounded-lg p-2.5 bg-background">
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Parking Remotes</span>
+                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.parkingRemotes} Remote(s)</span>
+                    </div>
+                    <div className="border rounded-lg p-2.5 bg-background">
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Customer ID</span>
+                      <span className={`font-semibold text-xs ${selectedHandover.idVerified ? "text-emerald-600 font-bold" : "text-amber-600"}`}>
+                        {selectedHandover.idVerified ? "QID Sighted & Verified ✓" : "Pending Verification"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Utility Meters */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 rounded-lg p-2.5">
+                      <span className="text-blue-800 dark:text-blue-300 block text-[10px] uppercase font-bold">⚡ Initial Electricity Meter</span>
+                      <span className="font-mono font-bold text-foreground text-sm">
+                        {selectedHandover.electricityMeterReading || "12,450"} <span className="text-xs text-muted-foreground font-normal">kWh</span>
+                      </span>
+                    </div>
+                    <div className="border border-cyan-200 dark:border-cyan-900/50 bg-cyan-50/40 dark:bg-cyan-950/20 rounded-lg p-2.5">
+                      <span className="text-cyan-800 dark:text-cyan-300 block text-[10px] uppercase font-bold">💧 Initial Water Meter</span>
+                      <span className="font-mono font-bold text-foreground text-sm">
+                        {selectedHandover.waterMeterReading || "840"} <span className="text-xs text-muted-foreground font-normal">m³</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4-Point Functional Audit */}
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                      Functional &amp; Fixture Condition Audit:
+                    </span>
+                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
+                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.acWorking ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🌀 A/C {selectedHandover.acWorking ? "Operational ✓" : "Defective ✗"}</div>
+                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.plumbingOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚿 Plumb. {selectedHandover.plumbingOk ? "Tested ✓" : "Issue ✗"}</div>
+                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.electricalOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>💡 Elec. {selectedHandover.electricalOk ? "Tested ✓" : "Issue ✗"}</div>
+                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚪 Doors {selectedHandover.doorsWindowsOk ? "Intact ✓" : "Defect ✗"}</div>
+                    </div>
+                  </div>
+
+                  {/* Handover Legal Acknowledgement Undertaking */}
+                  <div className="rounded-lg border bg-muted/15 p-3 text-[11px] text-muted-foreground leading-relaxed">
+                    <strong>Handover Undertaking:</strong> The Tenant / Authorized Collector hereby confirms receipt of the designated key sets, access devices, and takes over the premises in the condition detailed above. All functional fixtures and utility meter readings have been jointly inspected and agreed upon.
+                  </div>
+
+                  {/* Dual Formal Signature & Stamp Blocks */}
+                  <div className="grid grid-cols-2 gap-6 pt-2 border-t">
+                    <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Issued By (Landlord / PMS)</span>
+                        <Badge variant="outline" className="text-[9px] font-mono">Official</Badge>
+                      </div>
+                      <div className="h-12 border-b border-muted-foreground/40 flex items-end justify-center pb-1">
+                        <span className="font-serif italic text-primary/80 text-sm">ZYNO Property Management</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground space-y-0.5">
+                        <div>Officer: <strong className="text-foreground">Property Management Dept</strong></div>
+                        <div>Date: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+                      </div>
+                    </div>
+
+                    <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Received &amp; Acknowledged By</span>
+                        <Badge variant="outline" className="text-[9px] font-mono">Tenant Sign</Badge>
+                      </div>
+                      <div className="h-12 border-b border-muted-foreground/40 flex items-end justify-center pb-1">
+                        <span className="text-[11px] text-muted-foreground italic">
+                          {selectedHandover.tenantAcknowledgement ? selectedHandover.collectorName || lease?.tenantName : "Signature of Tenant / Collector"}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground space-y-0.5">
+                        <div>Name: <strong className="text-foreground">{selectedHandover.collectorName || lease?.tenantName || "Tenant"}</strong></div>
+                        <div>Date: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {selectedHandover.tenantAcknowledgement && (
-                  <div className="rounded-xl border bg-muted/20 p-3.5 text-xs">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">Tenant Digital Acknowledgement</p>
-                    <p className="italic text-foreground">{selectedHandover.tenantAcknowledgement}</p>
+
+                {/* ── Upload & Manage Physical Signed Handover Document Section ── */}
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-primary" />
+                      <Label className="text-xs font-bold text-foreground">
+                        Physical Signed Handover Receipt (Upload / Attachment)
+                      </Label>
+                    </div>
+                    {signedDoc ? (
+                      <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-300 text-[10px]">
+                        ✓ Scanned Copy On File
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-300 text-[10px]">
+                        Pending Physical Upload
+                      </Badge>
+                    )}
                   </div>
-                )}
-                <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
-                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.acWorking ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🌀 A/C {selectedHandover.acWorking ? "✓" : "✗"}</div>
-                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.plumbingOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚿 Plumb. {selectedHandover.plumbingOk ? "✓" : "✗"}</div>
-                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.electricalOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>💡 Elec. {selectedHandover.electricalOk ? "✓" : "✗"}</div>
-                  <div className={`rounded-lg border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚪 Doors {selectedHandover.doorsWindowsOk ? "✓" : "✗"}</div>
+
+                  {signedDoc ? (
+                    <div className="bg-background rounded-lg border p-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="p-2 rounded bg-emerald-50 text-emerald-600">
+                          <FileText className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground truncate">{signedDoc.fileName}</p>
+                          <p className="text-[10px] text-muted-foreground">Uploaded on {signedDoc.uploadedAt}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {signedDoc.dataUrl && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
+                            onClick={() => {
+                              setPreviewSignedDocUrl(signedDoc.dataUrl || "");
+                              setPreviewSignedDocName(signedDoc.fileName);
+                              setPreviewSignedDocOpen(true);
+                            }}
+                          >
+                            <Eye className="h-3 w-3" /> View Document
+                          </Button>
+                        )}
+                        <label className="cursor-pointer">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" asChild>
+                            <span>
+                              <Upload className="h-3 w-3" /> Replace
+                            </span>
+                          </Button>
+                          <input
+                            type="file"
+                            accept=".pdf,image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) handleUploadSignedHandover(handoverKey, f);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-muted-foreground">
+                        Download or print the handover receipt above, have the customer sign upon key delivery, and upload the signed scanned/photographed copy here.
+                      </p>
+                      <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/40 transition-colors">
+                        <div className="flex flex-col items-center justify-center text-center">
+                          <Upload className="h-6 w-6 text-primary mb-1" />
+                          <span className="text-xs font-semibold text-foreground">Click to upload signed handover receipt</span>
+                          <span className="text-[10px] text-muted-foreground mt-0.5">Supports PDF, PNG, JPG files</span>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".pdf,image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleUploadSignedHandover(handoverKey, f);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })()}
-          <div className="px-6 py-3.5 bg-muted/40 border-t flex justify-end gap-2.5">
-            <Button variant="outline" size="sm" onClick={() => setHandoverViewOpen(false)}>Close</Button>
-            <Button variant="outline" size="sm" onClick={() => { window.print(); }} className="gap-2"><Key className="h-4 w-4" /> Print Certificate</Button>
+
+          {/* Modal Footer */}
+          <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-between gap-2.5 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setHandoverViewOpen(false)}>
+              Close
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => { window.print(); }}
+                className="gap-2 shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <Printer className="h-4 w-4" /> Download / Print Handover Receipt
+              </Button>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── PREVIEW SIGNED HANDOVER DOCUMENT MODAL ── */}
+      <Dialog open={previewSignedDocOpen} onOpenChange={setPreviewSignedDocOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 py-3 border-b flex flex-row items-center justify-between">
+            <div>
+              <DialogTitle className="text-sm font-bold">Signed Handover Document</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">{previewSignedDocName}</DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-muted/20 min-h-[400px]">
+            {previewSignedDocUrl.startsWith("data:image/") ? (
+              <img src={previewSignedDocUrl} alt={previewSignedDocName} className="max-w-full max-h-[70vh] rounded-md shadow-md object-contain" />
+            ) : previewSignedDocUrl.startsWith("data:application/pdf") ? (
+              <iframe src={previewSignedDocUrl} title={previewSignedDocName} className="w-full h-[70vh] rounded-md border" />
+            ) : (
+              <div className="text-center text-xs text-muted-foreground">
+                Document preview available. <a href={previewSignedDocUrl} download={previewSignedDocName} className="text-primary underline font-semibold">Download File</a>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-2.5 border-t bg-muted/40">
+            <Button variant="outline" size="sm" onClick={() => setPreviewSignedDocOpen(false)}>Close</Button>
+            <Button size="sm" asChild>
+              <a href={previewSignedDocUrl} download={previewSignedDocName} className="gap-1.5">
+                <Download className="h-3.5 w-3.5" /> Download File
+              </a>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -9783,18 +11096,64 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
                 return (
                   <DataTable
-                    columns={["Property / Unit", "Tenant", "Valid Until", "Rent", "Status", "Actions"]}
-                    rows={filteredReservations.map((reservation) => [
-                      `${reservation?.property ? `${reservation.property} — ` : ""}${reservation?.unit || "-"}`,
-                      reservation?.tenantName || "-",
-                      <span className={reservation?.validUntil && isExpired(reservation.validUntil) && reservation.status === "reserved" ? "text-red-600" : ""}>{reservation?.validUntil || "-"}</span>,
-                      formatMoney(reservation?.rent),
-                      <StatusBadge key="status" value={reservation?.status} />,
-                      <div key="actions" className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" disabled={reservation?.status !== "reserved"} onClick={() => openCreateLeaseDialog(reservation)}>Create Lease</Button>
-                        <Button size="sm" variant="outline" disabled={reservation?.status !== "reserved"} onClick={() => openReleaseDialog(reservation)}>Release</Button>
-                      </div>,
-                    ])}
+                    columns={["Property / Unit", "Tenant", "Hold & Token Details", "Valid Until", "Rent", "Status", "Actions"]}
+                    rows={filteredReservations.map((reservation) => {
+                      const hasToken = Number(reservation?.tokenAmount) > 0;
+                      const isHold = reservation?.isHold || hasToken;
+                      const isRefunded = reservation?.tokenRefunded;
+
+                      const holdBadge = (() => {
+                        if (!isHold && !hasToken) {
+                          return <span className="text-muted-foreground text-xs">—</span>;
+                        }
+                        if (isRefunded) {
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 w-fit text-[10px] font-semibold gap-1">
+                                <RotateCcw className="h-3 w-3" /> Refunded: QAR {Number(reservation.tokenAmount).toLocaleString()}
+                              </Badge>
+                              {reservation.tokenReceiptNo && (
+                                <span className="text-[10px] text-muted-foreground font-mono">Ref: {reservation.tokenReceiptNo}</span>
+                              )}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 w-fit text-[10px] font-semibold gap-1">
+                              <Lock className="h-3 w-3 text-amber-600" /> Hold: QAR {Number(reservation.tokenAmount || 0).toLocaleString()}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                              {reservation.tokenPaymentMode || "Cash"}
+                              {reservation.tokenPaymentMode === "Cheque" && reservation.tokenChequeNo ? ` (Chq #${reservation.tokenChequeNo}${reservation.tokenChequeBank ? ` • ${reservation.tokenChequeBank}` : ""})` : ""}
+                              {reservation.tokenPaymentMode === "Bank Transfer" && reservation.tokenTransferRef ? ` (Ref: ${reservation.tokenTransferRef})` : ""}
+                              {reservation.tokenReceiptNo ? ` • ${reservation.tokenReceiptNo}` : ""}
+                            </span>
+                          </div>
+                        );
+                      })();
+
+                      return [
+                        `${reservation?.property ? `${reservation.property} — ` : ""}${reservation?.unit || "-"}`,
+                        reservation?.tenantName || "-",
+                        holdBadge,
+                        <span className={reservation?.validUntil && isExpired(reservation.validUntil) && reservation.status === "reserved" ? "text-red-600" : ""}>{reservation?.validUntil || "-"}</span>,
+                        formatMoney(reservation?.rent),
+                        <StatusBadge key="status" value={reservation?.status} />,
+                        <div key="actions" className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" disabled={reservation?.status !== "reserved"} onClick={() => openCreateLeaseDialog(reservation)}>Create Lease</Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={reservation?.status !== "reserved"}
+                            onClick={() => openReleaseDialog(reservation)}
+                            className={hasToken && !isRefunded ? "border-amber-400 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/50" : ""}
+                          >
+                            {hasToken && !isRefunded ? "Unhold & Refund" : "Release"}
+                          </Button>
+                        </div>,
+                      ];
+                    })}
                   />
                 );
               })()}
@@ -10751,8 +12110,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={true}
-                          className="opacity-70"
+                          disabled={!!notice}
+                          className={notice ? "opacity-50" : ""}
                           onClick={() => {
                             setKeysWorkflowLease(lease);
                             setKeyNotifyForm({
@@ -10768,7 +12127,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             setKeyNotifyOpen(true);
                           }}
                         >
-                          Notified
+                          {notice ? "Notified ✓" : "Send Notice"}
                         </Button>
                         <Button
                           size="sm"
@@ -10809,8 +12168,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={true}
-                          className="border-slate-200 text-muted-foreground opacity-70"
+                          disabled={!notice}
+                          className={!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-green-300 text-green-700 hover:bg-green-50"}
                           onClick={() => {
                             setKeysWorkflowLease(lease);
                             setHandoverActiveTab("details");

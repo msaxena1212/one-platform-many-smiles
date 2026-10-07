@@ -201,8 +201,20 @@ export async function receivePdc(payload: {
  *   Entry A: Dr 12000001 Bank / Cr 12900001 PDC In Hand
  *   Entry B: Dr 21400[unit SL] PDC Received / Cr 12413[unit SL] Tenant Receivable
  */
-export async function depositPdc(pdcId: number | string, chequeNo?: string) {
-  const today = new Date().toISOString().split('T')[0];
+export interface DepositPdcOptions {
+  bankAccountId?: string;
+  bankAccountName?: string;
+  bankAccountCode?: string;
+  depositDate?: string;
+  depositSlipNo?: string;
+}
+
+export async function depositPdc(
+  pdcId: number | string,
+  chequeNo?: string,
+  options?: DepositPdcOptions,
+) {
+  const today = options?.depositDate || new Date().toISOString().split('T')[0];
   const ctx = await resolveGlContext(pdcId, chequeNo);
   const status = (ctx.status || '').toLowerCase();
 
@@ -226,27 +238,46 @@ export async function depositPdc(pdcId: number | string, chequeNo?: string) {
   await postPdcDepositToBank(
     ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
     ctx.cheque_number, ctx.unitCode, ctx.pdcType,
+    options?.bankAccountCode ? {
+      code: options.bankAccountCode,
+      name: options.bankAccountName || 'Bank Operating Account',
+      id: options.bankAccountId,
+    } : undefined,
   );
+
+  const finUpdate: any = {
+    status: 'Deposited',
+    deposit_date: today,
+  };
+  if (options?.bankAccountName) finUpdate.bank_account = options.bankAccountName;
 
   if (!isNaN(Number(pdcId))) {
     const { error: finError } = await supabase
       .from('fin_pdc_register')
-      .update({ status: 'Deposited', deposit_date: today })
+      .update(finUpdate)
       .eq('id', Number(pdcId));
     if (finError) console.warn('[depositPdc] fin_pdc_register id update warning:', finError.message);
   }
 
+  const legacyUpdate: any = {
+    status: 'deposited',
+    status_pdc: 'deposited',
+    deposit_date: today,
+  };
+  if (options?.bankAccountName) legacyUpdate.bank_account = options.bankAccountName;
+  if (options?.depositSlipNo) legacyUpdate.deposit_slip_no = options.depositSlipNo;
+
   if (chequeNo) {
     const { error } = await supabase
       .from('pdcs')
-      .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
+      .update(legacyUpdate)
       .eq('cheque_number', chequeNo);
     if (error) console.warn('[depositPdc] legacy pdcs sync warning:', error.message);
   }
 
   const { error: legacyError } = await supabase
     .from('pdcs')
-    .update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today })
+    .update(legacyUpdate)
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[depositPdc] legacy pdcs id sync warning:', legacyError.message);
 }

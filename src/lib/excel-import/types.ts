@@ -4,7 +4,7 @@ export type ImportOperation = 'CREATE' | 'UPDATE' | 'DELETE';
 
 export type ImportSeverity = 'ERROR' | 'WARNING' | 'INFO';
 
-export type ImportRowStatus = 'READY' | 'ERROR' | 'WARNING' | 'NO_CHANGE' | 'BLOCKED' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+export type ImportRowStatus = 'READY' | 'ERROR' | 'WARNING' | 'NO_CHANGE' | 'BLOCKED' | 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'VALID';
 
 export type ImportBatchStatus = 
   | 'UPLOADED'

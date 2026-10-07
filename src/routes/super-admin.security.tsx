@@ -20,7 +20,7 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { fetchSecurityAuditLogs, type SecurityAuditLog } from "@/lib/security";
+import { fetchSecurityAuditLogs, clearSecurityAuditLogs, type SecurityAuditLog } from "@/lib/security";
 import { fetchInAppNotifications, type SystemNotification } from "@/lib/system-config";
 import { toast } from "sonner";
 
@@ -221,9 +221,24 @@ export function SecurityAndEngagementPage() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh Data
           </Button>
           {!isEngagementView && (
-            <Button size="sm" onClick={exportCSV} className="gap-2 text-xs cursor-pointer">
-              <Download className="h-3.5 w-3.5" /> Export CSV
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!window.confirm("⚠️ Are you sure you want to clear ALL audit trail logs? This will delete all entries from the database and local storage.")) return;
+                  await clearSecurityAuditLogs();
+                  setLogs([]);
+                  toast.success("Audit trail cleared successfully.");
+                }}
+                className="gap-2 text-xs cursor-pointer text-destructive border-destructive/30 hover:bg-destructive/10"
+              >
+                <XCircle className="h-3.5 w-3.5" /> Clear Logs
+              </Button>
+              <Button size="sm" onClick={exportCSV} className="gap-2 text-xs cursor-pointer">
+                <Download className="h-3.5 w-3.5" /> Export CSV
+              </Button>
+            </>
           )}
         </div>
       </div>

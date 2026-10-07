@@ -101,27 +101,31 @@ export async function fetchSecurityAuditLogs(): Promise<SecurityAuditLog[]> {
       .limit(200);
 
     if (error || !data || data.length === 0) {
-      // Merge memory and local storage
-      const combined = [...localLogs];
-      for (const m of _memoryLog) {
-        if (!combined.some(c => c.id === m.id || c.timestamp === m.timestamp)) {
-          combined.unshift(m);
-        }
-      }
-      return combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return localLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     }
 
     // Merge Supabase logs with local logs
     const mergedMap = new Map<string, SecurityAuditLog>();
     data.forEach((d: SecurityAuditLog) => mergedMap.set(d.id || d.timestamp, d));
     localLogs.forEach((l: SecurityAuditLog) => mergedMap.set(l.id || l.timestamp, l));
-    _memoryLog.forEach((m: SecurityAuditLog) => mergedMap.set(m.id || m.timestamp, m));
 
     return Array.from(mergedMap.values()).sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   } catch {
-    return localLogs.length > 0 ? localLogs : _memoryLog;
+    return localLogs;
+  }
+}
+
+export async function clearSecurityAuditLogs(): Promise<void> {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  _memoryLog.length = 0;
+  try {
+    await supabase.from("security_audit_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  } catch (err) {
+    console.warn("Could not delete from security_audit_logs table", err);
   }
 }
 

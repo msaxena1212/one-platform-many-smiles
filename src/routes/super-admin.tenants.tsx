@@ -428,6 +428,51 @@ export function TenantsPage() {
     }
   }
 
+  async function handleDeleteTenant(tenant: TenantOrg) {
+    if (!window.confirm(`Are you sure you want to permanently delete organisation "${tenant.name}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      // 1. Delete associated subscription invoices first if any
+      await supabase.from("tenant_subscription_invoices").delete().eq("tenant_id", tenant.id);
+      
+      // 2. Delete tenant organisation record
+      const { error } = await supabase.from("tenant_organisations").delete().eq("id", tenant.id);
+      if (error) throw error;
+
+      await logSecurityEvent({
+        event_type: "auth",
+        severity: "warning",
+        resource: `tenant_organisations/${tenant.id}`,
+        action: `TENANT_DELETED: ${tenant.name}`,
+        details: { tenant_id: tenant.id, tenant_key: tenant.tenant_key, name: tenant.name },
+      });
+
+      toast.success(`Organisation "${tenant.name}" deleted successfully.`);
+      loadTenants();
+    } catch (err: any) {
+      toast.error("Failed to delete organisation: " + (err.message || "Unknown error"));
+    }
+  }
+
+  async function handlePurgeAllTenants() {
+    if (!window.confirm("⚠️ DANGER: Are you sure you want to wipe ALL tenant organisations and subscription records? You will be able to onboard a clean tenant from scratch.")) {
+      return;
+    }
+    try {
+      // Delete child subscription invoices
+      await supabase.from("tenant_subscription_invoices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // Delete all tenant organisations
+      const { error } = await supabase.from("tenant_organisations").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw error;
+
+      toast.success("All tenant data has been wiped. You can now onboard a fresh tenant.");
+      loadTenants();
+    } catch (err: any) {
+      toast.error("Failed to wipe tenant data: " + (err.message || "Unknown error"));
+    }
+  }
+
   function startOnboardingWizard() {
     const pwd = generateSecurePassword();
     const txn = generateTxnRef();
@@ -697,7 +742,7 @@ export function TenantsPage() {
               <Wallet className="h-4 w-4 text-amber-600" />
             </div>
             <p className="text-3xl font-bold mt-2 text-amber-600">
-              QAR {tenants.reduce((sum, t) => sum + (Number(t.subscription_amount) || 999), 0).toLocaleString()}
+              QAR {tenants.reduce((sum, t) => sum + (Number(t.subscription_amount) || 0), 0).toLocaleString()}
             </p>
             <p className="text-[11px] text-amber-600/80 mt-1">Monthly recurring revenue</p>
           </CardContent>
@@ -721,6 +766,18 @@ export function TenantsPage() {
               <Button variant="outline" size="sm" onClick={loadTenants} disabled={loading} className="text-xs gap-1.5">
                 <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
               </Button>
+              {tenants.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePurgeAllTenants}
+                  disabled={loading}
+                  className="text-xs gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  title="Wipe all tenant organisations to start fresh"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Clean / Wipe All
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -840,6 +897,16 @@ export function TenantsPage() {
                               className="h-7 px-2 text-xs"
                             >
                               <Eye className="h-3.5 w-3.5 mr-1" /> View Details
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteTenant(t)}
+                              className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              title="Delete Organisation"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </td>

@@ -69,30 +69,24 @@ export function AnalyticsPage() {
 
       const activeLeases = leases.filter((l) => ["active", "Active", "fully_signed", "Renewed"].includes(l.lease_status));
       const leaseRevenue = activeLeases.reduce((s, l) => s + (Number(l.rental_amount) || 0), 0);
-      const subMRR = orgs.reduce((s, o) => s + (Number(o.subscription_amount) || 999), 0);
+      const subMRR = orgs.reduce((s, o) => s + (Number(o.subscription_amount) || 0), 0);
       const occupiedUnits = units.filter((u) => ["occupied", "Occupied", "leased"].includes(u.unit_status)).length;
-      const occupancyRate = units.length > 0 ? Math.round((occupiedUnits / units.length) * 100) : 84;
+      const occupancyRate = units.length > 0 ? Math.round((occupiedUnits / units.length) * 100) : 0;
 
       setStats({
-        totalTenants: orgs.length || 2,
-        totalProperties: props.length || 12,
-        totalUnits: units.length || 148,
-        totalLeases: leases.length || 42,
-        activeLeases: activeLeases.length || 38,
-        totalUsers: profiles.length || 507,
-        totalRevenue: leaseRevenue || 342000,
-        subscriptionMRR: subMRR || 4331,
+        totalTenants: orgs.length,
+        totalProperties: props.length,
+        totalUnits: units.length,
+        totalLeases: leases.length,
+        activeLeases: activeLeases.length,
+        totalUsers: profiles.length,
+        totalRevenue: leaseRevenue,
+        subscriptionMRR: subMRR,
         occupancyRate,
       });
 
       // Properties by city (Qatar hubs)
-      const cityMap: Record<string, number> = {
-        "Doha / West Bay": 5,
-        "The Pearl Island": 4,
-        "Lusail Marina": 3,
-        "Al Sadd": 2,
-        "Al Wakrah": 1,
-      };
+      const cityMap: Record<string, number> = {};
       props.forEach((p: any) => {
         if (p.city) cityMap[p.city] = (cityMap[p.city] || 0) + 1;
       });
@@ -103,15 +97,7 @@ export function AnalyticsPage() {
       );
 
       // Users by role
-      const roleMap: Record<string, number> = {
-        ADMIN: 495,
-        PROP_MGR: 5,
-        SUPER_ADMIN: 2,
-        LEASING: 2,
-        FINANCE: 1,
-        CASHIER: 1,
-        TENANT: 1,
-      };
+      const roleMap: Record<string, number> = {};
       profiles.forEach((p: any) => {
         if (p.role) roleMap[p.role] = (roleMap[p.role] || 0) + 1;
       });
@@ -122,11 +108,7 @@ export function AnalyticsPage() {
       );
 
       // Tenants by plan
-      const planMap: Record<string, number> = {
-        Professional: 1,
-        Enterprise: 1,
-        Starter: 1,
-      };
+      const planMap: Record<string, number> = {};
       orgs.forEach((o: any) => {
         if (o.plan) planMap[o.plan] = (planMap[o.plan] || 0) + 1;
       });

@@ -38,6 +38,7 @@ import {
   HrmsHelpdeskTicket,
   HrmsFnfSettlement
 } from "@/lib/hrmsService";
+import { REAL_EMPLOYEES_SEED } from "@/lib/hrmsSeedData";
 import { syncPayrollRun } from "@/lib/finance/payrollIntegrationService";
 import {
   HrmsMastersApi,
@@ -261,7 +262,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
         HrmsApi.getHelpdeskTickets()
       ]);
 
-      setEmployees(emps);
+      const effectiveEmployees = (emps && emps.length > 0) ? emps : REAL_EMPLOYEES_SEED;
+      setEmployees(effectiveEmployees);
       setDepartments(depts);
       setDesignations(desigs);
       setCompanies(comps);

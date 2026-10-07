@@ -40,6 +40,11 @@ import {
   cashDepositInPlaceOfPdc,
   receivePdc,
 } from "@/lib/finance/pdcService";
+import {
+  DEFAULT_COMPANY_BANK_ACCOUNTS,
+  fetchCompanyBankAccounts,
+  type CompanyBankAccount,
+} from "@/lib/finance/bankAccounts";
 import { collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
@@ -147,6 +152,13 @@ interface GlConfirmModalProps {
   loading: boolean;
   cancelReason?: string;
   onCancelReasonChange?: (reason: string) => void;
+  bankAccounts?: CompanyBankAccount[];
+  selectedBankAccountId?: string;
+  onBankAccountIdChange?: (id: string) => void;
+  depositSlipNo?: string;
+  onDepositSlipNoChange?: (slip: string) => void;
+  depositDate?: string;
+  onDepositDateChange?: (date: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -158,6 +170,13 @@ function GlConfirmModal({
   loading,
   cancelReason,
   onCancelReasonChange,
+  bankAccounts = DEFAULT_COMPANY_BANK_ACCOUNTS,
+  selectedBankAccountId,
+  onBankAccountIdChange,
+  depositSlipNo,
+  onDepositSlipNoChange,
+  depositDate,
+  onDepositDateChange,
   onConfirm,
   onCancel,
 }: GlConfirmModalProps) {
@@ -174,9 +193,11 @@ function GlConfirmModal({
     red: "bg-red-100 text-red-800",
   };
 
+  const selectedBank = bankAccounts.find(b => b.id === selectedBankAccountId) || bankAccounts[0];
+
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[540px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {config.icon}
@@ -202,6 +223,63 @@ function GlConfirmModal({
           </div>
         )}
 
+        {config.action === "deposit" && (
+          <div className="space-y-3 py-1 bg-muted/40 p-3.5 rounded-lg border">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                <Landmark className="h-3.5 w-3.5 text-blue-600" />
+                Deposit to Bank Account <span className="text-destructive">*</span>
+              </Label>
+              {selectedBank && (
+                <Badge variant="outline" className="text-[10px] font-mono bg-background border-blue-300 text-blue-700">
+                  GL {selectedBank.glCode}
+                </Badge>
+              )}
+            </div>
+
+            <Select
+              value={selectedBankAccountId || selectedBank?.id}
+              onValueChange={(val) => onBankAccountIdChange?.(val)}
+            >
+              <SelectTrigger className="text-xs bg-background">
+                <SelectValue placeholder="Select Destination Bank Account" />
+              </SelectTrigger>
+              <SelectContent>
+                {bankAccounts.map((b) => (
+                  <SelectItem key={b.id} value={b.id} className="text-xs">
+                    <div className="flex flex-col py-0.5">
+                      <span className="font-semibold">{b.accountTitle} ({b.bankName})</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">IBAN: {b.iban} • GL {b.glCode}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Deposit Date</Label>
+                <Input
+                  type="date"
+                  value={depositDate || new Date().toISOString().split("T")[0]}
+                  onChange={(e) => onDepositDateChange?.(e.target.value)}
+                  className="text-xs h-8 bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Deposit Slip / Ref #</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. SLIP-884920"
+                  value={depositSlipNo || ""}
+                  onChange={(e) => onDepositSlipNoChange?.(e.target.value)}
+                  className="text-xs h-8 bg-background"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* GL Impact Table */}
         <div className={`rounded-lg border p-3.5 space-y-2.5 ${colorMap[config.color] || "border-muted bg-muted/10"}`}>
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -209,29 +287,38 @@ function GlConfirmModal({
             General Ledger / COA Accounts Impacted
           </div>
           <div className="space-y-2">
-            {config.impacts.map((impact, i) => (
-              <div key={i} className="flex items-start gap-2.5 bg-background/85 rounded-md px-3 py-2 border shadow-sm">
-                <div className="mt-0.5">
-                  {impact.type === "Debit"
-                    ? <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-                    : <ArrowDownLeft className="h-4 w-4 text-amber-600" />
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${impact.type === "Debit" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                      {impact.type}
-                    </span>
-                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${badgeColorMap[config.color]}`}>
-                      GL {impact.code}
-                    </span>
-                    <span className="text-xs font-semibold">{impact.account}</span>
+            {config.impacts.map((impact, i) => {
+              const isDepositBankLine = config.action === "deposit" && impact.type === "Debit" && selectedBank;
+              const accountLabel = isDepositBankLine ? selectedBank.accountTitle : impact.account;
+              const glCode = isDepositBankLine ? selectedBank.glCode : impact.code;
+              const desc = isDepositBankLine
+                ? `Cash received into ${selectedBank.bankName} (${selectedBank.accountNumber || selectedBank.iban})`
+                : impact.description;
+
+              return (
+                <div key={i} className="flex items-start gap-2.5 bg-background/85 rounded-md px-3 py-2 border shadow-sm">
+                  <div className="mt-0.5">
+                    {impact.type === "Debit"
+                      ? <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                      : <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                    }
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{impact.description}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${impact.type === "Debit" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                        {impact.type}
+                      </span>
+                      <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${badgeColorMap[config.color]}`}>
+                        GL {glCode}
+                      </span>
+                      <span className="text-xs font-semibold">{accountLabel}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{desc}</p>
+                  </div>
+                  <div className="text-xs font-mono font-bold tabular-nums">{fmtAmt}</div>
                 </div>
-                <div className="text-xs font-mono font-bold tabular-nums">{fmtAmt}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="text-[11px] text-muted-foreground border-t border-border/50 pt-2">
@@ -670,11 +757,29 @@ export function PdcManagement() {
     return filteredPdcs.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   }, [filteredPdcs]);
 
+  // ── Bank Accounts & Deposit State ─────────────────────────────────────────
+  const [bankAccounts, setBankAccounts] = useState<CompanyBankAccount[]>(DEFAULT_COMPANY_BANK_ACCOUNTS);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("qnb-main-01");
+  const [depositSlipNo, setDepositSlipNo] = useState<string>("");
+  const [depositDate, setDepositDate] = useState<string>(new Date().toISOString().split("T")[0]);
+
+  useEffect(() => {
+    fetchCompanyBankAccounts().then((accounts) => {
+      if (accounts && accounts.length > 0) {
+        setBankAccounts(accounts);
+        const def = accounts.find((a) => a.isDefault) || accounts[0];
+        if (def) setSelectedBankAccountId(def.id);
+      }
+    });
+  }, []);
+
   // ── Open GL Confirm Modal ──────────────────────────────────────────────────
   function openGlConfirm(pdc: any, action: "deposit" | "clear" | "return" | "cancel") {
     setPendingActionPdc(pdc);
     setPendingAction(action);
     setCancelReason("");
+    setDepositSlipNo("");
+    setDepositDate(new Date().toISOString().split("T")[0]);
     setGlConfirmOpen(true);
   }
 
@@ -709,8 +814,16 @@ export function PdcManagement() {
 
     try {
       // 2. Persist status and GL double entries directly to Supabase Database
+      const chosenBank = bankAccounts.find((b) => b.id === selectedBankAccountId) || bankAccounts[0];
+
       if (action === "deposit") {
-        await depositPdc(id, String(chqNo));
+        await depositPdc(id, String(chqNo), {
+          bankAccountId: chosenBank?.id,
+          bankAccountName: chosenBank?.accountTitle,
+          bankAccountCode: chosenBank?.glCode,
+          depositDate: depositDate || todayStr,
+          depositSlipNo: depositSlipNo,
+        });
       } else if (action === "clear") {
         await clearPdc(id, String(chqNo));
       } else if (action === "cancel") {
@@ -720,19 +833,18 @@ export function PdcManagement() {
       }
 
       // 3. Immediately reflect in local FinanceStore vouchers so General Ledger updates without waiting for network/socket
-      const today = new Date().toISOString().split("T")[0];
       const tenant = pdc.tenant_name || "Tenant";
       const unit = pdc.unit_ref || "Unit";
       const prop = pdc.property_name || "Property";
 
       if (action === "deposit") {
         addVoucher({
-          voucher_no: `VCH-DEP-${chqNo}`,
+          voucher_no: depositSlipNo ? `VCH-DEP-${depositSlipNo}` : `VCH-DEP-${chqNo}`,
           voucher_type: "Receipt Voucher",
-          date: today,
-          name: `PDC Deposited to Bank – ${chqNo} (${tenant} - ${unit})`,
-          debit: "Bank Operating Account",
-          debit_code: "12000",
+          date: depositDate || todayStr,
+          name: `PDC Deposited to ${chosenBank?.accountTitle || 'Bank'} – ${chqNo} (${tenant} - ${unit})`,
+          debit: chosenBank?.accountTitle || "Bank Operating Account",
+          debit_code: chosenBank?.glCode || "12000001",
           credit: "PDC In Hand",
           credit_code: "12900",
           amount: amt,
@@ -749,7 +861,7 @@ export function PdcManagement() {
           addVoucher({
             voucher_no: `VCH-DEP-${chqNo}`,
             voucher_type: "Receipt Voucher",
-            date: today,
+            date: todayStr,
             name: `PDC Deposited to Bank (auto) – ${chqNo} (${tenant} - ${unit})`,
             debit: "Bank Operating Account",
             debit_code: "12000",
@@ -765,7 +877,7 @@ export function PdcManagement() {
         addVoucher({
           voucher_no: `VCH-CLR-${chqNo}`,
           voucher_type: "Journal Voucher",
-          date: today,
+          date: todayStr,
           name: `PDC Cleared – ${chqNo} (${tenant} - ${unit})`,
           debit: "Customer(PDC) - Unit Account",
           debit_code: "21400",
@@ -781,7 +893,7 @@ export function PdcManagement() {
         addVoucher({
           voucher_no: `VCH-RET-${chqNo}`,
           voucher_type: "Journal Voucher",
-          date: today,
+          date: todayStr,
           name: `PDC Cheque Returned / Dishonoured – ${chqNo} (${tenant} - ${unit})`,
           debit: "PDC In Hand",
           debit_code: "12900",
@@ -796,7 +908,7 @@ export function PdcManagement() {
         addVoucher({
           voucher_no: `VCH-RET-AR-${chqNo}`,
           voucher_type: "Journal Voucher",
-          date: today,
+          date: todayStr,
           name: `Tenant Dues Restored on Dishonour – ${chqNo} (${tenant} - ${unit})`,
           debit: "Tenant Receivables",
           debit_code: "12413",
@@ -812,7 +924,7 @@ export function PdcManagement() {
         addVoucher({
           voucher_no: `VCH-CNL-${chqNo}`,
           voucher_type: "Journal Voucher",
-          date: today,
+          date: todayStr,
           name: `PDC Cancelled – ${chqNo} (${tenant} - ${unit}) [${cancelReason}]`,
           debit: "Customer PDC Liability",
           debit_code: "21400",
@@ -2767,6 +2879,13 @@ export function PdcManagement() {
         loading={actionLoading}
         cancelReason={cancelReason}
         onCancelReasonChange={setCancelReason}
+        bankAccounts={bankAccounts}
+        selectedBankAccountId={selectedBankAccountId}
+        onBankAccountIdChange={setSelectedBankAccountId}
+        depositSlipNo={depositSlipNo}
+        onDepositSlipNoChange={setDepositSlipNo}
+        depositDate={depositDate}
+        onDepositDateChange={setDepositDate}
         onConfirm={executeConfirmedAction}
         onCancel={() => { setGlConfirmOpen(false); setPendingActionPdc(null); setPendingAction(null); }}
       />

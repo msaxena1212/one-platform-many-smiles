@@ -15,13 +15,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2, Plus, ShieldCheck, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2, Plus, ShieldCheck, ArrowDownLeft, ArrowUpRight, BookmarkCheck, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { settleDeposit, collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
+import { HrmsApi } from "@/lib/hrmsService";
 
 const PAGE_SIZE = 20;
 
@@ -221,8 +222,16 @@ function SettleRefundModal({
 
 // ── Deposits & Guarantees Component ──────────────────────────────────────────
 export function DepositsGuarantees() {
-  const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases } = useAppData();
-  const { addVoucher: addFinanceStoreVoucher, addReceivableInvoice } = useFinanceStore();
+  const {
+    vouchers: sharedVouchers,
+    setVouchers: setSharedVouchers,
+    leases,
+    reservations,
+    setReservations,
+    units,
+    setUnits,
+  } = useAppData();
+  const { addVoucher: addFinanceStoreVoucher, addReceivableInvoice, addCashBookEntry } = useFinanceStore();
   const [deposits, setDeposits] = useState<DepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -245,6 +254,46 @@ export function DepositsGuarantees() {
   const [collectMode, setCollectMode] = useState<"Cash" | "Bank Transfer" | "Cheque">("Bank Transfer");
   const [collectRef, setCollectRef] = useState("");
   const [collectDate, setCollectDate] = useState(new Date().toISOString().split("T")[0]);
+
+  // ── Collect Reservation Hold / Token Amount modal state ───────────────────
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdLoading, setHoldLoading] = useState(false);
+  const [holdUnitSelection, setHoldUnitSelection] = useState(""); // "unitId" or "res:reservationId"
+  const [holdTenantName, setHoldTenantName] = useState("");
+  const [holdPropertyName, setHoldPropertyName] = useState("");
+  const [holdUnitRef, setHoldUnitRef] = useState("");
+  const [holdAmount, setHoldAmount] = useState("2000");
+  const [holdPaymentMode, setHoldPaymentMode] = useState<"Cash" | "Bank Transfer" | "Cheque">("Cash");
+  const [holdDate, setHoldDate] = useState(new Date().toISOString().split("T")[0]);
+  const [holdCashierStaff, setHoldCashierStaff] = useState("");
+  const [holdBankName, setHoldBankName] = useState("Qatar National Bank (QNB)");
+  const [holdTransferRef, setHoldTransferRef] = useState("");
+  const [holdChequeNo, setHoldChequeNo] = useState("");
+  const [holdChequeBank, setHoldChequeBank] = useState("Commercial Bank of Qatar (CBQ)");
+  const [holdChequeDate, setHoldChequeDate] = useState(new Date().toISOString().split("T")[0]);
+  const [holdNotes, setHoldNotes] = useState("");
+
+  const [financeStaffList, setFinanceStaffList] = useState<string[]>([]);
+
+  useEffect(() => {
+    async function fetchHrmsStaff() {
+      try {
+        const emps = await HrmsApi.getEmployees();
+        const list = (emps || []).map((emp: any) => {
+          const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(" ").trim() || emp.name || "Employee";
+          const desig = emp.designations?.title || emp.designation_title || emp.designation || emp.job_title || "";
+          return desig ? `${fullName} - ${desig}` : fullName;
+        });
+        setFinanceStaffList(list);
+        if (list.length > 0) {
+          setHoldCashierStaff(list[0]);
+        }
+      } catch {
+        setFinanceStaffList([]);
+      }
+    }
+    fetchHrmsStaff();
+  }, []);
 
   useEffect(() => {
     load();
@@ -612,6 +661,215 @@ export function DepositsGuarantees() {
     }
   }
 
+  // ── Helper to open and prepopulate Hold Token Modal ─────────────────────────
+  function openHoldModal() {
+    // If there are existing reservations or available units, pre-select the first one
+    const availableUnit = (units || []).find((u) => u.status === "Available") || (units || [])[0];
+    const pendingRes = (reservations || []).find((r) => r.status === "reserved");
+
+    if (pendingRes) {
+      setHoldUnitSelection(`res:${pendingRes.id}`);
+      setHoldTenantName(pendingRes.tenantName || "Prospective Tenant");
+      setHoldPropertyName(pendingRes.property || "Property");
+      setHoldUnitRef(pendingRes.unit || "Unit");
+      setHoldAmount(String(pendingRes.tokenAmount || 2000));
+    } else if (availableUnit) {
+      setHoldUnitSelection(`unit:${availableUnit.id}`);
+      setHoldTenantName("");
+      setHoldPropertyName(availableUnit.property);
+      setHoldUnitRef(availableUnit.unit);
+      setHoldAmount("2000");
+    }
+
+    setHoldPaymentMode("Cash");
+    setHoldDate(new Date().toISOString().split("T")[0]);
+    setHoldNotes("");
+    setHoldOpen(true);
+  }
+
+  // ── Handle Collect Hold/Token Amount for Reservation ───────────────────────
+  async function handleCollectHold() {
+    const amount = parseFloat(holdAmount);
+    if (!holdTenantName.trim()) {
+      toast.error("Please enter the prospective tenant's name.");
+      return;
+    }
+    if (!holdUnitRef.trim()) {
+      toast.error("Please select a property and unit.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      toast.error("Enter a valid hold/token amount.");
+      return;
+    }
+
+    setHoldLoading(true);
+    try {
+      const receiptNo = `RV-HOLD-${holdUnitRef.replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`;
+      const cashierText = holdCashierStaff ? `Cashier: ${holdCashierStaff}` : "Finance Desk";
+
+      let paymentDetailText = "";
+      if (holdPaymentMode === "Cash") {
+        paymentDetailText = `${cashierText} · Cash`;
+      } else if (holdPaymentMode === "Bank Transfer") {
+        paymentDetailText = `${cashierText} · Bank: ${holdBankName} · Ref: ${holdTransferRef || receiptNo}`;
+      } else {
+        paymentDetailText = `${cashierText} · Cheque #${holdChequeNo || "PDC"} · Bank: ${holdChequeBank} · Due: ${holdChequeDate}`;
+      }
+
+      // 1. Update or create Reservation in AppData
+      const isResSelection = holdUnitSelection.startsWith("res:");
+      const existingResId = isResSelection ? holdUnitSelection.replace("res:", "") : null;
+
+      if (existingResId) {
+        setReservations((prev) =>
+          prev.map((r) =>
+            r.id === existingResId
+              ? {
+                  ...r,
+                  tokenAmount: amount,
+                  tokenPaymentMode: holdPaymentMode,
+                  tokenReceiptNo: receiptNo,
+                  tenantName: holdTenantName,
+                  isHold: true,
+                }
+              : r
+          )
+        );
+      } else {
+        const newRes: any = {
+          id: `r${Date.now()}`,
+          property: holdPropertyName,
+          unit: holdUnitRef,
+          tenantName: holdTenantName,
+          startDate: holdDate,
+          validUntil: new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0],
+          rent: 0,
+          status: "reserved",
+          isHold: true,
+          tokenAmount: amount,
+          tokenPaymentMode: holdPaymentMode,
+          tokenReceiptNo: receiptNo,
+          remarks: holdNotes || `Token Hold of QAR ${amount} collected by ${holdCashierStaff}`,
+        };
+        setReservations((prev) => [newRes, ...prev]);
+      }
+
+      // Mark unit as Reserved if available
+      setUnits((prev) =>
+        prev.map((u) => (u.unit === holdUnitRef ? { ...u, status: "Reserved" } : u))
+      );
+
+      // 2. Post Shared AppData Voucher
+      const holdVoucher: any = {
+        id: `v-hold-${Date.now()}`,
+        leaseId: "",
+        name: `Receipt Voucher - Reservation Token Advance (${holdTenantName}) [${paymentDetailText}]`,
+        receiptNo: receiptNo,
+        method: holdPaymentMode,
+        period: "Unit Hold Token Advance",
+        debit:
+          holdPaymentMode === "Bank Transfer"
+            ? "Bank Operating Account (12000)"
+            : holdPaymentMode === "Cheque"
+            ? "PDC In Hand Account (12900)"
+            : "Cash In Hand (12100)",
+        credit: `Reservation Advance Liability - ${holdUnitRef} (21100001)`,
+        amount: amount,
+        status: "posted",
+      };
+      setSharedVouchers((prev) => [holdVoucher, ...prev]);
+
+      // 3. Post Finance Store General Ledger Voucher
+      addFinanceStoreVoucher({
+        voucher_no: receiptNo,
+        voucher_type: "Receipt Voucher",
+        date: holdDate,
+        name: `Reservation Token Advance — ${holdTenantName} (${holdUnitRef}) [${paymentDetailText}]`,
+        debit:
+          holdPaymentMode === "Bank Transfer"
+            ? "Bank Operating Account"
+            : holdPaymentMode === "Cheque"
+            ? "PDC In Hand Account"
+            : "Cash In Hand",
+        debit_code:
+          holdPaymentMode === "Bank Transfer"
+            ? "12000"
+            : holdPaymentMode === "Cheque"
+            ? "12900"
+            : "12100",
+        credit: "Reservation Advance Liability (21100001)",
+        credit_code: "21100001",
+        amount: amount,
+        method: holdPaymentMode,
+        property_name: holdPropertyName,
+        unit_ref: holdUnitRef,
+        tenant_name: holdTenantName,
+      });
+
+      // 4. Cash book entry if Cash
+      if (holdPaymentMode === "Cash") {
+        addCashBookEntry({
+          date: holdDate,
+          voucher: receiptNo,
+          description: `Reservation Token Advance — ${holdTenantName} / ${holdUnitRef} (${cashierText})`,
+          type: "in",
+          amount: amount,
+        });
+      }
+
+      // 5. Create official Tenant Receipt Modal
+      const receipt: TenantReceiptDetails = {
+        receiptNo: receiptNo,
+        acknowledgementNo: `ACK-HOLD-${holdUnitRef}-${Date.now().toString().slice(-4)}`,
+        date: holdDate,
+        tenantName: holdTenantName,
+        propertyName: holdPropertyName,
+        unitRef: holdUnitRef,
+        leaseStartDate: holdDate,
+        leaseEndDate: new Date(Date.now() + 365 * 86400000).toISOString().split("T")[0],
+        monthlyRent: 0,
+        totalContractRent: 0,
+        depositAmount: amount,
+        depositMode: `${holdPaymentMode} (Hold / Token Amount)`,
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [
+          {
+            receiptNo: receiptNo,
+            name: `Reservation Hold / Token Advance (GL 21100001)`,
+            amount: amount,
+            method: holdPaymentMode,
+            debit:
+              holdPaymentMode === "Bank Transfer"
+                ? "Bank Operating Account (12000)"
+                : holdPaymentMode === "Cheque"
+                ? "PDC In Hand (12900)"
+                : "Cash In Hand (12100)",
+            credit: "Reservation Advance Liability (21100001)",
+          },
+        ],
+        totalCollected: amount,
+        cashierName: holdCashierStaff || "Finance Department",
+        notes: `OFFICIAL TOKEN HOLD RECEIPT: Refundable hold deposit of QAR ${amount.toLocaleString()} received via ${holdPaymentMode} for ${holdUnitRef} (${holdPropertyName}) from ${holdTenantName}. ${holdNotes ? `Notes: ${holdNotes}. ` : ""}Auto-posted to GL 21100001 (Reservation Advance Liability).`,
+      };
+
+      setReceiptData(receipt);
+      setReceiptOpen(true);
+
+      // Close modal
+      setHoldOpen(false);
+      toast.success(
+        `Reservation Token of QAR ${amount.toLocaleString()} collected for ${holdTenantName} · ${holdUnitRef}. Unit is held!`
+      );
+      await load(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to collect hold token amount.");
+    } finally {
+      setHoldLoading(false);
+    }
+  }
+
   function handleViewReceipt(dep: DepositRecord) {
     const isSettled = dep.status === "Settled";
     const grossAmt = Number(dep.amount) || 0;
@@ -699,6 +957,14 @@ export function DepositsGuarantees() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">{deposits.length} Total</Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 border-emerald-600/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-xs font-semibold"
+              onClick={openHoldModal}
+            >
+              <BookmarkCheck className="h-3.5 w-3.5 text-emerald-600" /> Collect Hold / Token Amount
+            </Button>
             <Button
               size="sm"
               className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
@@ -929,6 +1195,260 @@ export function DepositsGuarantees() {
               disabled={collectLoading || !collectLeaseId || !collectAmount}
             >
               {collectLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />Posting…</> : <><ShieldCheck className="h-3.5 w-3.5" /> Collect &amp; Issue Receipt</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── COLLECT RESERVATION HOLD / TOKEN AMOUNT MODAL ───────────── */}
+      <Dialog open={holdOpen} onOpenChange={setHoldOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-emerald-800 dark:text-emerald-300">
+              <BookmarkCheck className="h-5 w-5 text-emerald-600" /> Collect Hold / Token Amount for Reservation
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Record a refundable reservation token advance to hold/lock a unit. Posts to GL 21100001 (Reservation Advance Liability) and issues an official receipt.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1 text-xs">
+            {/* Property Unit Selection */}
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-[11px] font-semibold">Select Property &amp; Unit / Reservation <span className="text-destructive">*</span></Label>
+                <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300">
+                  GL 21100001
+                </Badge>
+              </div>
+              <Select
+                value={holdUnitSelection}
+                onValueChange={(val) => {
+                  setHoldUnitSelection(val);
+                  if (val.startsWith("res:")) {
+                    const res = (reservations || []).find((r) => r.id === val.replace("res:", ""));
+                    if (res) {
+                      setHoldTenantName(res.tenantName || "");
+                      setHoldPropertyName(res.property || "");
+                      setHoldUnitRef(res.unit || "");
+                      if (res.tokenAmount) setHoldAmount(String(res.tokenAmount));
+                    }
+                  } else if (val.startsWith("unit:")) {
+                    const u = (units || []).find((unit) => unit.id === val.replace("unit:", ""));
+                    if (u) {
+                      setHoldPropertyName(u.property);
+                      setHoldUnitRef(u.unit);
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Select an Available Unit or Pending Reservation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(reservations || [])
+                    .filter((r) => r.status === "reserved")
+                    .map((r) => (
+                      <SelectItem key={`res:${r.id}`} value={`res:${r.id}`}>
+                        [Reservation] {r.tenantName} · {r.unit} ({r.property}) · Valid until {r.validUntil}
+                      </SelectItem>
+                    ))}
+                  {(units || [])
+                    .filter((u) => u.status === "Available")
+                    .map((u) => (
+                      <SelectItem key={`unit:${u.id}`} value={`unit:${u.id}`}>
+                        [Available Unit] {u.property} — {u.unit} (QR {u.rent?.toLocaleString()}/mo)
+                      </SelectItem>
+                    ))}
+                  {(units || [])
+                    .filter((u) => u.status !== "Available")
+                    .map((u) => (
+                      <SelectItem key={`unit:${u.id}`} value={`unit:${u.id}`}>
+                        [{u.status}] {u.property} — {u.unit}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Tenant, Property, Unit Details */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Prospective Tenant <span className="text-destructive">*</span></Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Mr. Kasun Priyanka"
+                  value={holdTenantName}
+                  onChange={(e) => setHoldTenantName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Property</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Al Ameen Residence 40"
+                  value={holdPropertyName}
+                  onChange={(e) => setHoldPropertyName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Unit Number / Code <span className="text-destructive">*</span></Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. OS40-GF2"
+                  value={holdUnitRef}
+                  onChange={(e) => setHoldUnitRef(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Hold Token Amount & Payment Mode Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Hold / Token Amount (QAR) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="h-8 text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400"
+                  placeholder="2000"
+                  value={holdAmount}
+                  onChange={(e) => setHoldAmount(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Payment Mode <span className="text-destructive">*</span></Label>
+                <Select value={holdPaymentMode} onValueChange={(v) => setHoldPaymentMode(v as typeof holdPaymentMode)}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
+                    <SelectItem value="Bank Transfer">Bank Transfer (12000)</SelectItem>
+                    <SelectItem value="Cheque">Cheque / PDC In Hand (12900)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Collection Date</Label>
+                <Input type="date" className="h-8 text-xs" value={holdDate} onChange={(e) => setHoldDate(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Cashier / Receiving Staff (Finance) */}
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Cashier / Receiving Staff (Finance) <span className="text-destructive">*</span></Label>
+                <Select value={holdCashierStaff} onValueChange={setHoldCashierStaff}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Finance Staff" /></SelectTrigger>
+                  <SelectContent>
+                    {financeStaffList.map((staff) => (
+                      <SelectItem key={staff} value={staff}>
+                        {staff}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">Officer accountable for receiving the reservation advance.</p>
+              </div>
+
+              {/* Mode-Specific Fields */}
+              {holdPaymentMode === "Bank Transfer" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Receiving / Tenant Bank</Label>
+                    <Input className="h-8 text-xs" value={holdBankName} onChange={(e) => setHoldBankName(e.target.value)} placeholder="e.g. QNB, CBQ, QIB" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Bank Transfer Reference No.</Label>
+                    <Input className="h-8 text-xs font-mono" value={holdTransferRef} onChange={(e) => setHoldTransferRef(e.target.value)} placeholder="e.g. TRF-QNB-2026-0987" />
+                  </div>
+                </div>
+              )}
+
+              {holdPaymentMode === "Cheque" && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Cheque No.</Label>
+                    <Input className="h-8 text-xs font-mono" value={holdChequeNo} onChange={(e) => setHoldChequeNo(e.target.value)} placeholder="e.g. CHQ-77889" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Issuing Bank</Label>
+                    <Input className="h-8 text-xs" value={holdChequeBank} onChange={(e) => setHoldChequeBank(e.target.value)} placeholder="e.g. CBQ, QNB" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Cheque Maturity Date</Label>
+                    <Input type="date" className="h-8 text-xs" value={holdChequeDate} onChange={(e) => setHoldChequeDate(e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Notes / Reservation Remarks (Optional)</Label>
+              <Textarea
+                className="text-xs resize-none"
+                rows={2}
+                placeholder="e.g. Token advance to hold flat until agreement signing next week…"
+                value={holdNotes}
+                onChange={(e) => setHoldNotes(e.target.value)}
+              />
+            </div>
+
+            {/* GL Double Entry Preview */}
+            <div className="rounded-lg border bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/40 p-3 space-y-2">
+              <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                Automatic Double-Entry GL Posting (GL 21100001)
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 bg-background/80 rounded px-2 py-1.5 border">
+                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Debit</span>
+                  <span className="font-mono text-[10px] font-bold text-blue-700">
+                    {holdPaymentMode === "Cash" ? "GL 12100" : holdPaymentMode === "Bank Transfer" ? "GL 12000" : "GL 12900"}
+                  </span>
+                  <span className="text-xs">
+                    {holdPaymentMode === "Cash"
+                      ? "Cash In Hand"
+                      : holdPaymentMode === "Bank Transfer"
+                      ? "Bank Operating Account"
+                      : "PDC / Cheque In Hand"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 bg-background/80 rounded px-2 py-1.5 border">
+                  <ArrowDownLeft className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Credit</span>
+                  <span className="font-mono text-[10px] font-bold text-emerald-700">GL 21100001</span>
+                  <span className="text-xs">Reservation Advance Liability (Default Refundable)</span>
+                </div>
+              </div>
+              {holdAmount && parseFloat(holdAmount) > 0 && (
+                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 font-mono font-bold text-right">
+                  QAR {parseFloat(holdAmount).toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-3">
+            <Button variant="outline" onClick={() => setHoldOpen(false)} disabled={holdLoading}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={handleCollectHold}
+              disabled={holdLoading || !holdTenantName || !holdUnitRef || !holdAmount}
+            >
+              {holdLoading ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  Holding Unit &amp; Posting…
+                </>
+              ) : (
+                <>
+                  <BookmarkCheck className="h-3.5 w-3.5" />
+                  Collect Token &amp; Issue Receipt
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SalesRouteImport } from './routes/sales'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PropMgrRouteImport } from './routes/prop-mgr'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OwnerRouteImport } from './routes/owner'
@@ -100,6 +101,7 @@ import { Route as AdminHrmsRouteImport } from './routes/admin.hrms'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminEssRouteImport } from './routes/admin.ess'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
+import { Route as AdminBrandingRouteImport } from './routes/admin.branding'
 import { Route as AdminAuditLogsRouteImport } from './routes/admin.audit-logs'
 import { Route as AdminAssetsRouteImport } from './routes/admin.assets'
 import { Route as AdminLeasesIndexRouteImport } from './routes/admin.leases.index'
@@ -123,6 +125,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const SalesRoute = SalesRouteImport.update({
   id: '/sales',
   path: '/sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PropMgrRoute = PropMgrRouteImport.update({
@@ -565,6 +572,11 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminBrandingRoute = AdminBrandingRouteImport.update({
+  id: '/branding',
+  path: '/branding',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminAuditLogsRoute = AdminAuditLogsRouteImport.update({
   id: '/audit-logs',
   path: '/audit-logs',
@@ -623,11 +635,13 @@ export interface FileRoutesByFullPath {
   '/owner': typeof OwnerRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/prop-mgr': typeof PropMgrRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -718,10 +732,12 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/guest': typeof GuestRoute
   '/owner': typeof OwnerRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -819,11 +835,13 @@ export interface FileRoutesById {
   '/owner': typeof OwnerRouteWithChildren
   '/portal': typeof PortalRouteWithChildren
   '/prop-mgr': typeof PropMgrRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/sales': typeof SalesRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/super-admin': typeof SuperAdminRouteWithChildren
   '/admin/assets': typeof AdminAssetsRoute
   '/admin/audit-logs': typeof AdminAuditLogsRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/ess': typeof AdminEssRoute
   '/admin/finance': typeof AdminFinanceRoute
@@ -923,11 +941,13 @@ export interface FileRouteTypes {
     | '/owner'
     | '/portal'
     | '/prop-mgr'
+    | '/reset-password'
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
     | '/admin/assets'
     | '/admin/audit-logs'
+    | '/admin/branding'
     | '/admin/dashboard'
     | '/admin/ess'
     | '/admin/finance'
@@ -1018,10 +1038,12 @@ export interface FileRouteTypes {
     | '/auth'
     | '/guest'
     | '/owner'
+    | '/reset-password'
     | '/sales'
     | '/sitemap.xml'
     | '/admin/assets'
     | '/admin/audit-logs'
+    | '/admin/branding'
     | '/admin/dashboard'
     | '/admin/ess'
     | '/admin/finance'
@@ -1118,11 +1140,13 @@ export interface FileRouteTypes {
     | '/owner'
     | '/portal'
     | '/prop-mgr'
+    | '/reset-password'
     | '/sales'
     | '/sitemap.xml'
     | '/super-admin'
     | '/admin/assets'
     | '/admin/audit-logs'
+    | '/admin/branding'
     | '/admin/dashboard'
     | '/admin/ess'
     | '/admin/finance'
@@ -1221,6 +1245,7 @@ export interface RootRouteChildren {
   OwnerRoute: typeof OwnerRouteWithChildren
   PortalRoute: typeof PortalRouteWithChildren
   PropMgrRoute: typeof PropMgrRouteWithChildren
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SalesRoute: typeof SalesRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SuperAdminRoute: typeof SuperAdminRouteWithChildren
@@ -1248,6 +1273,13 @@ declare module '@tanstack/react-router' {
       path: '/sales'
       fullPath: '/sales'
       preLoaderRoute: typeof SalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prop-mgr': {
@@ -1866,6 +1898,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/branding': {
+      id: '/admin/branding'
+      path: '/branding'
+      fullPath: '/admin/branding'
+      preLoaderRoute: typeof AdminBrandingRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/audit-logs': {
       id: '/admin/audit-logs'
       path: '/audit-logs'
@@ -1951,6 +1990,7 @@ const AdminLeasesRouteWithChildren = AdminLeasesRoute._addFileChildren(
 interface AdminRouteChildren {
   AdminAssetsRoute: typeof AdminAssetsRoute
   AdminAuditLogsRoute: typeof AdminAuditLogsRoute
+  AdminBrandingRoute: typeof AdminBrandingRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminEssRoute: typeof AdminEssRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
@@ -1973,6 +2013,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAssetsRoute: AdminAssetsRoute,
   AdminAuditLogsRoute: AdminAuditLogsRoute,
+  AdminBrandingRoute: AdminBrandingRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminEssRoute: AdminEssRoute,
   AdminFinanceRoute: AdminFinanceRoute,
@@ -2223,6 +2264,7 @@ const rootRouteChildren: RootRouteChildren = {
   OwnerRoute: OwnerRouteWithChildren,
   PortalRoute: PortalRouteWithChildren,
   PropMgrRoute: PropMgrRouteWithChildren,
+  ResetPasswordRoute: ResetPasswordRoute,
   SalesRoute: SalesRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SuperAdminRoute: SuperAdminRouteWithChildren,

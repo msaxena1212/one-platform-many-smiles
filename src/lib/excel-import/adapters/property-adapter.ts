@@ -199,19 +199,20 @@ export const propertyAdapter: EntityImportAdapter = {
             normalized[col.key] = num;
           }
         } else if (col.type === 'enum' && col.allowedValues) {
-          const matched = col.allowedValues.find(v => v.toLowerCase() === strVal.toLowerCase());
-          if (!matched) {
+          const allowedArr = Array.isArray(col.allowedValues) ? col.allowedValues : [];
+          const matched = allowedArr.find((v: string) => v.toLowerCase() === strVal.toLowerCase());
+          if (!matched && allowedArr.length > 0) {
             warnings.push({
               row: context.rowNumber,
               field: col.label,
               code: 'VAL_002',
               message: `Value "${strVal}" for ${col.label} is not in standard options.`,
               severity: 'WARNING',
-              resolution: `Allowed: ${col.allowedValues.join(', ')}`,
+              resolution: `Allowed: ${allowedArr.join(', ')}`,
             });
             normalized[col.key] = strVal;
           } else {
-            normalized[col.key] = matched;
+            normalized[col.key] = matched || strVal;
           }
         } else {
           normalized[col.key] = strVal;

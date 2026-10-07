@@ -6,8 +6,9 @@
 if (typeof globalThis.WebSocket === "undefined") {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // @ts-ignore
     const { WebSocket: WsImpl } = await import("ws");
-    // @ts-expect-error – intentional global assignment for SSR polyfill
+    // @ts-ignore
     globalThis.WebSocket = WsImpl;
   } catch {
     // ws not installed – this will be caught downstream when Realtime connects

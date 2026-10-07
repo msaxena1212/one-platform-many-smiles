@@ -848,7 +848,40 @@ export async function fetchPDCs(leaseId?: string) {
 export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'updated_at'>) {
   const { data, error } = await supabase.from('pdcs').insert(payload).select().single();
   if (error) throw error;
-  return data as PDC;
+  const pdc = data as PDC;
+
+  // Post a GL receipt voucher: Dr 12900001 PDC In Hand / Cr 21400001 Customer PDC Liability
+  const chequeNo = pdc.cheque_number || String(pdc.id);
+  const voucherNo = `VCH-PDC-RCV-${chequeNo}`;
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    const { data: vData, error: vErr } = await supabase.from('fin_vouchers').insert({
+      voucher_number: voucherNo,
+      voucher_date: (pdc as any).deposit_date || (pdc as any).maturity_date || today,
+      voucher_type: 'RV',
+      description: `PDC Received — Cheque #${chequeNo}`,
+      total_amount: pdc.amount,
+      status: 'posted',
+      posted_at: new Date().toISOString(),
+    }).select('id').single();
+    if (!vErr && vData?.id) {
+      // Insert both ledger lines for this receipt voucher
+      await supabase.from('fin_voucher_lines').insert([
+        { voucher_id: vData.id, account_code: '12900001', account_name: 'Rent PDC In Hand', debit: pdc.amount, credit: 0, description: `PDC Received — Cheque #${chequeNo}` },
+        { voucher_id: vData.id, account_code: '21400001', account_name: 'Customer PDC Liability', debit: 0, credit: pdc.amount, description: `PDC Received — Cheque #${chequeNo}` },
+      ]);
+    }
+  } catch (glErr) {
+    // Best-effort: GL posting failure should not block PDC creation
+    console.warn('[createPDC] GL posting note:', glErr);
+  }
+
+  // Notify Finance Store so GL/Trial Balance refresh immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('finance_vouchers_updated'));
+  }
+
+  return pdc;
 }
 
 export async function updatePDC(id: string, status: PDC['status']) {
@@ -990,6 +1023,13 @@ export type Unit = {
   status?: string;
   created_at: string;
   // ERP Extended Fields
+  unit_type?: string;
+  unit_category?: string;
+  furnishing_type?: string;
+  rent?: number;
+  market_rent?: number;
+  no_of_bedrooms?: number;
+  no_of_bathrooms?: number;
   unit_code?: string;
   unit_cost_center_code?: string;
   unit_name?: string;

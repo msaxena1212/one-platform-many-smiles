@@ -986,6 +986,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
             color: "text-rose-500",
             bg: "bg-rose-500/10",
             items: [
+              { to: "/admin/branding", label: "Document Branding & Signatures", icon: <FileSignature className="h-3.5 w-3.5" /> },
               { to: "/admin/imports", label: "Excel Bulk Import", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
               { to: "/admin/notifications", label: "Notification Center", icon: <Bell className="h-3.5 w-3.5" /> },
               { to: "/admin/audit-logs", search: { tab: "audit-trail" }, label: "System Audit Trail", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
@@ -1006,6 +1007,7 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
     ],
     titleRules: [
       { match: "/admin", title: "Staff Console" },
+      { match: "/admin/branding", title: "Document Branding & Signatures" },
       { match: "/admin/properties", title: "Properties" },
       { match: "/admin/units", title: "Units" },
       { match: "/admin/leasing", title: "Lease Lifecycle" },
@@ -1108,7 +1110,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
           },
         ],
       },
-      getEssNavModule("/super-admin/ess"),
     ],
     titleRules: [
       { match: "/super-admin", title: "Platform Overview" },
@@ -1122,7 +1123,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
       { match: "/super-admin/config", title: "Global Configuration" },
       { match: "/super-admin/alerts", title: "In-App & Alerts Governance" },
       { match: "/super-admin/security", title: "System Audit Trail & Notification Analytics" },
-      { match: "/super-admin/ess", title: "My Self-Service (ESS)" },
     ],
   },
 

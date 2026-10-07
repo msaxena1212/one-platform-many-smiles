@@ -278,8 +278,9 @@ export const unitAdapter: EntityImportAdapter = {
             normalized[col.key] = num;
           }
         } else if (col.type === 'enum' && col.allowedValues) {
-          const matched = col.allowedValues.find(v => v.toLowerCase() === strVal.toLowerCase());
-          if (!matched) {
+          const allowedArr = Array.isArray(col.allowedValues) ? col.allowedValues : [];
+          const matched = allowedArr.find((v: string) => v.toLowerCase() === strVal.toLowerCase());
+          if (!matched && allowedArr.length > 0) {
             warnings.push({
               row: context.rowNumber,
               field: col.label,
@@ -289,7 +290,7 @@ export const unitAdapter: EntityImportAdapter = {
             });
             normalized[col.key] = strVal;
           } else {
-            normalized[col.key] = matched;
+            normalized[col.key] = matched || strVal;
           }
         } else {
           normalized[col.key] = strVal;
@@ -414,14 +415,14 @@ export const unitAdapter: EntityImportAdapter = {
           rent_frequency: data.rent_frequency || 'Monthly',
           current_tenant: data.current_tenant,
           contract_no: data.contract_no,
-          contract_start_date: sanitizeDateForPostgres(data.contract_start_date),
-          contract_end_date: sanitizeDateForPostgres(data.contract_end_date),
+          contract_start_date: sanitizeDateForPostgres(data.contract_start_date) || undefined,
+          contract_end_date: sanitizeDateForPostgres(data.contract_end_date) || undefined,
           current_rent: data.current_rent,
           security_deposit_type: data.security_deposit_type,
           security_deposit_amount: data.security_deposit_amount,
           service_charge: data.service_charge,
           maintenance_responsibility: data.maintenance_responsibility || 'Property Manager',
-          handover_date: sanitizeDateForPostgres(data.handover_date),
+          handover_date: sanitizeDateForPostgres(data.handover_date) || undefined,
           documents_received: typeof data.documents_received === 'boolean' ? data.documents_received : String(data.documents_received).toLowerCase() === 'yes' || String(data.documents_received).toLowerCase() === 'true',
           remarks: data.remarks,
         };

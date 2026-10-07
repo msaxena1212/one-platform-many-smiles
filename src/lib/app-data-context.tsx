@@ -49,6 +49,11 @@ export interface PmsCustomer {
   mobile: string;
   email: string;
   status: CustomerStatus;
+  qid?: string;
+  phone?: string;
+  poBox?: string;
+  address?: string;
+  [key: string]: any;
 }
 
 export interface PmsLease {
@@ -84,6 +89,8 @@ export interface PmsLease {
   actualVacateDate?: string;
   earlyVacate?: boolean;
   earlyVacateReason?: string;
+  contractNumber?: string;
+  [key: string]: any;
 }
 
 export interface PmsPdc {
@@ -186,6 +193,12 @@ export interface PmsReservation {
   rent: number;
   status: "reserved" | "released" | "expired" | "converted";
   remarks?: string;
+  proposedEndDate?: string;
+  isHold?: boolean;
+  tokenAmount?: number;
+  tokenPaymentMode?: "Cash" | "Bank Transfer" | "Cheque";
+  tokenReceiptNo?: string;
+  tokenRefunded?: boolean;
 }
 
 export interface PmsAuditEvent {
@@ -432,7 +445,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       // Also pull any imported customers from localStorage (Excel bulk import)
       try {
-        const rawHistory = localStorage.getItem("stayhub_import_batches_history_v1");
+        const rawHistory = localStorage.getItem("zyno_pms_import_batches_history_v2");
         if (rawHistory) {
           const parsedBatches = JSON.parse(rawHistory);
           if (Array.isArray(parsedBatches)) {

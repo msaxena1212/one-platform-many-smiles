@@ -238,33 +238,23 @@ function UsersPage() {
   async function loadUsers() {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch real profiles from DB
+      const { data: profileData } = await supabase
         .from("profiles")
         .select("id, full_name, role, created_at, avatar_url")
         .order("created_at", { ascending: false });
 
       const overrides = getLocalProfileOverrides();
-      let rawList: UserRow[] = data || [];
-
-      // If database is empty, fallback to seed profiles
-      if (rawList.length === 0) {
-        rawList = [
-          { id: "44d9684a-a043-4f54-ae24-3cabb79e7134", full_name: "Demo Maintenance Officer", role: "MAINTENANCE", created_at: new Date().toISOString() },
-          { id: "0c64c887-9ad2-4a7b-95bb-842416ce3998", full_name: "Demo Cashier", role: "CASHIER", created_at: new Date().toISOString() },
-          { id: "de427b95-6338-406b-b26a-93a0b5134706", full_name: "Demo Finance Officer", role: "FINANCE", created_at: new Date().toISOString() },
-          { id: "72bbc50f-705b-4680-a681-6780c8502f04", full_name: "Demo Leasing Officer", role: "LEASING", created_at: new Date().toISOString() },
-          { id: "1a8b9c0d-1111-2222-3333-444455556666", full_name: "Demo Property Manager", role: "PROP_MGR", created_at: new Date().toISOString() },
-          { id: "9f8e7d6c-5555-4444-3333-222211110000", full_name: "Demo Super Admin", role: "SUPER_ADMIN", created_at: new Date().toISOString() },
-        ];
-      }
-
-      // Apply overrides (such as role updates made while offline or when Supabase table RLS prevents anon writes)
-      const merged = rawList.map(u => ({
-        ...u,
-        ...(overrides[u.id] || {})
+      const rawList: UserRow[] = (profileData || []).map((p) => ({
+        id: p.id,
+        full_name: p.full_name || "User",
+        role: p.role || "ADMIN",
+        created_at: p.created_at || new Date().toISOString(),
+        avatar_url: p.avatar_url,
+        ...(overrides[p.id] || {}),
       }));
 
-      setUsers(merged);
+      setUsers(rawList);
     } catch (e: any) {
       toast.error("Failed to load users: " + e.message);
     } finally {

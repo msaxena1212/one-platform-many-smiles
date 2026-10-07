@@ -1047,7 +1047,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                         <Label className="text-xs font-semibold">Property Manager *</Label>
                         <SearchableSelect
                           options={propertyManagerOptions.map((pm) => ({
-                            id: pm.name,
+                            value: pm.name,
                             label: `${pm.name}${pm.designation ? ` (${pm.designation})` : ""}`,
                           }))}
                           value={form.property_manager}
