@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Printer, Download, Building, User, CreditCard, FileText, ShieldCheck } from 'lucide-react';
 import { generateReceiptBlob, type ReceiptData, type ReceiptLineItem } from './receipt-template';
+import { getDocumentBranding } from '@/lib/document-branding';
 
 export interface TenantReceiptDetails {
   receiptNo: string;
@@ -42,15 +43,14 @@ export interface TenantReceiptDetails {
   }>;
   agencyCommission?: number;
   adminCharges?: number;
-  utilityDeposit?: number; // Kahramaa Deposit (21100003)
-  qatarCoolDeposit?: number; // Qatar Cool Deposit (21100004)
-  reservationDeposit?: number; // Reservation Advance (21100001)
-  serviceFeeDeposit?: number; // Service Fee Deposit (21100005)
-  guaranteeChequeDeposit?: number; // Guarantee Cheque Deposit (21100006)
+  utilityDeposit?: number;
+  qatarCoolDeposit?: number;
+  reservationDeposit?: number;
+  serviceFeeDeposit?: number;
+  guaranteeChequeDeposit?: number;
   totalCollected: number;
   cashierName?: string;
   notes?: string;
-  /** Unused rent refund due to early vacate (current-month PDC deposited scenario) */
   unusedRentRefund?: number;
 }
 
@@ -83,8 +83,8 @@ function numberToWords(num: number): string {
 }
 
 export function ReceiptModal({ open, onOpenChange, data, secondaryData }: ReceiptModalProps) {
-  const printRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = React.useState<'primary' | 'secondary'>('primary');
+  const branding = getDocumentBranding();
 
   React.useEffect(() => {
     if (open) {
@@ -118,20 +118,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
       });
     }
 
-    // Add vouchers if present
-    (currentData.vouchers || []).forEach((v) => {
-      lineItems.push({
-        sNo: sNo++,
-        description: v.name,
-        chequeRef: v.receiptNo || currentData.receiptNo,
-        maturityDate: currentData.date,
-        type: (v.method as any) || 'Cash',
-        amount: v.amount,
-        bankName: v.debit || 'Bank',
-      });
-    });
-
-    // Add PDCs
+    // Add PDCs (Rent Schedule)
     (currentData.pdcs || []).forEach((pdc) => {
       lineItems.push({
         sNo: sNo++,
@@ -146,7 +133,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
       });
     });
 
-    // Add extra fees
+    // Add ancillary fees (Non-ledger tenant facing)
     if (currentData.agencyCommission && currentData.agencyCommission > 0) {
       lineItems.push({
         sNo: sNo++,
@@ -170,7 +157,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     if (currentData.utilityDeposit && currentData.utilityDeposit > 0) {
       lineItems.push({
         sNo: sNo++,
-        description: 'Kahramaa Utility Deposit (GL 21100)',
+        description: 'Kahramaa Utility Deposit',
         chequeRef: 'RV-KAHRAMAA',
         maturityDate: currentData.date,
         type: 'Cash',
@@ -180,7 +167,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     if (currentData.qatarCoolDeposit && currentData.qatarCoolDeposit > 0) {
       lineItems.push({
         sNo: sNo++,
-        description: 'Qatar Cool Deposit (GL 21100)',
+        description: 'Qatar Cool Deposit',
         chequeRef: 'RV-QCOOL',
         maturityDate: currentData.date,
         type: 'Cash',
@@ -190,7 +177,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     if (currentData.reservationDeposit && currentData.reservationDeposit > 0) {
       lineItems.push({
         sNo: sNo++,
-        description: 'Reservation Advance Deposit (GL 21100)',
+        description: 'Reservation Advance Deposit',
         chequeRef: 'RV-RESERVE',
         maturityDate: currentData.date,
         type: 'Cash',
@@ -200,7 +187,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     if (currentData.serviceFeeDeposit && currentData.serviceFeeDeposit > 0) {
       lineItems.push({
         sNo: sNo++,
-        description: 'Service Fee / Key Deposit (GL 21100)',
+        description: 'Service Fee / Key Deposit',
         chequeRef: 'RV-SVCFEE',
         maturityDate: currentData.date,
         type: 'Cash',
@@ -210,7 +197,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     if (currentData.guaranteeChequeDeposit && currentData.guaranteeChequeDeposit > 0) {
       lineItems.push({
         sNo: sNo++,
-        description: 'Guarantee Cheque Security (GL 21100)',
+        description: 'Guarantee Cheque Security',
         chequeRef: 'RV-GNTCHQ',
         maturityDate: currentData.date,
         type: 'Cheque',
@@ -251,12 +238,17 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
     }
   };
 
+  const ackSub = branding.submodules?.acknowledgementReceipt;
+  const bannerUrl = ackSub?.bannerImageUrl || branding.headerImageUrl;
+  const showBanner = ackSub?.showBanner !== false && Boolean(bannerUrl);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 border-0 bg-transparent shadow-2xl">
-        <div ref={printRef} className="bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 p-6 md:p-8 rounded-xl border shadow-md space-y-6">
+      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+        <div className="p-6 md:p-8 space-y-5 bg-card">
+          {/* Dual Receipt Selector (if settlement generated 2 receipts) */}
           {secondaryData && (
-            <div className="bg-muted/70 p-2.5 rounded-lg border flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
               <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                 <FileText className="h-4 w-4 text-purple-600 shrink-0" />
                 Settlement Receipts (2 Generated):
@@ -288,17 +280,38 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
             </div>
           )}
 
+          {/* ── Organization Branding Banner (if configured) ── */}
+          {showBanner && bannerUrl && (
+            <div className="w-full rounded-lg overflow-hidden border border-border/60 shadow-sm max-h-28">
+              <img
+                src={bannerUrl}
+                alt="Organization Branding Banner"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          {/* ── Header as per Organization Branding ── */}
           <div className="border-b pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <Building className="h-6 w-6 text-primary" />
-                <h2 className="text-xl font-bold tracking-tight text-primary">ZYNO PROPERTY MANAGEMENT</h2>
+                <h2 className="text-xl font-bold tracking-tight text-primary">
+                  {branding.companyName || "Al Ameen Real Estate"}
+                </h2>
               </div>
-              <p className="text-xs text-muted-foreground">Leasing Operations & Treasury Division • State of Qatar</p>
+              <p className="text-xs text-muted-foreground">
+                {branding.legalEntityName || "Al Ameen Real Estate W.L.L"} • CR: {branding.crNumber || "CR-90821-QA"}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {branding.address || "Grand Hamad Avenue, Building 42, Floor 7, Doha, State of Qatar"}
+              </p>
             </div>
             <div className="text-right">
               <Badge variant="outline" className="text-xs font-mono px-3 py-1 bg-primary/10 border-primary text-primary font-bold">
-                {activeTab === 'secondary' && secondaryData ? 'PAYMENT / REFUND VOUCHER' : 'OFFICIAL PAYMENT RECEIPT'}
+                {activeTab === 'secondary' && secondaryData
+                  ? 'PAYMENT / REFUND VOUCHER'
+                  : (ackSub?.documentTitle || 'OFFICIAL PAYMENT RECEIPT')}
               </Badge>
               <p className="text-xs font-mono mt-1 text-muted-foreground">No: <strong className="text-foreground">{currentData.receiptNo}</strong></p>
               <p className="text-xs text-muted-foreground">Date: {currentData.date}</p>
@@ -347,7 +360,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
             </div>
           )}
 
-          {/* PDC Breakdown Schedule Table */}
+          {/* PDC Breakdown Schedule Table (Tenant facing details only) */}
           {currentData.pdcs && currentData.pdcs.length > 0 && (
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -395,27 +408,6 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
             </div>
           )}
 
-          {/* Vouchers Posted Summary */}
-          {currentData.vouchers && currentData.vouchers.length > 0 && (
-            <div className="space-y-1.5 bg-muted/20 p-3 rounded-lg border text-xs">
-              <div className="flex items-center gap-1.5 font-semibold text-muted-foreground">
-                <FileText className="h-3.5 w-3.5" />
-                <span>Financial Line Items &amp; Sub-Ledger Posting</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
-                {currentData.vouchers.map((v, i) => (
-                  <div key={i} className="flex justify-between items-center bg-background px-2.5 py-1.5 rounded border">
-                    <div>
-                      <p className="font-semibold">{v.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{v.debit} → {v.credit}</p>
-                    </div>
-                    <span className="font-mono font-bold text-primary">QR {v.amount.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Total & Words */}
           <div className="border-t pt-4 space-y-2">
             <div className="flex justify-between items-center bg-primary/5 p-3 rounded-lg border border-primary/20">
@@ -433,7 +425,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
             </div>
           </div>
 
-          {/* Signatures */}
+          {/* Signatures as per branding */}
           <div className="grid grid-cols-3 gap-8 pt-8 text-center text-xs text-muted-foreground border-t">
             <div>
               <div className="border-b pb-8 border-dashed"></div>
@@ -448,7 +440,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
             <div>
               <div className="border-b pb-8 border-dashed"></div>
               <p className="mt-2 font-semibold text-foreground">Authorized Signatory</p>
-              <p className="text-[10px]">ZYNO Property Management</p>
+              <p className="text-[10px]">{branding.companyName || 'Al Ameen Real Estate'}</p>
             </div>
           </div>
         </div>

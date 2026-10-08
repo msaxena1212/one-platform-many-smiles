@@ -12,6 +12,7 @@ import { exportToExcel } from "@/lib/excel-export";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import { formatDateNumericDDMMYYYY } from "@/lib/date-utils";
+import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -94,14 +95,18 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         };
       });
 
-      // Normalize DB lease statuses to match the same ACTIVE/DRAFT/EXPIRING/CLOSED scheme
+      // Normalize DB lease statuses and apply exact dates from Excel Lease Master
       const normalizedDbLeases = dbLeases.map((l: any) => {
+        const uIdentifier = l.unit || l.unit_ref || l.unit_code || "";
+        const uKey = uIdentifier.toUpperCase().trim();
+        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+
         const rawStatus = (l.lease_status || l.status || "").toLowerCase();
+        const expiry = excelOverride?.end || l.expiry_date || l.contract_end_date;
         let normalized: string;
         if (rawStatus === "closed" || rawStatus === "terminated" || rawStatus === "vacated") {
           normalized = "CLOSED";
         } else if (rawStatus === "active" || rawStatus === "fully_signed" || rawStatus === "collection_completed" || rawStatus === "leased") {
-          const expiry = l.expiry_date || l.contract_end_date;
           if (expiry) {
             const expDate = new Date(expiry);
             if (!isNaN(expDate.getTime()) && expDate <= today90) {
@@ -123,6 +128,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         }
         return {
           ...l,
+          tenant_name: excelOverride?.tenant || l.tenant_name || l.customers?.full_name || '—',
+          commencement_date: excelOverride?.start || l.commencement_date,
+          expiry_date: excelOverride?.end || l.expiry_date,
+          rental_amount: excelOverride?.rent ? excelOverride.rent * 12 : l.rental_amount,
           lease_status: normalized,
           signedDocument: l.signed_document || l.signedDocument || l.contract_file,
           signedDocumentUrl: l.signed_contract_url || l.signed_document_url || l.signedDocumentUrl,

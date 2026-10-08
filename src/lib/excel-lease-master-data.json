@@ -1,0 +1,3566 @@
+{
+  "OS40-GF1": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-GF1",
+    "tenant": "Al Ameen Enterprise",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5000
+  },
+  "OS40-GF2": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-GF2",
+    "tenant": "Mr. Kasun Priyanka",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 4400
+  },
+  "OS40-11": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-11",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OS40-12": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-12",
+    "tenant": "Mr. Dawood Sulaiman S Al Rahbi",
+    "start": "2026-04-10",
+    "end": "2027-04-09",
+    "rent": 5400
+  },
+  "OS40-13": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-13",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OS40-14": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-14",
+    "tenant": "M/s.Embassy of Pakistan",
+    "start": "2026-07-01",
+    "end": "2027-06-30",
+    "rent": 7500
+  },
+  "OS40-15": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-15",
+    "tenant": "Mr. Hatem Sulaiman S Alrahbi",
+    "start": "2026-01-15",
+    "end": "2027-01-14",
+    "rent": 5000
+  },
+  "OS40-16": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-16",
+    "tenant": "Mr. Hafeez Shaik",
+    "start": "2025-10-01",
+    "end": "2027-09-30",
+    "rent": 5600
+  },
+  "OS40-21": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-21",
+    "tenant": "Mr. Mashreq Mohammad Zain",
+    "start": "2026-03-01",
+    "end": "2027-02-28",
+    "rent": 6000
+  },
+  "OS40-22": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-22",
+    "tenant": "Ms. Monica Sharma",
+    "start": "2026-05-20",
+    "end": "2027-06-19",
+    "rent": 5000
+  },
+  "OS40-23": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-23",
+    "tenant": "Mr. Kannunanni Ramakrishnan",
+    "start": "2026-10-01",
+    "end": "2027-10-31",
+    "rent": 5076
+  },
+  "OS40-24": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-24",
+    "tenant": "Mr. Soufiene Mejri",
+    "start": "2026-09-01",
+    "end": "2027-09-30",
+    "rent": 4892
+  },
+  "OS40-25": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-25",
+    "tenant": "Mr. Sijith Chandran",
+    "start": "2026-08-01",
+    "end": "2027-08-31",
+    "rent": 4615
+  },
+  "OS40-26": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-26",
+    "tenant": "Ms. Elseba Aluoch Onyango",
+    "start": "2025-10-15",
+    "end": "2026-10-14",
+    "rent": 5500
+  },
+  "OS40-31": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-31",
+    "tenant": "M/s Al Badi Trading Contracting",
+    "start": "2026-03-01",
+    "end": "2027-08-31",
+    "rent": 6000
+  },
+  "OS40-32": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-32",
+    "tenant": "Mr. Allabaksh Nadaf Razaksab Navi Nadaf",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5300
+  },
+  "OS40-33": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-33",
+    "tenant": "Mr. Taqi Ali Syed Mohammad",
+    "start": "2026-07-26",
+    "end": "2027-06-30",
+    "rent": 5300
+  },
+  "OS40-34": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-34",
+    "tenant": "Mr. Ahsen Samal Rajanth Don",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 5200
+  },
+  "OS40-35": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-35",
+    "tenant": "Ms. Saranya Asokan",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 5000
+  },
+  "OS40-36": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-36",
+    "tenant": "Al Ameen Enterprise",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5000
+  },
+  "OS40-41": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-41",
+    "tenant": "Mr. Imtiyaz Ahmed",
+    "start": "2025-07-01",
+    "end": "2027-06-30",
+    "rent": 5750
+  },
+  "OS40-42": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-42",
+    "tenant": "Mr. Jaiganesh Jayaraman Varathan",
+    "start": "2026-06-20",
+    "end": "2027-04-19",
+    "rent": 5500
+  },
+  "OS40-43": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-43",
+    "tenant": "Mr. Prashant Pandey",
+    "start": "2025-09-30",
+    "end": "2027-03-31",
+    "rent": 5300
+  },
+  "OS40-44": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-44",
+    "tenant": "Mr. Nasir Zaidi Shaikh",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 4900
+  },
+  "OS40-45": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-45",
+    "tenant": "Mr. Prakash Kumar",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 4800
+  },
+  "OS40-46": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-46",
+    "tenant": "Mr. Chandrasekaran Thanasekarapandian",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 5500
+  },
+  "OS40-51": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-51",
+    "tenant": "Mr. Mohammad Suhail Ahmad Mohammad",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6300
+  },
+  "OS40-52": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-52",
+    "tenant": "Mr. Kudzaishe Duncan Chanakira",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5500
+  },
+  "OS40-53": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-53",
+    "tenant": "Mr. Abdul Haseeb Anwar Mohammad Anwar",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5300
+  },
+  "OS40-54": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-54",
+    "tenant": "M/s.Embassy of Pakistan",
+    "start": "2026-07-01",
+    "end": "2027-06-30",
+    "rent": 7500
+  },
+  "OS40-55": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-55",
+    "tenant": "Mr. Rajneesh Singh",
+    "start": "2025-08-01",
+    "end": "2027-01-31",
+    "rent": 5100
+  },
+  "OS40-56": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-56",
+    "tenant": "Mr. Floyd Alukkal J.J. Alukkal",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5300
+  },
+  "OS40-61": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-61",
+    "tenant": "Mr. Ahmed Elzoara",
+    "start": "2026-07-01",
+    "end": "2027-06-30",
+    "rent": 6000
+  },
+  "OS40-62": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-62",
+    "tenant": "Mr. Joel John Jacob",
+    "start": "2026-06-10",
+    "end": "2027-06-09",
+    "rent": 5500
+  },
+  "OS40-63": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-63",
+    "tenant": "Mr. Ahmed Gamal",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 5000
+  },
+  "OS40-64": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-64",
+    "tenant": "Mr. Rijo Joseph",
+    "start": "2025-09-05",
+    "end": "2027-09-04",
+    "rent": 5000
+  },
+  "OS40-65": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-65",
+    "tenant": "Mr. Shaikh Sharukh",
+    "start": "2026-10-01",
+    "end": "2027-10-31",
+    "rent": 4892
+  },
+  "OS40-66": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-66",
+    "tenant": "Ms. Jincy Thomas",
+    "start": "2026-09-01",
+    "end": "2027-08-31",
+    "rent": 5400
+  },
+  "OS40-71": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-71",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OS40-72": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-72",
+    "tenant": "Mr. Denzil Daya Lewis",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 5000
+  },
+  "OS40-73": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-73",
+    "tenant": "Ms. Remya Gibin Maveli Pappu Peter",
+    "start": "2026-03-01",
+    "end": "2027-02-28",
+    "rent": 5300
+  },
+  "OS40-74": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-74",
+    "tenant": "Mr. Idowu Temiyope Adeleye",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4800
+  },
+  "OS40-75": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-75",
+    "tenant": "Mr. Srinivasa Rajakumar Alluru",
+    "start": "2025-09-05",
+    "end": "2027-09-04",
+    "rent": 5100
+  },
+  "OS40-76": {
+    "property": "Al Ameen Residence 40",
+    "propertyCode": "OS40",
+    "unit": "OS40-76",
+    "tenant": "Mr. Javad Kaitha Valappil",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 5700
+  },
+  "OS41-01": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-01",
+    "tenant": "Mr. Shankar Manjapara Sankaran",
+    "start": "2026-03-15",
+    "end": "2027-03-14",
+    "rent": 4000
+  },
+  "OS41-02": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-02",
+    "tenant": "Mr. Sherwin Raman",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 4000
+  },
+  "OS41-03": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-03",
+    "tenant": "Mr. Binu Gopinathan Parameswaran",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 4000
+  },
+  "OS41-04": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-04",
+    "tenant": "Mr. Emmanuel Akpan",
+    "start": "2026-08-22",
+    "end": "2027-08-21",
+    "rent": 3500
+  },
+  "OS41-05": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-05",
+    "tenant": "Mr. Youssef Imad",
+    "start": "2026-09-22",
+    "end": "2027-09-21",
+    "rent": 3800
+  },
+  "OS41-06": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-06",
+    "tenant": "Mr. Anupam Gupta Ashok K Gupta",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 4300
+  },
+  "OS41-07": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-07",
+    "tenant": "Mr. Jorge Wilson Suarez Castillo",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 4000
+  },
+  "OS41-08": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-08",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OS41-09": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-09",
+    "tenant": "Ms. Ramya Aradi Vissapragada Rao",
+    "start": "2025-09-10",
+    "end": "2026-09-09",
+    "rent": 4000
+  },
+  "OS41-10": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-10",
+    "tenant": "Mr. Hassan Shaito",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4000
+  },
+  "OS41-11": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-11",
+    "tenant": "Mr. Muzammil Farid Mukadam",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 4000
+  },
+  "OS41-12": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-12",
+    "tenant": "Mr. Marouane Bissal",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 3750
+  },
+  "OS41-13": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-13",
+    "tenant": "Ms. Shamaila Shamsur Rahman",
+    "start": "2025-11-01",
+    "end": "2026-11-30",
+    "rent": 3970
+  },
+  "OS41-14": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-14",
+    "tenant": "Mr. Ahmed Mohamed Fekry Shaaban",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 4000
+  },
+  "OS41-15": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-15",
+    "tenant": "Ms. Malgorzata Dorota Karas",
+    "start": "2026-01-15",
+    "end": "2027-01-31",
+    "rent": 4600
+  },
+  "OS41-16": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-16",
+    "tenant": "Mr. Muhammad Irfan Wali Muhammad",
+    "start": "2025-11-11",
+    "end": "2026-11-10",
+    "rent": 3800
+  },
+  "OS41-17": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-17",
+    "tenant": "Mr. Naveen N Nidadavolu",
+    "start": "2026-04-11",
+    "end": "2027-04-10",
+    "rent": 3800
+  },
+  "OS41-18": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-18",
+    "tenant": "Mr. Siddharth Chetan Dave",
+    "start": "2026-03-15",
+    "end": "2026-08-14",
+    "rent": 4000
+  },
+  "OS41-19": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-19",
+    "tenant": "Mr. Bassel Maghames",
+    "start": "2025-10-03",
+    "end": "2026-10-02",
+    "rent": 4600
+  },
+  "OS41-20": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-20",
+    "tenant": "Ms. Souad Bougherara",
+    "start": "2025-10-25",
+    "end": "2026-10-24",
+    "rent": 3800
+  },
+  "OS41-21": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-21",
+    "tenant": "Mr. Faraz Ahmed Khan",
+    "start": "2026-06-02",
+    "end": "2027-06-01",
+    "rent": 4000
+  },
+  "OS41-22": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-22",
+    "tenant": "Mr. Malek Caleb",
+    "start": "2026-09-01",
+    "end": "2027-08-31",
+    "rent": 4200
+  },
+  "OS41-23": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-23",
+    "tenant": "Mr. Abhayawansha Rathnasekara",
+    "start": "2026-06-15",
+    "end": "2027-06-14",
+    "rent": 4000
+  },
+  "OS41-24": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-24",
+    "tenant": "Mr. Albert Farai Sharaunga",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 3692
+  },
+  "OS41-25": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-25",
+    "tenant": "Mr. Venkata Manojkumar Nallabotula",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 4000
+  },
+  "OS41-26": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-26",
+    "tenant": "Ms. Cristina Michaela Mitrache",
+    "start": "2026-04-20",
+    "end": "2027-04-19",
+    "rent": 4000
+  },
+  "OS41-27": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-27",
+    "tenant": "Mr. Prasanth Muthusamy",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 4000
+  },
+  "OS41-28": {
+    "property": "Al Ameen Residence 41",
+    "propertyCode": "OS41",
+    "unit": "OS41-28",
+    "tenant": "Mr. Abdelmalek Triki",
+    "start": "2026-07-20",
+    "end": "2027-07-19",
+    "rent": 4300
+  },
+  "BO60-01": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-01",
+    "tenant": "Mr. Fernan Binay- An Carpio",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 4800
+  },
+  "BO60-02": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-02",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO60-03": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-03",
+    "tenant": "M/S Ishaq Electrical",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4900
+  },
+  "BO60-04": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-04",
+    "tenant": "Mr. Zaid Jasser Suliman Alnweiran",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 4800
+  },
+  "BO60-05": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-05",
+    "tenant": "Mr. Mannil Mahesh Menon",
+    "start": "2025-06-28",
+    "end": "2027-04-30",
+    "rent": 4650
+  },
+  "BO60-06": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-06",
+    "tenant": "Mr. Ahamed Satham Samsudeen",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 4800
+  },
+  "BO60-07": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-07",
+    "tenant": "Mr. Assem Ali Elsayed Battikh",
+    "start": "2026-07-01",
+    "end": "2027-06-30",
+    "rent": 4800
+  },
+  "BO60-08": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-08",
+    "tenant": "Occupied",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO60-09": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-09",
+    "tenant": "Mr. Jyothi Prasanth C Sekar",
+    "start": "2026-06-10",
+    "end": "2027-06-09",
+    "rent": 4800
+  },
+  "BO60-10": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-10",
+    "tenant": "Mr. Mohiuddin Shaikh",
+    "start": "2025-08-25",
+    "end": "2026-08-24",
+    "rent": 5300
+  },
+  "BO60-11": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-11",
+    "tenant": "Pakistan Embassy, Ms. Ghazala Akhtar",
+    "start": "2026-08-28",
+    "end": "2027-06-27",
+    "rent": 7500
+  },
+  "BO60-12": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-12",
+    "tenant": "Mr. Mohammed Kamran Tanoli",
+    "start": "2026-05-15",
+    "end": "2027-05-14",
+    "rent": 4800
+  },
+  "BO60-13": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-13",
+    "tenant": "Mr. Balaji Talaseela",
+    "start": "2026-05-30",
+    "end": "2027-06-30",
+    "rent": 4900
+  },
+  "BO60-14": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-14",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO60-15": {
+    "property": "Al Ameen Residence 60",
+    "propertyCode": "BO60",
+    "unit": "BO60-15",
+    "tenant": "Mr. Mohamed Zafnas Mohamed Zarook",
+    "start": "2025-01-15",
+    "end": "2027-01-14",
+    "rent": 4800
+  },
+  "MN30-01": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-01",
+    "tenant": "Mr. Augusto Galang Lobaton Jr.",
+    "start": "2025-10-01",
+    "end": "2027-09-30",
+    "rent": 4600
+  },
+  "MN30-02": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-02",
+    "tenant": "Mr. Kannan Sankaran Subramani",
+    "start": "2025-08-01",
+    "end": "2026-10-31",
+    "rent": 6000
+  },
+  "MN30-03": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-03",
+    "tenant": "Mr. Mohamed Shadir Mohamed Naufel",
+    "start": "2025-05-25",
+    "end": "2027-05-24",
+    "rent": 5000
+  },
+  "MN30-04": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-04",
+    "tenant": "Mr. Imtiaz Syed",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 5000
+  },
+  "MN30-05": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-05",
+    "tenant": "Ms.Vanessa Ingrid Pereira",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 6000
+  },
+  "MN30-06": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-06",
+    "tenant": "M/s Embassy of Pakistan",
+    "start": "2026-06-25",
+    "end": "2027-06-24",
+    "rent": 7500
+  },
+  "MN30-07": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-07",
+    "tenant": "Mr. Raneil P. Dela Cruz",
+    "start": "2026-07-15",
+    "end": "2027-07-14",
+    "rent": 4800
+  },
+  "MN30-08": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-08",
+    "tenant": "Mr. Warnewatte Waduge Suneth Sunera",
+    "start": "2025-06-10",
+    "end": "2027-06-09",
+    "rent": 5900
+  },
+  "MN30-09": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-09",
+    "tenant": "M/s Embassy of Pakistan",
+    "start": "2026-05-17",
+    "end": "2027-05-16",
+    "rent": 7500
+  },
+  "MN30-10": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-10",
+    "tenant": "M/s Embassy of Pakistan",
+    "start": "2026-05-17",
+    "end": "2027-05-16",
+    "rent": 7500
+  },
+  "MN30-11": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-11",
+    "tenant": "Ms. Maria Abigail Concepcion Almeron",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 6000
+  },
+  "MN30-12": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-12",
+    "tenant": "Mr. Mohamed Meerashagani Dulkarunai",
+    "start": "2026-08-01",
+    "end": "2027-06-30",
+    "rent": 5000
+  },
+  "MN30-13": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-13",
+    "tenant": "Mr. Ahmed Mohammed Abdellatif Elkhabaz",
+    "start": "2025-04-01",
+    "end": "2027-03-31",
+    "rent": 4600
+  },
+  "MN30-14": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-14",
+    "tenant": "Mr. Abdulmajid Abdulqawi Farhan Alhamidi",
+    "start": "2025-11-25",
+    "end": "2026-11-24",
+    "rent": 5900
+  },
+  "MN30-15": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-15",
+    "tenant": "Mr. Halden Noronha",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 5000
+  },
+  "MN30-16": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-16",
+    "tenant": "Mr. Benjamin Mathew Kuriakose",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 5000
+  },
+  "MN30-17": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-17",
+    "tenant": "Mr. Sooraj Gooradoo",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 6250
+  },
+  "MN30-18": {
+    "property": "Al Ameen Residence 30",
+    "propertyCode": "MN30",
+    "unit": "MN30-18",
+    "tenant": "Mr. Fahdhan Mohammed",
+    "start": "2026-09-01",
+    "end": "2027-09-30",
+    "rent": 5000
+  },
+  "MN31-101": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-101",
+    "tenant": "M/S Special Numberz Trading",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 6000
+  },
+  "MN31-102": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-102",
+    "tenant": "Mr. Sandeep Kumar Narayanan Panuvelil",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 4500
+  },
+  "MN31-103": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-103",
+    "tenant": "M/S Al Saad Sport Club",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5800
+  },
+  "MN31-201": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-201",
+    "tenant": "Mr. Rama Krishna Sriramoju",
+    "start": "2025-12-15",
+    "end": "2026-12-14",
+    "rent": 5900
+  },
+  "MN31-202": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-202",
+    "tenant": "Mr. Tawiwut Charuwat",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 4750
+  },
+  "MN31-203": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-203",
+    "tenant": "Ms. Abilasha Soni",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5700
+  },
+  "MN31-301": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-301",
+    "tenant": "Mr. Manel Fatten",
+    "start": "2025-12-15",
+    "end": "2026-12-14",
+    "rent": 5800
+  },
+  "MN31-302": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-302",
+    "tenant": "Mr. Mohammed Ajmal Kothikal",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 4500
+  },
+  "MN31-303": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-303",
+    "tenant": "Ms. Yogalekshmi Selvanathan",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5800
+  },
+  "MN31-401": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-401",
+    "tenant": "Mr. Jasmeet Singh Bal",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 6000
+  },
+  "MN31-402": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-402",
+    "tenant": "Mr. Sunil Thapa",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 4500
+  },
+  "MN31-403": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-403",
+    "tenant": "Mr. Amir Hesham Mohamed Osman Rezk",
+    "start": "2025-12-15",
+    "end": "2026-12-14",
+    "rent": 5800
+  },
+  "MN31-501": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-501",
+    "tenant": "Mr. Bulchandani Ramesh Narsing Dasji",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 6000
+  },
+  "MN31-502": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-502",
+    "tenant": "Mr. Rameel Sher Khan",
+    "start": "2025-12-15",
+    "end": "2026-12-14",
+    "rent": 4500
+  },
+  "MN31-503": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-503",
+    "tenant": "Mr. Mazen Jaber",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5700
+  },
+  "MN31-00": {
+    "property": "Al Ameen Residence 31",
+    "propertyCode": "MN31",
+    "unit": "MN31-00",
+    "tenant": "Mr. Mohamed Soliman",
+    "start": "2025-11-10",
+    "end": "2026-11-09",
+    "rent": 3000
+  },
+  "MN32-05": {
+    "property": "Al Ameen Residence 32",
+    "propertyCode": "MN32",
+    "unit": "MN32-05",
+    "tenant": "Mr. Akram Hassan",
+    "start": "2025-08-15",
+    "end": "2027-08-14",
+    "rent": 4800
+  },
+  "MN33-39": {
+    "property": "Al Ameen Residence 33",
+    "propertyCode": "MN33",
+    "unit": "MN33-39",
+    "tenant": "Mr. Selvamuthukumaran Ramalingam",
+    "start": "2026-03-01",
+    "end": "2027-02-28",
+    "rent": 4900
+  },
+  "NA71-01": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-01",
+    "tenant": "Mr. Nader A A Qudeimat",
+    "start": "2026-03-15",
+    "end": "2027-03-31",
+    "rent": 5800
+  },
+  "NA71-02": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-02",
+    "tenant": "M/S Crompton International Trading",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 6000
+  },
+  "NA71-03": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-03",
+    "tenant": "Ms. Sandra Anne Francis Xavier",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5900
+  },
+  "NA71-04": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-04",
+    "tenant": "Mr. Mohamedalmogtba Abbas",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5700
+  },
+  "NA71-05": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-05",
+    "tenant": "Mr. Ahmad Hasan Bader Ibrahim Aqel",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6700
+  },
+  "NA71-06": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-06",
+    "tenant": "Mr. Yousef Mohammad Nassar",
+    "start": "2026-03-10",
+    "end": "2027-03-09",
+    "rent": 5800
+  },
+  "NA71-07": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-07",
+    "tenant": "Ms. Hanan Ghazi H Mubarak",
+    "start": "2026-03-01",
+    "end": "2027-02-28",
+    "rent": 6000
+  },
+  "NA71-08": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-08",
+    "tenant": "Mr. Mohamed Aboulazayem Hassan Abooh",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 5900
+  },
+  "NA71-09": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-09",
+    "tenant": "Ms. Ghada Kristou",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5600
+  },
+  "NA71-10": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-10",
+    "tenant": "Mr. Mousa Mohammad Mousa Abu Ahhoud",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 6200
+  },
+  "NA71-11": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-11",
+    "tenant": "Mr. Afroz Ahmed",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6700
+  },
+  "NA71-12": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-12",
+    "tenant": "Ms. Katerina Antevska",
+    "start": "2026-04-20",
+    "end": "2027-04-19",
+    "rent": 6400
+  },
+  "NA71-13": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-13",
+    "tenant": "Mr. Yusuf Raoof",
+    "start": "2026-03-25",
+    "end": "2027-03-24",
+    "rent": 6700
+  },
+  "NA71-14": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-14",
+    "tenant": "Ms. Hamda Ahmed Abdi",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 6500
+  },
+  "NA71-15": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-15",
+    "tenant": "Mr. Satish Saini Ramesh",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 6200
+  },
+  "NA71-16": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-16",
+    "tenant": "Mr. Bilal Inayat Inayatullah",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 6800
+  },
+  "NA71-17": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-17",
+    "tenant": "Mr. Karim Bakar",
+    "start": "2026-04-20",
+    "end": "2027-04-19",
+    "rent": 6600
+  },
+  "NA71-18": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-18",
+    "tenant": "M/S Mace Qatar Contracting & Eng'g",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 6500
+  },
+  "NA71-19": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-19",
+    "tenant": "Mr. Samer Hisham Aljogol",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6700
+  },
+  "NA71-20": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-20",
+    "tenant": "Mr. Nareshkumar Chandrasekaran",
+    "start": "2026-04-05",
+    "end": "2027-04-04",
+    "rent": 6500
+  },
+  "NA71-21": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-21",
+    "tenant": "Mr. Faisal Ahmad Ballan",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6200
+  },
+  "NA71-22": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-22",
+    "tenant": "Mr. George Chacko Chacko Varghese",
+    "start": "2026-03-20",
+    "end": "2027-03-19",
+    "rent": 6800
+  },
+  "NA71-23": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-23",
+    "tenant": "Mr. Yahia Zakaria Kamaleldin Albahy",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6800
+  },
+  "NA71-24": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-24",
+    "tenant": "Mr. Ramakrishnan Sundaram Sundaram",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6400
+  },
+  "NA71-25": {
+    "property": "Al Ameen Residence 71",
+    "propertyCode": "NA71",
+    "unit": "NA71-25",
+    "tenant": "Mr. Ali Sufian Muhammad Ashraf",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 6300
+  },
+  "PQ50-101": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-101",
+    "tenant": "Mr. Ahmad Itani",
+    "start": "2026-07-10",
+    "end": "2027-08-09",
+    "rent": 7150
+  },
+  "PQ50-102": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-102",
+    "tenant": "Mr. Amir Hamze Rani Bazzi",
+    "start": "2026-02-01",
+    "end": "2027-02-28",
+    "rent": 7400
+  },
+  "PQ50-103": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-103",
+    "tenant": "Mr. Abdallah Nidal Esam Alboukhari",
+    "start": "2026-07-01",
+    "end": "2027-07-31",
+    "rent": 7100
+  },
+  "PQ50-104": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-104",
+    "tenant": "Mr. Feysal Awil Hassan",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 7400
+  },
+  "PQ50-105": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-105",
+    "tenant": "Ms. Mays Jamal Ghaith",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 7300
+  },
+  "PQ50-106": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-106",
+    "tenant": "Ms. Sabrine Ferjani",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 7000
+  },
+  "PQ50-107": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-107",
+    "tenant": "Mr. Mazen Fattah",
+    "start": "2026-09-01",
+    "end": "2027-09-30",
+    "rent": 7350
+  },
+  "PQ50-108": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-108",
+    "tenant": "Mr. Aituar Kenges",
+    "start": "2026-09-01",
+    "end": "2027-09-30",
+    "rent": 7500
+  },
+  "PQ50-201": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-201",
+    "tenant": "Ms. Samantha Khadine Anushka Mohammed",
+    "start": "2025-10-20",
+    "end": "2026-11-19",
+    "rent": 7700
+  },
+  "PQ50-202": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-202",
+    "tenant": "M/s Katara RCHD",
+    "start": "2025-02-20",
+    "end": "2027-02-19",
+    "rent": 7500
+  },
+  "PQ50-203": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-203",
+    "tenant": "Ms. Tatiana Efimova",
+    "start": "2026-09-15",
+    "end": "2027-10-14",
+    "rent": 7015
+  },
+  "PQ50-204": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-204",
+    "tenant": "Mr.Alan Deans Walters Palmer",
+    "start": "2025-01-05",
+    "end": "2027-01-04",
+    "rent": 7700
+  },
+  "PQ50-205": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-205",
+    "tenant": "Mr. Eyad K A Elkhorebi",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 7800
+  },
+  "PQ50-206": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-206",
+    "tenant": "Ms. Heba Mohamed Magdy Mahmoud Gheith",
+    "start": "2025-01-01",
+    "end": "2027-01-31",
+    "rent": 7400
+  },
+  "PQ50-207": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-207",
+    "tenant": "Mr. Stefan Sudimac",
+    "start": "2026-07-01",
+    "end": "2027-01-31",
+    "rent": 7200
+  },
+  "PQ50-208": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-208",
+    "tenant": "M/s Katara RCHD",
+    "start": "2026-09-15",
+    "end": "2027-09-14",
+    "rent": 7000
+  },
+  "PQ50-301": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-301",
+    "tenant": "Mr. Rony Jean Ramady",
+    "start": "2026-05-26",
+    "end": "2027-06-25",
+    "rent": 7600
+  },
+  "PQ50-302": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-302",
+    "tenant": "Mr. Ahmad Bilal",
+    "start": "2026-06-01",
+    "end": "2027-06-30",
+    "rent": 7400
+  },
+  "PQ50-303": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-303",
+    "tenant": "M/s Katara RCHD",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 7500
+  },
+  "PQ50-304": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-304",
+    "tenant": "Mr. Lalit Taneja",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 7500
+  },
+  "PQ50-305": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-305",
+    "tenant": "Ms. Thalia Katiuska Ortiz del Valle",
+    "start": "2025-11-01",
+    "end": "2026-11-30",
+    "rent": 7700
+  },
+  "PQ50-306": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-306",
+    "tenant": "Mr. Albert Biosca Caro",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 7300
+  },
+  "PQ50-307": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-307",
+    "tenant": "Mr. Ihar Selivonchyk",
+    "start": "2025-12-01",
+    "end": "2027-01-31",
+    "rent": 6831
+  },
+  "PQ50-308": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-308",
+    "tenant": "Ms. Adina Hardi Bidin",
+    "start": "2026-01-01",
+    "end": "2027-01-31",
+    "rent": 7293
+  },
+  "PQ50-401": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-401",
+    "tenant": "Mr. Hamad Anwar H A Albuaijan",
+    "start": "2026-03-01",
+    "end": "2026-12-31",
+    "rent": 7300
+  },
+  "PQ50-402": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-402",
+    "tenant": "Mr. Mohammad Firsham Bin Abdullah",
+    "start": "2026-05-25",
+    "end": "2027-05-24",
+    "rent": 7500
+  },
+  "PQ50-403": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-403",
+    "tenant": "Ms. Raihana Daghrour",
+    "start": "2026-08-20",
+    "end": "2027-09-19",
+    "rent": 7015
+  },
+  "PQ50-404": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-404",
+    "tenant": "Mr. Seif Issam Samaan Aibefe",
+    "start": "2026-05-10",
+    "end": "2027-07-09",
+    "rent": 7600
+  },
+  "PQ50-405": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-405",
+    "tenant": "Mr. Abdouhak Madaoui",
+    "start": "2025-11-01",
+    "end": "2026-11-30",
+    "rent": 7292
+  },
+  "PQ50-406": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-406",
+    "tenant": "Ms. Rania Mneimneh",
+    "start": "2026-04-01",
+    "end": "2027-04-30",
+    "rent": 7500
+  },
+  "PQ50-407": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-407",
+    "tenant": "Ms. Shalaka Bharade",
+    "start": "2026-05-22",
+    "end": "2027-06-21",
+    "rent": 7500
+  },
+  "PQ50-408": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-408",
+    "tenant": "Mr. Bojan Sestan",
+    "start": "2025-08-01",
+    "end": "2027-08-31",
+    "rent": 6900
+  },
+  "PQ50-501": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-501",
+    "tenant": "Ms. Ei Ei Htun",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 7293
+  },
+  "PQ50-502": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-502",
+    "tenant": "Mr. Charly Joseph Wehbe",
+    "start": "2025-12-25",
+    "end": "2027-01-24",
+    "rent": 7700
+  },
+  "PQ50-503": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-503",
+    "tenant": "Ms. Claire Marie Dela Cruz Drilon",
+    "start": "2025-09-01",
+    "end": "2026-09-30",
+    "rent": 7700
+  },
+  "PQ50-504": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-504",
+    "tenant": "Mr. Thanh Thinh Tran",
+    "start": "2025-12-10",
+    "end": "2026-12-09",
+    "rent": 7500
+  },
+  "PQ50-505": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-505",
+    "tenant": "Ms. Tassadit Gharbi",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 7600
+  },
+  "PQ50-506": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-506",
+    "tenant": "Me. Michelle Jane Asafu Adjaye",
+    "start": "2026-07-01",
+    "end": "2027-07-31",
+    "rent": 7500
+  },
+  "PQ50-507": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-507",
+    "tenant": "Mr. Haytem Khouild",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 7500
+  },
+  "PQ50-508": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-508",
+    "tenant": "Mr. Jose Alberto Montenegro Carvallo",
+    "start": "2026-02-01",
+    "end": "2027-02-28",
+    "rent": 7800
+  },
+  "PQ50-601": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-601",
+    "tenant": "Mr. Yousef Mohammed Abubaker",
+    "start": "2026-03-01",
+    "end": "2027-03-31",
+    "rent": 7000
+  },
+  "PQ50-602": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-602",
+    "tenant": "Ms. Jamilya Parkina",
+    "start": "2026-02-01",
+    "end": "2027-02-28",
+    "rent": 7500
+  },
+  "PQ50-603": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-603",
+    "tenant": "Ms. Leia Bassam Bassam",
+    "start": "2026-04-20",
+    "end": "2027-04-19",
+    "rent": 7700
+  },
+  "PQ50-604": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-604",
+    "tenant": "Mr. Hassan Youssef",
+    "start": "2026-02-01",
+    "end": "2027-02-28",
+    "rent": 7600
+  },
+  "PQ50-605": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-605",
+    "tenant": "Ms. Yasmine Sabra",
+    "start": "2025-12-01",
+    "end": "2026-12-31",
+    "rent": 7600
+  },
+  "PQ50-606": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-606",
+    "tenant": "Mr. Bongane Edmond Shangwe",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 7500
+  },
+  "PQ50-607": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-607",
+    "tenant": "Mr. Barakat Zeyad Barakat Aladwan",
+    "start": "2026-02-15",
+    "end": "2027-04-14",
+    "rent": 6923
+  },
+  "PQ50-608": {
+    "property": "Al Ameen Residence 50",
+    "propertyCode": "PQ50",
+    "unit": "PQ50-608",
+    "tenant": "Ms. Mariam Hasan Mohammad Ibrahim",
+    "start": "2026-06-01",
+    "end": "2027-06-30",
+    "rent": 7800
+  },
+  "BO61-01": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-01",
+    "tenant": "Ms. Jeynee Jacinto",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 5000
+  },
+  "BO61-02": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-02",
+    "tenant": "Ms. Elinor Radam Laja",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 5300
+  },
+  "BO61-03": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-03",
+    "tenant": "Mr. Hussein Younes Jaber",
+    "start": "2025-08-10",
+    "end": "2027-08-09",
+    "rent": 5100
+  },
+  "BO61-04": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-04",
+    "tenant": "Mr. Farhan Siraj",
+    "start": "2025-12-15",
+    "end": "2026-12-31",
+    "rent": 5000
+  },
+  "BO61-05": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-05",
+    "tenant": "Mr. Basel Ahmad Sudqi Hamdan",
+    "start": "2025-09-15",
+    "end": "2027-09-14",
+    "rent": 5000
+  },
+  "BO61-06": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-06",
+    "tenant": "Mr. Anwar Mahmoud Shibli",
+    "start": "2026-12-01",
+    "end": "2027-05-31",
+    "rent": 5300
+  },
+  "BO61-07": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-07",
+    "tenant": "Mr. Abdelrahman Mahmoud Soliman",
+    "start": "2025-02-01",
+    "end": "2027-01-31",
+    "rent": 5200
+  },
+  "BO61-08": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-08",
+    "tenant": "Ms. Ria Mary",
+    "start": "2025-03-20",
+    "end": "2027-03-19",
+    "rent": 5200
+  },
+  "BO61-09": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-09",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO61-10": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-10",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO61-11": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-11",
+    "tenant": "Ms. Mekhna Ann George",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5300
+  },
+  "BO61-12": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-12",
+    "tenant": "Mr. Omar S Bouassi",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 5300
+  },
+  "BO61-13": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-13",
+    "tenant": "Mr. Bassel Ali Hammoud",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 5200
+  },
+  "BO61-14": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-14",
+    "tenant": "Mr. Shadi Nino",
+    "start": "2026-12-01",
+    "end": "2027-01-31",
+    "rent": 5000
+  },
+  "BO61-15": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-15",
+    "tenant": "Ms. Honeylaine Gleezell  Paras",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 5300
+  },
+  "BO61-16": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-16",
+    "tenant": "Mr. Nikhil Neelakanta Puthran",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5200
+  },
+  "BO61-17": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-17",
+    "tenant": "Mr. Mohamed Swedan",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 5100
+  },
+  "BO61-18": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-18",
+    "tenant": "Ms. Khaoula Arfaoui",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 5000
+  },
+  "BO61-19": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-19",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "BO61-20": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-20",
+    "tenant": "Ms. Krethlyne Del Rosario Paraiso",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 5200
+  },
+  "BO61-21": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-21",
+    "tenant": "Mr. Muralidharan Thenozhy Vadassery",
+    "start": "2025-08-15",
+    "end": "2027-08-14",
+    "rent": 5300
+  },
+  "BO61-22": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-22",
+    "tenant": "Mr. Rajesh Thenguvila Krishnan",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 5200
+  },
+  "BO61-23": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-23",
+    "tenant": "Mr. Siraj Ahamed Abul Kasim",
+    "start": "2026-01-16",
+    "end": "2027-01-15",
+    "rent": 5200
+  },
+  "BO61-24": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-24",
+    "tenant": "Mr. Muhammad Asif M Ilyas",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 5300
+  },
+  "BO61-25": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-25",
+    "tenant": "Mr. Mustafa Mohamed Gany",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 4800
+  },
+  "BO61-26": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-26",
+    "tenant": "Mr. Azeem Farooque Kotwal",
+    "start": "2026-06-15",
+    "end": "2027-06-14",
+    "rent": 5300
+  },
+  "BO61-27": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-27",
+    "tenant": "Mr. Hani Mohd Hashem Ahmed S",
+    "start": "2026-02-01",
+    "end": "2027-01-01",
+    "rent": 5200
+  },
+  "BO61-28": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-28",
+    "tenant": "Mr. Samar Khan",
+    "start": "2026-09-01",
+    "end": "2027-08-31",
+    "rent": 5000
+  },
+  "BO61-29": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-29",
+    "tenant": "Mr. Moath Mohammad Suleiman Banimelhem",
+    "start": "2026-09-06",
+    "end": "2027-09-05",
+    "rent": 5100
+  },
+  "BO61-30": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-30",
+    "tenant": "Mr. Mohamed Fazil Silingi Nizamuddin",
+    "start": "2026-07-15",
+    "end": "2027-07-14",
+    "rent": 5300
+  },
+  "BO61-31": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-31",
+    "tenant": "Mr. Hassan Sherif Mahmoud Elsherief",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 5300
+  },
+  "BO61-32": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-32",
+    "tenant": "Mr. MHD Khir Oughli",
+    "start": "2026-06-01",
+    "end": "2027-06-30",
+    "rent": 5300
+  },
+  "BO61-33": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-33",
+    "tenant": "Mr. Leon Manil Pius W. Fernndo",
+    "start": "2026-07-15",
+    "end": "2027-07-14",
+    "rent": 5200
+  },
+  "BO61-34": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-34",
+    "tenant": "Mr. PadmaPrabah Mavila Veetil",
+    "start": "2026-03-10",
+    "end": "2027-03-09",
+    "rent": 5400
+  },
+  "BO61-35": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-35",
+    "tenant": "Mr. Marco Maher Noose Bushra",
+    "start": "2026-03-15",
+    "end": "2027-03-31",
+    "rent": 5200
+  },
+  "BO61-36": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-36",
+    "tenant": "Mr. Arjun Narahari Rao",
+    "start": "2026-04-25",
+    "end": "2027-04-30",
+    "rent": 5400
+  },
+  "BO61-37": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-37",
+    "tenant": "Mr. Akram Ghassan Alkhoury",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 6000
+  },
+  "BO61-38": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-38",
+    "tenant": "Mr. Nithin Ismail Nadeera Beevi",
+    "start": "2025-10-07",
+    "end": "2026-10-06",
+    "rent": 5200
+  },
+  "BO61-39": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-39",
+    "tenant": "Mr. Nazim Mohammad Shabir Momin",
+    "start": "2025-08-01",
+    "end": "2026-07-31",
+    "rent": 5100
+  },
+  "BO61-40": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-40",
+    "tenant": "Mr. Zaid Majed E Alsajjan",
+    "start": "2026-01-25",
+    "end": "2027-01-24",
+    "rent": 5200
+  },
+  "BO61-41": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-41",
+    "tenant": "Mr. Moetez Zribi",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 5300
+  },
+  "BO61-42": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-42",
+    "tenant": "Mr. Naser Shams Aldeen Mousa Husein",
+    "start": "2025-09-01",
+    "end": "2026-09-30",
+    "rent": 5100
+  },
+  "BO61-43": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-43",
+    "tenant": "Mr. Ronaldo Gilles Villafranca",
+    "start": "2026-01-25",
+    "end": "2027-01-31",
+    "rent": 5100
+  },
+  "BO61-44": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-44",
+    "tenant": "Ms. Aisha Gul Nawaz",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5100
+  },
+  "BO61-45": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-45",
+    "tenant": "Ms. Safa Barhoumi",
+    "start": "2025-08-25",
+    "end": "2027-08-24",
+    "rent": 5100
+  },
+  "BO61-46": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-46",
+    "tenant": "Ms. Ajinimol Siju",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5400
+  },
+  "BO61-47": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-47",
+    "tenant": "Mr. Akram Inad Karme",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 5500
+  },
+  "BO61-48": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-48",
+    "tenant": "Mr. Adham Ahmed",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5100
+  },
+  "BO61-49": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-49",
+    "tenant": "Ms. Luanne Marie Torres de Gracia",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5300
+  },
+  "BO61-50": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-50",
+    "tenant": "Mr. Mohammed Ammaruddin Zahiruddin",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 5300
+  },
+  "BO61-51": {
+    "property": "Al Ameen Residence 61",
+    "propertyCode": "BO61",
+    "unit": "BO61-51",
+    "tenant": "Mr. Muhammad Azam",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5200
+  },
+  "OA24-01": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-01",
+    "tenant": "Mr. Roy Harfouche",
+    "start": "2026-05-20",
+    "end": "2027-05-19",
+    "rent": 6000
+  },
+  "OA24-02": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-02",
+    "tenant": "Mr. Swaminathan Sundararajan",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4900
+  },
+  "OA24-03": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-03",
+    "tenant": "Qatar Kentz",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 6750
+  },
+  "OA24-04": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-04",
+    "tenant": "Ms. Marissa Pigao Espano",
+    "start": "2026-01-20",
+    "end": "2027-01-19",
+    "rent": 5000
+  },
+  "OA24-05": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-05",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OA24-06": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-06",
+    "tenant": "Mr. Dinesh Kumar Natheshan",
+    "start": "2026-06-15",
+    "end": "2027-06-14",
+    "rent": 4800
+  },
+  "OA24-07": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-07",
+    "tenant": "Larsen and Toubro Limited",
+    "start": "2025-12-01",
+    "end": "2026-11-30",
+    "rent": 6000
+  },
+  "OA24-08": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-08",
+    "tenant": "Mr. Ritesh Saini",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 4800
+  },
+  "OA24-09": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-09",
+    "tenant": "Qatar Kentz",
+    "start": "2026-11-08",
+    "end": "2027-02-07",
+    "rent": 5150
+  },
+  "OA24-10": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-10",
+    "tenant": "Mr. Devadas Pappu",
+    "start": "2026-04-07",
+    "end": "2027-04-06",
+    "rent": 4900
+  },
+  "OA24-11": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-11",
+    "tenant": "Qatar Kentz",
+    "start": "2025-05-16",
+    "end": "2026-11-15",
+    "rent": 6750
+  },
+  "OA24-12": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-12",
+    "tenant": "Mr. Edwin Bright Varuvel Chellappan",
+    "start": "2026-03-15",
+    "end": "2027-03-14",
+    "rent": 5000
+  },
+  "OA24-13": {
+    "property": "Al Ameen Residence 24",
+    "propertyCode": "OA24",
+    "unit": "OA24-13",
+    "tenant": "Mr. Omar Abou Rehab H Mahmoud",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 4700
+  },
+  "OA25-01": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-01",
+    "tenant": "M/s.Embassy of Pakistan",
+    "start": "2025-09-15",
+    "end": "2026-09-14",
+    "rent": 5500
+  },
+  "OA25-02": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-02",
+    "tenant": "Mr. Gopala Krishnan Ramalingam",
+    "start": "2026-07-05",
+    "end": "2027-07-04",
+    "rent": 5200
+  },
+  "OA25-03": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-03",
+    "tenant": "Mr. Ujwal Thayyil Keezhana",
+    "start": "2026-01-08",
+    "end": "2027-01-07",
+    "rent": 5100
+  },
+  "OA25-04": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-04",
+    "tenant": "Qatar Kentz",
+    "start": "2026-09-10",
+    "end": "2026-12-09",
+    "rent": 10000
+  },
+  "OA25-05": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-05",
+    "tenant": "Mr. Hasin Syed",
+    "start": "2026-09-10",
+    "end": "2028-09-09",
+    "rent": 5000
+  },
+  "OA25-06": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-06",
+    "tenant": "Mr. Shabbir Iqbal Mamsa",
+    "start": "2025-04-01",
+    "end": "2027-03-31",
+    "rent": 5300
+  },
+  "OA25-07": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-07",
+    "tenant": "Qatar Kentz",
+    "start": "2026-02-01",
+    "end": "2026-07-31",
+    "rent": 6750
+  },
+  "OA25-08": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-08",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OA25-09": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-09",
+    "tenant": "Mr. Mahmoud Eid",
+    "start": "2026-09-01",
+    "end": "2028-08-31",
+    "rent": 5300
+  },
+  "OA25-10": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-10",
+    "tenant": "Mr. Satish M Nair",
+    "start": "2026-08-01",
+    "end": "2028-07-31",
+    "rent": 5300
+  },
+  "OA25-11": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-11",
+    "tenant": "Ms. Shraddha Sanjeev Patil",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 5100
+  },
+  "OA25-12": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-12",
+    "tenant": "Qatar Kentz",
+    "start": "2026-03-16",
+    "end": "2026-09-15",
+    "rent": 6750
+  },
+  "OA25-13": {
+    "property": "Al Ameen Residence 25",
+    "propertyCode": "OA25",
+    "unit": "OA25-13",
+    "tenant": "Qatar Kentz",
+    "start": "2026-06-01",
+    "end": "2026-11-30",
+    "rent": 6750
+  },
+  "WK95-01": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-01",
+    "tenant": "Mr. Syed Hazim Wasit",
+    "start": "2025-08-01",
+    "end": "2027-08-31",
+    "rent": 5700
+  },
+  "WK95-02": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-02",
+    "tenant": "Mr. Shailesh Lanjewar",
+    "start": "2026-04-15",
+    "end": "2027-04-14",
+    "rent": 4700
+  },
+  "WK95-03": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-03",
+    "tenant": "Mr. Abdul Buhari Abdul Kadar",
+    "start": "2026-01-20",
+    "end": "2027-02-19",
+    "rent": 5800
+  },
+  "WK95-04": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-04",
+    "tenant": "Mr. Sajjad Ali Mohammed",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 5500
+  },
+  "WK95-05": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-05",
+    "tenant": "Mr. Ashraf Ali Hassan Mohamed Abdulkader",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 4800
+  },
+  "WK95-06": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-06",
+    "tenant": "Mr. Salman Sajjad",
+    "start": "2026-03-25",
+    "end": "2027-03-24",
+    "rent": 5700
+  },
+  "WK95-07": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-07",
+    "tenant": "Mr. Rajendran Karunakaran",
+    "start": "2026-03-25",
+    "end": "2027-03-24",
+    "rent": 5700
+  },
+  "WK95-08": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-08",
+    "tenant": "Mr. Gabriel Anthony Dmello",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4700
+  },
+  "WK95-09": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-09",
+    "tenant": "Mr. Mohamed Ahmed A Mohamed",
+    "start": "2026-02-20",
+    "end": "2027-02-19",
+    "rent": 5800
+  },
+  "WK95-10": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-10",
+    "tenant": "Ms. Yashna MoodleY",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 4750
+  },
+  "WK95-11": {
+    "property": "Al Ameen Residence 95",
+    "propertyCode": "WK95",
+    "unit": "WK95-11",
+    "tenant": "Mr. Anwar Pothuvil Shamsudin",
+    "start": "2026-04-01",
+    "end": "2027-04-30",
+    "rent": 2500
+  },
+  "MG90-01": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-01",
+    "tenant": "Qatar Kentz",
+    "start": "2026-01-16",
+    "end": "2026-10-15",
+    "rent": 5000
+  },
+  "MG90-02": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-02",
+    "tenant": "Mr. Sumith Buddhika A Mudalige",
+    "start": "2025-07-20",
+    "end": "2027-07-19",
+    "rent": 3800
+  },
+  "MG90-03": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-03",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MG90-04": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-04",
+    "tenant": "Mr. Augustus Kormla Agbemavi",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 3700
+  },
+  "MG90-05": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-05",
+    "tenant": "Mr. Rakesh Pandit Aseshwar Pandit",
+    "start": "2026-05-01",
+    "end": "2027-05-31",
+    "rent": 4000
+  },
+  "MG90-06": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-06",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MG90-07": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-07",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MG90-08": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-08",
+    "tenant": "Ms. Souha Zairi",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 3600
+  },
+  "MG90-09": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-09",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MG90-10": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-10",
+    "tenant": "Mr. Bashir Ahmed A S Dawood",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 3800
+  },
+  "MG90-11": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-11",
+    "tenant": "Mr. Rahul Nediyedath Rathnakaran",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 3800
+  },
+  "MG90-12": {
+    "property": "Al Ameen Residence 90",
+    "propertyCode": "MG90",
+    "unit": "MG90-12",
+    "tenant": "Mr. Shown Munjanattu Cherian",
+    "start": "2026-05-25",
+    "end": "2027-05-24",
+    "rent": 3600
+  },
+  "MG91-03": {
+    "property": "Al Ameen Residence 91",
+    "propertyCode": "MG91",
+    "unit": "MG91-03",
+    "tenant": "Mr. Masrooh Ahammed",
+    "start": "2026-12-20",
+    "end": "2027-04-19",
+    "rent": 3500
+  },
+  "MS80-01": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-01",
+    "tenant": "Mr. Jaison Jose Chakkalakkal Devassy",
+    "start": "2026-07-15",
+    "end": "2027-07-14",
+    "rent": 3800
+  },
+  "MS80-02": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-02",
+    "tenant": "Mr. Taha Zebdi",
+    "start": "2026-01-10",
+    "end": "2027-01-09",
+    "rent": 3800
+  },
+  "MS80-03": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-03",
+    "tenant": "Mr. Harish Kurupathi Parambil",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 3900
+  },
+  "MS80-04": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-04",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MS80-05": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-05",
+    "tenant": "Mr. Rajan Suresh Kumar",
+    "start": "2026-07-10",
+    "end": "2027-07-09",
+    "rent": 3800
+  },
+  "MS80-06": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-06",
+    "tenant": "Mr. Syed Shaz Areeb",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 4000
+  },
+  "MS80-07": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-07",
+    "tenant": "Mr. Venkaiah Gara Jalaiah Gara",
+    "start": "2025-09-01",
+    "end": "2026-08-31",
+    "rent": 3900
+  },
+  "MS80-08": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-08",
+    "tenant": "Mr. Manesh Satheesh Chandran Sreenadesan",
+    "start": "2025-11-05",
+    "end": "2026-11-04",
+    "rent": 3900
+  },
+  "MS80-09": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-09",
+    "tenant": "Mr. Fuad Zaneen Ovinakath",
+    "start": "2026-07-01",
+    "end": "2027-06-30",
+    "rent": 4100
+  },
+  "MS80-10": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-10",
+    "tenant": "Mr. John Britto Fernandez",
+    "start": "2026-03-12",
+    "end": "2027-03-11",
+    "rent": 3800
+  },
+  "MS80-11": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-11",
+    "tenant": "Mr. Varun Chanrakantbai",
+    "start": "2026-02-20",
+    "end": "2027-02-19",
+    "rent": 3800
+  },
+  "MS80-12": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-12",
+    "tenant": "Mr. Manoj Kumar Jain",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 3800
+  },
+  "MS80-13": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-13",
+    "tenant": "Mr. Gouse Pasha Shaik Chand Miya",
+    "start": "2026-05-01",
+    "end": "2027-04-30",
+    "rent": 3800
+  },
+  "MS80-14": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-14",
+    "tenant": "Mr. Dranreb A. Marcellana",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 4000
+  },
+  "MS80-15": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-15",
+    "tenant": "Mr. Milind Sukchandra Nagrale",
+    "start": "2026-01-01",
+    "end": "2027-03-31",
+    "rent": 3900
+  },
+  "MS80-16": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-16",
+    "tenant": "Ms. Pavani T Thottimpudi",
+    "start": "2025-08-01",
+    "end": "2026-10-31",
+    "rent": 4000
+  },
+  "MS80-17": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-17",
+    "tenant": "Mr. Anup Prabhakaran Nair",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 4000
+  },
+  "MS80-18": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-18",
+    "tenant": "Mr. Anish Digambar",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 3800
+  },
+  "MS80-19": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-19",
+    "tenant": "Mr. Ganeshamani Neela Pakkia Mani",
+    "start": "2026-05-25",
+    "end": "2027-05-24",
+    "rent": 3800
+  },
+  "MS80-20": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-20",
+    "tenant": "Mr. Abdul Rafay Anwar Siddiqui",
+    "start": "2025-10-05",
+    "end": "2026-10-04",
+    "rent": 4000
+  },
+  "MS80-21": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-21",
+    "tenant": "Ms. Girija Ramamurth",
+    "start": "2015-12-01",
+    "end": "2026-11-30",
+    "rent": 4000
+  },
+  "MS80-22": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-22",
+    "tenant": "Mr. Arsalan Ahmed Nafees Ahmed",
+    "start": "2025-10-01",
+    "end": "2026-09-30",
+    "rent": 4000
+  },
+  "MS80-23": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-23",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "MS80-24": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-24",
+    "tenant": "Mr. Akshay Jadav",
+    "start": "2026-09-01",
+    "end": "2027-08-31",
+    "rent": 3800
+  },
+  "MS80-25": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-25",
+    "tenant": "Mr. Ayyappan Azhakesan Prasanna",
+    "start": "2026-04-10",
+    "end": "2027-04-09",
+    "rent": 3800
+  },
+  "MS80-26": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-26",
+    "tenant": "Mr. Muhammed Sherif Channanath",
+    "start": "2025-10-05",
+    "end": "2026-10-04",
+    "rent": 3800
+  },
+  "MS80-27": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-27",
+    "tenant": "Ms. Aniline C. Bellas",
+    "start": "2026-07-01",
+    "end": "2026-09-30",
+    "rent": 4200
+  },
+  "MS80-28": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-28",
+    "tenant": "Mr. Don Lakshan Liyanage",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 3800
+  },
+  "MS80-29": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-29",
+    "tenant": "Mr. Shyam Rajagopal Erikapatil M Rajagopal",
+    "start": "2026-05-25",
+    "end": "2027-05-24",
+    "rent": 3800
+  },
+  "MS80-30": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-30",
+    "tenant": "Mr. Haswar Kamaruddin",
+    "start": "2025-10-20",
+    "end": "2026-10-19",
+    "rent": 4000
+  },
+  "MS80-31": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-31",
+    "tenant": "Mr. Rupender Juyal",
+    "start": "2025-01-05",
+    "end": "2027-01-04",
+    "rent": 4000
+  },
+  "MS80-32": {
+    "property": "Al Ameen Residence 80",
+    "propertyCode": "MS80",
+    "unit": "MS80-32",
+    "tenant": "Mr. Suneel Mammudhoddi",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 3900
+  },
+  "BK96-01": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-01",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-02": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-02",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-03": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-03",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-04": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-04",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-05": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-05",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-07": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-07",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-08": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-08",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-09": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-09",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-10": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-10",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-11": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-11",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-12": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-12",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-13": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-13",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-14": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-14",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-15": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-15",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-05-01",
+    "end": "2026-10-31",
+    "rent": 4325
+  },
+  "BK96-16": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-16",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-17": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-17",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-18": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-18",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-20": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-20",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-21": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-21",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-22": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-22",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "BK96-23": {
+    "property": "Al Ameen Residence 96",
+    "propertyCode": "BK96",
+    "unit": "BK96-23",
+    "tenant": "M/s. Saipem S P A",
+    "start": "2026-07-01",
+    "end": "2026-12-31",
+    "rent": 4325
+  },
+  "OA22-01": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-01",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
+  },
+  "OA22-02": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-02",
+    "tenant": "Mr. Shamnad Shamsudeen",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 5800
+  },
+  "OA22-03": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-03",
+    "tenant": "Qatar Kentz",
+    "start": "2026-06-04",
+    "end": "2026-09-03",
+    "rent": 6500
+  },
+  "OA22-04": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-04",
+    "tenant": "Qatar Kentz",
+    "start": "2026-06-01",
+    "end": "2026-09-30",
+    "rent": 6500
+  },
+  "OA22-05": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-05",
+    "tenant": "Tenis Shop",
+    "start": "2025-08-01",
+    "end": "2026-07-31",
+    "rent": 3500
+  },
+  "OA23-01": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-01",
+    "tenant": "Qatar Kentz",
+    "start": "2026-06-22",
+    "end": "2026-10-21",
+    "rent": 6500
+  },
+  "OA23-02": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-02",
+    "tenant": "Mr. Vikesh Pala Satchithanamtham",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 4500
+  },
+  "OA23-03": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-03",
+    "tenant": "Mr. Abdul Majeed Nalakath P Hamza",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 5400
+  },
+  "OA23-04": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-04",
+    "tenant": "Mr. Mudappala Krishnakumar",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5300
+  },
+  "OA23-05": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-05",
+    "tenant": "Mr. Mohammed Shahbaz Khan",
+    "start": "2026-03-01",
+    "end": "2027-02-28",
+    "rent": 4100
+  },
+  "OA23-06": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-06",
+    "tenant": "Ms. Zinel Arroz Umadhay",
+    "start": "2026-03-15",
+    "end": "2027-03-14",
+    "rent": 5500
+  },
+  "OA23-07": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-07",
+    "tenant": "Mr. Nael Abdelsamad",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 4000
+  },
+  "OA23-08": {
+    "property": "Al Ameen Residence 23",
+    "propertyCode": "OA23",
+    "unit": "OA23-08",
+    "tenant": "Mr. Lijo Joy",
+    "start": "2025-11-01",
+    "end": "2026-10-31",
+    "rent": 4500
+  },
+  "OA20-01": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-01",
+    "tenant": "Mr. Donnie Ray L. Calacal",
+    "start": "2026-06-01",
+    "end": "2027-05-31",
+    "rent": 5500
+  },
+  "OA20-02": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-02",
+    "tenant": "Mr. Hazem Mahmoud",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 4400
+  },
+  "OA20-03": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-03",
+    "tenant": "Mr. Sunil Lawrence D Souza",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5500
+  },
+  "OA20-04": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-04",
+    "tenant": "Mr.Edward Allan Andaluz Dee",
+    "start": "2025-08-01",
+    "end": "2027-07-31",
+    "rent": 5500
+  },
+  "OA20-05": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-05",
+    "tenant": "M/s. Axiom International W.L.L",
+    "start": "2025-11-15",
+    "end": "2026-11-14",
+    "rent": 5000
+  },
+  "OA20-06": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-06",
+    "tenant": "Mr. Binoth Lonen Victal",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 5500
+  },
+  "OA20-07": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-07",
+    "tenant": "Mr. Sreekumar Sreedharan Pillai",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 5500
+  },
+  "OA20-08": {
+    "property": "Al Ameen Residence 20",
+    "propertyCode": "OA20",
+    "unit": "OA20-08",
+    "tenant": "M/s. Qatar Qentz",
+    "start": "2026-01-02",
+    "end": "2027-03-01",
+    "rent": 6300
+  },
+  "OA21-01": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-01",
+    "tenant": "Alfanet Solutions",
+    "start": "2025-06-01",
+    "end": "2026-07-31",
+    "rent": 5500
+  },
+  "OA21-02": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-02",
+    "tenant": "Qatar Kentz",
+    "start": "2025-12-25",
+    "end": "2026-12-24",
+    "rent": 7750
+  },
+  "OA21-03": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-03",
+    "tenant": "Al Ameen Enterprise",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5000
+  },
+  "OA21-04": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-04",
+    "tenant": "Al Ameen Enterprise",
+    "start": "2026-01-01",
+    "end": "2026-12-31",
+    "rent": 5000
+  },
+  "OA21-05": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-05",
+    "tenant": "Mr. Deepak Raj",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 3400
+  },
+  "OA21-06": {
+    "property": "Al Ameen Residence 21",
+    "propertyCode": "OA21",
+    "unit": "OA21-06",
+    "tenant": "Mr. Karthekiyan Nagamuthu",
+    "start": "2026-09-01",
+    "end": "2027-08-31",
+    "rent": 3400
+  },
+  "OA26-V23": {
+    "property": "Al Ameen Residence 26",
+    "propertyCode": "OA26",
+    "unit": "OA26-V23",
+    "tenant": "Qatar Kentz",
+    "start": "2025-08-10",
+    "end": "2026-08-09",
+    "rent": 15000
+  },
+  "SD70-01": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-01",
+    "tenant": "Mr. Hassan Ahmed Nawab Ahmed",
+    "start": "2026-03-10",
+    "end": "2027-03-09",
+    "rent": 6000
+  },
+  "SD70-02": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-02",
+    "tenant": "Mr. Mohamed Saeed Mohamed Aboelgreed",
+    "start": "2026-08-01",
+    "end": "2027-07-31",
+    "rent": 5200
+  },
+  "SD70-03": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-03",
+    "tenant": "Ms. Rhoda Villamor Uy",
+    "start": "2026-02-01",
+    "end": "2027-01-31",
+    "rent": 6100
+  },
+  "SD70-04": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-04",
+    "tenant": "Mr. Sobhi Ibrahim",
+    "start": "2025-09-01",
+    "end": "2027-08-31",
+    "rent": 6200
+  },
+  "SD70-05": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-05",
+    "tenant": "Mr. Jethro Tull Mendoza Dela Cruz",
+    "start": "2026-02-15",
+    "end": "2027-02-14",
+    "rent": 5000
+  },
+  "SD70-06": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-06",
+    "tenant": "Ms. Zahra Mohamed Sharif",
+    "start": "2026-05-10",
+    "end": "2027-05-09",
+    "rent": 6000
+  },
+  "SD70-07": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-07",
+    "tenant": "Mr. Abdul Salam Sameer K Mulangatt",
+    "start": "2025-08-15",
+    "end": "2027-08-14",
+    "rent": 6200
+  },
+  "SD70-08": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-08",
+    "tenant": "Ms. Razel Ojeda Nueva",
+    "start": "2026-04-01",
+    "end": "2027-03-31",
+    "rent": 5100
+  },
+  "SD70-09": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-09",
+    "tenant": "Mr. Yamin Amin Mahmoud Zakarneh",
+    "start": "2025-10-01",
+    "end": "2027-09-30",
+    "rent": 6000
+  },
+  "SD70-10": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-10",
+    "tenant": "Mr. Mohammed Khder S Akkila",
+    "start": "2025-09-25",
+    "end": "2027-09-24",
+    "rent": 6000
+  },
+  "SD70-11": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-11",
+    "tenant": "Mr. Mohammed Maged Said Zaina",
+    "start": "2025-09-25",
+    "end": "2027-09-24",
+    "rent": 5000
+  },
+  "SD70-12": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-12",
+    "tenant": "Ms. Fatima N J Sh Hussein",
+    "start": "2025-10-01",
+    "end": "2027-09-30",
+    "rent": 6000
+  },
+  "SD70-13": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-13",
+    "tenant": "Mr. Renin John Mathew",
+    "start": "2026-01-01",
+    "end": "2027-01-31",
+    "rent": 6100
+  },
+  "SD70-14": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-14",
+    "tenant": "Mr. Ashraf Abdelrazek Elsayed",
+    "start": "2026-12-01",
+    "end": "2026-12-31",
+    "rent": 5500
+  },
+  "SD70-15": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-15",
+    "tenant": "Glamour Company",
+    "start": "2025-08-15",
+    "end": "2027-08-14",
+    "rent": 6300
+  },
+  "SD70-16": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-16",
+    "tenant": "Mr. Mahmoud Ghazal",
+    "start": "2025-08-01",
+    "end": "2026-08-31",
+    "rent": 6100
+  },
+  "SD70-17": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-17",
+    "tenant": "Ms. Maria Bethel Ezpeleta",
+    "start": "2026-10-01",
+    "end": "2027-09-30",
+    "rent": 5200
+  },
+  "SD70-18": {
+    "property": "Al Ameen Residence 70",
+    "propertyCode": "SD70",
+    "unit": "SD70-18",
+    "tenant": "Mr. Ali Bacharouche",
+    "start": "2025-01-01",
+    "end": "2026-12-31",
+    "rent": 6300
+  }
+}

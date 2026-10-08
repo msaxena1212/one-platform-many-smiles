@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
 
 const today = new Date();
 
@@ -487,30 +488,40 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       );
 
 
-      // Map existing relational leases
-      const existingLeases: PmsLease[] = (leasesRes.data || []).map((l: any) => ({
-        id: l.lease_number || l.id,
-        customerId: l.customer_id || "",
-        reservationId: l.id || "",
-        property: l.properties?.title || propMap.get(l.property_id) || "Property",
-        unit: unitMap.get(l.unit_id) || l.unit_ref || "Unit",
-        tenantName: canonicalName(l.customers?.full_name || l.tenant_name || "Tenant"),
-        startDate: l.commencement_date || "",
-        endDate: l.expiry_date || "",
-        monthlyRent: Number(l.rental_amount || 0),
-        securityDeposit: Number(l.security_deposit || 0),
-        pdcCount: Number(l.number_of_pdc || 12),
-        paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
-        gracePeriodDays: Number(l.grace_period_days || 7),
-        penalties: `${l.late_penalty_percentage || 0}%`,
-        maintenanceResponsibility: l.maintenance_responsibility || "Landlord",
-        utilityResponsibility: l.utility_responsibility || "Tenant",
-        parkingDetails: l.parking_details || "",
-        specialConditions: l.special_conditions || "",
-        noticePeriodDays: Number(l.notice_period_days || 30),
-        status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
-        collectionCompleted: true,
-      }));
+      // Map existing relational leases with exact dates from Excel Lease Master
+      const existingLeases: PmsLease[] = (leasesRes.data || []).map((l: any) => {
+        const uIdentifier = unitMap.get(l.unit_id) || l.unit_ref || l.unit || "";
+        const uKey = uIdentifier.toUpperCase().trim();
+        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+
+        const startDate = excelOverride?.start || l.commencement_date || "";
+        const endDate = excelOverride?.end || l.expiry_date || "";
+        const annualRent = excelOverride?.rent ? excelOverride.rent * 12 : Number(l.rental_amount || 0);
+
+        return {
+          id: l.lease_number || l.id,
+          customerId: l.customer_id || "",
+          reservationId: l.id || "",
+          property: excelOverride?.property || l.properties?.title || propMap.get(l.property_id) || "Property",
+          unit: uIdentifier || "Unit",
+          tenantName: canonicalName(excelOverride?.tenant || l.customers?.full_name || l.tenant_name || "Tenant"),
+          startDate: startDate,
+          endDate: endDate,
+          monthlyRent: excelOverride?.rent || (Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : 0),
+          securityDeposit: Number(l.security_deposit || 0) || excelOverride?.rent || 0,
+          pdcCount: Number(l.number_of_pdc || 12),
+          paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
+          gracePeriodDays: Number(l.grace_period_days || 7),
+          penalties: `${l.late_penalty_percentage || 0}%`,
+          maintenanceResponsibility: l.maintenance_responsibility || "Landlord",
+          utilityResponsibility: l.utility_responsibility || "Tenant",
+          parkingDetails: l.parking_details || "",
+          specialConditions: l.special_conditions || "",
+          noticePeriodDays: Number(l.notice_period_days || 30),
+          status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
+          collectionCompleted: true,
+        };
+      });
 
       // Also synthesize active leases for occupied units or units with current_tenant / contract
       const seenLeaseUnits = new Set(existingLeases.map((l) => `${l.property}-${l.unit}`.toLowerCase()));
@@ -529,21 +540,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
           if (!seenLeaseUnits.has(unitKey)) {
             seenLeaseUnits.add(unitKey);
-            const monthlyRent = Number(u.current_rent || u.price || u.rent_amount || 6500);
+            const uKey = unitIdentifier.toUpperCase().trim();
+            const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+
+            const startDate = excelOverride?.start || u.contract_start_date || "2026-01-01";
+            const endDate = excelOverride?.end || u.contract_end_date || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })();
+            const monthlyRent = excelOverride?.rent || Number(u.current_rent || u.price || u.rent_amount || 6500);
             const secDeposit = Number(u.security_deposit_amount || monthlyRent);
             const contractNo = u.contract_no || `L-${unitIdentifier.replace(/\W/g, "") || u.id.slice(0, 5)}`;
-            const tenantName = u.current_tenant && u.current_tenant.trim() ? canonicalName(u.current_tenant.trim()) : `Tenant (${unitIdentifier})`;
+            const tenantName = canonicalName(excelOverride?.tenant || (u.current_tenant && u.current_tenant.trim() ? u.current_tenant.trim() : `Tenant (${unitIdentifier})`));
             const custId = `cust-${u.id.slice(0, 8)}`;
 
             unitContracts.push({
               id: contractNo,
               customerId: custId,
               reservationId: `res-${u.id.slice(0, 8)}`,
-              property: propTitle,
+              property: excelOverride?.property || propTitle,
               unit: unitIdentifier,
               tenantName: tenantName,
-              startDate: u.contract_start_date || "2026-01-01",
-              endDate: u.contract_end_date || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })(),
+              startDate: startDate,
+              endDate: endDate,
               monthlyRent: monthlyRent,
               securityDeposit: secDeposit,
               pdcCount: 12,
@@ -796,10 +812,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }
 
+const fallbackAppDataValue: AppDataContextValue = {
+  ...EMPTY_DATA,
+  setUnits: () => {},
+  setCustomers: () => {},
+  setReservations: () => {},
+  setLeases: () => {},
+  setPdcs: () => {},
+  setVouchers: () => {},
+  setKeyNotices: () => {},
+  setHandovers: () => {},
+  setCheckIns: () => {},
+  setAuditEvents: () => {},
+  syncing: false,
+  refetchData: async () => {},
+};
+
 export function useAppData(): AppDataContextValue {
   const context = useContext(AppDataContext);
   if (!context) {
-    throw new Error("useAppData must be used inside <AppDataProvider>");
+    return fallbackAppDataValue;
   }
   return context;
 }
