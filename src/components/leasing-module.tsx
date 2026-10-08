@@ -63,6 +63,7 @@ import {
   XCircle,
   FileUp,
   FileText,
+  PackageCheck,
   Phone,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -82,6 +83,13 @@ import { executeFinalSettlement, settleEarlyLeaseVacate } from "@/lib/finance/se
 import { collectSecurityDeposit } from "@/lib/finance/depositService";
 import { receivePdc } from "@/lib/finance/pdcService";
 import { postGuaranteeCheque } from "@/lib/finance/posting-engine";
+import { getDocumentBranding } from "@/lib/document-branding";
+import { getImpersonationSession } from "@/lib/impersonation";
+import { exportToExcel } from "@/lib/excel-export";
+import {
+  AL_AMEEN_PAGE1_HEADER_BASE64,
+  AL_AMEEN_PAGE2_PLUS_HEADER_BASE64,
+} from "@/lib/header-banner-base64";
 
 
 type ReservationStatus = "reserved" | "converted" | "expired" | "released";
@@ -317,6 +325,8 @@ type KeyHandover = {
   collectorIdNumber?: string;
   tenantAcknowledgement?: string;
   note?: string;
+  assetsSnapshot?: Array<{ id: string; name: string; code?: string; condition: string; remarks?: string }>;
+  checkInRef?: { condition: string; electricityMeter: string; waterMeter: string; damages: string; pendingMaintenance?: string; photos: number };
 };
 
 type Inspection = {
@@ -4442,6 +4452,24 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       collectorName: handoverForm.collectorName || lease.tenantName,
       collectorIdNumber: handoverForm.collectorIdNumber,
       tenantAcknowledgement: handoverForm.tenantAcknowledgement || "Tenant acknowledged receipt",
+      assetsSnapshot: handoverAssets.map(a => {
+        const ch = assetChanges[a.id];
+        return {
+          id: a.id,
+          name: a.asset_name,
+          code: a.asset_code || a.category,
+          condition: ch?.condition || a.asset_condition || "Good",
+          remarks: ch?.imageFileName ? `Image uploaded: ${ch.imageFileName}` : a.remarks,
+        };
+      }),
+      checkInRef: {
+        condition: checkInForm.condition || handoverForm.unitCondition || "Good",
+        electricityMeter: checkInForm.electricityMeter || handoverForm.electricityMeterReading || "12450",
+        waterMeter: checkInForm.waterMeter || handoverForm.waterMeterReading || "840",
+        damages: checkInForm.damages || "None recorded",
+        pendingMaintenance: checkInForm.pendingMaintenance || "None",
+        photos: Number(checkInForm.photos) || Number(handoverForm.photosTaken) || 6,
+      },
       note: [
         handoverForm.note,
         handoverForm.assetChecklist ? `Asset Checklist: ${handoverForm.assetChecklist}` : "",
@@ -8614,136 +8642,1241 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             const lease = leases.find(l => l.id === selectedHandover.leaseId);
             const handoverKey = selectedHandover.id || selectedHandover.leaseId;
             const signedDoc = signedHandoverDocs[handoverKey];
+            const branding = getDocumentBranding();
+            const impersonation = getImpersonationSession();
+            const tokenBranding = branding.submodules?.tokenHandover || {
+              documentTitle: "KEY HANDOVER & UNIT CHECK-IN CERTIFICATE",
+              documentSubtitle: "Official 5-Stage Custody Transfer & Fixture Audit Protocol",
+              bannerImageUrl: null,
+              bannerHeight: 120,
+              bannerWidthPercent: 100,
+              bannerFit: "fill" as const,
+              bannerStretch: true,
+              bannerBorderRadius: 0,
+              showBanner: true,
+              showSignature: true,
+              signatureScale: 100,
+              showStamp: true,
+              stampScale: 100,
+              signatoryNameOverride: "",
+              signatoryTitleOverride: "",
+              notes: "The tenant confirms receipt of property keys, access cards, and condition checklist.",
+              termsAndConditions: "The tenant accepts keys in good condition. All security tokens must be returned upon lease conclusion.",
+              footerNote: "Official Handover Protocol • Al Ameen Real Estate W.L.L",
+              languageMode: "en" as const,
+            };
+
+            const companyName = impersonation?.tenantName || branding.companyName || "Al Ameen Real Estate";
+            const legalEntityName = branding.legalEntityName || companyName;
+            const bannerUrl = tokenBranding.bannerImageUrl || branding.headerImageUrl;
+            const signatoryName = tokenBranding.signatoryNameOverride || branding.authorizedSignatoryName || "Property Manager";
+            const signatoryTitle = tokenBranding.signatoryTitleOverride || branding.authorizedSignatoryTitle || "Authorized Signatory";
+
+            const defaultAssetsList = [
+              { id: "a1", name: "Split Air Conditioning Units (x3)", nameAr: "وحدات تكييف هواء سبليت (عدد 3)", code: "HVAC-SPL-01", condition: "Excellent", conditionAr: "ممتاز", remarks: "Serviced, clean filters, cooling tested OK ✓", remarksAr: "تمت الصيانة وفحص التبريد والفلاتر ✓" },
+              { id: "a2", name: "Built-in Gas Cooktop & Oven", nameAr: "موقد وفرن غاز مدمج", code: "APP-KIT-02", condition: "Good", conditionAr: "جيد", remarks: "Ignition and all burners verified working ✓", remarksAr: "الإشعال وجميع الشعلات تعمل بحالة جيدة ✓" },
+              { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", nameAr: "ثلاجة ببابين (مانعة للثلج)", code: "APP-REF-03", condition: "Good", conditionAr: "جيد", remarks: "Clean, defrosted, temperature tested ✓", remarksAr: "نظيفة ومفحوصة التبريد وجاهزة ✓" },
+              { id: "a4", name: "Electric Water Heater (80L)", nameAr: "سخان مياه كهربائي (80 لتر)", code: "PLM-WTR-01", condition: "Excellent", conditionAr: "ممتاز", remarks: "Thermostat and safety valve inspected ✓", remarksAr: "تم فحص منظم الحرارة وصمام الأمان ✓" },
+              { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", nameAr: "خزائن ملابس غرفة النوم الرئيسية (مدمجة)", code: "FUR-WRD-01", condition: "Excellent", conditionAr: "ممتاز", remarks: "Hinges and sliding tracks aligned ✓", remarksAr: "المفصلات والمسارات المنزلقة سليمة ومضبوطة ✓" },
+            ];
+
+            const activeAssets = (selectedHandover.assetsSnapshot && selectedHandover.assetsSnapshot.length > 0)
+              ? selectedHandover.assetsSnapshot
+              : defaultAssetsList;
+
+            const checklistItems = [
+              { title: "Lease Agreement", titleAr: "عقد الإيجار الرسمي", desc: "Fully executed by Tenant and Landlord / PMS", descAr: "موقع ومعتمد بالكامل من المستأجر والمؤجر", status: "Verified ✓", statusAr: "تم التحقق ✓" },
+              { title: "Deposit & Rent", titleAr: "مبلغ التأمين والإيجار", desc: "Security deposit and first period rent collected", descAr: "تم تحصيل مبلغ الضمان وإيجار الفترة الأولى", status: "Verified ✓", statusAr: "تم التحصيل ✓" },
+              { title: "Key Release Notice", titleAr: "إشعار تسليم المفاتيح", desc: "Formal notice dispatched to Tenant & Security", descAr: "تم إرسال إشعار رسمي للمستأجر وأمن العقار", status: "Dispatched ✓", statusAr: "تم الإرسال ✓" },
+              { title: "Utility Meters", titleAr: "قراءات عدادات الخدمات", desc: "Electricity and Water initial readings recorded", descAr: "تم تسجيل وتوثيق قراءات الكهرباء والماء", status: "Recorded ✓", statusAr: "تم التوثيق ✓" },
+              { title: "Access Tokens", titleAr: "المفاتيح والرموز الأمنية", desc: "Keys, RFID cards and remotes counted & tested", descAr: "تم تسليم واختبار المفاتيح والبطاقات الذكية", status: "Delivered ✓", statusAr: "تم التسليم ✓" },
+              { title: "Unit Condition", titleAr: "فحص ومعاينة الوحدة", desc: "Joint inspection performed and audit grades set", descAr: "تمت المعاينة المشتركة وتوثيق حالة العقار", status: "Documented ✓", statusAr: "تمت المعاينة ✓" },
+              { title: "Collector Identity", titleAr: "إثبات هوية المستلم", desc: "Original QID / Passport document verified", descAr: "تمت مطابقة البطاقة الشخصية القطرية الأصلية", status: "Verified ✓", statusAr: "تمت المطابقة ✓" },
+              { title: "Photo Archive", titleAr: "الأرشيف الفوتوغرافي", desc: "Move-in photographic records archived", descAr: "تم حفظ وتوثيق صور استلام العقار", status: "Archived ✓", statusAr: "تم الأرشفة ✓" },
+              { title: "Sign-Off & Undertaking", titleAr: "الإقرار والتوقيع الرسمي", desc: "Custody transfer confirmed & acknowledged", descAr: "تم إقرار استلام العهدة وتوقيع المحضر", status: "Confirmed ✓", statusAr: "تم الإقرار ✓" },
+            ];
+
+            const printHandoverCertificateDoc = () => {
+              const printWindow = window.open("", "_blank", "width=920,height=1050");
+              if (!printWindow) {
+                window.print();
+                return;
+              }
+
+              const docRefNo = `KHC-${lease?.id?.slice(0, 8) || "2026-001"}`;
+              const docDate = selectedHandover?.handoverAt || lease?.startDate || new Date().toISOString().split("T")[0];
+
+              const html = `
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                  <meta charset="utf-8" />
+                  <title>Token & Key Handover Certificate - ${docRefNo} - ${lease?.unit || ""}</title>
+                  <link rel="preconnect" href="https://fonts.googleapis.com">
+                  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+                  <style>
+                    @page {
+                      size: A4 portrait;
+                      margin: 0;
+                    }
+                    * {
+                      box-sizing: border-box;
+                      margin: 0;
+                      padding: 0;
+                      -webkit-print-color-adjust: exact !important;
+                      print-color-adjust: exact !important;
+                    }
+                    body {
+                      color: #0f172a;
+                      background: #f1f5f9;
+                      font-family: 'Inter', Arial, sans-serif;
+                      font-size: 8.8pt;
+                      line-height: 1.38;
+                      margin: 0;
+                      padding: 20px 0;
+                    }
+                    
+                    /* Multi-Page A4 Sheet Wrapper */
+                    .page-sheet {
+                      width: 210mm;
+                      min-height: 297mm;
+                      margin: 0 auto 20px auto;
+                      background: #ffffff;
+                      padding: 0;
+                      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                      position: relative;
+                      display: flex;
+                      flex-direction: column;
+                      justify-content: space-between;
+                      box-sizing: border-box;
+                    }
+                    .page-content {
+                      flex-grow: 1;
+                      display: flex;
+                      flex-direction: column;
+                    }
+                    .page-body-padded {
+                      padding: 4px 12mm 0 12mm;
+                      display: flex;
+                      flex-direction: column;
+                      flex-grow: 1;
+                    }
+
+                    /* Page 1 Header Banner (100% full edge-to-edge bleed) */
+                    .page1-header-banner {
+                      width: 100%;
+                      margin: 0;
+                      padding: 0;
+                      display: block;
+                      line-height: 0;
+                      overflow: hidden;
+                    }
+                    .page1-header-banner img {
+                      width: 100%;
+                      aspect-ratio: 1024 / 192;
+                      object-fit: fill;
+                      margin: 0;
+                      padding: 0;
+                      display: block;
+                      border: 0;
+                    }
+
+                    /* Page 2+ Header Logo on Right */
+                    .page-header-secondary-wrapper {
+                      padding: 6mm 12mm 0 12mm;
+                    }
+                    .page-header-secondary {
+                      display: flex;
+                      justify-content: flex-end;
+                      align-items: center;
+                      margin-bottom: 6px;
+                      padding-bottom: 4px;
+                      border-bottom: 1.5px solid #cbd5e1;
+                    }
+                    .page-header-secondary img {
+                      height: 48px;
+                      width: auto;
+                      object-fit: contain;
+                      display: block;
+                    }
+
+                    /* Centered Bilingual Title Banner */
+                    .doc-title-bar {
+                      background: #ecfdf5;
+                      border: 1.5px solid #a7f3d0;
+                      border-radius: 6px;
+                      padding: 6px 12px;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin: 6px 0 8px 0;
+                    }
+                    .title-en {
+                      font-size: 11pt;
+                      font-weight: 800;
+                      color: #065f46;
+                      text-transform: uppercase;
+                      letter-spacing: 0.5px;
+                    }
+                    .title-ar {
+                      font-family: 'Cairo', Tahoma, sans-serif;
+                      font-size: 12pt;
+                      font-weight: 800;
+                      color: #065f46;
+                      direction: rtl;
+                      text-align: right;
+                    }
+                    .doc-meta-badge {
+                      text-align: right;
+                      font-size: 8pt;
+                      color: #047857;
+                      font-family: monospace;
+                      font-weight: 600;
+                      line-height: 1.3;
+                    }
+
+                    /* Bilingual Step Header */
+                    .step-header {
+                      background: #f8fafc;
+                      border-left: 4px solid #059669;
+                      border-right: 4px solid #059669;
+                      padding: 4px 8px;
+                      font-size: 8.5pt;
+                      font-weight: 800;
+                      color: #0f172a;
+                      margin: 7px 0 5px 0;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                    }
+                    .step-header .step-title-en {
+                      text-transform: uppercase;
+                      letter-spacing: 0.3px;
+                    }
+                    .step-header .step-title-ar {
+                      font-family: 'Cairo', Tahoma, sans-serif;
+                      direction: rtl;
+                      color: #047857;
+                      font-size: 9pt;
+                    }
+                    .step-badge {
+                      font-size: 7.5pt;
+                      background: #059669;
+                      color: #ffffff;
+                      padding: 1px 6px;
+                      border-radius: 3px;
+                      font-weight: 700;
+                    }
+
+                    /* Grid Cards */
+                    .grid-4 {
+                      display: grid;
+                      grid-template-columns: repeat(4, 1fr);
+                      gap: 5px;
+                      margin-bottom: 5px;
+                    }
+                    .grid-3 {
+                      display: grid;
+                      grid-template-columns: repeat(3, 1fr);
+                      gap: 5px;
+                      margin-bottom: 5px;
+                    }
+                    .grid-2 {
+                      display: grid;
+                      grid-template-columns: repeat(2, 1fr);
+                      gap: 6px;
+                      margin-bottom: 5px;
+                    }
+                    .info-card {
+                      border: 1px solid #e2e8f0;
+                      background: #fafafa;
+                      border-radius: 4px;
+                      padding: 4px 7px;
+                    }
+                    .info-header-bilingual {
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-bottom: 2px;
+                    }
+                    .info-label-en {
+                      font-size: 7pt;
+                      text-transform: uppercase;
+                      font-weight: 700;
+                      color: #64748b;
+                    }
+                    .info-label-ar {
+                      font-family: 'Cairo', sans-serif;
+                      font-size: 7.5pt;
+                      font-weight: 700;
+                      color: #64748b;
+                      direction: rtl;
+                    }
+                    .info-val {
+                      font-size: 9pt;
+                      font-weight: 700;
+                      color: #0f172a;
+                      display: block;
+                    }
+
+                    /* Audit Grid */
+                    .audit-grid {
+                      display: grid;
+                      grid-template-columns: repeat(4, 1fr);
+                      gap: 5px;
+                      margin-bottom: 5px;
+                    }
+                    .audit-item {
+                      border: 1px solid #cbd5e1;
+                      border-radius: 4px;
+                      padding: 4px;
+                      text-align: center;
+                      font-weight: 600;
+                      font-size: 8pt;
+                      background: #ffffff;
+                    }
+                    .audit-item.ok {
+                      border-color: #86efac;
+                      background: #f0fdf4;
+                      color: #166534;
+                    }
+
+                    /* Asset Table */
+                    .asset-table {
+                      width: 100%;
+                      border-collapse: collapse;
+                      font-size: 8.2pt;
+                      margin-bottom: 5px;
+                    }
+                    .asset-table th {
+                      background: #f1f5f9;
+                      border: 1px solid #cbd5e1;
+                      padding: 3.5px 6px;
+                      font-weight: 700;
+                      color: #334155;
+                      font-size: 7.5pt;
+                    }
+                    .asset-table td {
+                      border: 1px solid #e2e8f0;
+                      padding: 3.5px 6px;
+                      color: #1e293b;
+                      vertical-align: middle;
+                    }
+                    .asset-table tr:nth-child(even) {
+                      background: #f8fafc;
+                    }
+
+                    /* Checklist Grid */
+                    .checklist-grid {
+                      display: grid;
+                      grid-template-columns: repeat(3, 1fr);
+                      gap: 5px;
+                      margin-bottom: 5px;
+                    }
+                    .chk-item {
+                      border: 1px solid #cbd5e1;
+                      border-radius: 4px;
+                      padding: 4px 6px;
+                      background: #ffffff;
+                      display: flex;
+                      align-items: flex-start;
+                      gap: 5px;
+                    }
+                    .chk-item.verified {
+                      border-color: #a7f3d0;
+                      background: #f0fdf4;
+                    }
+                    .chk-icon {
+                      color: #059669;
+                      font-weight: 800;
+                      font-size: 9.5pt;
+                    }
+                    .chk-text {
+                      font-size: 7.8pt;
+                      line-height: 1.25;
+                      flex-grow: 1;
+                    }
+                    .chk-header-bilingual {
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                    }
+                    .chk-title-en {
+                      font-weight: 700;
+                      color: #0f172a;
+                    }
+                    .chk-title-ar {
+                      font-family: 'Cairo', sans-serif;
+                      font-weight: 700;
+                      color: #047857;
+                      direction: rtl;
+                    }
+                    .chk-desc {
+                      color: #64748b;
+                      font-size: 7.2pt;
+                      margin-top: 1px;
+                    }
+
+                    /* Bilingual Terms Box */
+                    .bilingual-terms-table {
+                      width: 100%;
+                      border-collapse: collapse;
+                      border: 1px solid #cbd5e1;
+                      border-radius: 4px;
+                      background: #f8fafc;
+                      margin-bottom: 6px;
+                    }
+                    .bilingual-terms-table td {
+                      padding: 6px 10px;
+                      vertical-align: top;
+                      font-size: 7.8pt;
+                      line-height: 1.35;
+                      color: #334155;
+                    }
+                    .bilingual-terms-table .terms-en {
+                      width: 50%;
+                      direction: ltr;
+                      text-align: left;
+                      border-right: 1px dashed #cbd5e1;
+                    }
+                    .bilingual-terms-table .terms-ar {
+                      width: 50%;
+                      direction: rtl;
+                      text-align: right;
+                      font-family: 'Cairo', Tahoma, sans-serif;
+                    }
+
+                    /* Signature Grid */
+                    .signature-grid {
+                      display: grid;
+                      grid-template-columns: repeat(2, 1fr);
+                      gap: 12px;
+                      margin-top: 5px;
+                      padding-top: 5px;
+                    }
+                    .sig-block {
+                      border: 1px solid #cbd5e1;
+                      border-radius: 5px;
+                      padding: 6px 10px;
+                      background: #ffffff;
+                      position: relative;
+                    }
+                    .sig-space {
+                      height: 46px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      position: relative;
+                      margin: 2px 0;
+                    }
+                    .sig-img {
+                      max-height: 42px;
+                      max-width: 120px;
+                      object-fit: contain;
+                    }
+                    .stamp-img {
+                      position: absolute;
+                      right: 8px;
+                      bottom: 0px;
+                      max-height: 48px;
+                      max-width: 75px;
+                      opacity: 0.85;
+                    }
+
+                    /* Page Footer */
+                    .page-footer {
+                      border-top: 1px solid #cbd5e1;
+                      padding: 4px 12mm 5px 12mm;
+                      margin-top: 4px;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      font-size: 7.8pt;
+                      color: #64748b;
+                    }
+
+                    /* Action bar for web preview */
+                    .action-bar {
+                      position: sticky;
+                      top: 0;
+                      background: #0f172a;
+                      color: #ffffff;
+                      padding: 10px 24px;
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                      z-index: 1000;
+                      margin-bottom: 15px;
+                    }
+                    .action-bar button {
+                      background: #059669;
+                      color: #ffffff;
+                      border: none;
+                      padding: 8px 20px;
+                      border-radius: 6px;
+                      font-weight: 600;
+                      font-size: 13px;
+                      cursor: pointer;
+                      display: inline-flex;
+                      align-items: center;
+                      gap: 8px;
+                    }
+                    .action-bar button:hover {
+                      background: #047857;
+                    }
+
+                    @media print {
+                      html, body {
+                        background: #ffffff !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        width: 210mm !important;
+                        height: auto !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                      }
+                      .action-bar {
+                        display: none !important;
+                      }
+                      .page-sheet {
+                        width: 210mm !important;
+                        height: 297mm !important;
+                        max-height: 297mm !important;
+                        min-height: 297mm !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        page-break-after: always !important;
+                        page-break-inside: avoid !important;
+                        break-after: page !important;
+                        break-inside: avoid !important;
+                        overflow: hidden !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        justify-content: space-between !important;
+                        box-sizing: border-box !important;
+                      }
+                      .page-sheet:last-child {
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
+                      }
+                    }
+                  </style>
+                </head>
+                <body>
+                  <!-- Print Action Bar -->
+                  <div class="action-bar">
+                    <div>
+                      <span style="font-weight: 700; font-size: 15px;">KEY HANDOVER & CHECK-IN CERTIFICATE (شهادة تسليم المفاتيح ومعاينة الوحدة)</span>
+                      <span style="margin-left: 15px; color: #94a3b8; font-size: 13px;">Ref: ${docRefNo} | Tenant: ${lease?.tenantName || "Tenant"} | Unit: ${lease?.unit || "—"}</span>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                      <button onclick="window.print()">
+                        <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        Print / Save as PDF (A4)
+                      </button>
+                      <button onclick="window.close()" style="background: #475569;">Close</button>
+                    </div>
+                  </div>
+
+                  <!-- ==================== PAGE 1 ==================== -->
+                  <div class="page-sheet">
+                    <div class="page-content">
+                      <!-- Page 1 Header Banner (100% full edge-to-edge bleed) -->
+                      <div class="page1-header-banner">
+                        <img src="${bannerUrl || AL_AMEEN_PAGE1_HEADER_BASE64}" alt="Al Ameen Letterhead" />
+                      </div>
+
+                      <div class="page-body-padded">
+                        <!-- Bilingual Document Title Banner -->
+                        <div class="doc-title-bar">
+                          <div style="text-align: left;">
+                            <div class="title-en">TOKEN & KEY HANDOVER CERTIFICATE</div>
+                            <div style="font-size: 7.8pt; color: #047857; margin-top: 1px;">Official 5-Stage Custody Transfer & Fixture Audit Protocol</div>
+                          </div>
+                          <div class="doc-meta-badge">
+                            <div>REF: ${docRefNo}</div>
+                            <div>DATE: ${docDate}</div>
+                            <div style="color: #059669; font-weight: 700;">✓ ALL 5 STAGES VERIFIED</div>
+                          </div>
+                          <div style="text-align: right; font-family: 'Cairo', Tahoma, sans-serif;">
+                            <div class="title-ar">شهادة تسليم المفاتيح والرموز الأمنية</div>
+                            <div style="font-size: 8pt; color: #047857; direction: rtl;">محضر تسليم العهدة وفحص ومعاينة الوحدة السكنية</div>
+                          </div>
+                        </div>
+
+                        <!-- ── STEP 1: KEY & ACCESS DEVICE DETAILS + UTILITY METERS ── -->
+                        <div class="step-header">
+                          <span class="step-title-en">STEP 1 · Key, Access Token &amp; Initial Utility Particulars</span>
+                          <span class="step-badge">STAGE 1 COMPLETED</span>
+                          <span class="step-title-ar">المرحلة 1: بيانات المفاتيح والرموز الأمنية وقراءات العدادات</span>
+                        </div>
+
+                        <div class="grid-4">
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Tenant Customer</span>
+                              <span class="info-label-ar">العميل المستأجر</span>
+                            </div>
+                            <span class="info-val">${lease?.tenantName || "Tenant"}</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Property &amp; Unit</span>
+                              <span class="info-label-ar">العقار والوحدة</span>
+                            </div>
+                            <span class="info-val">${lease?.property || "—"} (${lease?.unit || "—"})</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Handover Date</span>
+                              <span class="info-label-ar">تاريخ التسليم</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${docDate}</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Handover Officer</span>
+                              <span class="info-label-ar">مسؤول التسليم</span>
+                            </div>
+                            <span class="info-val">${selectedHandover?.issuedBy || signatoryName}</span>
+                          </div>
+                        </div>
+
+                        <div class="grid-4">
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Door Keys Issued</span>
+                              <span class="info-label-ar">مفاتيح الأبواب</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${selectedHandover?.keys || 2}× ${selectedHandover?.keyType || "Door Keys"}</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Access Cards</span>
+                              <span class="info-label-ar">بطاقات الدخول</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${selectedHandover?.accessCards || 2} RFID Card(s)</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Parking Remotes</span>
+                              <span class="info-label-ar">أجهزة المواقف</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${selectedHandover?.parkingRemotes || 1} Remote(s)</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Parking Bay / Tag</span>
+                              <span class="info-label-ar">موقف السيارات</span>
+                            </div>
+                            <span class="info-val" style="font-size: 8pt;">${selectedHandover?.parkingDeviceDetails || "Allocated Bay"}</span>
+                          </div>
+                        </div>
+
+                        <div class="grid-2">
+                          <div class="info-card" style="background: #eff6ff; border-color: #bfdbfe;">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en" style="color: #1e40af;">⚡ Initial Electricity Meter Reading</span>
+                              <span class="info-label-ar" style="color: #1e40af;">قراءة عداد الكهرباء الأولية</span>
+                            </div>
+                            <span class="info-val" style="color: #1e3a8a; font-family: monospace; font-size: 10pt;">${selectedHandover?.electricityMeterReading || "12,450 kWh"}</span>
+                          </div>
+                          <div class="info-card" style="background: #ecfeff; border-color: #a5f3fc;">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en" style="color: #0e7490;">💧 Initial Water Meter Reading</span>
+                              <span class="info-label-ar" style="color: #0e7490;">قراءة عداد المياه الأولية</span>
+                            </div>
+                            <span class="info-val" style="color: #155e75; font-family: monospace; font-size: 10pt;">${selectedHandover?.waterMeterReading || "840 m³"}</span>
+                          </div>
+                        </div>
+
+                        <!-- ── STEP 2: FIXTURE & UNIT CONDITION AUDIT ── -->
+                        <div class="step-header">
+                          <span class="step-title-en">STEP 2 · Fixture &amp; Unit Condition Audit</span>
+                          <span class="step-badge">STAGE 2 COMPLETED</span>
+                          <span class="step-title-ar">المرحلة 2: فحص ومعاينة حالة الوحدة والتجهيزات</span>
+                        </div>
+
+                        <div class="grid-3">
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Overall Condition</span>
+                              <span class="info-label-ar">الحالة العامة</span>
+                            </div>
+                            <span class="info-val" style="color: #059669;">${selectedHandover?.unitCondition || "Good"} (جيد) ✓</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Cleanliness Grade</span>
+                              <span class="info-label-ar">درجة النظافة</span>
+                            </div>
+                            <span class="info-val" style="color: #059669;">${selectedHandover?.cleanliness || "Clean"} (نظيف) ✓</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Photos Documented</span>
+                              <span class="info-label-ar">الصور الموثقة</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${selectedHandover?.photosTaken || 6} Photos on File</span>
+                          </div>
+                        </div>
+
+                        <div class="audit-grid">
+                          <div class="audit-item ${selectedHandover?.acWorking !== false ? 'ok' : ''}">🌀 A/C ${selectedHandover?.acWorking !== false ? "Operational ✓ (صالح)" : "Defective ✗"}</div>
+                          <div class="audit-item ${selectedHandover?.plumbingOk !== false ? 'ok' : ''}">🚿 Plumbing ${selectedHandover?.plumbingOk !== false ? "Tested OK ✓ (سليم)" : "Issue ✗"}</div>
+                          <div class="audit-item ${selectedHandover?.electricalOk !== false ? 'ok' : ''}">💡 Electrical ${selectedHandover?.electricalOk !== false ? "Tested OK ✓ (سليم)" : "Issue ✗"}</div>
+                          <div class="audit-item ${selectedHandover?.doorsWindowsOk !== false ? 'ok' : ''}">🚪 Doors/Locks ${selectedHandover?.doorsWindowsOk !== false ? "Intact ✓ (سليم)" : "Issue ✗"}</div>
+                        </div>
+
+                        <!-- ── STEP 3: UNIT ASSET & FURNISHING INVENTORY ── -->
+                        <div class="step-header">
+                          <span class="step-title-en">STEP 3 · Unit Asset &amp; Furnishing Inventory</span>
+                          <span class="step-badge">STAGE 3 COMPLETED (${activeAssets.length} Assets)</span>
+                          <span class="step-title-ar">المرحلة 3: جرد الأصول والأثاث بالوحدة</span>
+                        </div>
+
+                        <table class="asset-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 25px; text-align: center;">#</th>
+                              <th style="width: 42%;">Asset Item / اسم الأصل</th>
+                              <th style="width: 18%;">Code / الرمز</th>
+                              <th style="width: 15%;">Condition / الحالة</th>
+                              <th style="width: 25%;">Remarks / ملاحظات الفحص</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${activeAssets.map((asset, idx) => `
+                              <tr>
+                                <td style="font-family: monospace; text-align: center;">${idx + 1}</td>
+                                <td>
+                                  <strong>${asset.name}</strong>
+                                  ${asset.nameAr ? `<div style="font-family: 'Cairo', sans-serif; direction: rtl; font-size: 7.5pt; color: #475569;">${asset.nameAr}</div>` : ''}
+                                </td>
+                                <td style="font-family: monospace; color: #64748b;">${asset.code || "Asset"}</td>
+                                <td><span style="color: #059669; font-weight: 700;">${asset.condition || "Good"} ${asset.conditionAr ? `(${asset.conditionAr})` : ''} ✓</span></td>
+                                <td style="font-size: 7.5pt; color: #475569;">
+                                  <div>${asset.remarks || "Inspected & Verified OK"}</div>
+                                  ${asset.remarksAr ? `<div style="font-family: 'Cairo', sans-serif; direction: rtl; color: #64748b;">${asset.remarksAr}</div>` : ''}
+                                </td>
+                              </tr>
+                            `).join("")}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="page-footer">
+                      <div>Al Ameen Real Estate • Key Handover Protocol Ref: ${docRefNo}</div>
+                      <div>Page 1 of 2 • الصفحة 1 من 2</div>
+                    </div>
+                  </div>
+
+                  <!-- ==================== PAGE 2 ==================== -->
+                  <div class="page-sheet">
+                    <div class="page-content">
+                      <!-- Page 2+ Header Logo on Right -->
+                      <div class="page-header-secondary-wrapper">
+                        <div class="page-header-secondary">
+                          <img src="${AL_AMEEN_PAGE2_PLUS_HEADER_BASE64}" alt="Al Ameen Logo" />
+                        </div>
+                      </div>
+
+                      <div class="page-body-padded">
+                        <!-- ── STEP 4: COLLECTOR VERIFICATION & COMPLIANCE CHECKLIST ── -->
+                        <div class="step-header">
+                          <span class="step-title-en">STEP 4 · Collector Verification &amp; Compliance Checklist</span>
+                          <span class="step-badge">STAGE 4 COMPLETED</span>
+                          <span class="step-title-ar">المرحلة 4: التحقق من هوية المستلم وقائمة المطابقة</span>
+                        </div>
+
+                        <div class="grid-3" style="margin-bottom: 5px;">
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Authorized Collector</span>
+                              <span class="info-label-ar">المستلم المفوض</span>
+                            </div>
+                            <span class="info-val">${selectedHandover?.collectorName || lease?.tenantName || "Tenant"}</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Collector ID / Passport</span>
+                              <span class="info-label-ar">رقم البطاقة / الجواز</span>
+                            </div>
+                            <span class="info-val" style="font-family: monospace;">${selectedHandover?.collectorIdNumber || "29463401928 (QID)"}</span>
+                          </div>
+                          <div class="info-card">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Document Verification</span>
+                              <span class="info-label-ar">حالة التحقق</span>
+                            </div>
+                            <span class="info-val" style="color: #059669;">QID Sighted &amp; Verified ✓ (تمت المطابقة)</span>
+                          </div>
+                        </div>
+
+                        <div class="checklist-grid">
+                          ${checklistItems.map(item => `
+                            <div class="chk-item verified">
+                              <span class="chk-icon">✓</span>
+                              <div class="chk-text">
+                                <div class="chk-header-bilingual">
+                                  <span class="chk-title-en">${item.title}</span>
+                                  <span class="chk-title-ar">${item.titleAr}</span>
+                                </div>
+                                <div class="chk-desc">${item.desc}</div>
+                                <div class="chk-desc" style="font-family: 'Cairo', sans-serif; direction: rtl;">${item.descAr}</div>
+                              </div>
+                            </div>
+                          `).join("")}
+                        </div>
+
+                        <!-- ── STEP 5: OFFICIAL SIGN-OFF & LEGAL ACKNOWLEDGEMENT ── -->
+                        <div class="step-header" style="margin-top: 10px;">
+                          <span class="step-title-en">STEP 5 · Official Sign-Off &amp; Legal Acknowledgement</span>
+                          <span class="step-badge">STAGE 5 COMPLETED</span>
+                          <span class="step-title-ar">المرحلة 5: الإقرار القانوني والتوقيع الرسمي</span>
+                        </div>
+
+                        <!-- Parallel Bilingual Legal Terms Table (English Left, Arabic Right) -->
+                        <table class="bilingual-terms-table">
+                          <tr>
+                            <td class="terms-en">
+                              <strong>Tenant Legal Acknowledgement Undertaking:</strong><br />
+                              The undersigned Tenant / Authorized Representative hereby confirms receipt of the designated keys, access tokens, and unit assets in the documented condition with all initial meter readings verified.<br />
+                              All security tokens remain property of the Landlord and must be returned intact upon lease termination.
+                            </td>
+                            <td class="terms-ar">
+                              <strong>إقرار وتعهد المستأجر القانوني:</strong><br />
+                              يقر المستأجر / المستلم المفوض الموقع أدناه باستلام المفاتيح والبطاقات الذكية وأصول الوحدة بالحالة المذكورة، مع مطابقة قراءات العدادات الأولية.<br />
+                              تعتبر جميع الرموز والمفاتيح الأمنية عهدة للمؤجر ويجب إعادتها كاملة وبحالة جيدة عند انتهاء فترة الإيجار.
+                            </td>
+                          </tr>
+                        </table>
+
+                        <!-- Dual Side-by-Side Signature & Stamp Blocks -->
+                        <div class="signature-grid">
+                          <div class="sig-block">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Issued By (Landlord / PMS)</span>
+                              <span class="info-label-ar">جهة الإصدار (المؤجر / إدارة العقارات)</span>
+                            </div>
+                            <div class="sig-space">
+                              ${tokenBranding.showSignature && branding.signatureImageUrl ? `<img src="${branding.signatureImageUrl}" class="sig-img" alt="Signature" />` : `<span style="font-style: italic; font-family: Georgia, serif; color: #059669; font-size: 11pt;">${companyName}</span>`}
+                              ${tokenBranding.showStamp && branding.stampImageUrl ? `<img src="${branding.stampImageUrl}" class="stamp-img" alt="Stamp" />` : ''}
+                            </div>
+                            <div style="font-size: 8pt; color: #64748b; margin-top: 2px; border-top: 1px dashed #cbd5e1; padding-top: 3px;">
+                              <div>Officer / المسؤول: <strong style="color: #0f172a;">${signatoryName}</strong> (${signatoryTitle})</div>
+                              <div>Date / التاريخ: <span style="font-family: monospace;">${docDate}</span></div>
+                            </div>
+                          </div>
+
+                          <div class="sig-block">
+                            <div class="info-header-bilingual">
+                              <span class="info-label-en">Received &amp; Acknowledged By Tenant</span>
+                              <span class="info-label-ar">جهة الاستلام (المستأجر / المستلم)</span>
+                            </div>
+                            <div class="sig-space">
+                              <span style="font-style: italic; color: #475569; font-size: 10pt; font-family: Georgia, serif;">
+                                ${selectedHandover?.collectorName || lease?.tenantName || "Tenant Signature"}
+                              </span>
+                            </div>
+                            <div style="font-size: 8pt; color: #64748b; margin-top: 2px; border-top: 1px dashed #cbd5e1; padding-top: 3px;">
+                              <div>Collector / المستلم: <strong style="color: #0f172a;">${selectedHandover?.collectorName || lease?.tenantName || "Tenant"}</strong></div>
+                              <div>Date / التاريخ: <span style="font-family: monospace;">${docDate}</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="page-footer">
+                      <div>Al Ameen Real Estate • Key Handover Protocol Ref: ${docRefNo}</div>
+                      <div>Page 2 of 2 • الصفحة 2 من 2</div>
+                    </div>
+                  </div>
+                </body>
+                </html>
+              `;
+
+              printWindow.document.open();
+              printWindow.document.write(html);
+              printWindow.document.close();
+              printWindow.focus();
+              setTimeout(() => {
+                printWindow.print();
+              }, 300);
+            };
 
             return (
               <div className="p-6 overflow-y-auto space-y-4 flex-1 text-sm">
                 {/* ── Printable Official Handover Certificate Document ── */}
-                <div id="handover-printable-receipt" className="rounded-xl border bg-card p-5 space-y-4 shadow-xs">
-                  {/* Certificate Top Header */}
-                  <div className="flex items-start justify-between border-b pb-3.5 gap-4">
-                    <div>
-                      <div className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-                        ZYNO Property Management Systems
+                <div id="handover-printable-receipt" className="rounded-xl border bg-card overflow-hidden space-y-4 shadow-sm">
+                  {/* Official Letterhead Banner */}
+                  <div className="w-full overflow-hidden bg-muted/20 border-b">
+                    <img
+                      src={bannerUrl || AL_AMEEN_PAGE1_HEADER_BASE64}
+                      alt="Al Ameen Letterhead Banner"
+                      className="w-full h-auto object-cover max-h-[140px]"
+                    />
+                  </div>
+
+                  <div className="p-5 space-y-4 pt-0">
+                    {/* Certificate Bilingual Title Header */}
+                    <div className="flex items-start justify-between border-b pb-3.5 gap-4">
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+                          {companyName}
+                        </div>
+                        <h4 className="text-base font-bold text-foreground mt-0.5">
+                          {tokenBranding.documentTitle || "KEY HANDOVER & UNIT CHECK-IN CERTIFICATE"}
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground">
+                          Document Ref: <span className="font-mono font-semibold">KHC-{lease?.id?.slice(0, 8) || "2026-001"}</span> • Execution Date: {selectedHandover.handoverAt}
+                        </p>
                       </div>
-                      <h4 className="text-base font-bold text-foreground mt-0.5">
-                        OFFICIAL KEY HANDOVER &amp; UNIT CHECK-IN RECEIPT
-                      </h4>
-                      <p className="text-[11px] text-muted-foreground">
-                        Document Ref: <span className="font-mono font-semibold">KHC-{lease?.id?.slice(0, 8) || "2026-001"}</span> • Execution Date: {selectedHandover.handoverAt}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="inline-block px-2.5 py-1 rounded bg-muted/60 border font-mono text-[11px] text-muted-foreground">
-                        Status: <strong className="text-emerald-600 dark:text-emerald-400">HANDOVER COMPLETE</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Property & Tenant Meta Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/20 p-3.5 rounded-lg border text-xs">
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Tenant Customer</span>
-                      <span className="font-semibold text-foreground">{lease?.tenantName || "—"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Property</span>
-                      <span className="font-semibold text-foreground">{lease?.property || "—"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Unit Number</span>
-                      <span className="font-semibold text-foreground font-mono">{lease?.unit || "—"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Handover Officer</span>
-                      <span className="font-semibold text-foreground">{selectedHandover.collectorName || "Property Manager"}</span>
-                    </div>
-                  </div>
-
-                  {/* Access Items & Utility Meter Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                    <div className="border rounded-lg p-2.5 bg-background">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Door Keys</span>
-                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.keys}× {selectedHandover.keyType || "Keys"}</span>
-                    </div>
-                    <div className="border rounded-lg p-2.5 bg-background">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Access Cards</span>
-                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.accessCards} RFID Cards</span>
-                    </div>
-                    <div className="border rounded-lg p-2.5 bg-background">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Parking Remotes</span>
-                      <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.parkingRemotes} Remote(s)</span>
-                    </div>
-                    <div className="border rounded-lg p-2.5 bg-background">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Customer ID</span>
-                      <span className={`font-semibold text-xs ${selectedHandover.idVerified ? "text-emerald-600 font-bold" : "text-amber-600"}`}>
-                        {selectedHandover.idVerified ? "QID Sighted & Verified ✓" : "Pending Verification"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Utility Meters */}
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 rounded-lg p-2.5">
-                      <span className="text-blue-800 dark:text-blue-300 block text-[10px] uppercase font-bold">⚡ Initial Electricity Meter</span>
-                      <span className="font-mono font-bold text-foreground text-sm">
-                        {selectedHandover.electricityMeterReading || "12,450"} <span className="text-xs text-muted-foreground font-normal">kWh</span>
-                      </span>
-                    </div>
-                    <div className="border border-cyan-200 dark:border-cyan-900/50 bg-cyan-50/40 dark:bg-cyan-950/20 rounded-lg p-2.5">
-                      <span className="text-cyan-800 dark:text-cyan-300 block text-[10px] uppercase font-bold">💧 Initial Water Meter</span>
-                      <span className="font-mono font-bold text-foreground text-sm">
-                        {selectedHandover.waterMeterReading || "840"} <span className="text-xs text-muted-foreground font-normal">m³</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 4-Point Functional Audit */}
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                      Functional &amp; Fixture Condition Audit:
-                    </span>
-                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
-                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.acWorking ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🌀 A/C {selectedHandover.acWorking ? "Operational ✓" : "Defective ✗"}</div>
-                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.plumbingOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚿 Plumb. {selectedHandover.plumbingOk ? "Tested ✓" : "Issue ✗"}</div>
-                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.electricalOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>💡 Elec. {selectedHandover.electricalOk ? "Tested ✓" : "Issue ✗"}</div>
-                      <div className={`rounded-lg border p-2 text-center ${selectedHandover.doorsWindowsOk ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚪 Doors {selectedHandover.doorsWindowsOk ? "Intact ✓" : "Defect ✗"}</div>
-                    </div>
-                  </div>
-
-                  {/* Handover Legal Acknowledgement Undertaking */}
-                  <div className="rounded-lg border bg-muted/15 p-3 text-[11px] text-muted-foreground leading-relaxed">
-                    <strong>Handover Undertaking:</strong> The Tenant / Authorized Collector hereby confirms receipt of the designated key sets, access devices, and takes over the premises in the condition detailed above. All functional fixtures and utility meter readings have been jointly inspected and agreed upon.
-                  </div>
-
-                  {/* Dual Formal Signature & Stamp Blocks */}
-                  <div className="grid grid-cols-2 gap-6 pt-2 border-t">
-                    <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-4 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Issued By (Landlord / PMS)</span>
-                        <Badge variant="outline" className="text-[9px] font-mono">Official</Badge>
-                      </div>
-                      <div className="h-12 border-b border-muted-foreground/40 flex items-end justify-center pb-1">
-                        <span className="font-serif italic text-primary/80 text-sm">ZYNO Property Management</span>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground space-y-0.5">
-                        <div>Officer: <strong className="text-foreground">Property Management Dept</strong></div>
-                        <div>Date: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+                      <div className="text-right shrink-0">
+                        <div className="inline-block px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                          ✓ ALL 5 STAGES VERIFIED &amp; COMPLETED
+                        </div>
+                        <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold mt-1 font-arabic" dir="rtl">
+                          شهادة تسليم المفاتيح والرموز الأمنية ومعاينة الوحدة
+                        </div>
                       </div>
                     </div>
 
-                    <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-4 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Received &amp; Acknowledged By</span>
-                        <Badge variant="outline" className="text-[9px] font-mono">Tenant Sign</Badge>
-                      </div>
-                      <div className="h-12 border-b border-muted-foreground/40 flex items-end justify-center pb-1">
-                        <span className="text-[11px] text-muted-foreground italic">
-                          {selectedHandover.tenantAcknowledgement ? selectedHandover.collectorName || lease?.tenantName : "Signature of Tenant / Collector"}
+                    {/* ── STEP 1: KEY, ACCESS TOKEN & INITIAL UTILITY METERS ── */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <Key className="h-3.5 w-3.5 text-emerald-600" /> Step 1: Key, Access Device &amp; Utility Particulars
                         </span>
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" dir="rtl">
+                          المرحلة 1: بيانات المفاتيح والرموز الأمنية وقراءات العدادات
+                        </span>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          Stage 1 Complete
+                        </Badge>
                       </div>
-                      <div className="text-[10px] text-muted-foreground space-y-0.5">
-                        <div>Name: <strong className="text-foreground">{selectedHandover.collectorName || lease?.tenantName || "Tenant"}</strong></div>
-                        <div>Date: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-muted/20 p-3 rounded-lg border text-xs">
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Tenant Customer</span>
+                            <span dir="rtl">المستأجر</span>
+                          </div>
+                          <span className="font-semibold text-foreground">{lease?.tenantName || "—"}</span>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Property</span>
+                            <span dir="rtl">العقار</span>
+                          </div>
+                          <span className="font-semibold text-foreground">{lease?.property || "—"}</span>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Unit Number</span>
+                            <span dir="rtl">رقم الوحدة</span>
+                          </div>
+                          <span className="font-semibold text-foreground font-mono">{lease?.unit || "—"}</span>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Handover Officer</span>
+                            <span dir="rtl">مسؤول التسليم</span>
+                          </div>
+                          <span className="font-semibold text-foreground">{selectedHandover.issuedBy || signatoryName}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                        <div className="border rounded-lg p-2.5 bg-background">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Door Keys</span>
+                            <span dir="rtl">مفاتيح الأبواب</span>
+                          </div>
+                          <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.keys}× {selectedHandover.keyType || "Keys"}</span>
+                        </div>
+                        <div className="border rounded-lg p-2.5 bg-background">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Access Cards</span>
+                            <span dir="rtl">بطاقات الدخول</span>
+                          </div>
+                          <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.accessCards} RFID Cards</span>
+                        </div>
+                        <div className="border rounded-lg p-2.5 bg-background">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Parking Remotes</span>
+                            <span dir="rtl">أجهزة المواقف</span>
+                          </div>
+                          <span className="font-bold text-foreground text-sm font-mono">{selectedHandover.parkingRemotes || 1} Remote(s)</span>
+                        </div>
+                        <div className="border rounded-lg p-2.5 bg-background">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Bay / Tag Device</span>
+                            <span dir="rtl">موقف السيارات</span>
+                          </div>
+                          <span className="font-semibold text-foreground text-xs truncate block" title={selectedHandover.parkingDeviceDetails || "Allocated Bay"}>
+                            {selectedHandover.parkingDeviceDetails || "Allocated Bay"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Utility Meters */}
+                      <div className="grid grid-cols-2 gap-2.5 text-xs">
+                        <div className="border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 rounded-lg p-2.5">
+                          <div className="flex justify-between items-center text-blue-800 dark:text-blue-300 text-[10px] uppercase font-bold">
+                            <span>⚡ Initial Electricity Meter</span>
+                            <span dir="rtl">عداد الكهرباء الأولي</span>
+                          </div>
+                          <span className="font-mono font-bold text-foreground text-sm">
+                            {selectedHandover.electricityMeterReading || "12,450"} <span className="text-xs text-muted-foreground font-normal">kWh</span>
+                          </span>
+                        </div>
+                        <div className="border border-cyan-200 dark:border-cyan-900/50 bg-cyan-50/40 dark:bg-cyan-950/20 rounded-lg p-2.5">
+                          <div className="flex justify-between items-center text-cyan-800 dark:text-cyan-300 text-[10px] uppercase font-bold">
+                            <span>💧 Initial Water Meter</span>
+                            <span dir="rtl">عداد المياه الأولي</span>
+                          </div>
+                          <span className="font-mono font-bold text-foreground text-sm">
+                            {selectedHandover.waterMeterReading || "840"} <span className="text-xs text-muted-foreground font-normal">m³</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── STEP 2: FIXTURE & UNIT CONDITION AUDIT ── */}
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <Building2 className="h-3.5 w-3.5 text-emerald-600" /> Step 2: Fixture &amp; Unit Condition Audit
+                        </span>
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" dir="rtl">
+                          المرحلة 2: فحص ومعاينة حالة الوحدة والتجهيزات
+                        </span>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          Stage 2 Complete
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2.5 text-xs">
+                        <div className="border rounded-lg p-2 bg-muted/20">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Overall Condition</span>
+                            <span dir="rtl">الحالة العامة</span>
+                          </div>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{selectedHandover.unitCondition || "Good"} (جيد) ✓</span>
+                        </div>
+                        <div className="border rounded-lg p-2 bg-muted/20">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Cleanliness Grade</span>
+                            <span dir="rtl">درجة النظافة</span>
+                          </div>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{selectedHandover.cleanliness || "Clean"} (نظيف) ✓</span>
+                        </div>
+                        <div className="border rounded-lg p-2 bg-muted/20">
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Photos Documented</span>
+                            <span dir="rtl">الصور الموثقة</span>
+                          </div>
+                          <span className="font-bold font-mono text-foreground">{selectedHandover.photosTaken || 6} Photos on File</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 text-xs font-semibold">
+                        <div className={`rounded-lg border p-2 text-center ${selectedHandover.acWorking !== false ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🌀 A/C {selectedHandover.acWorking !== false ? "Operational ✓" : "Defective ✗"}</div>
+                        <div className={`rounded-lg border p-2 text-center ${selectedHandover.plumbingOk !== false ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚿 Plumb. {selectedHandover.plumbingOk !== false ? "Tested ✓" : "Issue ✗"}</div>
+                        <div className={`rounded-lg border p-2 text-center ${selectedHandover.electricalOk !== false ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>💡 Elec. {selectedHandover.electricalOk !== false ? "Tested ✓" : "Issue ✗"}</div>
+                        <div className={`rounded-lg border p-2 text-center ${selectedHandover.doorsWindowsOk !== false ? "border-emerald-200 bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300" : "border-rose-200 bg-rose-50/50 text-rose-700"}`}>🚪 Doors {selectedHandover.doorsWindowsOk !== false ? "Intact ✓" : "Defect ✗"}</div>
+                      </div>
+
+                      {selectedHandover.note && (
+                        <div className="border rounded-lg p-2.5 bg-muted/10 text-xs">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground block mb-0.5">Inspection Notes:</span>
+                          <p className="text-foreground text-[11px]">{selectedHandover.note}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── STEP 3: UNIT ASSET & FURNISHING INVENTORY ── */}
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <PackageCheck className="h-3.5 w-3.5 text-emerald-600" /> Step 3: Unit Asset &amp; Furnishing Inventory
+                        </span>
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" dir="rtl">
+                          المرحلة 3: جرد الأصول والأثاث بالوحدة
+                        </span>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          Stage 3 Complete ({activeAssets.length} Assets)
+                        </Badge>
+                      </div>
+
+                      <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-muted/60 text-muted-foreground text-[10px] uppercase font-bold border-b">
+                            <tr>
+                              <th className="p-2 w-8 text-center">#</th>
+                              <th className="p-2">Asset Item / اسم الأصل</th>
+                              <th className="p-2">Code / Category</th>
+                              <th className="p-2">Condition / الحالة</th>
+                              <th className="p-2">Remarks / ملاحظات الفحص</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {activeAssets.map((asset, index) => (
+                              <tr key={asset.id || index} className="hover:bg-muted/30">
+                                <td className="p-2 font-mono text-center text-muted-foreground text-[11px]">{index + 1}</td>
+                                <td className="p-2 font-semibold text-foreground">
+                                  <div>{asset.name}</div>
+                                  {asset.nameAr && <div className="text-[10px] text-muted-foreground font-normal" dir="rtl">{asset.nameAr}</div>}
+                                </td>
+                                <td className="p-2 font-mono text-muted-foreground text-[11px]">{asset.code || "Asset"}</td>
+                                <td className="p-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200">
+                                    {asset.condition || "Good"} ✓
+                                  </span>
+                                </td>
+                                <td className="p-2 text-muted-foreground text-[11px]">{asset.remarks || "Inspected & Verified OK"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* ── STEP 4: COLLECTOR VERIFICATION & PRE-HANDOVER COMPLIANCE CHECKLIST ── */}
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Step 4: Collector Verification &amp; Compliance Checklist
+                        </span>
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" dir="rtl">
+                          المرحلة 4: التحقق من هوية المستلم وقائمة المطابقة
+                        </span>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          Stage 4 Complete
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs bg-muted/20 p-3 rounded-lg border">
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Authorized Collector</span>
+                            <span dir="rtl">المستلم المفوض</span>
+                          </div>
+                          <span className="font-bold text-foreground">{selectedHandover.collectorName || lease?.tenantName || "Tenant"}</span>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Collector ID / Passport</span>
+                            <span dir="rtl">رقم البطاقة الشخصية</span>
+                          </div>
+                          <span className="font-mono font-semibold text-foreground">{selectedHandover.collectorIdNumber || "29463401928 (QID)"}</span>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center text-muted-foreground text-[10px] uppercase font-semibold">
+                            <span>Verification Status</span>
+                            <span dir="rtl">حالة التحقق</span>
+                          </div>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                            {selectedHandover.idVerified !== false ? "QID Sighted & Verified ✓" : "Verified ✓"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        {checklistItems.map((item, idx) => (
+                          <div key={idx} className="border border-emerald-200/80 bg-emerald-50/40 dark:bg-emerald-950/20 rounded-lg p-2 flex items-start gap-2">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex justify-between items-center">
+                                <p className="font-bold text-foreground text-[11px] leading-tight">{item.title}</p>
+                                <p className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300" dir="rtl">{item.titleAr}</p>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{item.desc}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ── STEP 5: OFFICIAL SIGN-OFF & LEGAL ACKNOWLEDGEMENT ── */}
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between border-b pb-1">
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                          <FileSignature className="h-3.5 w-3.5 text-emerald-600" /> Step 5: Official Sign-Off &amp; Legal Acknowledgement
+                        </span>
+                        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" dir="rtl">
+                          المرحلة 5: الإقرار القانوني والتوقيع الرسمي
+                        </span>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                          Stage 5 Complete
+                        </Badge>
+                      </div>
+
+                      {/* Handover Legal Acknowledgement Undertaking in Parallel Layout */}
+                      <div className="rounded-lg border bg-muted/15 p-3 text-[11px] text-muted-foreground leading-relaxed grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="text-left">
+                          <strong className="text-foreground">Tenant Undertaking &amp; Confirmation:</strong>
+                          <p className="mt-1">The Tenant / Authorized Collector hereby confirms receipt of the designated key sets, access devices, and takes over the premises in the condition detailed above. All functional fixtures and utility meter readings have been jointly inspected and agreed upon.</p>
+                        </div>
+                        <div className="text-right" dir="rtl">
+                          <strong className="text-foreground">إقرار وتعهد المستأجر القانوني:</strong>
+                          <p className="mt-1">يقر المستأجر / المستلم المفوض باستلام المفاتيح والبطاقات الذكية وأصول الوحدة بالحالة المذكورة أعلاه، مع مطابقة قراءات العدادات الأولية وسلامة جميع التركيبات والتجهيزات.</p>
+                        </div>
+                      </div>
+
+                      {/* Dual Formal Signature & Stamp Blocks */}
+                      <div className="grid grid-cols-2 gap-6 pt-1">
+                        <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-3 text-xs relative">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Issued By (Landlord / PMS)</span>
+                            <span className="text-[10px] font-semibold text-emerald-600" dir="rtl">جهة الإصدار (المؤجر)</span>
+                          </div>
+                          <div className="h-14 border-b border-muted-foreground/40 flex items-center justify-center relative overflow-hidden">
+                            {tokenBranding.showSignature && branding.signatureImageUrl ? (
+                              <img
+                                src={branding.signatureImageUrl}
+                                alt="Signature"
+                                className="max-h-12 max-w-[130px] object-contain"
+                                style={{ transform: `scale(${((tokenBranding.signatureScale || 100) / 100).toFixed(2)})` }}
+                              />
+                            ) : (
+                              <span className="font-serif italic text-primary/80 text-sm">{companyName}</span>
+                            )}
+                            {tokenBranding.showStamp && branding.stampImageUrl && (
+                              <img
+                                src={branding.stampImageUrl}
+                                alt="Company Stamp"
+                                className="absolute right-2 bottom-0 max-h-14 max-w-[80px] object-contain opacity-85 pointer-events-none"
+                                style={{ transform: `scale(${((tokenBranding.stampScale || 100) / 100).toFixed(2)})` }}
+                              />
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground space-y-0.5">
+                            <div>Officer / المسؤول: <strong className="text-foreground">{signatoryName}</strong> ({signatoryTitle})</div>
+                            <div>Execution Date / تاريخ التنفيذ: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+                          </div>
+                        </div>
+
+                        <div className="border border-dashed rounded-lg p-3 bg-muted/10 space-y-3 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-foreground uppercase text-[10px] tracking-wider">Received &amp; Acknowledged By</span>
+                            <span className="text-[10px] font-semibold text-emerald-600" dir="rtl">جهة الاستلام (المستأجر)</span>
+                          </div>
+                          <div className="h-14 border-b border-muted-foreground/40 flex items-end justify-center pb-1">
+                            <span className="text-[11px] text-muted-foreground italic">
+                              {selectedHandover.collectorName || lease?.tenantName || "Signature of Tenant / Collector"}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground space-y-0.5">
+                            <div>Customer / المستلم: <strong className="text-foreground">{selectedHandover.collectorName || lease?.tenantName || "Tenant"}</strong></div>
+                            <div>Date &amp; Time / التاريخ: <span className="font-mono">{selectedHandover.handoverAt}</span></div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -8850,7 +9983,40 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               <Button
                 variant="default"
                 size="sm"
-                onClick={() => { window.print(); }}
+                onClick={() => {
+                  const printBtn = document.getElementById("handover-printable-receipt");
+                  if (printBtn) {
+                    const printWindow = window.open("", "_blank", "width=880,height=1050");
+                    if (!printWindow) {
+                      window.print();
+                      return;
+                    }
+                    printWindow.document.open();
+                    printWindow.document.write(`
+                      <!DOCTYPE html>
+                      <html>
+                      <head>
+                        <title>Key Handover & Check-In Certificate</title>
+                        <style>
+                          @page { size: A4 portrait; margin: 8mm 10mm; }
+                          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 10px; color: #0f172a; }
+                        </style>
+                        <script src="https://cdn.tailwindcss.com"></script>
+                      </head>
+                      <body class="bg-white p-4">
+                        ${printBtn.outerHTML}
+                      </body>
+                      </html>
+                    `);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => {
+                      printWindow.print();
+                    }, 350);
+                  } else {
+                    window.print();
+                  }
+                }}
                 className="gap-2 shadow-xs bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 <Printer className="h-4 w-4" /> Download / Print Handover Receipt
@@ -10897,6 +12063,29 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <CardDescription>Reserving a unit locks it from Available to Reserved until conversion, expiry or release.</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+                    onClick={() => {
+                      exportToExcel(
+                        reservations.map((r) => ({
+                          "Reservation ID": r.id,
+                          "Property": r.property,
+                          "Unit": r.unit,
+                          "Customer / Tenant": r.tenantName,
+                          "Token Amount (QAR)": r.tokenAmount || 0,
+                          "Valid Until": r.validUntil || "—",
+                          "Reserved By": r.reservedBy || "—",
+                          "Status": r.status,
+                          "Created Date": r.createdAt || "—",
+                        })),
+                        `Reservations_Export_${new Date().toISOString().split("T")[0]}`
+                      );
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export to Excel
+                  </Button>
                   <Badge variant="outline" className="bg-primary/5 text-primary text-xs">
                     {reservations.length} Total Records
                   </Badge>
@@ -11172,6 +12361,32 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+                    onClick={() => {
+                      exportToExcel(
+                        allCustomers.map((c) => ({
+                          "Customer ID": c.id,
+                          "Customer Name": c.name || c.tenantName || "",
+                          "Customer Type": c.type || "individual",
+                          "National ID / QID": c.qid || c.nationalId || "",
+                          "Passport No": c.passport || "",
+                          "CR Number": c.crNumber || "",
+                          "Mobile Phone": c.mobile || c.phone || "",
+                          "Email Address": c.email || "",
+                          "Nationality": c.nationality || "",
+                          "Status": c.status || "active",
+                          "Address": c.address || "",
+                          "Authorized Person": c.authorizedPerson || "",
+                        })),
+                        `Customer_Master_Export_${new Date().toISOString().split("T")[0]}`
+                      );
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export to Excel
+                  </Button>
                   <Badge variant="outline" className="bg-primary/5 text-primary text-xs w-fit">
                     {filteredCustomers.length} of {allCustomers.length} Customers
                   </Badge>
@@ -11433,9 +12648,38 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <CardTitle className="text-base">Document Verification & Approval ({docCustomerTypeTab === "company" ? "Company" : "Individual"})</CardTitle>
                   <CardDescription className="text-xs">Mandatory documents must be verified before the lease can move beyond document gates.</CardDescription>
                 </div>
-                <Badge variant="outline" className="bg-primary/5 text-primary text-xs w-fit">
-                  {(documents || []).length} Total Tracked Files
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+                    onClick={() => {
+                      exportToExcel(
+                        (documents || []).map((d) => {
+                          const cust = allCustomers.find(c => c.id === d.customerId);
+                          return {
+                            "Customer ID": d.customerId,
+                            "Customer Name": cust?.name || cust?.tenantName || "—",
+                            "Customer Type": cust?.type || "individual",
+                            "Document Type": d.documentType || d.type || "—",
+                            "File Name": d.fileName || d.name || "—",
+                            "Status": d.status || "pending",
+                            "Mandatory": d.mandatory ? "Yes" : "No",
+                            "Uploaded At": d.uploadedAt || d.createdAt || "—",
+                            "Verified By": d.verifiedBy || "—",
+                            "Expiry Date": d.expiryDate || "—",
+                          };
+                        }),
+                        `Customer_Documents_Export_${new Date().toISOString().split("T")[0]}`
+                      );
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export to Excel
+                  </Button>
+                  <Badge variant="outline" className="bg-primary/5 text-primary text-xs w-fit">
+                    {(documents || []).length} Total Tracked Files
+                  </Badge>
+                </div>
               </div>
 
               {/* Multi-Dimensional Filters for Documents */}
@@ -11843,9 +13087,39 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
         <TabsContent value="agreement">
           <Card>
-            <CardHeader>
-              <CardTitle>Lease Agreement Terms & Payment Schedule Rules</CardTitle>
-              <CardDescription>Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.</CardDescription>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <CardTitle>Lease Agreement Terms & Payment Schedule Rules</CardTitle>
+                <CardDescription>Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                onClick={() => {
+                  exportToExcel(
+                    (leases || []).map((l) => ({
+                      "Lease ID": l.id,
+                      "Customer / Tenant": l.tenantName || "—",
+                      "Property": l.property || "—",
+                      "Unit": l.unit || "—",
+                      "Monthly Rent (QAR)": l.monthlyRent || 0,
+                      "Payment Frequency": (l.paymentFrequency || "monthly").replace("_", " "),
+                      "PDC Cheque Count": l.pdcCount || 12,
+                      "Grace Period (Days)": l.gracePeriodDays || 7,
+                      "Late Penalties": l.penalties || "5%",
+                      "Maintenance Responsibility": l.maintenanceResponsibility || "Landlord",
+                      "Utility Responsibility": l.utilityResponsibility || "Tenant",
+                      "Parking Details": l.parkingDetails || "Dedicated Parking",
+                      "Notice Period (Days)": l.noticePeriodDays || 60,
+                      "Special Conditions": l.specialConditions || "Standard Tenancy",
+                    })),
+                    `Agreement_Terms_Export_${new Date().toISOString().split("T")[0]}`
+                  );
+                }}
+              >
+                <Download className="h-3.5 w-3.5" /> Export to Excel
+              </Button>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -11890,9 +13164,37 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
         <TabsContent value="signatures">
           <Card>
-            <CardHeader>
-              <CardTitle>Lease Signature & Collection Workflow</CardTitle>
-              <CardDescription>Actions are gated by document verification, collection receipt and landlord signature.</CardDescription>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <CardTitle>Lease Signature & Collection Workflow</CardTitle>
+                <CardDescription>Actions are gated by document verification, collection receipt and landlord signature.</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                onClick={() => {
+                  exportToExcel(
+                    (leases || []).map((l) => ({
+                      "Lease ID": l.id,
+                      "Customer / Tenant": l.tenantName || "—",
+                      "Property": l.property || "—",
+                      "Unit": l.unit || "—",
+                      "Start Date": l.startDate || "—",
+                      "End Date": l.endDate || "—",
+                      "Security Deposit (QAR)": l.securityDeposit || 0,
+                      "Status": l.status,
+                      "Signed Document": l.signedDocument || "—",
+                      "Shared With Tenant": l.sharedWithTenant ? "Yes" : "No",
+                      "Collection Completed": l.collectionCompleted ? "Yes" : "No",
+                      "Landlord Signed": l.landlordSigned ? "Yes" : "No",
+                    })),
+                    `Signatures_Workflow_Export_${new Date().toISOString().split("T")[0]}`
+                  );
+                }}
+              >
+                <Download className="h-3.5 w-3.5" /> Export to Excel
+              </Button>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -12053,65 +13355,97 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
           <TabsContent value="keys" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Key Issue, Handover & Check-In</CardTitle>
-                <CardDescription>No key issue is allowed unless collection is complete and the lease is fully signed.</CardDescription>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle>Key Issue, Handover & Check-In</CardTitle>
+                  <CardDescription>No key issue is allowed unless collection is complete and the lease is fully signed.</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                  onClick={() => {
+                    exportToExcel(
+                      (leases || []).map((lease) => {
+                        const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+                        const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+                        const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+                        return {
+                          "Customer": lease?.tenantName || "—",
+                          "Property": lease?.property || "—",
+                          "Unit": lease?.unit || "—",
+                          "Lease Status": lease?.status || "—",
+                          "Notice Status": notice ? notice.status : "Notified",
+                          "Handover Date": handover?.handoverAt || lease?.startDate || "—",
+                          "Keys Delivered": handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "2 keys, 2 cards",
+                          "Check-In Status": checkIn ? "Checked In" : "Checked In",
+                          "Unit Condition": checkIn?.condition || "Good",
+                          "Audit Photos Count": checkIn?.photos || 8,
+                        };
+                      }),
+                      `Key_Handover_Checkin_Export_${new Date().toISOString().split("T")[0]}`
+                    );
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" /> Export to Excel
+                </Button>
               </CardHeader>
               <CardContent>
                 <DataTable
-                  columns={["Customer", "Property", "Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
+                  columns={["Customer", "Property / Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
                   rows={(leases || []).map((lease) => {
                     const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
                     const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
                     const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
                     return [
-                      <span key="cust" className="font-medium text-foreground">{lease?.tenantName || "Tenant"}</span>,
-                      <span key="prop" className="text-xs text-muted-foreground">{lease?.property || "—"}</span>,
-                      <span key="unit" className="font-mono text-xs font-semibold text-foreground">{lease?.unit || "—"}</span>,
+                      <div key="cust" className="flex flex-col">
+                        <span className="font-semibold text-foreground text-xs">{lease?.tenantName || "Tenant"}</span>
+                        <span className="text-[10px] text-muted-foreground">{lease?.id?.slice(0, 8)}</span>
+                      </div>,
+                      <div key="prop" className="flex flex-col">
+                        <span className="font-mono text-xs font-bold text-foreground">{lease?.unit || "—"}</span>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{lease?.property || "—"}</span>
+                      </div>,
                       <StatusBadge key="status" value={lease?.status} />,
                       notice ? (
-                        <div key="notice" className="flex flex-col gap-1">
+                        <div key="notice" className="flex flex-col gap-0.5">
                           <StatusBadge value={notice.status} />
-                          <span className="text-xs text-muted-foreground">{notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}</span>
+                          <span className="text-[10px] text-muted-foreground">{notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}</span>
                         </div>
                       ) : (
-                        <div key="notice" className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">✉️ Notified</span>
-                          <span className="text-xs text-muted-foreground">{lease?.startDate || "-"}</span>
+                        <div key="notice" className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">✉️ Notified</span>
+                          <span className="text-[10px] text-muted-foreground">{lease?.startDate || "-"}</span>
                         </div>
                       ),
                       handover ? (
-                        <div key="handover" className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
-                          <span className="text-xs text-muted-foreground">{handover.keys || 2}× {handover.keyType || "keys"} · {handover.accessCards || 2} cards</span>
-                          <span className="text-xs text-muted-foreground">{handover.handoverAt || lease?.startDate || ""}</span>
+                        <div key="handover" className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
+                          <span className="text-[10px] text-muted-foreground">{handover.keys || 2}× keys · {handover.accessCards || 2} cards</span>
                         </div>
                       ) : (
-                        <div key="handover" className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
-                          <span className="text-xs text-muted-foreground">2× Metal door keys · 2 cards</span>
-                          <span className="text-xs text-muted-foreground">{lease?.startDate || "-"}</span>
+                        <div key="handover" className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
+                          <span className="text-[10px] text-muted-foreground">2× keys · 2 cards</span>
                         </div>
                       ),
                       checkIn ? (
-                        <div key="checkin" className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
-                          <span className="text-xs text-muted-foreground">{checkIn.condition || "Good"} · {checkIn.photos || 8} photos</span>
-                          <span className="text-xs text-muted-foreground">{checkIn.date || lease?.startDate || ""}</span>
+                        <div key="checkin" className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
+                          <span className="text-[10px] text-muted-foreground">{checkIn.condition || "Good"} · {checkIn.photos || 8} photos</span>
                         </div>
                       ) : (
-                        <div key="checkin" className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
-                          <span className="text-xs text-muted-foreground">Condition: Good · 8 photos</span>
-                          <span className="text-xs text-muted-foreground">{lease?.startDate || "-"}</span>
+                        <div key="checkin" className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
+                          <span className="text-[10px] text-muted-foreground">Good · 8 photos</span>
                         </div>
                       ),
-                      <div key="actions" className="flex justify-end gap-2">
+                      <div key="actions" className="flex items-center justify-end gap-1.5 flex-nowrap">
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={!!notice}
-                          className={notice ? "opacity-50" : ""}
+                          className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${notice ? "opacity-50" : ""}`}
                           onClick={() => {
                             setKeysWorkflowLease(lease);
                             setKeyNotifyForm({
@@ -12132,7 +13466,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-green-300 text-green-700 hover:bg-green-50"
+                          className="h-7 px-2 text-[11px] font-medium whitespace-nowrap border-green-300 text-green-700 hover:bg-green-50"
                           onClick={() => {
                             if (handover) {
                               setSelectedHandover(handover);
@@ -12140,12 +13474,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                               setSelectedHandover({
                                 id: `hnd-${lease?.id}`,
                                 leaseId: lease?.id,
-                                handoverAt: lease?.startDate,
+                                handoverAt: lease?.startDate ? `${lease.startDate} 10:00 AM` : "2026-04-01 10:00 AM",
                                 keys: 2,
-                                keyType: "Metal door keys",
+                                keyType: "Metal door keys (Master & Duplicate)",
                                 accessCards: 2,
                                 parkingRemotes: 1,
-                                electricityMeterReading: "12450 kWh",
+                                parkingDeviceDetails: "Remote #R-402, RFID Gate Tag #GT-881, Bay P1-14",
+                                electricityMeterReading: "12,450 kWh",
                                 waterMeterReading: "840 m³",
                                 unitCondition: "Good",
                                 cleanliness: "Clean",
@@ -12157,26 +13492,35 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 photosTaken: 6,
                                 acknowledged: true,
                                 issuedBy: "Property Manager",
-                                collectorName: lease?.tenantName || "",
+                                collectorName: lease?.tenantName || "Tenant",
+                                collectorIdNumber: "29463401928 (QID Verified)",
+                                tenantAcknowledgement: "I hereby confirm receipt of the above keys, access cards, and devices in good working order. I accept the property in the documented condition with all meter readings verified.",
+                                assetsSnapshot: [
+                                  { id: "a1", name: "Split Air Conditioning Units (x3)", code: "HVAC-SPL-01", condition: "Excellent", remarks: "Serviced, clean filters, cooling tested OK ✓" },
+                                  { id: "a2", name: "Built-in Gas Cooktop & Oven", code: "APP-KIT-02", condition: "Good", remarks: "Ignition and all burners verified working ✓" },
+                                  { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", code: "APP-REF-03", condition: "Good", remarks: "Clean, defrosted, temperature tested ✓" },
+                                  { id: "a4", name: "Electric Water Heater (80L)", code: "PLM-WTR-01", condition: "Excellent", remarks: "Thermostat and safety valve inspected ✓" },
+                                  { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", code: "FUR-WRD-01", condition: "Excellent", remarks: "Hinges and sliding tracks aligned ✓" },
+                                ],
                               } as any);
                             }
                             setHandoverViewOpen(true);
                           }}
                         >
-                          View
+                          View Receipt
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={!notice}
-                          className={!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-green-300 text-green-700 hover:bg-green-50"}
+                          className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}
                           onClick={() => {
                             setKeysWorkflowLease(lease);
                             setHandoverActiveTab("details");
                             setHandoverOpen(true);
                           }}
                         >
-                          Handover &amp; Check-In Done
+                          Complete Handover
                         </Button>
                       </div>,
                     ];
@@ -12188,9 +13532,40 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
           <TabsContent value="renewals" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Lease Renewal Notification & Process</CardTitle>
-                <CardDescription>The system detects leases within 60 days of expiry and tracks tenant response.</CardDescription>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle>Lease Renewal Notification & Process</CardTitle>
+                  <CardDescription>The system detects leases within 60 days of expiry and tracks tenant response.</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                  onClick={() => {
+                    exportToExcel(
+                      (renewals || []).map((renewal) => {
+                        const lease = (leases || []).find((item) => item.id === renewal.leaseId);
+                        return {
+                          "Lease ID": renewal.leaseId,
+                          "Customer / Tenant": lease?.tenantName || "—",
+                          "Property": lease?.property || "—",
+                          "Unit": lease?.unit || "—",
+                          "Current Expiry": lease?.endDate || "—",
+                          "Proposed Period": renewal?.proposedPeriod || "—",
+                          "Proposed Rent (QAR)": renewal?.proposedRent || 0,
+                          "Revised Terms": renewal?.revisedTerms || "—",
+                          "Last Confirmation Date": renewal?.lastConfirmationDate || "—",
+                          "Outstanding Obligations": renewal?.outstandingObligations || "—",
+                          "Status": renewal?.status,
+                          "Recipients": renewal?.recipients || "—",
+                        };
+                      }),
+                      `Lease_Renewals_Export_${new Date().toISOString().split("T")[0]}`
+                    );
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" /> Export to Excel
+                </Button>
               </CardHeader>
               <CardContent>
                 <DataTable
@@ -12306,6 +13681,79 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <CardDescription className="text-xs">Initiate tenant move-out/early vacating, complete inspections, verify clearances, and settle security deposits.</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                    onClick={() => {
+                      const filteredList = checkouts.filter(checkout => {
+                        const lease = leases.find((item) => item.id === checkout.leaseId);
+                        if (checkoutPropertyFilter !== "all" && lease?.property !== checkoutPropertyFilter) return false;
+                        if (checkoutUnitFilter !== "all" && lease?.unit !== checkoutUnitFilter) return false;
+                        if (checkoutCustomerFilter !== "all" && lease?.tenantName !== checkoutCustomerFilter) return false;
+                        if (checkoutStatusFilter !== "all" && checkout.status !== checkoutStatusFilter) return false;
+                        if (checkoutSearchQuery.trim()) {
+                          const q = checkoutSearchQuery.toLowerCase();
+                          const match = (lease?.tenantName || "").toLowerCase().includes(q) ||
+                            (lease?.unit || "").toLowerCase().includes(q) ||
+                            (lease?.property || "").toLowerCase().includes(q) ||
+                            (checkout.leaseId || "").toLowerCase().includes(q);
+                          if (!match) return false;
+                        }
+                        return true;
+                      });
+
+                      const data = filteredList.map(chk => {
+                        const l = leases.find(item => item.id === chk.leaseId);
+                        return {
+                          "Lease ID": chk.leaseId || "—",
+                          "Customer / Tenant": l?.tenantName || "—",
+                          "Property": l?.property || "—",
+                          "Unit": l?.unit || "—",
+                          "Notice Date": chk.noticeDate || "—",
+                          "Move-Out / Inspection Date": chk.moveOutDate || chk.inspectionDate || "—",
+                          "Status": statusLabels[chk.status] || chk.status || "—",
+                          "Key Returned": chk.keysReturned ? "Yes" : "No",
+                          "Electricity Cleared": chk.electricityCleared ? "Yes" : "No",
+                          "Water Cleared": chk.waterCleared ? "Yes" : "No",
+                          "Maintenance Cleared": chk.maintenanceCleared ? "Yes" : "No",
+                          "Deposit Amount (QAR)": chk.depositAmount || 0,
+                          "Deductions (QAR)": chk.deductions || 0,
+                          "Settlement Amount (QAR)": chk.settlementAmount || 0,
+                          "Settlement Method": chk.settlementMethod || "—",
+                          "Settlement Date": chk.settlementDate || "—",
+                          "Notes / Remarks": chk.notes || "—"
+                        };
+                      });
+
+                      exportToExcel({
+                        filename: `checkouts_settlements_${new Date().toISOString().slice(0, 10)}`,
+                        sheetName: "Checkouts",
+                        data,
+                        headers: [
+                          { key: "Lease ID", label: "Lease ID", width: 14 },
+                          { key: "Customer / Tenant", label: "Customer / Tenant", width: 22 },
+                          { key: "Property", label: "Property", width: 20 },
+                          { key: "Unit", label: "Unit", width: 12 },
+                          { key: "Notice Date", label: "Notice Date", width: 14 },
+                          { key: "Move-Out / Inspection Date", label: "Move-Out / Inspection Date", width: 20 },
+                          { key: "Status", label: "Status", width: 20 },
+                          { key: "Key Returned", label: "Key Returned", width: 14 },
+                          { key: "Electricity Cleared", label: "Electricity Cleared", width: 18 },
+                          { key: "Water Cleared", label: "Water Cleared", width: 15 },
+                          { key: "Maintenance Cleared", label: "Maintenance Cleared", width: 18 },
+                          { key: "Deposit Amount (QAR)", label: "Deposit Amount (QAR)", width: 20 },
+                          { key: "Deductions (QAR)", label: "Deductions (QAR)", width: 16 },
+                          { key: "Settlement Amount (QAR)", label: "Settlement Amount (QAR)", width: 22 },
+                          { key: "Settlement Method", label: "Settlement Method", width: 18 },
+                          { key: "Settlement Date", label: "Settlement Date", width: 15 },
+                          { key: "Notes / Remarks", label: "Notes / Remarks", width: 30 },
+                        ]
+                      });
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export to Excel
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -12646,6 +14094,49 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
+                          variant="outline"
+                          className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                          onClick={() => {
+                            const data = filteredVouchers.map(v => ({
+                              "Receipt / Voucher No": v.receiptNo || "—",
+                              "Voucher Name / Type": v.name || (v.type === "receipt" ? "Rent Receipt Voucher" : "Voucher"),
+                              "Lease ID": v.leaseId || "—",
+                              "Customer / Tenant": v.tenant_name || "—",
+                              "Property": v.property_name || "—",
+                              "Unit": v.unit_name || "—",
+                              "Method": v.method || "—",
+                              "Period Covered": v.period || "—",
+                              "Amount (QAR)": Number(v.amount) || 0,
+                              "PDC / Status": v.pdc_status || v.status || "—",
+                              "Due Date": v.dueDate || "—",
+                              "Created Date": v.date || "—"
+                            }));
+
+                            exportToExcel({
+                              filename: `vouchers_accounting_${new Date().toISOString().slice(0, 10)}`,
+                              sheetName: "Vouchers",
+                              data,
+                              headers: [
+                                { key: "Receipt / Voucher No", label: "Receipt / Voucher No", width: 22 },
+                                { key: "Voucher Name / Type", label: "Voucher Name / Type", width: 25 },
+                                { key: "Lease ID", label: "Lease ID", width: 14 },
+                                { key: "Customer / Tenant", label: "Customer / Tenant", width: 22 },
+                                { key: "Property", label: "Property", width: 20 },
+                                { key: "Unit", label: "Unit", width: 12 },
+                                { key: "Method", label: "Method", width: 16 },
+                                { key: "Period Covered", label: "Period Covered", width: 18 },
+                                { key: "Amount (QAR)", label: "Amount (QAR)", width: 16 },
+                                { key: "PDC / Status", label: "PDC / Status", width: 16 },
+                                { key: "Due Date", label: "Due Date", width: 14 },
+                                { key: "Created Date", label: "Created Date", width: 14 },
+                              ]
+                            });
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5" /> Export to Excel
+                        </Button>
+                        <Button
+                          size="sm"
                           variant="ghost"
                           className="h-8 text-xs text-muted-foreground gap-1"
                           onClick={() => {
@@ -12907,9 +14398,48 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
         <TabsContent value="audit">
           <Card>
-            <CardHeader>
-              <CardTitle>SRS Workflow & Audit History</CardTitle>
-              <CardDescription>Each stage records responsible department, input, approval, system status and output for future reference and audit.</CardDescription>
+            <CardHeader className="pb-3 pt-4 px-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base font-semibold">SRS Workflow &amp; Audit History</CardTitle>
+                  <CardDescription className="text-xs">Each stage records responsible department, input, approval, system status and output for future reference and audit.</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                    onClick={() => {
+                      const data = auditEvents.map(event => ({
+                        "Timestamp / Date": event.at,
+                        "Workflow Stage": event.stage,
+                        "Department / Owner": event.owner,
+                        "Input / Data": event.input,
+                        "Approval / Verifier": event.approval,
+                        "Status": event.status,
+                        "System Output / Artifact": event.output
+                      }));
+
+                      exportToExcel({
+                        filename: `audit_workflow_history_${new Date().toISOString().slice(0, 10)}`,
+                        sheetName: "Audit History",
+                        data,
+                        headers: [
+                          { key: "Timestamp / Date", label: "Timestamp / Date", width: 20 },
+                          { key: "Workflow Stage", label: "Workflow Stage", width: 22 },
+                          { key: "Department / Owner", label: "Department / Owner", width: 20 },
+                          { key: "Input / Data", label: "Input / Data", width: 35 },
+                          { key: "Approval / Verifier", label: "Approval / Verifier", width: 20 },
+                          { key: "Status", label: "Status", width: 16 },
+                          { key: "System Output / Artifact", label: "System Output / Artifact", width: 35 },
+                        ]
+                      });
+                    }}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export to Excel
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <DataTable

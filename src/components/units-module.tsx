@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
+import { exportToExcel } from "@/lib/excel-export";
 import {
   AlertTriangle,
   Bath,
@@ -703,28 +704,59 @@ export function UnitsModule({ role }: UnitsModuleProps) {
             Manage all rental and sale units across your portfolio.
           </p>
         </div>
-        {role !== "owner" && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setBulkImportOpen(true)}
-              className="gap-2"
-            >
-              <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
-            </Button>
-            <Button
-              onClick={() => {
-                setForm(EMPTY_FORM);
-                setRooms([makeRoomEntry("Bedroom")]);
-                setStep(1);
-                setOpen(true);
-              }}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" /> Add Unit
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              exportToExcel(
+                units.map((u) => {
+                  const prop = properties.find((p) => p.id === u.property_id);
+                  return {
+                    "Unit Ref / No": u.unit_ref || u.unit_name || u.id,
+                    "Property": prop?.title || u.property_id || "—",
+                    "Floor": u.floor || "1",
+                    "Unit Type": u.unit_type || "Apartment",
+                    "Category": u.unit_category || "Residential",
+                    "Bedrooms": u.no_of_bedrooms || 1,
+                    "Bathrooms": u.no_of_bathrooms || 1,
+                    "Area (sqft)": u.unit_area || "—",
+                    "Monthly Rent (QAR)": u.rent || u.market_rent || 0,
+                    "Electricity Meter": u.electricity_meter_no || "—",
+                    "Water Meter": u.water_meter_no || "—",
+                    "Status": u.status || "Available",
+                    "Lease Status": u.lease_status || "Vacant",
+                  };
+                }),
+                `Units_Master_${new Date().toISOString().split("T")[0]}`
+              );
+            }}
+            className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+          >
+            <Download className="h-4 w-4" /> Export to Excel
+          </Button>
+          {role !== "owner" && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBulkImportOpen(true)}
+                className="gap-2"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+              </Button>
+              <Button
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setRooms([makeRoomEntry("Bedroom")]);
+                  setStep(1);
+                  setOpen(true);
+                }}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" /> Add Unit
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Bulk Unit Import Dialog */}

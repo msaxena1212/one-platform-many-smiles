@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
+import { exportToExcel } from "@/lib/excel-export";
 import { Building2, Check, ChevronLeft, ChevronRight, Loader2, FileUp, Download, FileSpreadsheet, PlusCircle, Sparkles, Plus, Trash2, Search, X, SlidersHorizontal, Users, Home, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -530,7 +531,32 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             Manage your portfolio and track occupancy.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              exportToExcel(
+                properties.map((p) => ({
+                  "Property Code": p.property_code || p.id,
+                  "Property Name": p.title || p.name || "",
+                  "Property Type": p.property_type || "Residential",
+                  "Category": p.property_category || "Building",
+                  "Ownership": p.ownership_type || "Leased",
+                  "City": p.city || "Doha",
+                  "Area / Zone": p.area_zone || "",
+                  "Floors": p.no_of_floors || 0,
+                  "Total Units": p.total_units || p.no_of_units || 0,
+                  "Occupancy": occupancyData[p.id]?.occupancy || "0%",
+                  "Owner / Landlord": p.owner_landlord || "Al Ameen Real Estate",
+                  "Status": p.is_active !== false ? "Active" : "Inactive",
+                })),
+                `Properties_Master_${new Date().toISOString().split("T")[0]}`
+              );
+            }}
+            className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+          >
+            <Download className="h-4 w-4" /> Export to Excel
+          </Button>
           {role !== "owner" && (
             <>
               <Button

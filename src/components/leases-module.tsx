@@ -7,8 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, Search, Filter, RotateCcw, FileText } from "lucide-react";
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Loader2, Search, Filter, RotateCcw, FileText, Download, CheckCircle2 } from "lucide-react";
+import { exportToExcel } from "@/lib/excel-export";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
+import { toast } from "sonner";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -33,7 +35,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     try {
       let dbLeases: any[] = [];
       try {
-        const { data, error } = await supabase.from('leases').select('*, properties(title, property_code)').order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('leases').select('*, properties(title, property_code, area_zone, street_building_name)').order('created_at', { ascending: false });
         if (!error && data) dbLeases = data;
       } catch (e) {
         console.error(e);
@@ -77,6 +79,17 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           expiry_date: cl.endDate,
           rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
           lease_status: status,
+          signedDocument: cl.signedDocument,
+          signedDocumentUrl: (cl as any).signedDocumentUrl || (cl as any).signedContractUrl || (cl as any).signed_contract_url,
+          contract_file: (cl as any).contract_file,
+          monthlyRent: cl.monthlyRent,
+          securityDeposit: cl.securityDeposit,
+          tenant_qid: (cl as any).tenantQid || (cl as any).qid || (cl as any).qatarId,
+          tenant_mobile: (cl as any).tenantMobile || (cl as any).mobile || (cl as any).phone,
+          tenant_email: (cl as any).tenantEmail || (cl as any).email,
+          tenant_address: (cl as any).tenantAddress || (cl as any).address,
+          bedrooms: (cl as any).bedrooms,
+          furnishing: (cl as any).furnishing,
         };
       });
 
@@ -87,7 +100,6 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         if (rawStatus === "closed" || rawStatus === "terminated" || rawStatus === "vacated") {
           normalized = "CLOSED";
         } else if (rawStatus === "active" || rawStatus === "fully_signed" || rawStatus === "collection_completed" || rawStatus === "leased") {
-          // Check if expiring within 90 days
           const expiry = l.expiry_date || l.contract_end_date;
           if (expiry) {
             const expDate = new Date(expiry);
@@ -108,7 +120,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         } else {
           normalized = "DRAFT";
         }
-        return { ...l, lease_status: normalized };
+        return {
+          ...l,
+          lease_status: normalized,
+          signedDocument: l.signed_document || l.signedDocument || l.contract_file,
+          signedDocumentUrl: l.signed_contract_url || l.signed_document_url || l.signedDocumentUrl,
+          contract_file: l.contract_file || l.signed_contract_file,
+        };
       });
 
       // Combine both sources
@@ -185,8 +203,6 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
   const closedCount = leases.filter(l => l.lease_status?.toUpperCase() === 'CLOSED').length;
 
-  const basePath = role === 'admin' ? '/admin' : role === 'owner' ? '/owner' : '/prop-mgr';
-
   const totalPages = Math.max(1, Math.ceil(filteredLeases.length / ITEMS_PER_PAGE));
   const paginatedLeases = filteredLeases.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -195,8 +211,93 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
   useEffect(() => { setCurrentPage(1); }, [propertyFilter, unitFilter, customerFilter, statusFilter, searchQuery]);
 
+  const getVisiblePageNumbers = (current: number, total: number) => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, "ellipsis", total];
+    }
+    if (current >= total - 2) {
+      return [1, "ellipsis", total - 3, total - 2, total - 1, total];
+    }
+    return [1, "ellipsis", current - 1, current, current + 1, "ellipsis", total];
+  };
+
+  const handleDownloadContract = async (lease: any) => {
+    // Check if the lease has an uploaded signed contract
+    const signedUrl = lease.signedDocumentUrl || lease.signed_contract_url || lease.signed_doc_url;
+    const signedFileName = lease.signedDocument || lease.contract_file || lease.signed_document;
+
+    if (signedUrl && (signedUrl.startsWith("http") || signedUrl.startsWith("blob:") || signedUrl.startsWith("data:"))) {
+      const a = document.createElement("a");
+      a.href = signedUrl;
+      a.download = signedFileName || `Signed_Lease_Contract_${lease.lease_number || lease.id}.pdf`;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success(`Downloading signed lease contract for ${lease.tenant_name || lease.lease_number}`);
+      return;
+    }
+
+    // Otherwise, generate & download the standard bilingual lease contract (same as the download CTA)
+    toast.info(`Generating official bilingual lease contract for ${lease.tenant_name || lease.lease_number}...`);
+    try {
+      const { printBilingualLeaseContract } = await import('@/lib/qatar-lease-contract');
+      printBilingualLeaseContract({
+        contractNumber: lease.lease_number || `LC-${lease.id}`,
+        agreementDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        landlord: {
+          companyNameEn: "AL AMEEN REAL ESTATE",
+          companyNameAr: "الأمين للعقارات",
+          representedByEn: "MR. MOHAMED AMEEN",
+          representedByAr: "السيد / محمد أمين",
+          poBox: "20722",
+          cityEn: "DOHA - QATAR",
+          cityAr: "الدوحة - قطر",
+          phone: "+974 4444 1234",
+        },
+        tenant: {
+          nameEn: lease.tenant_name || "VALUED TENANT",
+          nameAr: lease.tenant_name || "المستأجر المحترم",
+          qid: lease.tenant_qid || lease.customer_qid || "28463401234",
+          mobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
+          poBox: lease.tenant_pobox || "Doha, Qatar",
+          addressEn: lease.tenant_address || "Doha, State of Qatar",
+          addressAr: lease.tenant_address || "الدوحة، دولة قطر",
+        },
+        property: {
+          propertyNameEn: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence",
+          propertyNameAr: (lease as any).properties?.title || lease.property_name || "مبنى الأمين السكني",
+          unitNumber: lease.unit || "Flat No. 04",
+          zone: (lease as any).properties?.area_zone || "90",
+          street: (lease as any).properties?.street_building_name || "Al Wukair Street",
+          building: (lease as any).properties?.property_code || "Building 12",
+          electricityMeterNo: lease.electricity_meter_no || "E-984210",
+          waterMeterNo: lease.water_meter_no || "W-541298",
+          unitTypeEn: lease.bedrooms ? `${lease.bedrooms} Bedroom Apartment` : "Residential Flat",
+          unitTypeAr: lease.bedrooms ? `شقة سكنية ${lease.bedrooms} غرف نوم` : "شقة سكنية",
+          furnishingEn: lease.furnishing || "Fully Furnished",
+          furnishingAr: lease.furnishing === 'unfurnished' ? "غير مفروشة" : lease.furnishing === 'semi_furnished' ? "نصف مفروشة" : "مفروشة بالكامل",
+        },
+        financial: {
+          monthlyRent: Number(lease.rental_amount) ? Math.round(Number(lease.rental_amount) / 12) : 5000,
+          securityDeposit: Math.round(Number(lease.rental_amount || 60000) / 12),
+          numberOfCheques: 12,
+          startDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : "2026-09-01",
+          endDate: lease.expiry_date ? new Date(lease.expiry_date).toISOString().split('T')[0] : "2027-08-31",
+          pdcCount: 12,
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate lease contract document.");
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full">
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
         <Card className="border-border">
@@ -242,13 +343,38 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       </div>
 
       {/* Main Table Card */}
-      <Card className="border-border">
+      <Card className="border-border w-full overflow-hidden">
         <div className="p-4 border-b border-border space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-base font-semibold">Lease Contracts Registry</CardTitle>
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1" onClick={() => { setPropertyFilter("all"); setUnitFilter("all"); setCustomerFilter("all"); setStatusFilter("all"); setSearchQuery(""); }}>
-              <RotateCcw className="h-3 w-3" /> Reset Filters
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
+                onClick={() => {
+                  exportToExcel(
+                    filteredLeases.map((l) => ({
+                      "Lease Number": l.lease_number || l.id,
+                      "Customer / Tenant": l.tenant_name || "—",
+                      "Property": l.properties?.title || l.property_name || "—",
+                      "Unit": l.unit || "—",
+                      "Commencement Date": l.commencement_date || "—",
+                      "Expiry Date": l.expiry_date || "—",
+                      "Annual Rent (QAR)": l.rental_amount || 0,
+                      "Monthly Rent (QAR)": l.rental_amount ? Math.round(l.rental_amount / 12) : 0,
+                      "Status": l.lease_status || "ACTIVE",
+                    })),
+                    `All_Leases_Export_${new Date().toISOString().split("T")[0]}`
+                  );
+                }}
+              >
+                <Download className="h-3.5 w-3.5" /> Export to Excel
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1" onClick={() => { setPropertyFilter("all"); setUnitFilter("all"); setCustomerFilter("all"); setStatusFilter("all"); setSearchQuery(""); }}>
+                <RotateCcw className="h-3 w-3" /> Reset Filters
+              </Button>
+            </div>
           </div>
 
           {/* Multi-Dimensional Filter Bar */}
@@ -309,18 +435,18 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         </div>
 
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto w-full">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/20">
                 <tr>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Ref #</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Property &amp; Unit</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Customer / Tenant</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Start Date</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">End Date</th>
-                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Annual Rent</th>
-                  <th className="px-4 py-2.5 text-center font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Status</th>
-                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider">Agreement</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Ref #</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Property &amp; Unit</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Customer / Tenant</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Start Date</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">End Date</th>
+                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Annual Rent</th>
+                  <th className="px-4 py-2.5 text-center font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Status</th>
+                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Agreement</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -340,16 +466,16 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                 ) : (
                   paginatedLeases.map((lease) => (
                     <tr key={lease.id} className="hover:bg-muted/10 transition-colors text-xs">
-                      <td className="px-4 py-3 font-mono font-medium text-primary">{lease.lease_number || 'N/A'}</td>
+                      <td className="px-4 py-3 font-mono font-medium text-primary whitespace-nowrap">{lease.lease_number || 'N/A'}</td>
                       <td className="px-4 py-3">
                         <div className="font-medium">{(lease as any).properties?.title || lease.property_name || 'Unknown Property'}</div>
                         {lease.unit && <div className="text-[11px] text-muted-foreground font-mono">Unit: {lease.unit}</div>}
                       </td>
                       <td className="px-4 py-3 font-medium">{lease.tenant_name || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{lease.commencement_date ? new Date(lease.commencement_date).toLocaleDateString() : 'N/A'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{lease.expiry_date ? new Date(lease.expiry_date).toLocaleDateString() : 'N/A'}</td>
-                      <td className="px-4 py-3 font-mono font-semibold text-right">QAR {lease.rental_amount?.toLocaleString() || '0'}</td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{lease.commencement_date ? new Date(lease.commencement_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{lease.expiry_date ? new Date(lease.expiry_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-right whitespace-nowrap">QAR {lease.rental_amount?.toLocaleString() || '0'}</td>
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
                           lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
                           lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
@@ -359,64 +485,16 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                           {lease.lease_status || 'DRAFT'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs hover:text-primary hover:bg-primary/10"
-                          title="Download / Print Bilingual Lease Contract"
-                          onClick={() => {
-                            import('@/lib/qatar-lease-contract').then(({ printBilingualLeaseContract }) => {
-                              printBilingualLeaseContract({
-                                contractNumber: undefined,
-                                agreementDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                                landlord: {
-                                  companyNameEn: "AL AMEEN REAL ESTATE",
-                                  companyNameAr: "الأمين للعقارات",
-                                  representedByEn: "MR. MOHAMED AMEEN",
-                                  representedByAr: "السيد / محمد أمين",
-                                  poBox: "20722",
-                                  cityEn: "DOHA - QATAR",
-                                  cityAr: "الدوحة - قطر",
-                                  phone: "+974 4444 1234",
-                                },
-                                tenant: {
-                                  nameEn: lease.tenant_name || "VALUED TENANT",
-                                  nameAr: lease.tenant_name || "المستأجر المحترم",
-                                  qid: lease.tenant_qid || lease.customer_qid || "28463401234",
-                                  mobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
-                                  poBox: lease.tenant_pobox || "Doha, Qatar",
-                                  addressEn: lease.tenant_address || "Doha, State of Qatar",
-                                  addressAr: lease.tenant_address || "الدوحة، دولة قطر",
-                                },
-                                property: {
-                                  propertyNameEn: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence",
-                                  propertyNameAr: (lease as any).properties?.title || lease.property_name || "مبنى الأمين السكني",
-                                  unitNumber: lease.unit || "Flat No. 04",
-                                  zone: (lease as any).properties?.area_zone || "90",
-                                  street: (lease as any).properties?.street_building_name || "Al Wukair Street",
-                                  building: (lease as any).properties?.property_code || "Building 12",
-                                  electricityMeterNo: lease.electricity_meter_no || "E-984210",
-                                  waterMeterNo: lease.water_meter_no || "W-541298",
-                                  unitTypeEn: lease.bedrooms ? `${lease.bedrooms} Bedroom Apartment` : "Residential Flat",
-                                  unitTypeAr: lease.bedrooms ? `شقة سكنية ${lease.bedrooms} غرف نوم` : "شقة سكنية",
-                                  furnishingEn: lease.furnishing || "Fully Furnished",
-                                  furnishingAr: lease.furnishing === 'unfurnished' ? "غير مفروشة" : lease.furnishing === 'semi_furnished' ? "نصف مفروشة" : "مفروشة بالكامل",
-                                },
-                                financial: {
-                                  monthlyRent: Number(lease.rental_amount) ? Math.round(Number(lease.rental_amount) / 12) : 5000,
-                                  securityDeposit: Math.round(Number(lease.rental_amount || 60000) / 12),
-                                  numberOfCheques: 12,
-                                  startDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : "2026-09-01",
-                                  endDate: lease.expiry_date ? new Date(lease.expiry_date).toISOString().split('T')[0] : "2027-08-31",
-                                  pdcCount: 12,
-                                }
-                              });
-                            });
-                          }}
+                          variant="outline"
+                          className="h-7 px-2.5 text-xs hover:text-primary hover:bg-primary/10 gap-1 border-border"
+                          title={lease.signedDocument ? `Download Uploaded Signed Contract (${lease.signedDocument})` : "Download / Print Official Lease Contract"}
+                          onClick={() => handleDownloadContract(lease)}
                         >
-                          <FileText className="h-3.5 w-3.5 mr-1" />
-                          Contract
+                          <FileText className="h-3.5 w-3.5 text-primary" />
+                          <span>Contract</span>
                         </Button>
                       </td>
                     </tr>
@@ -426,20 +504,43 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             </table>
           </div>
           {totalPages > 1 && (
-            <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-              <span>Showing {paginatedLeases.length} of {filteredLeases.length} leases</span>
-              <Pagination className="justify-end w-auto">
-                <PaginationContent>
+            <div className="p-3.5 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground bg-muted/10">
+              <div>
+                Showing <span className="font-semibold text-foreground">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span>–<span className="font-semibold text-foreground">{Math.min(currentPage * ITEMS_PER_PAGE, filteredLeases.length)}</span> of <span className="font-semibold text-foreground">{filteredLeases.length}</span> leases
+              </div>
+              <Pagination className="justify-center sm:justify-end w-auto mx-0">
+                <PaginationContent className="gap-1">
                   <PaginationItem>
-                    <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} />
+                    <PaginationPrevious
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }}
+                      className={`h-8 px-2.5 text-xs ${currentPage === 1 ? "pointer-events-none opacity-40" : "hover:bg-muted cursor-pointer"}`}
+                    />
                   </PaginationItem>
-                  {[...Array(totalPages)].map((_, i) => (
-                    <PaginationItem key={i}>
-                      <PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink>
-                    </PaginationItem>
+                  {getVisiblePageNumbers(currentPage, totalPages).map((pNum, idx) => (
+                    pNum === "ellipsis" ? (
+                      <PaginationItem key={`ellipsis-${idx}`}>
+                        <PaginationEllipsis className="h-8 w-8" />
+                      </PaginationItem>
+                    ) : (
+                      <PaginationItem key={pNum}>
+                        <PaginationLink
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); setCurrentPage(Number(pNum)); }}
+                          isActive={currentPage === pNum}
+                          className="h-8 w-8 text-xs cursor-pointer"
+                        >
+                          {pNum}
+                        </PaginationLink>
+                      </PaginationItem>
+                    )
                   ))}
                   <PaginationItem>
-                    <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} />
+                    <PaginationNext
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                      className={`h-8 px-2.5 text-xs ${currentPage === totalPages ? "pointer-events-none opacity-40" : "hover:bg-muted cursor-pointer"}`}
+                    />
                   </PaginationItem>
                 </PaginationContent>
               </Pagination>

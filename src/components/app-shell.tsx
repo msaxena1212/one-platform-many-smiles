@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { InAppNotificationBell } from "@/components/in-app-notification-bell";
+import { getDocumentBranding } from "@/lib/document-branding";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +120,10 @@ export function AppShell({
     navigate({ to: "/super-admin/tenants" as any });
   }
 
+  const branding = getDocumentBranding();
+  const orgName = impersonation?.tenantName || branding.companyName || "Al Ameen Real Estate";
+  const orgInitial = orgName.charAt(0).toUpperCase();
+
   // ════════════════════════════════════════════════════════════════════════════
   // 3-Layer nav (navModules) – single-column accordion
   // ════════════════════════════════════════════════════════════════════════════
@@ -148,6 +153,8 @@ export function AppShell({
             pathname={pathname}
             searchParams={searchParams}
             onSignOut={handleSignOut}
+            orgName={orgName}
+            orgInitial={orgInitial}
           />
           {/* ── Main content ─────────────────────────────────── */}
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
@@ -164,7 +171,6 @@ export function AppShell({
       </div>
     );
   }
-
   // ════════════════════════════════════════════════════════════════════════════
   // Legacy 2-layer nav (navGroups)
   // ════════════════════════════════════════════════════════════════════════════
@@ -177,6 +183,8 @@ export function AppShell({
         title={title}
         isItemActive={isItemActive}
         onSignOut={handleSignOut}
+        orgName={orgName}
+        orgInitial={orgInitial}
       >
         {children}
       </LegacyNavGroupsLayout>
@@ -190,9 +198,9 @@ export function AppShell({
     <div className="flex h-screen overflow-hidden">
       <nav className={cn("hidden md:flex w-56 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b", DIVIDER, SIDEBAR_HEADER)}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">{orgInitial}</div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+            <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
             <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
           </div>
         </div>
@@ -236,6 +244,8 @@ function NavModulesSidebar({
   pathname,
   searchParams,
   onSignOut,
+  orgName = "Al Ameen Real Estate",
+  orgInitial = "A",
 }: {
   navModules: NavModule[];
   consoleLabel?: string;
@@ -244,6 +254,8 @@ function NavModulesSidebar({
   pathname: string;
   searchParams: Record<string, any>;
   onSignOut: () => void;
+  orgName?: string;
+  orgInitial?: string;
 }) {
   // ── Detect active state: pick ONLY the single most-specific matching item ──
   // This prevents "/prop-mgr" (Dashboard) from also matching when on "/prop-mgr/leases"
@@ -327,10 +339,10 @@ function NavModulesSidebar({
       {/* ── Header: logo + console name ──────────────────────────────────── */}
       <div className={cn("flex items-center gap-3 px-5 py-4 border-b shrink-0", DIVIDER, SIDEBAR_HEADER)}>
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">
-          Z
+          {orgInitial}
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+          <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
           <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
         </div>
       </div>
@@ -490,6 +502,8 @@ function LegacyNavGroupsLayout({
   isItemActive,
   onSignOut,
   children,
+  orgName = "Al Ameen Real Estate",
+  orgInitial = "A",
 }: {
   navGroups: NavGroup[];
   consoleLabel?: string;
@@ -498,6 +512,8 @@ function LegacyNavGroupsLayout({
   isItemActive: (item: NavItem) => boolean;
   onSignOut: () => void;
   children?: React.ReactNode;
+  orgName?: string;
+  orgInitial?: string;
 }) {
   function findActiveGroup(): number {
     const idx = navGroups.findIndex((g) => g.items.some(isItemActive));
@@ -522,9 +538,9 @@ function LegacyNavGroupsLayout({
       <nav className={cn("hidden md:flex w-60 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         {/* Logo */}
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b shrink-0", DIVIDER, SIDEBAR_HEADER)}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">{orgInitial}</div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+            <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
             <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
           </div>
         </div>
