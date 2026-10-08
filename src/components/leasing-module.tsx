@@ -9731,7 +9731,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 <td className="p-2 font-mono text-center text-muted-foreground text-[11px]">{index + 1}</td>
                                 <td className="p-2 font-semibold text-foreground">
                                   <div>{asset.name}</div>
-                                  {asset.nameAr && <div className="text-[10px] text-muted-foreground font-normal" dir="rtl">{asset.nameAr}</div>}
+                                  {(asset as any).nameAr && <div className="text-[10px] text-muted-foreground font-normal" dir="rtl">{(asset as any).nameAr}</div>}
                                 </td>
                                 <td className="p-2 font-mono text-muted-foreground text-[11px]">{asset.code || "Asset"}</td>
                                 <td className="p-2">
