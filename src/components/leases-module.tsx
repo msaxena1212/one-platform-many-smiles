@@ -11,6 +11,7 @@ import { Loader2, Search, Filter, RotateCcw, FileText, Download, CheckCircle2 } 
 import { exportToExcel } from "@/lib/excel-export";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
 import { toast } from "sonner";
+import { formatDateNumericDDMMYYYY } from "@/lib/date-utils";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -245,50 +246,39 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     toast.info(`Generating official bilingual lease contract for ${lease.tenant_name || lease.lease_number}...`);
     try {
       const { printBilingualLeaseContract } = await import('@/lib/qatar-lease-contract');
+      
+      const sDate = lease.commencement_date || lease.startDate || lease.start_date || "2026-04-10";
+      const eDate = lease.expiry_date || lease.endDate || lease.end_date || "2027-04-09";
+      const rentAmount = Number(lease.rental_amount) || 60000;
+      const monthlyRent = rentAmount > 20000 ? Math.round(rentAmount / 12) : rentAmount;
+
       printBilingualLeaseContract({
+        id: lease.id,
         contractNumber: lease.lease_number || `LC-${lease.id}`,
-        agreementDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        landlord: {
-          companyNameEn: "AL AMEEN REAL ESTATE",
-          companyNameAr: "الأمين للعقارات",
-          representedByEn: "MR. MOHAMED AMEEN",
-          representedByAr: "السيد / محمد أمين",
-          poBox: "20722",
-          cityEn: "DOHA - QATAR",
-          cityAr: "الدوحة - قطر",
-          phone: "+974 4444 1234",
-        },
-        tenant: {
-          nameEn: lease.tenant_name || "VALUED TENANT",
-          nameAr: lease.tenant_name || "المستأجر المحترم",
-          qid: lease.tenant_qid || lease.customer_qid || "28463401234",
-          mobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
-          poBox: lease.tenant_pobox || "Doha, Qatar",
-          addressEn: lease.tenant_address || "Doha, State of Qatar",
-          addressAr: lease.tenant_address || "الدوحة، دولة قطر",
-        },
-        property: {
-          propertyNameEn: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence",
-          propertyNameAr: (lease as any).properties?.title || lease.property_name || "مبنى الأمين السكني",
-          unitNumber: lease.unit || "Flat No. 04",
-          zone: (lease as any).properties?.area_zone || "90",
-          street: (lease as any).properties?.street_building_name || "Al Wukair Street",
-          building: (lease as any).properties?.property_code || "Building 12",
-          electricityMeterNo: lease.electricity_meter_no || "E-984210",
-          waterMeterNo: lease.water_meter_no || "W-541298",
-          unitTypeEn: lease.bedrooms ? `${lease.bedrooms} Bedroom Apartment` : "Residential Flat",
-          unitTypeAr: lease.bedrooms ? `شقة سكنية ${lease.bedrooms} غرف نوم` : "شقة سكنية",
-          furnishingEn: lease.furnishing || "Fully Furnished",
-          furnishingAr: lease.furnishing === 'unfurnished' ? "غير مفروشة" : lease.furnishing === 'semi_furnished' ? "نصف مفروشة" : "مفروشة بالكامل",
-        },
-        financial: {
-          monthlyRent: Number(lease.rental_amount) ? Math.round(Number(lease.rental_amount) / 12) : 5000,
-          securityDeposit: Math.round(Number(lease.rental_amount || 60000) / 12),
-          numberOfCheques: 12,
-          startDate: lease.commencement_date ? new Date(lease.commencement_date).toISOString().split('T')[0] : "2026-09-01",
-          endDate: lease.expiry_date ? new Date(lease.expiry_date).toISOString().split('T')[0] : "2027-08-31",
-          pdcCount: 12,
-        }
+        tenantName: lease.tenant_name || "Mr. Dawood Sulaiman S Al Rahbi",
+        tenantQid: lease.tenant_qid || lease.customer_qid || "28463401234",
+        tenantMobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
+        tenantPoBox: lease.tenant_pobox || "Doha, Qatar",
+        tenantAddressEn: lease.tenant_address || "Doha, State of Qatar",
+        tenantAddressAr: lease.tenant_address || "الدوحة، دولة قطر",
+        property: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence 40",
+        propertyCode: (lease as any).properties?.property_code || "PR01",
+        unit: lease.unit || "OS40-12",
+        zoneEn: (lease as any).properties?.area_zone || "Al Wakara-90",
+        streetNumber: (lease as any).properties?.street_building_name || "Street 993",
+        buildingNumber: (lease as any).properties?.property_code || "01",
+        electricityNumber: lease.electricity_meter_no || "1424225",
+        waterNumber: lease.water_meter_no || "1264332",
+        bedroomCount: lease.bedrooms || "2",
+        furnishingStatusEn: lease.furnishing || "Semi Furnished",
+        monthlyRent: monthlyRent,
+        securityDeposit: monthlyRent,
+        currentChequeCount: 1,
+        pdcCount: 12,
+        startDate: sDate,
+        endDate: eDate,
+        commencement_date: sDate,
+        expiry_date: eDate,
       });
     } catch (err) {
       console.error(err);
@@ -472,8 +462,8 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                         {lease.unit && <div className="text-[11px] text-muted-foreground font-mono">Unit: {lease.unit}</div>}
                       </td>
                       <td className="px-4 py-3 font-medium">{lease.tenant_name || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{lease.commencement_date ? new Date(lease.commencement_date).toLocaleDateString() : 'N/A'}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{lease.expiry_date ? new Date(lease.expiry_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateNumericDDMMYYYY(lease.commencement_date || lease.startDate || lease.start_date)}</td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateNumericDDMMYYYY(lease.expiry_date || lease.endDate || lease.end_date)}</td>
                       <td className="px-4 py-3 font-mono font-semibold text-right whitespace-nowrap">QAR {lease.rental_amount?.toLocaleString() || '0'}</td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${

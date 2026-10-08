@@ -59,6 +59,40 @@ export function formatDDMMMYYYY(dateInput?: string | Date | null): string {
 }
 
 /**
+ * Formats any date into strict 'dd/mm/yyyy' or 'dd/mmm/yyyy' without timezone shift.
+ */
+export function formatDateNumericDDMMYYYY(dateInput?: string | Date | null): string {
+  if (!dateInput) return '-';
+  try {
+    const raw = String(dateInput).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      const parts = raw.split('T')[0].split('-');
+      const y = parts[0];
+      const m = parts[1].padStart(2, '0');
+      const d = parts[2].padStart(2, '0');
+      return `${d}/${m}/${y}`;
+    }
+    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/.test(raw)) {
+      const parts = raw.split('T')[0].split(/[\/-]/);
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2];
+      return `${d}/${m}/${y}`;
+    }
+    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (isNaN(d.getTime())) {
+      return String(dateInput);
+    }
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return String(dateInput || '-');
+  }
+}
+
+/**
  * Alias for backward compatibility that outputs canonical 'dd/mmm/yyyy' (e.g. 03/Sep/2026).
  */
 export function formatDateDDMMYYYY(dateInput?: string | Date | null): string {

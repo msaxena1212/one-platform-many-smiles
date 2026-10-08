@@ -219,19 +219,50 @@ export function numberToEnglishWords(num: number): string {
   return "Qatar Riyals " + result.trim() + " only";
 }
 
-// Date formatting helpers
+// Date formatting helpers without timezone shift
+function parseDateParts(dateStr: string): { year: number; month: number; day: number } | null {
+  if (!dateStr) return null;
+  const raw = String(dateStr).trim();
+  // Match YYYY-MM-DD (e.g., from DB or ISO string)
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const parts = raw.split('T')[0].split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return { year, month, day };
+    }
+  }
+  // Match DD/MM/YYYY or DD-MM-YYYY
+  if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}/.test(raw)) {
+    const parts = raw.split('T')[0].split(/[\/-]/);
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return { year, month, day };
+    }
+  }
+  // Fallback to JS Date
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+  }
+  return null;
+}
+
 export function formatArabicDate(dateStr: string): string {
   if (!dateStr) return "01 سبتمبر 2026";
   try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
+    const parsed = parseDateParts(dateStr);
+    if (!parsed) return dateStr;
     const arabicMonths = [
       "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
       "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
     ];
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = arabicMonths[d.getMonth()];
-    const year = d.getFullYear();
+    const day = String(parsed.day).padStart(2, "0");
+    const month = arabicMonths[parsed.month] || "سبتمبر";
+    const year = parsed.year;
     return `${day} ${month} ${year}`;
   } catch {
     return dateStr;
@@ -241,17 +272,17 @@ export function formatArabicDate(dateStr: string): string {
 export function formatEnglishDate(dateStr: string): string {
   if (!dateStr) return "01st September 2026";
   try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
+    const parsed = parseDateParts(dateStr);
+    if (!parsed) return dateStr;
     const months = [
       "January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"
     ];
-    const day = d.getDate();
+    const day = parsed.day;
     const suffix = (day === 1 || day === 21 || day === 31) ? "st" : (day === 2 || day === 22) ? "nd" : (day === 3 || day === 23) ? "rd" : "th";
     const dayFormatted = `${String(day).padStart(2, "0")}${suffix}`;
-    const month = months[d.getMonth()];
-    const year = d.getFullYear();
+    const month = months[parsed.month] || "September";
+    const year = parsed.year;
     return `${dayFormatted} ${month} ${year}`;
   } catch {
     return dateStr;
