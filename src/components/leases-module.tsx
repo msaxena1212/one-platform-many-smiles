@@ -3,22 +3,25 @@ import { useEffect, useState, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import type { Lease } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, PenLine, CheckSquare } from "lucide-react";
+import { Loader2, PenLine, CheckSquare, Download } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { ESignatureModal } from "@/components/e-signature-modal";
 import { SnaggingHandoverModal } from "@/components/snagging-handover-modal";
+import * as XLSX from "xlsx";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
 }
 
-/** Always format date as DD/MM/YYYY — locale-independent, Qatar standard */
+/**
+ * Always format date as DD/MM/YYYY — locale-independent, Qatar standard.
+ * Parses the raw ISO string directly so timezone offsets never shift the day.
+ */
 function formatQatarDate(value?: string | null): string {
   if (!value) return 'N/A';
-  // Parse the raw date string directly to avoid timezone shifts
-  const parts = String(value).split('T')[0].split('-');
+  const raw = String(value).split('T')[0]; // 'YYYY-MM-DD'
+  const parts = raw.split('-');
   if (parts.length === 3) {
     const [yyyy, mm, dd] = parts;
     return `${dd}/${mm}/${yyyy}`;
@@ -120,6 +123,31 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     );
   }
 
+  /** Export all leases (all pages) to an Excel file */
+  function exportToExcel() {
+    const rows = leases.map((lease) => ({
+      'Ref':          lease.lease_number || '',
+      'Property':     getPropertyName(lease),
+      'Unit':         getUnitName(lease),
+      'Tenant Name':  getTenantName(lease),
+      'Start Date':   formatQatarDate(lease.commencement_date),
+      'End Date':     formatQatarDate(lease.expiry_date),
+      'Annual Rent (QAR)': lease.rental_amount ?? 0,
+      'Status':       lease.lease_status || 'DRAFT',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Auto-fit column widths
+    const colWidths = Object.keys(rows[0] || {}).map((k) => ({
+      wch: Math.max(k.length, ...rows.map((r: any) => String(r[k] ?? '').length)) + 2,
+    }));
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'All Leases');
+    XLSX.writeFile(wb, `All_Leases_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -161,6 +189,15 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         <div className="flex items-center justify-between p-6 pb-4">
           <CardTitle className="text-lg">Leases &amp; Tenancy Agreements</CardTitle>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={exportToExcel}
+              disabled={loading || leases.length === 0}
+            >
+              <Download className="h-3.5 w-3.5" /> Export Excel
+            </Button>
             {role !== 'owner' && (
               <Button asChild size="sm" className="gap-1 text-xs">
                 <Link to={`${basePath}/leases/new`}>+ New Lease</Link>
