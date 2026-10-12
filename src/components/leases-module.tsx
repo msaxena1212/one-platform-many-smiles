@@ -5,8 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2 } from "lucide-react";
+import { Loader2, PenLine, CheckSquare, ScanLine, FileCheck } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { ESignatureModal } from "@/components/e-signature-modal";
+import { SnaggingHandoverModal } from "@/components/snagging-handover-modal";
+import { KYCVerificationOCRModal } from "@/components/kyc-ocr-modal";
+import { toast } from "sonner";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -17,6 +21,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const [leases, setLeases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [signModalOpen, setSignModalOpen] = useState(false);
+  const [snagModalOpen, setSnagModalOpen] = useState(false);
+  const [kycModalOpen, setKycModalOpen] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<any | null>(null);
   const ITEMS_PER_PAGE = 20;
 
   const load = useCallback(async () => {
@@ -114,7 +122,22 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
       <Card className="border-border">
         <div className="flex items-center justify-between p-6 pb-4">
-          <CardTitle className="text-lg">Leases</CardTitle>
+          <CardTitle className="text-lg">Leases & Tenancy Agreements</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKycModalOpen(true)}
+              className="gap-1.5 text-xs border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+            >
+              <ScanLine className="w-3.5 h-3.5 text-indigo-600" /> AI KYC Scanner
+            </Button>
+            {role !== 'owner' && (
+              <Button asChild size="sm" className="gap-1 text-xs">
+                <Link to={`${basePath}/leases/new`}>+ New Lease</Link>
+              </Button>
+            )}
+          </div>
         </div>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -127,19 +150,20 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                   <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">End</th>
                   <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Annual Rent</th>
                   <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">Quick Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
                    <tr>
-                     <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                     <td colSpan={7} className="text-center py-8 text-muted-foreground">
                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                        Loading leases...
                      </td>
                    </tr>
                 ) : leases.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
                       No leases found.
                     </td>
                   </tr>
@@ -150,15 +174,41 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       <td className="px-6 py-4 font-medium">{(lease as any).properties?.title || 'Unknown Property'}</td>
                       <td className="px-6 py-4 text-muted-foreground">{lease.commencement_date ? new Date(lease.commencement_date).toLocaleDateString() : 'N/A'}</td>
                       <td className="px-6 py-4 text-muted-foreground">{lease.expiry_date ? new Date(lease.expiry_date).toLocaleDateString() : 'N/A'}</td>
-                      <td className="px-6 py-4 font-medium">${lease.rental_amount?.toLocaleString() || '0'}</td>
+                      <td className="px-6 py-4 font-medium">QR {lease.rental_amount?.toLocaleString() || '0'}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
-                          lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-green-100 text-green-700' :
-                          lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700' :
-                          'bg-slate-100 text-slate-700'
+                          lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' :
+                          lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
+                          'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                         }`}>
                           {lease.lease_status || 'DRAFT'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setSelectedLease(lease);
+                              setSignModalOpen(true);
+                            }}
+                          >
+                            <PenLine className="h-3 w-3 text-emerald-600" /> Sign
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setSelectedLease(lease);
+                              setSnagModalOpen(true);
+                            }}
+                          >
+                            <CheckSquare className="h-3 w-3 text-indigo-600" /> Snagging
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -187,6 +237,46 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Interactive Modals */}
+      {selectedLease && (
+        <>
+          <ESignatureModal
+            open={signModalOpen}
+            onOpenChange={setSignModalOpen}
+            documentTitle={`Residential Tenancy Agreement`}
+            documentRef={selectedLease.lease_number || selectedLease.id}
+            tenantName={selectedLease.tenant_name || selectedLease.tenantName || 'Tenant Principal'}
+            landlordName="ZYNO Real Estate Asset Management"
+            onSigningComplete={(sigInfo) => {
+              setLeases((prev) =>
+                prev.map((l) =>
+                  l.id === selectedLease.id ? { ...l, lease_status: 'ACTIVE' } : l
+                )
+              );
+            }}
+          />
+
+          <SnaggingHandoverModal
+            open={snagModalOpen}
+            onOpenChange={setSnagModalOpen}
+            unitCode={selectedLease.unit_code || selectedLease.unit || 'A-101'}
+            propertyName={(selectedLease as any).properties?.title || selectedLease.property || 'Tower 1'}
+            tenantName={selectedLease.tenant_name || selectedLease.tenantName || 'Tenant Principal'}
+            leaseNo={selectedLease.lease_number || selectedLease.id}
+            securityDepositAmount={selectedLease.rental_amount ? Math.round(selectedLease.rental_amount / 12) : 5000}
+            defaultType={selectedLease.lease_status === 'ACTIVE' ? 'MOVE_OUT' : 'MOVE_IN'}
+          />
+        </>
+      )}
+
+      <KYCVerificationOCRModal
+        open={kycModalOpen}
+        onOpenChange={setKycModalOpen}
+        onApplyData={(data) => {
+          toast.success(`OCR Loaded: ${data.fullName} (ID: ${data.idNumber})`);
+        }}
+      />
     </div>
   );
 }

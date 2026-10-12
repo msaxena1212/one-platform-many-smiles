@@ -16,6 +16,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { useAppData } from "@/lib/app-data-context";
 import { fetchAssets, updateAsset, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
+import { generateReceiptBlob } from "@/components/receipt-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
 import {
   AlertCircle,
@@ -1057,7 +1058,22 @@ function LeasingPage() {
     rent: "5500",
     proposedEndDate: "",
     remarks: "",
+    // Token payment fields
+    collectionDate: today.toISOString().split("T")[0],
+    paymentMethod: "Cash" as "Cash" | "PDC" | "Bank Transfer",
+    tokenAmount: "",
+    chequeNo: "",
+    chequeBank: "",
+    chequeDate: today.toISOString().split("T")[0],
+    bankTransferRef: "",
+    bankName: "",
+    cashierName: "",
   });
+
+  // Token receipt download modal state
+  const [tokenReceiptUrl, setTokenReceiptUrl] = useState<string | null>(null);
+  const [tokenReceiptOpen, setTokenReceiptOpen] = useState(false);
+  const [tokenReceiptReservationId, setTokenReceiptReservationId] = useState("");
 
   const [customerForm, setCustomerForm] = useState({
     name: "",
@@ -1108,12 +1124,14 @@ function LeasingPage() {
     ]);
   }
 
-  function createReservation() {
+  async function createReservation() {
     const activeUnits = realUnits.length > 0 ? realUnits : units;
     const unit = activeUnits.find((item) => item.unit === reservationForm.unit);
     if (!unit || unit.status !== "Available") return;
+    const reservationId = `r${reservations.length + 1}`;
+    const tokenAmt = Number(reservationForm.tokenAmount) || 0;
     const reservation: Reservation = {
-      id: `r${reservations.length + 1}`,
+      id: reservationId,
       property: unit.property,
       unit: unit.unit,
       tenantName: reservationForm.tenantName || "Prospective Tenant",
@@ -1127,15 +1145,66 @@ function LeasingPage() {
     };
     setReservations((items) => [reservation, ...items]);
     setUnits((items) => items.map((item) => (item.id === unit.id ? { ...item, status: "Reserved" } : item)));
-    setReservationForm((form) => ({ ...form, tenantName: "", remarks: "" }));
+    setReservationForm((form) => ({ ...form, tenantName: "", remarks: "", tokenAmount: "", chequeNo: "", chequeBank: "", bankTransferRef: "", bankName: "", cashierName: "" }));
     recordAudit({
       stage: "Unit Reservation",
       owner: "Marketing Agent",
-      input: `${reservation.unit}, ${reservation.tenantName}, validity until ${reservation.validUntil}`,
+      input: `${reservation.unit}, ${reservation.tenantName}, validity until ${reservation.validUntil}${tokenAmt > 0 ? `, token ${reservationForm.paymentMethod} QR ${tokenAmt}` : ""}`,
       approval: "Lease Module reservation control",
       status: "Reserved",
-      output: "Unit locked and unavailable for other offers",
+      output: `Unit locked and unavailable for other offers${tokenAmt > 0 ? `; token receipt generated` : ""}.`,
     });
+
+    // Generate token collection receipt if amount entered
+    if (tokenAmt > 0) {
+      try {
+        const ackNo = `TKN-${reservationId.toUpperCase()}-${Date.now().toString().slice(-4)}`;
+        const payRef =
+          reservationForm.paymentMethod === "PDC"
+            ? reservationForm.chequeNo || "PDC"
+            : reservationForm.paymentMethod === "Bank Transfer"
+            ? reservationForm.bankTransferRef || "TRANSFER"
+            : "CASH";
+        const receiptData = {
+          receipt_no: ackNo,
+          acknowledgement_no: ackNo,
+          tenant_name: reservation.tenantName,
+          property_name: unit.property,
+          lease_no: `RES-${reservationId.toUpperCase()}`,
+          location_code: unit.unit,
+          collection_date: reservationForm.collectionDate || today.toISOString().split("T")[0],
+          lease_start_date: reservation.startDate,
+          lease_end_date: reservation.validUntil,
+          total_amount: tokenAmt,
+          amount_in_words: "",
+          remarks: `Token amount collected for reservation of ${unit.unit}. Valid until ${reservation.validUntil}.${reservationForm.remarks ? " " + reservationForm.remarks : ""}`,
+          prepared_by: reservationForm.cashierName || "Leasing Department",
+          line_items: [
+            {
+              sNo: 1,
+              description: "Token / Reservation Amount",
+              chequeRef: payRef,
+              maturityDate: reservationForm.paymentMethod === "PDC" ? (reservationForm.chequeDate || today.toISOString().split("T")[0]) : reservationForm.collectionDate || today.toISOString().split("T")[0],
+              type: (reservationForm.paymentMethod === "PDC" ? "PDC" : reservationForm.paymentMethod === "Bank Transfer" ? "Bank Transfer" : "Cash") as any,
+              checkStartDate: "",
+              checkEndDate: "",
+              bankName: reservationForm.paymentMethod === "PDC" ? (reservationForm.chequeBank || "") : reservationForm.paymentMethod === "Bank Transfer" ? (reservationForm.bankName || "") : "",
+              amount: tokenAmt,
+            },
+          ],
+        };
+        const blob = await generateReceiptBlob(receiptData);
+        const url = URL.createObjectURL(blob);
+        setTokenReceiptUrl(url);
+        setTokenReceiptReservationId(reservationId);
+        setTokenReceiptOpen(true);
+      } catch (err) {
+        console.error("Token receipt generation failed", err);
+        toast.error("Reservation saved but receipt could not be generated.");
+      }
+    } else {
+      toast.success("Reservation created successfully.");
+    }
   }
 
   function releaseReservation(reservation: Reservation, status: "expired" | "released") {
@@ -2339,12 +2408,13 @@ function LeasingPage() {
       {/* ── CREATE LEASE DIALOG ───────────────────────────────────── */}
 
       <Dialog open={createReservationOpen} onOpenChange={setCreateReservationOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Reservation</DialogTitle>
-            <DialogDescription>Select a property, then a unit to reserve.</DialogDescription>
+            <DialogDescription>Select a property and unit to reserve. Optionally collect a token amount.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {/* Unit Selection */}
             <Field label="Property">
               <SearchableSelect
                 value={reservationForm.property}
@@ -2364,14 +2434,11 @@ function LeasingPage() {
                 options={(realUnits.length > 0 ? realUnits : units)
                   .filter(u => {
                     if (u.property !== reservationForm.property) return false;
-                    // Check if unit is occupied/leased in unit status
                     if (u.status && u.status.toLowerCase() !== "available") return false;
-                    // Check if unit is currently reserved (active reservation)
                     const isReserved = reservations.some(
                       r => r.property === u.property && r.unit === u.unit && (r.status === "reserved" || r.status === "converted")
                     );
                     if (isReserved) return false;
-                    // Check if unit has an active lease
                     const isLeased = leases.some(
                       l => l.property === u.property && l.unit === u.unit && (l.status === "active" || l.status === "fully_signed" || l.status === "collection_completed")
                     );
@@ -2381,7 +2448,7 @@ function LeasingPage() {
                   .map((unit) => ({ label: `${unit.unit} - Available`, value: unit.unit }))}
               />
             </Field>
-            <Field label="Prospective tenant">
+            <Field label="Prospective Tenant">
               <SearchableSelect
                 value={reservationForm.tenantName}
                 onValueChange={(tenantName) => setReservationForm((form) => ({ ...form, tenantName }))}
@@ -2390,12 +2457,76 @@ function LeasingPage() {
                 options={customers.map((c) => ({ label: c.name, value: c.name }))}
               />
             </Field>
-            <Field label="Expected Lease start"><Input type="date" value={reservationForm.startDate} onChange={(event) => setReservationForm((form) => ({ ...form, startDate: event.target.value }))} /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Validity days"><Input type="number" value={reservationForm.validityDays} onChange={(event) => setReservationForm((form) => ({ ...form, validityDays: event.target.value }))} /></Field>
-              <Field label="Rent"><Input type="number" value={reservationForm.rent} onChange={(event) => setReservationForm((form) => ({ ...form, rent: event.target.value }))} /></Field>
+              <Field label="Expected Lease Start"><Input type="date" value={reservationForm.startDate} onChange={(e) => setReservationForm((f) => ({ ...f, startDate: e.target.value }))} /></Field>
+              <Field label="Proposed End Date"><Input type="date" value={reservationForm.proposedEndDate} onChange={(e) => setReservationForm((f) => ({ ...f, proposedEndDate: e.target.value }))} /></Field>
             </div>
-            <Field label="Remarks"><Textarea value={reservationForm.remarks} onChange={(event) => setReservationForm((form) => ({ ...form, remarks: event.target.value }))} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Validity (days)"><Input type="number" value={reservationForm.validityDays} onChange={(e) => setReservationForm((f) => ({ ...f, validityDays: e.target.value }))} /></Field>
+              <Field label="Proposed Rent (QR)"><Input type="number" value={reservationForm.rent} onChange={(e) => setReservationForm((f) => ({ ...f, rent: e.target.value }))} /></Field>
+            </div>
+            <Field label="Remarks"><Textarea value={reservationForm.remarks} onChange={(e) => setReservationForm((f) => ({ ...f, remarks: e.target.value }))} /></Field>
+
+            {/* Token Payment Section */}
+            <Separator />
+            <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-primary" />
+              Token Amount Collection (Optional)
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Collection Date">
+                <Input type="date" value={reservationForm.collectionDate} onChange={(e) => setReservationForm((f) => ({ ...f, collectionDate: e.target.value }))} />
+              </Field>
+              <Field label="Token Amount (QR)">
+                <Input type="number" placeholder="0" value={reservationForm.tokenAmount} onChange={(e) => setReservationForm((f) => ({ ...f, tokenAmount: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Payment Method">
+              <Select value={reservationForm.paymentMethod} onValueChange={(v: typeof reservationForm.paymentMethod) => setReservationForm((f) => ({ ...f, paymentMethod: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Cash">Cash</SelectItem>
+                  <SelectItem value="PDC">PDC (Post-Dated Cheque)</SelectItem>
+                  <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {reservationForm.paymentMethod === "PDC" && (
+              <div className="grid grid-cols-2 gap-3 bg-muted/30 rounded-lg p-3">
+                <Field label="Cheque No.">
+                  <Input placeholder="e.g. CHQ-100123" value={reservationForm.chequeNo} onChange={(e) => setReservationForm((f) => ({ ...f, chequeNo: e.target.value }))} />
+                </Field>
+                <Field label="Bank">
+                  <Input placeholder="e.g. QNB" value={reservationForm.chequeBank} onChange={(e) => setReservationForm((f) => ({ ...f, chequeBank: e.target.value }))} />
+                </Field>
+                <Field label="Cheque Date">
+                  <Input type="date" value={reservationForm.chequeDate} onChange={(e) => setReservationForm((f) => ({ ...f, chequeDate: e.target.value }))} />
+                </Field>
+                <Field label="Received By">
+                  <Input placeholder="Staff name" value={reservationForm.cashierName} onChange={(e) => setReservationForm((f) => ({ ...f, cashierName: e.target.value }))} />
+                </Field>
+              </div>
+            )}
+            {reservationForm.paymentMethod === "Bank Transfer" && (
+              <div className="grid grid-cols-2 gap-3 bg-muted/30 rounded-lg p-3">
+                <Field label="Transfer / Ref. No.">
+                  <Input placeholder="e.g. TRF-20261001" value={reservationForm.bankTransferRef} onChange={(e) => setReservationForm((f) => ({ ...f, bankTransferRef: e.target.value }))} />
+                </Field>
+                <Field label="Bank Name">
+                  <Input placeholder="e.g. QNB" value={reservationForm.bankName} onChange={(e) => setReservationForm((f) => ({ ...f, bankName: e.target.value }))} />
+                </Field>
+                <Field label="Received By">
+                  <Input placeholder="Staff name" value={reservationForm.cashierName} onChange={(e) => setReservationForm((f) => ({ ...f, cashierName: e.target.value }))} />
+                </Field>
+              </div>
+            )}
+            {reservationForm.paymentMethod === "Cash" && (
+              <div className="bg-muted/30 rounded-lg p-3">
+                <Field label="Received By">
+                  <Input placeholder="Staff name" value={reservationForm.cashierName} onChange={(e) => setReservationForm((f) => ({ ...f, cashierName: e.target.value }))} />
+                </Field>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateReservationOpen(false)}>Cancel</Button>
@@ -2406,6 +2537,33 @@ function LeasingPage() {
               {busyAction === "reserve" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lock className="mr-2 h-4 w-4" />}
               Reserve Unit
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Token Receipt Download Modal */}
+      <Dialog open={tokenReceiptOpen} onOpenChange={(open) => { if (!open && tokenReceiptUrl) { URL.revokeObjectURL(tokenReceiptUrl); setTokenReceiptUrl(null); } setTokenReceiptOpen(open); }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-green-600" /> Token Receipt Ready</DialogTitle>
+            <DialogDescription>The reservation token receipt has been generated. Download and hand over to the customer.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+              <p className="font-semibold">Reservation {tokenReceiptReservationId.toUpperCase()} — Token collected</p>
+              <p className="mt-1 text-xs">Print this receipt and obtain the customer's signature. Upload the signed copy once received.</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTokenReceiptOpen(false)}>Close</Button>
+            {tokenReceiptUrl && (
+              <a href={tokenReceiptUrl} download={`Token-Receipt-${tokenReceiptReservationId}.pdf`}>
+                <Button className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Download Receipt
+                </Button>
+              </a>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

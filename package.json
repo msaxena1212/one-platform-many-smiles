@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "start": "nitro-server dist/server/server.js || node dist/server/server.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "seed:real-estate": "node seed-real-estate.js"
