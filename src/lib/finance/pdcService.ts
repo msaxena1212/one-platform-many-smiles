@@ -226,9 +226,9 @@ export async function depositPdc(
       message: `PDC ${ctx.cheque_number} is already ${ctx.status}.`,
     });
   }
-  if (status === 'returned' || status === 'cancelled' || status === 'bounced') {
+  if (status === 'cancelled') {
     throw new PdcStateError({
-      code: status === 'returned' || status === 'bounced' ? 'PDC_ALREADY_RETURNED' : 'PDC_ALREADY_CANCELLED',
+      code: 'PDC_ALREADY_CANCELLED',
       pdcId, chequeNumber: ctx.cheque_number, currentStatus: ctx.status,
       message: `PDC ${ctx.cheque_number} is in terminal state '${ctx.status}'.`,
     });

@@ -156,6 +156,7 @@ export const DEFAULT_CONFIGS = {
   } as LocalizationConfig,
 
   engine_automations: {
+    pdcClearingEnabled: false,
     pdcClearingSchedule: "5 21 * * *",
     pdcClearingTimeQatar: "00:05 AST",
     recurringBillingSchedule: "15 21 * * *",

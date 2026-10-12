@@ -446,19 +446,49 @@ function LegacyCashierPDCs() {
                               </>
                             )}
 
-                            {/* Event 3 — Clear (after Deposit) */}
+                            {/* Event 3 — Clear / Return (after Deposit) */}
                             {row.effectiveStatus === "deposited" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-xs border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                                  disabled={!!isActioning}
+                                  onClick={() => handleAction(row.id, "cleared")}
+                                  title="Clear cheque — GL: Dr Customer(PDC), Cr Receivable"
+                                >
+                                  {isActioning && actionLoading === row.id + "cleared"
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : "Clear"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={!!isActioning}
+                                  onClick={() => handleAction(row.id, "bounced")}
+                                  title="Return / Dishonour cheque"
+                                >
+                                  {isActioning && actionLoading === row.id + "bounced"
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : "Return"}
+                                </Button>
+                              </>
+                            )}
+
+                            {/* Re-Deposit for Returned / Bounced PDCs */}
+                            {(row.effectiveStatus === "bounced" || row.effectiveStatus === "returned") && (
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 px-2 text-xs"
+                                className="h-7 px-2 text-xs border-blue-500 text-blue-600 hover:bg-blue-50"
                                 disabled={!!isActioning}
-                                onClick={() => handleAction(row.id, "cleared")}
-                                title="Clear cheque — GL: Dr Customer(PDC), Cr Receivable"
+                                onClick={() => handleAction(row.id, "deposited")}
+                                title="Re-deposit cheque to bank"
                               >
-                                {isActioning && actionLoading === row.id + "cleared"
+                                {isActioning && actionLoading === row.id + "deposited"
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
-                                  : "Clear"}
+                                  : "Re-Deposit"}
                               </Button>
                             )}
                           </div>
