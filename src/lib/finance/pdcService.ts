@@ -329,6 +329,10 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   );
 
   if (!isNaN(Number(pdcId))) {
+    // Set session variable so the guard trigger (trg_fin_guard_pdc_auto_clear) allows
+    // this MANUAL clear to proceed. Without this, the trigger silently reverts the status.
+    await supabase.rpc('set_config', { setting: 'app.pdc_manual_clear', value: 'true', is_local: true }).maybeSingle().catch(() => {});
+
     const { error: finError } = await supabase
       .from('fin_pdc_register')
       .update({ status: 'Cleared', cleared_date: today })
