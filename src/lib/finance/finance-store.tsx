@@ -927,13 +927,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
         });
 
-        if (isPastDue) {
-          clearedCount++;
-          // ── Entry 2: PDC Deposited to Bank — Journal Voucher (NOT Contra) ──
+        const rawStatus = (p.status || "").toLowerCase().trim();
+        const isDeposited = rawStatus === "deposited";
+        const isCleared = rawStatus === "cleared";
+
+        if (isDeposited || isCleared) {
+          // ── Entry 2: PDC Deposited to Bank — Journal Voucher ──
           freshVouchers.push({
             id:           `pdc-dep-${p.id ?? chequeNo}`,
             voucher_no:   `VCH-PDC-DEP-${chequeNo}`,
-            voucher_type: "Journal Voucher",  // NOT Contra Voucher
+            voucher_type: "Journal Voucher",
             date:         chqDate,
             name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
             debit:        "Bank Operating Account (QNB)",
@@ -943,7 +946,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             amount, method: "Bank Transfer", status: "Posted",
             property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
           });
+        }
 
+        if (isCleared) {
+          clearedCount++;
           // ── Entry 3: Revenue Recognised — Journal Voucher ─────────────────
           freshVouchers.push({
             id:           `pdc-clr-${p.id ?? chequeNo}`,

@@ -941,10 +941,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           const chqDate  = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
           const isPastDue = chqDate <= todayStr;
 
-          // Derive display-facing PDC status from stored + date
+          // Derive display-facing PDC status strictly from stored DB status (manual workflow only)
           const storedStatus = (p.status || "").toLowerCase().trim();
-          const isTerminal = ["cleared", "returned", "bounced", "cancelled", "replaced", "partial cash", "deposited"].includes(storedStatus);
-          const pdcStatus = isTerminal ? storedStatus : (isPastDue ? "cleared" : "in hand");
+          const pdcStatus = storedStatus || "in hand";
 
           // Map to Voucher.status for existing metric counters
           const vStatus: Voucher["status"] =
@@ -14364,10 +14363,15 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           const vUnit   = vv.unit_name || "—";
                           const vCust   = vv.tenant_name || "—";
                           const pdcSt   = (vv.pdc_status || "in hand") as string;
+                          const chqDateStr = String(vv.period || "");
 
                           // PDC-status-aware badge
                           const pdcStatusBadge = (() => {
-                            const s = pdcSt.toLowerCase();
+                            const s = pdcSt.toLowerCase().trim();
+                            // From October 1, 2026 onwards, strictly require manual workflow
+                            if (chqDateStr >= "2026-10-01" && s !== "cleared" && s !== "deposited" && s !== "returned" && s !== "bounced" && s !== "cancelled" && s !== "replaced") {
+                              return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">In Hand</span>;
+                            }
                             if (s === "cleared")   return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Cleared</span>;
                             if (s === "deposited") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Deposited</span>;
                             if (s === "returned" || s === "bounced") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{s.charAt(0).toUpperCase() + s.slice(1)}</span>;
