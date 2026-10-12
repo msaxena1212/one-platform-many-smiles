@@ -1,18 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import type { Lease } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, Search, Filter, RotateCcw, FileText, Download, CheckCircle2 } from "lucide-react";
-import { exportToExcel } from "@/lib/excel-export";
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from "@/components/ui/pagination";
+import { Loader2, PenLine, CheckSquare, ScanLine, FileCheck } from "lucide-react";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { ESignatureModal } from "@/components/e-signature-modal";
+import { SnaggingHandoverModal } from "@/components/snagging-handover-modal";
+import { KYCVerificationOCRModal } from "@/components/kyc-ocr-modal";
 import { toast } from "sonner";
-import { formatDateNumericDDMMYYYY } from "@/lib/date-utils";
-import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
 
 export interface LeasesModuleProps {
   role: "admin" | "prop-mgr" | "owner";
@@ -23,124 +21,36 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const [leases, setLeases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 15;
+  const [signModalOpen, setSignModalOpen] = useState(false);
+  const [snagModalOpen, setSnagModalOpen] = useState(false);
+  const [kycModalOpen, setKycModalOpen] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<any | null>(null);
+  const ITEMS_PER_PAGE = 20;
 
-  // Filter States
-  const [propertyFilter, setPropertyFilter] = useState("all");
-  const [unitFilter, setUnitFilter] = useState("all");
-  const [customerFilter, setCustomerFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const load = useCallback(async (showLoading = true) => {
-    if (showLoading && leases.length === 0) setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
       let dbLeases: any[] = [];
       try {
-        const { data, error } = await supabase.from('leases').select('*, properties(title, property_code, area_zone, street_building_name)').order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('leases').select('*, properties(title, property_code)').order('created_at', { ascending: false });
         if (!error && data) dbLeases = data;
       } catch (e) {
         console.error(e);
       }
 
       // Map context leases to match table structure
-      const today90 = new Date();
-      today90.setDate(today90.getDate() + 90);
-
-      const mappedContext = (contextLeases || []).map(cl => {
-        const rawStatus = (cl.status || '').toLowerCase();
-        let status = 'DRAFT';
-        if (rawStatus === 'closed' || rawStatus === 'checkout' || rawStatus === 'terminated' || rawStatus === 'vacated') {
-          status = 'CLOSED';
-        } else if (rawStatus === 'active' || rawStatus === 'fully_signed' || rawStatus === 'collection_completed' || rawStatus === 'leased') {
-          if (cl.endDate) {
-            const expDate = new Date(cl.endDate);
-            if (!isNaN(expDate.getTime()) && expDate <= today90) {
-              status = 'EXPIRING';
-            } else {
-              status = 'ACTIVE';
-            }
-          } else {
-            status = 'ACTIVE';
-          }
-        } else if (rawStatus === 'renewal_due' || rawStatus === 'expiring') {
-          status = 'EXPIRING';
-        } else if (rawStatus === 'draft' || rawStatus === 'pending' || rawStatus === 'in_progress') {
-          status = 'DRAFT';
-        } else if (rawStatus) {
-          status = rawStatus.toUpperCase();
-        }
-        return {
-          id: cl.id,
-          lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
-          properties: { title: cl.property },
-          property_name: cl.property,
-          unit: cl.unit,
-          tenant_name: cl.tenantName,
-          commencement_date: cl.startDate,
-          expiry_date: cl.endDate,
-          rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
-          lease_status: status,
-          signedDocument: cl.signedDocument,
-          signedDocumentUrl: (cl as any).signedDocumentUrl || (cl as any).signedContractUrl || (cl as any).signed_contract_url,
-          contract_file: (cl as any).contract_file,
-          monthlyRent: cl.monthlyRent,
-          securityDeposit: cl.securityDeposit,
-          tenant_qid: (cl as any).tenantQid || (cl as any).qid || (cl as any).qatarId,
-          tenant_mobile: (cl as any).tenantMobile || (cl as any).mobile || (cl as any).phone,
-          tenant_email: (cl as any).tenantEmail || (cl as any).email,
-          tenant_address: (cl as any).tenantAddress || (cl as any).address,
-          bedrooms: (cl as any).bedrooms,
-          furnishing: (cl as any).furnishing,
-        };
-      });
-
-      // Normalize DB lease statuses and apply exact dates from Excel Lease Master
-      const normalizedDbLeases = dbLeases.map((l: any) => {
-        const uIdentifier = l.unit || l.unit_ref || l.unit_code || "";
-        const uKey = uIdentifier.toUpperCase().trim();
-        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
-
-        const rawStatus = (l.lease_status || l.status || "").toLowerCase();
-        const expiry = excelOverride?.end || l.expiry_date || l.contract_end_date;
-        let normalized: string;
-        if (rawStatus === "closed" || rawStatus === "terminated" || rawStatus === "vacated") {
-          normalized = "CLOSED";
-        } else if (rawStatus === "active" || rawStatus === "fully_signed" || rawStatus === "collection_completed" || rawStatus === "leased") {
-          if (expiry) {
-            const expDate = new Date(expiry);
-            if (!isNaN(expDate.getTime()) && expDate <= today90) {
-              normalized = "EXPIRING";
-            } else {
-              normalized = "ACTIVE";
-            }
-          } else {
-            normalized = "ACTIVE";
-          }
-        } else if (rawStatus === "renewal_due" || rawStatus === "expiring") {
-          normalized = "EXPIRING";
-        } else if (rawStatus === "draft" || rawStatus === "pending" || rawStatus === "in_progress") {
-          normalized = "DRAFT";
-        } else if (rawStatus) {
-          normalized = rawStatus.toUpperCase();
-        } else {
-          normalized = "DRAFT";
-        }
-        return {
-          ...l,
-          tenant_name: excelOverride?.tenant || l.tenant_name || l.customers?.full_name || '—',
-          commencement_date: excelOverride?.start || l.commencement_date,
-          expiry_date: excelOverride?.end || l.expiry_date,
-          rental_amount: excelOverride?.rent ? excelOverride.rent * 12 : l.rental_amount,
-          lease_status: normalized,
-          signedDocument: l.signed_document || l.signedDocument || l.contract_file,
-          signedDocumentUrl: l.signed_contract_url || l.signed_document_url || l.signedDocumentUrl,
-          contract_file: l.contract_file || l.signed_contract_file,
-        };
-      });
+      const mappedContext = (contextLeases || []).map(cl => ({
+        id: cl.id,
+        lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
+        properties: { title: cl.property },
+        commencement_date: cl.startDate,
+        expiry_date: cl.endDate,
+        rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
+        lease_status: cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed' ? 'ACTIVE' : cl.status === 'renewal_due' ? 'EXPIRING' : 'DRAFT',
+      }));
 
       // Combine both sources
-      const allLeases = [...normalizedDbLeases];
+      const allLeases = [...dbLeases];
       for (const mc of mappedContext) {
         if (!allLeases.some(l => l.id === mc.id || l.lease_number === mc.lease_number)) {
           allLeases.push(mc);
@@ -156,345 +66,149 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   }, [contextLeases]);
 
   useEffect(() => {
-    load(true);
+    load();
   }, [load]);
-
-  // Distinct filter options
-  const propertyOptions = useMemo(() => {
-    const set = new Set<string>();
-    leases.forEach(l => {
-      const p = (l as any).properties?.title || l.property_name;
-      if (p) set.add(p);
-    });
-    return Array.from(set).sort();
-  }, [leases]);
-
-  const unitOptions = useMemo(() => {
-    const set = new Set<string>();
-    leases.forEach(l => {
-      if (l.unit) set.add(l.unit);
-    });
-    return Array.from(set).sort();
-  }, [leases]);
-
-  const customerOptions = useMemo(() => {
-    const set = new Set<string>();
-    leases.forEach(l => {
-      if (l.tenant_name) set.add(l.tenant_name);
-    });
-    return Array.from(set).sort();
-  }, [leases]);
-
-  // Filtered leases
-  const filteredLeases = useMemo(() => {
-    return leases.filter(l => {
-      const propTitle = ((l as any).properties?.title || l.property_name || "").toLowerCase();
-      const unit = (l.unit || "").toLowerCase();
-      const tenant = (l.tenant_name || "").toLowerCase();
-      const status = (l.lease_status || "").toUpperCase();
-      const ref = (l.lease_number || l.id || "").toLowerCase();
-
-      if (propertyFilter !== "all" && ((l as any).properties?.title || l.property_name) !== propertyFilter) return false;
-      if (unitFilter !== "all" && l.unit !== unitFilter) return false;
-      if (customerFilter !== "all" && l.tenant_name !== customerFilter) return false;
-      if (statusFilter !== "all" && status !== statusFilter.toUpperCase()) return false;
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matches = ref.includes(q) || propTitle.includes(q) || unit.includes(q) || tenant.includes(q);
-        if (!matches) return false;
-      }
-      return true;
-    });
-  }, [leases, propertyFilter, unitFilter, customerFilter, statusFilter, searchQuery]);
 
   const activeCount = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
   const draftCount = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
   const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
-  const closedCount = leases.filter(l => l.lease_status?.toUpperCase() === 'CLOSED').length;
 
-  const totalPages = Math.max(1, Math.ceil(filteredLeases.length / ITEMS_PER_PAGE));
-  const paginatedLeases = filteredLeases.slice(
+  const basePath = role === 'admin' ? '/admin' : role === 'owner' ? '/owner' : '/prop-mgr';
+
+  const totalPages = Math.ceil(leases.length / ITEMS_PER_PAGE);
+  const paginatedLeases = leases.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
-  useEffect(() => { setCurrentPage(1); }, [propertyFilter, unitFilter, customerFilter, statusFilter, searchQuery]);
-
-  const getVisiblePageNumbers = (current: number, total: number) => {
-    if (total <= 7) {
-      return Array.from({ length: total }, (_, i) => i + 1);
-    }
-    if (current <= 3) {
-      return [1, 2, 3, 4, "ellipsis", total];
-    }
-    if (current >= total - 2) {
-      return [1, "ellipsis", total - 3, total - 2, total - 1, total];
-    }
-    return [1, "ellipsis", current - 1, current, current + 1, "ellipsis", total];
-  };
-
-  const handleDownloadContract = async (lease: any) => {
-    // Check if the lease has an uploaded signed contract
-    const signedUrl = lease.signedDocumentUrl || lease.signed_contract_url || lease.signed_doc_url;
-    const signedFileName = lease.signedDocument || lease.contract_file || lease.signed_document;
-
-    if (signedUrl && (signedUrl.startsWith("http") || signedUrl.startsWith("blob:") || signedUrl.startsWith("data:"))) {
-      const a = document.createElement("a");
-      a.href = signedUrl;
-      a.download = signedFileName || `Signed_Lease_Contract_${lease.lease_number || lease.id}.pdf`;
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast.success(`Downloading signed lease contract for ${lease.tenant_name || lease.lease_number}`);
-      return;
-    }
-
-    // Otherwise, generate & download the standard bilingual lease contract (same as the download CTA)
-    toast.info(`Generating official bilingual lease contract for ${lease.tenant_name || lease.lease_number}...`);
-    try {
-      const { printBilingualLeaseContract } = await import('@/lib/qatar-lease-contract');
-      
-      const sDate = lease.commencement_date || lease.startDate || lease.start_date || "2026-04-10";
-      const eDate = lease.expiry_date || lease.endDate || lease.end_date || "2027-04-09";
-      const rentAmount = Number(lease.rental_amount) || 60000;
-      const monthlyRent = rentAmount > 20000 ? Math.round(rentAmount / 12) : rentAmount;
-
-      printBilingualLeaseContract({
-        id: lease.id,
-        contractNumber: lease.lease_number || `LC-${lease.id}`,
-        tenantName: lease.tenant_name || "Mr. Dawood Sulaiman S Al Rahbi",
-        tenantQid: lease.tenant_qid || lease.customer_qid || "28463401234",
-        tenantMobile: lease.tenant_mobile || lease.customer_mobile || "+974 5555 1234",
-        tenantPoBox: lease.tenant_pobox || "Doha, Qatar",
-        tenantAddressEn: lease.tenant_address || "Doha, State of Qatar",
-        tenantAddressAr: lease.tenant_address || "الدوحة، دولة قطر",
-        property: (lease as any).properties?.title || lease.property_name || "Al Ameen Residence 40",
-        propertyCode: (lease as any).properties?.property_code || "PR01",
-        unit: lease.unit || "OS40-12",
-        zoneEn: (lease as any).properties?.area_zone || "Al Wakara-90",
-        streetNumber: (lease as any).properties?.street_building_name || "Street 993",
-        buildingNumber: (lease as any).properties?.property_code || "01",
-        electricityNumber: lease.electricity_meter_no || "1424225",
-        waterNumber: lease.water_meter_no || "1264332",
-        bedroomCount: lease.bedrooms || "2",
-        furnishingStatusEn: lease.furnishing || "Semi Furnished",
-        monthlyRent: monthlyRent,
-        securityDeposit: monthlyRent,
-        currentChequeCount: 1,
-        pdcCount: 12,
-        startDate: sDate,
-        endDate: eDate,
-        commencement_date: sDate,
-        expiry_date: eDate,
-      });
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to generate lease contract document.");
-    }
-  };
+  useEffect(() => { setCurrentPage(1); }, [leases]);
 
   return (
-    <div className="space-y-6 w-full max-w-full">
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border-border">
-          <CardHeader className="pb-1 pt-3 px-4">
+          <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Active</CardTitle>
           </CardHeader>
-          <CardContent className="pb-3 px-4">
-            <div className="text-2xl font-bold text-emerald-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : activeCount}</div>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : activeCount}</div>
           </CardContent>
         </Card>
         <Card className="border-border">
-          <CardHeader className="pb-1 pt-3 px-4">
+          <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expiring {'<'} 90D</CardTitle>
           </CardHeader>
-          <CardContent className="pb-3 px-4">
+          <CardContent>
             <div className="text-2xl font-bold text-amber-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : expiringCount}</div>
           </CardContent>
         </Card>
         <Card className="border-border">
-          <CardHeader className="pb-1 pt-3 px-4">
+          <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Drafts</CardTitle>
           </CardHeader>
-          <CardContent className="pb-3 px-4">
-            <div className="text-2xl font-bold text-slate-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : draftCount}</div>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : draftCount}</div>
           </CardContent>
         </Card>
         <Card className="border-border">
-          <CardHeader className="pb-1 pt-3 px-4">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Closed / Vacated</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-3 px-4">
-            <div className="text-2xl font-bold text-rose-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : closedCount}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="pb-1 pt-3 px-4">
+          <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Leases</CardTitle>
           </CardHeader>
-          <CardContent className="pb-3 px-4">
-            <div className="text-2xl font-bold text-primary">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : leases.length}</div>
+          <CardContent>
+            <div className="text-2xl font-bold">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : leases.length}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Table Card */}
-      <Card className="border-border w-full overflow-hidden">
-        <div className="p-4 border-b border-border space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-base font-semibold">Lease Contracts Registry</CardTitle>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
-                onClick={() => {
-                  exportToExcel(
-                    filteredLeases.map((l) => ({
-                      "Lease Number": l.lease_number || l.id,
-                      "Customer / Tenant": l.tenant_name || "—",
-                      "Property": l.properties?.title || l.property_name || "—",
-                      "Unit": l.unit || "—",
-                      "Commencement Date": l.commencement_date || "—",
-                      "Expiry Date": l.expiry_date || "—",
-                      "Annual Rent (QAR)": l.rental_amount || 0,
-                      "Monthly Rent (QAR)": l.rental_amount ? Math.round(l.rental_amount / 12) : 0,
-                      "Status": l.lease_status || "ACTIVE",
-                    })),
-                    `All_Leases_Export_${new Date().toISOString().split("T")[0]}`
-                  );
-                }}
-              >
-                <Download className="h-3.5 w-3.5" /> Export to Excel
+      <Card className="border-border">
+        <div className="flex items-center justify-between p-6 pb-4">
+          <CardTitle className="text-lg">Leases & Tenancy Agreements</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setKycModalOpen(true)}
+              className="gap-1.5 text-xs border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+            >
+              <ScanLine className="w-3.5 h-3.5 text-indigo-600" /> AI KYC Scanner
+            </Button>
+            {role !== 'owner' && (
+              <Button asChild size="sm" className="gap-1 text-xs">
+                <Link to={`${basePath}/leases/new`}>+ New Lease</Link>
               </Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1" onClick={() => { setPropertyFilter("all"); setUnitFilter("all"); setCustomerFilter("all"); setStatusFilter("all"); setSearchQuery(""); }}>
-                <RotateCcw className="h-3 w-3" /> Reset Filters
-              </Button>
-            </div>
-          </div>
-
-          {/* Multi-Dimensional Filter Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-            <div>
-              <Select value={propertyFilter} onValueChange={setPropertyFilter}>
-                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="All Properties" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Properties ({propertyOptions.length})</SelectItem>
-                  {propertyOptions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Select value={unitFilter} onValueChange={setUnitFilter}>
-                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="All Units" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Units ({unitOptions.length})</SelectItem>
-                  {unitOptions.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Select value={customerFilter} onValueChange={setCustomerFilter}>
-                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="All Customers" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers ({customerOptions.length})</SelectItem>
-                  {customerOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="All Statuses" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="EXPIRING">Expiring {'<'} 90D</SelectItem>
-                  <SelectItem value="DRAFT">Draft</SelectItem>
-                  <SelectItem value="CLOSED">Closed / Vacated</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                className="h-8 text-xs pl-8 bg-background"
-                placeholder="Search ref, property, unit, tenant..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+            )}
           </div>
         </div>
-
         <CardContent className="p-0">
-          <div className="overflow-x-auto w-full">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/20">
+              <thead className="border-y border-border bg-muted/10">
                 <tr>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Ref #</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Property &amp; Unit</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Customer / Tenant</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Start Date</th>
-                  <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">End Date</th>
-                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Annual Rent</th>
-                  <th className="px-4 py-2.5 text-center font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Status</th>
-                  <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground uppercase text-[11px] tracking-wider whitespace-nowrap">Agreement</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Ref</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Property</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Start</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">End</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Annual Rent</th>
+                  <th className="px-6 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">Quick Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
                    <tr>
-                     <td colSpan={8} className="text-center py-8 text-muted-foreground">
-                       <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
+                     <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                       <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                        Loading leases...
                      </td>
                    </tr>
-                ) : filteredLeases.length === 0 ? (
+                ) : leases.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-muted-foreground text-xs">
-                      No matching leases found.
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No leases found.
                     </td>
                   </tr>
                 ) : (
                   paginatedLeases.map((lease) => (
-                    <tr key={lease.id} className="hover:bg-muted/10 transition-colors text-xs">
-                      <td className="px-4 py-3 font-mono font-medium text-primary whitespace-nowrap">{lease.lease_number || 'N/A'}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{(lease as any).properties?.title || lease.property_name || 'Unknown Property'}</div>
-                        {lease.unit && <div className="text-[11px] text-muted-foreground font-mono">Unit: {lease.unit}</div>}
-                      </td>
-                      <td className="px-4 py-3 font-medium">{lease.tenant_name || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateNumericDDMMYYYY(lease.commencement_date || lease.startDate || lease.start_date)}</td>
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDateNumericDDMMYYYY(lease.expiry_date || lease.endDate || lease.end_date)}</td>
-                      <td className="px-4 py-3 font-mono font-semibold text-right whitespace-nowrap">QAR {lease.rental_amount?.toLocaleString() || '0'}</td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                    <tr key={lease.id} className="hover:bg-muted/10 transition-colors">
+                      <td className="px-6 py-4 font-mono text-xs">{lease.lease_number || 'N/A'}</td>
+                      <td className="px-6 py-4 font-medium">{(lease as any).properties?.title || 'Unknown Property'}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{lease.commencement_date ? new Date(lease.commencement_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{lease.expiry_date ? new Date(lease.expiry_date).toLocaleDateString() : 'N/A'}</td>
+                      <td className="px-6 py-4 font-medium">QR {lease.rental_amount?.toLocaleString() || '0'}</td>
+                      <td className="px-6 py-4">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
-                          lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
-                          lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
-                          lease.lease_status?.toUpperCase() === 'CLOSED' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
+                          lease.lease_status?.toUpperCase() === 'ACTIVE' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' :
+                          lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
                           'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                         }`}>
                           {lease.lease_status || 'DRAFT'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5 text-xs hover:text-primary hover:bg-primary/10 gap-1 border-border"
-                          title={lease.signedDocument ? `Download Uploaded Signed Contract (${lease.signedDocument})` : "Download / Print Official Lease Contract"}
-                          onClick={() => handleDownloadContract(lease)}
-                        >
-                          <FileText className="h-3.5 w-3.5 text-primary" />
-                          <span>Contract</span>
-                        </Button>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setSelectedLease(lease);
+                              setSignModalOpen(true);
+                            }}
+                          >
+                            <PenLine className="h-3 w-3 text-emerald-600" /> Sign
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setSelectedLease(lease);
+                              setSnagModalOpen(true);
+                            }}
+                          >
+                            <CheckSquare className="h-3 w-3 text-indigo-600" /> Snagging
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -503,43 +217,19 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             </table>
           </div>
           {totalPages > 1 && (
-            <div className="p-3.5 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground bg-muted/10">
-              <div>
-                Showing <span className="font-semibold text-foreground">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span>–<span className="font-semibold text-foreground">{Math.min(currentPage * ITEMS_PER_PAGE, filteredLeases.length)}</span> of <span className="font-semibold text-foreground">{filteredLeases.length}</span> leases
-              </div>
-              <Pagination className="justify-center sm:justify-end w-auto mx-0">
-                <PaginationContent className="gap-1">
+            <div className="p-4 border-t border-border">
+              <Pagination>
+                <PaginationContent>
                   <PaginationItem>
-                    <PaginationPrevious
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }}
-                      className={`h-8 px-2.5 text-xs ${currentPage === 1 ? "pointer-events-none opacity-40" : "hover:bg-muted cursor-pointer"}`}
-                    />
+                    <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? "pointer-events-none opacity-50" : ""} />
                   </PaginationItem>
-                  {getVisiblePageNumbers(currentPage, totalPages).map((pNum, idx) => (
-                    pNum === "ellipsis" ? (
-                      <PaginationItem key={`ellipsis-${idx}`}>
-                        <PaginationEllipsis className="h-8 w-8" />
-                      </PaginationItem>
-                    ) : (
-                      <PaginationItem key={pNum}>
-                        <PaginationLink
-                          href="#"
-                          onClick={(e) => { e.preventDefault(); setCurrentPage(Number(pNum)); }}
-                          isActive={currentPage === pNum}
-                          className="h-8 w-8 text-xs cursor-pointer"
-                        >
-                          {pNum}
-                        </PaginationLink>
-                      </PaginationItem>
-                    )
+                  {[...Array(totalPages)].map((_, i) => (
+                    <PaginationItem key={i}>
+                      <PaginationLink href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }} isActive={currentPage === i + 1}>{i + 1}</PaginationLink>
+                    </PaginationItem>
                   ))}
                   <PaginationItem>
-                    <PaginationNext
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
-                      className={`h-8 px-2.5 text-xs ${currentPage === totalPages ? "pointer-events-none opacity-40" : "hover:bg-muted cursor-pointer"}`}
-                    />
+                    <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""} />
                   </PaginationItem>
                 </PaginationContent>
               </Pagination>
@@ -547,6 +237,46 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Interactive Modals */}
+      {selectedLease && (
+        <>
+          <ESignatureModal
+            open={signModalOpen}
+            onOpenChange={setSignModalOpen}
+            documentTitle={`Residential Tenancy Agreement`}
+            documentRef={selectedLease.lease_number || selectedLease.id}
+            tenantName={selectedLease.tenant_name || selectedLease.tenantName || 'Tenant Principal'}
+            landlordName="ZYNO Real Estate Asset Management"
+            onSigningComplete={(sigInfo) => {
+              setLeases((prev) =>
+                prev.map((l) =>
+                  l.id === selectedLease.id ? { ...l, lease_status: 'ACTIVE' } : l
+                )
+              );
+            }}
+          />
+
+          <SnaggingHandoverModal
+            open={snagModalOpen}
+            onOpenChange={setSnagModalOpen}
+            unitCode={selectedLease.unit_code || selectedLease.unit || 'A-101'}
+            propertyName={(selectedLease as any).properties?.title || selectedLease.property || 'Tower 1'}
+            tenantName={selectedLease.tenant_name || selectedLease.tenantName || 'Tenant Principal'}
+            leaseNo={selectedLease.lease_number || selectedLease.id}
+            securityDepositAmount={selectedLease.rental_amount ? Math.round(selectedLease.rental_amount / 12) : 5000}
+            defaultType={selectedLease.lease_status === 'ACTIVE' ? 'MOVE_OUT' : 'MOVE_IN'}
+          />
+        </>
+      )}
+
+      <KYCVerificationOCRModal
+        open={kycModalOpen}
+        onOpenChange={setKycModalOpen}
+        onApplyData={(data) => {
+          toast.success(`OCR Loaded: ${data.fullName} (ID: ${data.idNumber})`);
+        }}
+      />
     </div>
   );
 }
