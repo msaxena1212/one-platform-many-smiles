@@ -4,7 +4,7 @@
 --
 --   1. Replace pg_cron daily-pdc-clearing with a no-op
 --   2. Replace cron_flag_overdue_pdcs function with a no-op
---   3. Install BEFORE UPDATE guard trigger on fin_pdc_register
+--   3. Install BEFORE UPDATE guard trigger on fin_pdc_register (if table exists)
 --   4. Reset October 2026+ cleared PDCs to Deposited/In Hand
 -- =============================================================================
 
@@ -45,26 +45,37 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS trg_fin_guard_pdc_auto_clear ON public.fin_pdc_register;
-CREATE TRIGGER trg_fin_guard_pdc_auto_clear
-  BEFORE UPDATE OF status ON public.fin_pdc_register
-  FOR EACH ROW EXECUTE FUNCTION public.fin_guard_pdc_auto_clear();
-
-COMMENT ON TRIGGER trg_fin_guard_pdc_auto_clear ON public.fin_pdc_register IS
-  'Blocks automated clearing. Manual clear requires SET LOCAL app.pdc_manual_clear=true (done in pdcService clearPdc).';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'fin_pdc_register') THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_fin_guard_pdc_auto_clear ON public.fin_pdc_register';
+    EXECUTE 'CREATE TRIGGER trg_fin_guard_pdc_auto_clear
+      BEFORE UPDATE OF status ON public.fin_pdc_register
+      FOR EACH ROW EXECUTE FUNCTION public.fin_guard_pdc_auto_clear()';
+    EXECUTE 'COMMENT ON TRIGGER trg_fin_guard_pdc_auto_clear ON public.fin_pdc_register IS
+      ''Blocks automated clearing. Manual clear requires SET LOCAL app.pdc_manual_clear=true.''';
+  END IF;
+END $$;
 
 -- 4. Reset October 2026+ PDCs that were auto-cleared back to Deposited/In Hand
-UPDATE public.fin_pdc_register
-SET status = CASE WHEN deposit_date IS NOT NULL THEN 'Deposited' ELSE 'In Hand' END,
-    cleared_date = NULL,
-    updated_at = NOW()
-WHERE LOWER(status) = 'cleared'
-  AND cheque_date >= '2026-10-01';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'fin_pdc_register') THEN
+    UPDATE public.fin_pdc_register
+    SET status = CASE WHEN deposit_date IS NOT NULL THEN 'Deposited' ELSE 'In Hand' END,
+        cleared_date = NULL,
+        updated_at = NOW()
+    WHERE LOWER(status) = 'cleared'
+      AND cheque_date >= '2026-10-01';
+  END IF;
 
-UPDATE public.pdcs
-SET status     = CASE WHEN deposit_date IS NOT NULL THEN 'deposited' ELSE 'In Hand' END,
-    status_pdc = CASE WHEN deposit_date IS NOT NULL THEN 'deposited' ELSE 'In Hand' END,
-    cleared_date = NULL,
-    updated_at = NOW()
-WHERE LOWER(status) = 'cleared'
-  AND cheque_date >= '2026-10-01';
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'pdcs') THEN
+    UPDATE public.pdcs
+    SET status     = CASE WHEN deposit_date IS NOT NULL THEN 'deposited' ELSE 'In Hand' END,
+        status_pdc = CASE WHEN deposit_date IS NOT NULL THEN 'deposited' ELSE 'In Hand' END,
+        cleared_date = NULL,
+        updated_at = NOW()
+    WHERE LOWER(status) = 'cleared'
+      AND cheque_date >= '2026-10-01';
+  END IF;
+END $$;

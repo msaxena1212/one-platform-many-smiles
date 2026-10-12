@@ -9,6 +9,16 @@ const supabaseAnonKey =
   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined) ||
   '';
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error(
+    '[Supabase] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from environment variables.\n' +
+    'On the production server, ensure /home/ubuntu/one-platform-many-smiles/.env contains:\n' +
+    '  VITE_SUPABASE_URL=https://<project-ref>.supabase.co\n' +
+    '  VITE_SUPABASE_ANON_KEY=<your-anon-key>\n' +
+    'Then rebuild: npm run build && pm2 restart pms-app'
+  );
+}
+
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseAnonKey || 'placeholder'
