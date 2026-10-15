@@ -351,7 +351,7 @@ type RenewalCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
-  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined";
+  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined" | "expired";
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
@@ -739,28 +739,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     }
   }, [customers]);
 
-  // Dynamically populate renewals & checkouts from active/expiring leases
+  // Dynamically populate checkouts from active/expiring leases
   useEffect(() => {
     if (leases && leases.length > 0) {
-      setRenewals(prev => {
-        if (prev.length > 0) return prev;
-        return leases.slice(0, 15).map((l, idx) => ({
-          id: `ren-${l.id || idx}`,
-          leaseId: l.id,
-          noticeDate: l.startDate || today.toISOString().split("T")[0],
-          status: idx % 3 === 0 ? "renewal_confirmed" : idx % 3 === 1 ? "under_discussion" : "awaiting_response",
-          proposedRent: Math.round((l.monthlyRent || 6500) * 1.05),
-          proposedPeriod: "12 months",
-          revisedTerms: "5% rent revision; 12 PDCs scheduled; standard notice period",
-          expiryDate: l.endDate,
-          requiredNoticePeriod: `${l.noticePeriodDays || 60} days`,
-          lastConfirmationDate: addDays(today, 30),
-          outstandingObligations: "None",
-          recipients: `${l.tenantName}, Property Manager, Leasing Desk`,
-          followUpOwner: "Leasing Department",
-        }));
-      });
-
       setCheckouts(prev => {
         if (prev.length > 0) return prev;
         return leases.filter(l => l.status === "checkout" || l.status === "non_renewal").map((l, idx) => ({
@@ -859,6 +840,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [resCustomerFilter, setResCustomerFilter] = useState("all");
   const [resStatusFilter, setResStatusFilter] = useState("all");
   const [resSearchQuery, setResSearchQuery] = useState("");
+
+  // Filter states for Renewals tab
+  const [renewalPropertyFilter, setRenewalPropertyFilter] = useState("all");
+  const [renewalUnitFilter, setRenewalUnitFilter] = useState("all");
+  const [renewalCustomerFilter, setRenewalCustomerFilter] = useState("all");
+  const [renewalStatusFilter, setRenewalStatusFilter] = useState("all");
+  const [renewalSearchQuery, setRenewalSearchQuery] = useState("");
+  const [showRenewalFilters, setShowRenewalFilters] = useState(false);
+  const [renewalStartFrom, setRenewalStartFrom] = useState("");
+  const [renewalStartTo, setRenewalStartTo] = useState("");
+  const [renewalEndFrom, setRenewalEndFrom] = useState("");
+  const [renewalEndTo, setRenewalEndTo] = useState("");
+  const [renewalRentMin, setRenewalRentMin] = useState("");
+  const [renewalRentMax, setRenewalRentMax] = useState("");
 
   // Filter states for Checkout & Settlement tab
   const [checkoutPropertyFilter, setCheckoutPropertyFilter] = useState("all");
@@ -1264,7 +1259,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     });
   }, [customers]);
 
-  // Synchronize renewals for upcoming expiring leases (within 60 days)
+  // Synchronize renewals for upcoming expiring & expired leases (due for renewal or expired)
   useEffect(() => {
     if (!leases || leases.length === 0) return;
     const expiringLeases = leases.filter((lease) => {
@@ -1273,7 +1268,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       if (isNaN(endTime)) return false;
       const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
       const days = Math.ceil((endTime - todayTime) / 86400000);
-      return days <= 60 && days >= 0 && lease.status !== "closed";
+      return days <= 77 && lease.status !== "closed";
     });
 
     setRenewals((prev) => {
@@ -1285,21 +1280,33 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       expiringLeases.forEach((lease, idx) => {
         const exists = updated.some((r) => r.leaseId === lease.id);
         if (!exists) {
+          const endTime = new Date(lease.endDate).getTime();
+          const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
+          const days = Math.ceil((endTime - todayTime) / 86400000);
+          const isExpired = days < 0;
           const proposedRent = Math.round((lease.monthlyRent || 6000) * 1.05);
           const noticeDate = today instanceof Date ? today.toISOString().split("T")[0] : "2026-09-01";
           const lastConfDate = lease.endDate ? addDays(new Date(lease.endDate), -30) : "2026-11-30";
+          const status = isExpired
+            ? "expired"
+            : idx % 3 === 0
+            ? "awaiting_response"
+            : idx % 3 === 1
+            ? "under_discussion"
+            : "renewal_confirmed";
+
           updated.push({
             id: `rnw-${lease.id}`,
             leaseId: lease.id,
             noticeDate: noticeDate,
-            status: idx % 3 === 0 ? "awaiting_response" : idx % 3 === 1 ? "under_discussion" : "renewal_confirmed",
+            status: status,
             proposedRent: proposedRent,
             proposedPeriod: "12 Months (1 Year Extension)",
             revisedTerms: "5% rent revision; notice period 60 days retained",
             expiryDate: lease.endDate || "2026-12-31",
             requiredNoticePeriod: "60 Days",
             lastConfirmationDate: lastConfDate,
-            outstandingObligations: "None - All PDCs cleared to date",
+            outstandingObligations: isExpired ? "Pending contract renewal / renewal overdue" : "None - All PDCs cleared to date",
             recipients: `${lease.tenantName} (Primary), leasing@property.qa`,
             followUpOwner: "Leasing Department",
           });
@@ -2307,7 +2314,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         if (isNaN(endTime)) return false;
         const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
         const days = Math.ceil((endTime - todayTime) / 86400000);
-        return days <= 60 && days >= 0 && lease.status !== "closed";
+        return days <= 77 && lease.status !== "closed";
       }),
     [leases],
   );
@@ -11981,11 +11988,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               )}
             </Button>
           </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            <Metric label="Expiring in 60 Days" value={upcomingRenewals.length} icon={<CalendarClock className="h-4 w-4 text-rose-600" />} description="Upcoming lease expiries" />
-            <Metric label="Renewal Confirmed" value={upcomingRenewals.filter(l => (renewals || []).some(r => r.leaseId === l.id && r.status === "renewal_confirmed")).length} icon={<CheckCircle2 className="h-4 w-4 text-green-600" />} description="Agreed to renew" />
-            <Metric label="In Discussion / Awaiting" value={upcomingRenewals.filter(l => (renewals || []).some(r => r.leaseId === l.id && (r.status === "under_discussion" || r.status === "awaiting_response"))).length} icon={<Clock className="h-4 w-4 text-amber-600" />} description="Active negotiation" />
-            <Metric label="Non-Renewal Confirmed" value={upcomingRenewals.filter(l => (renewals || []).some(r => r.leaseId === l.id && r.status === "non_renewal_confirmed")).length} icon={<LogOut className="h-4 w-4 text-slate-600" />} description="Proceeding to checkout" />
+          <div className="grid gap-4 md:grid-cols-5">
+            <Metric label="Total Renewal Pending" value={upcomingRenewals.length} icon={<CalendarClock className="h-4 w-4 text-rose-600" />} description="Upcoming expiries & renewal backlog" />
+            <Metric label="Expired" value={(renewals || []).filter(r => r.status === "expired").length} icon={<AlertTriangle className="h-4 w-4 text-red-600" />} description="Passed end date without closure" />
+            <Metric label="Renewal Confirmed" value={(renewals || []).filter(r => r.status === "renewal_confirmed").length} icon={<CheckCircle2 className="h-4 w-4 text-green-600" />} description="Agreed to renew" />
+            <Metric label="In Discussion / Awaiting" value={(renewals || []).filter(r => r.status === "under_discussion" || r.status === "awaiting_response").length} icon={<Clock className="h-4 w-4 text-amber-600" />} description="Active negotiation" />
+            <Metric label="Non-Renewal Confirmed" value={(renewals || []).filter(r => r.status === "non_renewal_confirmed").length} icon={<LogOut className="h-4 w-4 text-slate-600" />} description="Proceeding to checkout" />
           </div>
         </>
       )}
@@ -13530,85 +13538,450 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           </TabsContent>
 
           <TabsContent value="renewals" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <CardTitle>Lease Renewal Notification & Process</CardTitle>
-                  <CardDescription>The system detects leases within 60 days of expiry and tracks tenant response.</CardDescription>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                  onClick={() => {
-                    exportToExcel(
-                      (renewals || []).map((renewal) => {
-                        const lease = (leases || []).find((item) => item.id === renewal.leaseId);
-                        return {
-                          "Lease ID": renewal.leaseId,
-                          "Customer / Tenant": lease?.tenantName || "—",
-                          "Property": lease?.property || "—",
-                          "Unit": lease?.unit || "—",
-                          "Current Expiry": lease?.endDate || "—",
-                          "Proposed Period": renewal?.proposedPeriod || "—",
-                          "Proposed Rent (QAR)": renewal?.proposedRent || 0,
-                          "Revised Terms": renewal?.revisedTerms || "—",
-                          "Last Confirmation Date": renewal?.lastConfirmationDate || "—",
-                          "Outstanding Obligations": renewal?.outstandingObligations || "—",
-                          "Status": renewal?.status,
-                          "Recipients": renewal?.recipients || "—",
-                        };
-                      }),
-                      `Lease_Renewals_Export_${new Date().toISOString().split("T")[0]}`
-                    );
-                  }}
-                >
-                  <Download className="h-3.5 w-3.5" /> Export to Excel
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <DataTable
-                  columns={["Lease", "Expiry", "Recipients", "Proposed Terms", "Last Confirmation", "Obligations", "Status", "Actions"]}
-                  rows={(renewals || []).map((renewal) => {
-                    const lease = (leases || []).find((item) => item.id === renewal.leaseId);
-                    return [
-                      lease ? `${lease.tenantName} / ${lease.unit}` : "-",
-                      lease?.endDate || "-",
-                      renewal?.recipients || "-",
-                      `${renewal?.proposedPeriod || ""}; ${formatMoney(renewal?.proposedRent)}; ${renewal?.revisedTerms || ""}`,
-                      renewal?.lastConfirmationDate || "-",
-                      renewal?.outstandingObligations || "-",
-                      <StatusBadge key="status" value={renewal?.status} />,
-                      <div key="actions" className="flex justify-end gap-2">
+            {(() => {
+              // Gather lease objects for renewals
+              const renewalLeases = (renewals || []).map(r => {
+                const lease = (leases || []).find(l => l.id === r.leaseId);
+                return { renewal: r, lease };
+              });
+
+              // Apply filters
+              const filteredList = renewalLeases.filter(({ renewal, lease }) => {
+                const prop = lease?.property || "";
+                const unit = lease?.unit || "";
+                const tenant = lease?.tenantName || "";
+                const status = renewal?.status || "";
+                const start = lease?.startDate ? String(lease.startDate).split("T")[0] : "";
+                const end = lease?.endDate ? String(lease.endDate).split("T")[0] : "";
+                const rent = renewal?.proposedRent || lease?.monthlyRent || 0;
+                const annualRent = rent * 12;
+                const ref = (renewal.leaseId || "").toLowerCase();
+
+                // Quick search
+                if (renewalSearchQuery.trim()) {
+                  const q = renewalSearchQuery.toLowerCase().trim();
+                  const match =
+                    ref.includes(q) ||
+                    prop.toLowerCase().includes(q) ||
+                    unit.toLowerCase().includes(q) ||
+                    tenant.toLowerCase().includes(q);
+                  if (!match) return false;
+                }
+
+                // Property filter
+                if (renewalPropertyFilter !== "all" && prop !== renewalPropertyFilter) return false;
+
+                // Unit filter
+                if (renewalUnitFilter !== "all") {
+                  if (renewalUnitFilter.includes("||")) {
+                    const [fp, fu] = renewalUnitFilter.split("||");
+                    if (prop !== fp || unit !== fu) return false;
+                  } else if (unit.toLowerCase() !== renewalUnitFilter.toLowerCase()) {
+                    return false;
+                  }
+                }
+
+                // Customer filter
+                if (renewalCustomerFilter !== "all" && tenant.toLowerCase() !== renewalCustomerFilter.toLowerCase()) {
+                  return false;
+                }
+
+                // Status filter
+                if (renewalStatusFilter !== "all") {
+                  if (renewalStatusFilter === "expired" && status !== "expired") return false;
+                  if (renewalStatusFilter === "awaiting_response" && status !== "awaiting_response") return false;
+                  if (renewalStatusFilter === "under_discussion" && status !== "under_discussion") return false;
+                  if (renewalStatusFilter === "renewal_confirmed" && status !== "renewal_confirmed") return false;
+                  if (renewalStatusFilter === "non_renewal_confirmed" && status !== "non_renewal_confirmed") return false;
+                  if (renewalStatusFilter === "renewal_declined" && status !== "renewal_declined") return false;
+                }
+
+                // Date ranges
+                if (renewalStartFrom && start && start < renewalStartFrom) return false;
+                if (renewalStartTo && start && start > renewalStartTo) return false;
+                if (renewalEndFrom && end && end < renewalEndFrom) return false;
+                if (renewalEndTo && end && end > renewalEndTo) return false;
+
+                // Rent ranges (Annual QAR)
+                if (renewalRentMin && annualRent < Number(renewalRentMin)) return false;
+                if (renewalRentMax && annualRent > Number(renewalRentMax)) return false;
+
+                return true;
+              });
+
+              // Options for dropdowns
+              const uniqueProps = Array.from(new Set(renewalLeases.map(rl => rl.lease?.property).filter(Boolean))).sort() as string[];
+              const uniqueUnits = Array.from(new Set(
+                renewalLeases
+                  .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
+                  .map(rl => rl.lease?.unit)
+                  .filter(Boolean)
+              )).sort() as string[];
+              const uniqueCustomers = Array.from(new Set(
+                renewalLeases
+                  .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
+                  .map(rl => rl.lease?.tenantName)
+                  .filter(Boolean)
+              )).sort() as string[];
+
+              const isFiltered =
+                renewalPropertyFilter !== "all" ||
+                renewalUnitFilter !== "all" ||
+                renewalCustomerFilter !== "all" ||
+                renewalStatusFilter !== "all" ||
+                renewalSearchQuery.trim() !== "" ||
+                renewalStartFrom !== "" ||
+                renewalStartTo !== "" ||
+                renewalEndFrom !== "" ||
+                renewalEndTo !== "" ||
+                renewalRentMin !== "" ||
+                renewalRentMax !== "";
+
+              const activeFilterCount = [
+                renewalPropertyFilter !== "all",
+                renewalUnitFilter !== "all",
+                renewalCustomerFilter !== "all",
+                renewalStatusFilter !== "all",
+                renewalSearchQuery.trim() !== "",
+                renewalStartFrom !== "",
+                renewalStartTo !== "",
+                renewalEndFrom !== "",
+                renewalEndTo !== "",
+                renewalRentMin !== "",
+                renewalRentMax !== "",
+              ].filter(Boolean).length;
+
+              const clearRenewalFilters = () => {
+                setRenewalPropertyFilter("all");
+                setRenewalUnitFilter("all");
+                setRenewalCustomerFilter("all");
+                setRenewalStatusFilter("all");
+                setRenewalSearchQuery("");
+                setRenewalStartFrom("");
+                setRenewalStartTo("");
+                setRenewalEndFrom("");
+                setRenewalEndTo("");
+                setRenewalRentMin("");
+                setRenewalRentMax("");
+              };
+
+              return (
+                <Card>
+                  <CardHeader className="pb-3 pt-4 px-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base font-semibold">Lease Renewal Notification &amp; Process</CardTitle>
+                        <CardDescription className="text-xs">
+                          Detect leases due for renewal or expired, track negotiation status, and dispatch renewal terms.
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Quick search input */}
+                        <div className="relative w-56 sm:w-64">
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Search ref, property, unit, tenant…"
+                            value={renewalSearchQuery}
+                            onChange={(e) => setRenewalSearchQuery(e.target.value)}
+                            className="pl-8 h-8 text-xs bg-background"
+                          />
+                        </div>
+
+                        {/* Filters Toggle Button */}
+                        <Button
+                          variant={showRenewalFilters ? "default" : "outline"}
+                          size="sm"
+                          className="gap-1.5 text-xs h-8 relative"
+                          onClick={() => setShowRenewalFilters((p) => !p)}
+                        >
+                          <Filter className="h-3.5 w-3.5" />
+                          Filters
+                          {activeFilterCount > 0 && (
+                            <span className="ml-1 rounded-full bg-primary-foreground text-primary px-1.5 py-0.2 text-[10px] font-bold">
+                              {activeFilterCount}
+                            </span>
+                          )}
+                        </Button>
+
+                        {/* Clear button if filtered */}
+                        {isFiltered && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground gap-1"
+                            onClick={clearRenewalFilters}
+                          >
+                            <X className="h-3.5 w-3.5" /> Clear
+                          </Button>
+                        )}
+
+                        {/* Export to Excel */}
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
-                          onClick={() => { setSelectedDiscussRenewal(renewal); setDiscussRenewalForm({ discussedRent: String(renewal?.proposedRent || 0), proposedPeriod: renewal?.proposedPeriod || "", tenantResponse: "pending", notes: "", nextFollowUpDate: renewal?.lastConfirmationDate || "" }); setDiscussRenewalOpen(true); }}
-                        >Discuss</Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
-                          onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal?.proposedRent || 0), notes: "", updateStatus: "awaiting_response" }); setRenewalResponseOpen(true); }}
-                        >Renew</Button>
-                        {lease && <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                          className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
                           onClick={() => {
-                            setIsFixedTenantCheckout(true);
-                            setCheckoutWorkflowLease(lease);
-                            setStartCheckoutForm({ noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "", moveOutDate: lease.endDate || "", inspectionDate: addDays(new Date(lease.endDate || today), -3), outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", notes: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0" });
-                            setStartCheckoutOpen(true);
+                            exportToExcel(
+                              filteredList.map(({ renewal, lease }) => ({
+                                "Lease ID": renewal.leaseId,
+                                "Customer / Tenant": lease?.tenantName || "—",
+                                "Property": lease?.property || "—",
+                                "Unit": lease?.unit || "—",
+                                "Current Expiry": lease?.endDate || "—",
+                                "Proposed Period": renewal?.proposedPeriod || "—",
+                                "Proposed Rent (QAR)": renewal?.proposedRent || 0,
+                                "Revised Terms": renewal?.revisedTerms || "—",
+                                "Last Confirmation Date": renewal?.lastConfirmationDate || "—",
+                                "Outstanding Obligations": renewal?.outstandingObligations || "—",
+                                "Status": renewal?.status === "expired" ? "Expired" : renewal?.status,
+                                "Recipients": renewal?.recipients || "—",
+                              })),
+                              `Lease_Renewals_Export_${new Date().toISOString().split("T")[0]}`
+                            );
                           }}
-                        >Non-Renew</Button>}
-                      </div>,
-                    ];
-                  })}
-                />
-              </CardContent>
-            </Card>
+                        >
+                          <Download className="h-3.5 w-3.5" /> Export to Excel
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Advanced Filter Panel */}
+                    {showRenewalFilters && (
+                      <div className="mt-3 p-3.5 rounded-lg border border-border bg-muted/10 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Advanced Filters
+                          </p>
+                          <span className="text-xs text-muted-foreground">
+                            Showing <span className="font-semibold text-foreground">{filteredList.length}</span> of{" "}
+                            <span className="font-semibold text-foreground">{renewals.length}</span> renewal contracts
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {/* Property Name */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Property Name</label>
+                            <select
+                              value={renewalPropertyFilter}
+                              onChange={(e) => {
+                                setRenewalPropertyFilter(e.target.value);
+                                setRenewalUnitFilter("all");
+                              }}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                            >
+                              <option value="all">All Properties ({uniqueProps.length})</option>
+                              {uniqueProps.map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Unit */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Unit</label>
+                            <Input
+                              placeholder="e.g. Flat 101"
+                              value={renewalUnitFilter === "all" ? "" : renewalUnitFilter}
+                              onChange={(e) => setRenewalUnitFilter(e.target.value.trim() ? e.target.value : "all")}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* Tenant Name */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Tenant Name</label>
+                            <Input
+                              placeholder="Tenant name…"
+                              value={renewalCustomerFilter === "all" ? "" : renewalCustomerFilter}
+                              onChange={(e) => setRenewalCustomerFilter(e.target.value.trim() ? e.target.value : "all")}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* Status - including Expired */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Status</label>
+                            <select
+                              value={renewalStatusFilter}
+                              onChange={(e) => setRenewalStatusFilter(e.target.value)}
+                              className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                            >
+                              <option value="all">All Statuses</option>
+                              <option value="expired">Expired</option>
+                              <option value="awaiting_response">Awaiting Response</option>
+                              <option value="under_discussion">Under Discussion</option>
+                              <option value="renewal_confirmed">Renewal Confirmed</option>
+                              <option value="non_renewal_confirmed">Non-Renewal Confirmed</option>
+                              <option value="renewal_declined">Renewal Declined</option>
+                            </select>
+                          </div>
+
+                          {/* Start Date - From */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Start Date — From</label>
+                            <Input
+                              type="date"
+                              value={renewalStartFrom}
+                              onChange={(e) => setRenewalStartFrom(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* Start Date - To */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Start Date — To</label>
+                            <Input
+                              type="date"
+                              value={renewalStartTo}
+                              onChange={(e) => setRenewalStartTo(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* End Date - From */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">End Date — From</label>
+                            <Input
+                              type="date"
+                              value={renewalEndFrom}
+                              onChange={(e) => setRenewalEndFrom(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* End Date - To */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">End Date — To</label>
+                            <Input
+                              type="date"
+                              value={renewalEndTo}
+                              onChange={(e) => setRenewalEndTo(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* Annual Rent Min */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Annual Rent — Min (QAR)</label>
+                            <Input
+                              type="number"
+                              placeholder="0"
+                              value={renewalRentMin}
+                              onChange={(e) => setRenewalRentMin(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+
+                          {/* Annual Rent Max */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-muted-foreground">Annual Rent — Max (QAR)</label>
+                            <Input
+                              type="number"
+                              placeholder="No limit"
+                              value={renewalRentMax}
+                              onChange={(e) => setRenewalRentMax(e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-1 flex items-center justify-between text-xs text-muted-foreground border-t border-border">
+                          <span>Showing <strong>{filteredList.length}</strong> of <strong>{renewals.length}</strong> leases</span>
+                          {isFiltered && (
+                            <button onClick={clearRenewalFilters} className="text-primary hover:underline font-medium">
+                              Reset all filters
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardHeader>
+
+                  <CardContent>
+                    <DataTable
+                      columns={["Lease", "Expiry", "Recipients", "Proposed Terms", "Last Confirmation", "Obligations", "Status", "Actions"]}
+                      rows={filteredList.map(({ renewal, lease }) => {
+                        return [
+                          lease ? `${lease.tenantName} / ${lease.unit}` : renewal.leaseId,
+                          lease?.endDate || renewal?.expiryDate || "-",
+                          renewal?.recipients || "-",
+                          `${renewal?.proposedPeriod || ""}; ${formatMoney(renewal?.proposedRent)}; ${renewal?.revisedTerms || ""}`,
+                          renewal?.lastConfirmationDate || "-",
+                          renewal?.outstandingObligations || "-",
+                          <StatusBadge key="status" value={renewal?.status} />,
+                          <div key="actions" className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                              onClick={() => {
+                                setSelectedDiscussRenewal(renewal);
+                                setDiscussRenewalForm({
+                                  discussedRent: String(renewal?.proposedRent || 0),
+                                  proposedPeriod: renewal?.proposedPeriod || "",
+                                  tenantResponse: "pending",
+                                  notes: "",
+                                  nextFollowUpDate: renewal?.lastConfirmationDate || "",
+                                });
+                                setDiscussRenewalOpen(true);
+                              }}
+                            >
+                              Discuss
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                              onClick={() => {
+                                setSelectedRenewal(renewal);
+                                setRenewalResponseForm({
+                                  response: "confirm",
+                                  confirmedRent: String(renewal?.proposedRent || 0),
+                                  notes: "",
+                                  updateStatus: "awaiting_response",
+                                });
+                                setRenewalResponseOpen(true);
+                              }}
+                            >
+                              Renew
+                            </Button>
+                            {lease && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                                onClick={() => {
+                                  setIsFixedTenantCheckout(true);
+                                  setCheckoutWorkflowLease(lease);
+                                  setStartCheckoutForm({
+                                    noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
+                                    moveOutDate: lease.endDate || "",
+                                    inspectionDate: addDays(new Date(lease.endDate || today), -3),
+                                    outstandingCharges: "Pending finance confirmation",
+                                    utilityClearanceRequirements: "Final utility clearance required before checkout closure",
+                                    keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
+                                    notes: "",
+                                    missingItems: "",
+                                    cleaningCharges: "0",
+                                    restorationCharges: "0",
+                                  });
+                                  setStartCheckoutOpen(true);
+                                }}
+                              >
+                                Non-Renew
+                              </Button>
+                            )}
+                          </div>,
+                        ];
+                      })}
+                    />
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </TabsContent>
 
         <TabsContent value="checkout" className="space-y-4">

@@ -47,7 +47,7 @@ interface Filters {
   endTo: string;
   rentMin: string;
   rentMax: string;
-  status: string;       // 'ACTIVE' | 'EXPIRING' | 'DRAFT' | ''
+  status: string;       // 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'DRAFT' | ''
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -82,20 +82,32 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         console.error(e);
       }
 
-      const mappedContext = (contextLeases || []).map(cl => ({
-        id: cl.id,
-        lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
-        properties: { title: cl.property },
-        units: null,
-        customers: null,
-        tenant_name: (cl as any).tenantName || '',
-        unit_code: (cl as any).unit || '',
-        commencement_date: cl.startDate,
-        expiry_date: cl.endDate,
-        rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
-        lease_status: cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed'
-          ? 'ACTIVE' : cl.status === 'renewal_due' ? 'EXPIRING' : 'DRAFT',
-      }));
+      const todayStr = new Date().toISOString().split('T')[0];
+      const mappedContext = (contextLeases || []).map(cl => {
+        const endDateStr = cl.endDate ? String(cl.endDate).split('T')[0] : '';
+        const isExpired = endDateStr && endDateStr < todayStr;
+        const statusVal = isExpired
+          ? 'EXPIRED'
+          : cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed'
+          ? 'ACTIVE'
+          : cl.status === 'renewal_due'
+          ? 'EXPIRING'
+          : 'DRAFT';
+
+        return {
+          id: cl.id,
+          lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
+          properties: { title: cl.property },
+          units: null,
+          customers: null,
+          tenant_name: (cl as any).tenantName || '',
+          unit_code: (cl as any).unit || '',
+          commencement_date: cl.startDate,
+          expiry_date: cl.endDate,
+          rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
+          lease_status: statusVal,
+        };
+      });
 
       const allLeases = [...dbLeases];
       for (const mc of mappedContext) {
@@ -128,6 +140,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const activeCount   = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
   const draftCount    = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
   const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
+  const expiredCount  = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRED').length;
 
   // ── Unique property options for dropdown ──────────────────────────────────
   const propertyOptions = useMemo(() => {
@@ -135,7 +148,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     return names;
   }, [leases]);
 
-  const statusOptions = ['ACTIVE', 'EXPIRING', 'DRAFT'];
+  const statusOptions = ['ACTIVE', 'EXPIRING', 'EXPIRED', 'DRAFT'];
 
   // ── Filtered leases ───────────────────────────────────────────────────────
   const filteredLeases = useMemo(() => {
@@ -218,13 +231,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   return (
     <div className="space-y-6">
       {/* ── Summary cards ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card className="border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Active</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : activeCount}</div>
+            <div className="text-2xl font-bold text-emerald-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : activeCount}</div>
           </CardContent>
         </Card>
         <Card className="border-border">
@@ -233,6 +246,14 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-amber-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : expiringCount}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Expired</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-rose-600">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : expiredCount}</div>
           </CardContent>
         </Card>
         <Card className="border-border">
@@ -500,6 +521,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
                           lease.lease_status?.toUpperCase() === 'ACTIVE'   ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' :
                           lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
+                          lease.lease_status?.toUpperCase() === 'EXPIRED'  ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' :
                           'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                         }`}>
                           {lease.lease_status || 'DRAFT'}
