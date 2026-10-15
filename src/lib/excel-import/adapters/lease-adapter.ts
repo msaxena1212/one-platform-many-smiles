@@ -6,7 +6,8 @@ import {
   type FieldComparison, 
   type DependencyCheckItem, 
   type ImportOperation,
-  getCellValue
+  getCellValue,
+  sanitizeDateForPostgres
 } from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
@@ -152,6 +153,19 @@ export const leaseAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitized = sanitizeDateForPostgres(cellValue);
+          if (sanitized) {
+            normalized[col.key] = sanitized;
+          } else {
+            errors.push({
+              row: context.rowNumber,
+              field: col.label,
+              code: 'VAL_003',
+              message: `Invalid date format for "${col.label}". Expected YYYY-MM-DD, DD/MM/YYYY or standard Excel date.`,
+              severity: 'ERROR',
+            });
+          }
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {

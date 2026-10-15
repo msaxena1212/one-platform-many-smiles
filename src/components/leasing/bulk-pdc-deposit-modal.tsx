@@ -57,18 +57,34 @@ function normalizeUuid(value: string | number | null | undefined): string | unde
 /** Robust Date parser to format DD-MM-YYYY, DD/MM/YYYY, Excel serial numbers, or YYYY-MM-DD to strict ISO YYYY-MM-DD */
 function formatDateToIso(val: any): string {
   if (val === null || val === undefined || val === "") return new Date().toISOString().split("T")[0];
-  if (typeof val === "number") {
-    // Excel serial date format (approximate to JS date)
-    const excelEpoch = new Date(1899, 11, 30);
-    const dateObj = new Date(excelEpoch.getTime() + val * 86400000);
-    if (!isNaN(dateObj.getTime())) {
-      return dateObj.toISOString().split("T")[0];
+
+  // If already a JS Date object
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return new Date().toISOString().split("T")[0];
+    const midday = new Date(val.getTime() + 12 * 60 * 60 * 1000);
+    const y = midday.getUTCFullYear();
+    const m = String(midday.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(midday.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  if (typeof val === "number" || (!isNaN(Number(val)) && Number(val) > 20000 && Number(val) < 80000)) {
+    const num = Number(val);
+    // Excel epoch UTC: 1899-12-30. Add 12 hours buffer so boundary offsets don't shift day back
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const targetDate = new Date(excelEpoch.getTime() + (num * 86400000) + (12 * 3600 * 1000));
+    if (!isNaN(targetDate.getTime())) {
+      const y = targetDate.getUTCFullYear();
+      const m = String(targetDate.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(targetDate.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
     }
   }
+
   const s = String(val).trim().replace(/\./g, "-").replace(/\//g, "-");
   
   // Case: DD-MM-YYYY
-  const ddmmyyyyMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  const ddmmyyyyMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
   if (ddmmyyyyMatch) {
     const day = ddmmyyyyMatch[1].padStart(2, "0");
     const month = ddmmyyyyMatch[2].padStart(2, "0");
@@ -77,7 +93,7 @@ function formatDateToIso(val: any): string {
   }
 
   // Case: YYYY-MM-DD
-  const yyyymmddMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const yyyymmddMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (yyyymmddMatch) {
     const year = yyyymmddMatch[1];
     const month = yyyymmddMatch[2].padStart(2, "0");
@@ -85,11 +101,18 @@ function formatDateToIso(val: any): string {
     return `${year}-${month}-${day}`;
   }
 
-  // Try standard Date parse
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().split("T")[0];
-  }
+  // Try standard Date parse with midday shift to avoid timezone shifts
+  try {
+    const cleaned = s.replace(/\b(gmt[+-]\d+|utc[+-]\d+|[a-z]{3,4}\b)/gi, '').trim();
+    const parsed = new Date(cleaned);
+    if (!isNaN(parsed.getTime())) {
+      const midday = new Date(parsed.getTime() + 12 * 60 * 60 * 1000);
+      const y = midday.getUTCFullYear();
+      const m = String(midday.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(midday.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  } catch {}
 
   return s;
 }

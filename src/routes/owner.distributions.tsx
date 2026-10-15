@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDateUniform } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/owner/distributions")({
   component: OwnerDistributions,
@@ -70,7 +71,7 @@ function OwnerDistributions() {
                     {dist.status === "paid" ? "Paid" : "Pending"}
                   </Badge>
                   {dist.paid_date && (
-                    <span className="text-xs text-muted-foreground">{new Date(dist.paid_date).toLocaleDateString()}</span>
+                    <span className="text-xs text-muted-foreground">{formatDateUniform(dist.paid_date)}</span>
                   )}
                 </div>
               </div>

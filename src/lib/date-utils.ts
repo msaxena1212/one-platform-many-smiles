@@ -133,3 +133,33 @@ export function formatDateNumericDDMMYYYY(dateInput?: string | Date | null): str
 export function formatDateDDMMYYYY(dateInput?: string | Date | null): string {
   return formatDDMMMYYYY(dateInput);
 }
+
+/**
+ * Uniform system date formatter that enforces DD/MM/YYYY across all machines (Qatar, India, US, etc.)
+ * regardless of the client machine's OS locale settings.
+ */
+export function formatDateUniform(dateInput?: string | Date | null): string {
+  return formatDateNumericDDMMYYYY(dateInput);
+}
+
+/**
+ * Uniform system date & time formatter (e.g. "15/04/2026, 14:30") across all client operating systems.
+ */
+export function formatDateTimeUniform(dateInput?: string | Date | null): string {
+  if (!dateInput) return '-';
+  const parts = extractLocalParts(dateInput);
+  if (!parts) return '-';
+  const d = String(parts.day).padStart(2, '0');
+  const m = String(parts.month0 + 1).padStart(2, '0');
+  const base = `${d}/${m}/${parts.year}`;
+
+  try {
+    const dObj = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (!isNaN(dObj.getTime())) {
+      const hh = String(dObj.getHours()).padStart(2, '0');
+      const mm = String(dObj.getMinutes()).padStart(2, '0');
+      return `${base} ${hh}:${mm}`;
+    }
+  } catch {}
+  return base;
+}

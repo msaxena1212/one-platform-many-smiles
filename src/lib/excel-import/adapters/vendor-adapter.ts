@@ -173,7 +173,7 @@ export const vendorAdapter: EntityImportAdapter = {
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
         } else if (col.type === 'date') {
-          const sanitized = sanitizeDateForPostgres(strVal);
+          const sanitized = sanitizeDateForPostgres(cellValue);
           if (sanitized) {
             normalized[col.key] = sanitized;
           } else {

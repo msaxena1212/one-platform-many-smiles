@@ -210,22 +210,29 @@ export function getCellValue(row: Record<string, any>, ...possibleKeys: (string 
 /**
  * Normalizes Excel dates, JavaScript dates, ISO strings, serial numbers, and custom formatted strings
  * into a standard clean 'YYYY-MM-DD' format that PostgreSQL DATE columns accept without timezone errors.
+ * 
+ * Prevents the notorious Excel/JS 1-day-prior timezone bug (e.g., UTC midnight dates becoming previous day
+ * when read or parsed in local/offset environments like AST UTC+3 or IST UTC+5:30).
  */
 export function sanitizeDateForPostgres(value: any): string | null {
   if (value === undefined || value === null) return null;
   const str = String(value).trim();
   if (!str || str === '[NULL]' || str.toLowerCase() === 'null' || str === '—' || str === '-') return null;
 
-  // 1. If it's already a JS Date object
+  // 1. If it's a JS Date object (e.g. from XLSX with cellDates: true)
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, '0');
-    const d = String(value.getDate()).padStart(2, '0');
+    // XLSX parses Excel dates at UTC midnight or local depending on environment.
+    // Shift by 12 hours forward from UTC timestamp to land squarely in midday of intended calendar day,
+    // avoiding boundary timezone offsets backward.
+    const midday = new Date(value.getTime() + 12 * 60 * 60 * 1000);
+    const y = midday.getUTCFullYear();
+    const m = String(midday.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(midday.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
 
-  // 2. Direct YYYY-MM-DD match
+  // 2. Direct YYYY-MM-DD match (with optional time component like T00:00:00 or space)
   const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (ymdMatch) {
     const y = ymdMatch[1];
@@ -247,7 +254,8 @@ export function sanitizeDateForPostgres(value: any): string | null {
   const num = Number(str);
   if (!isNaN(num) && num > 20000 && num < 80000) {
     const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-    const targetDate = new Date(excelEpoch.getTime() + num * 86400000);
+    // Add 12 hours buffer (0.5 day) so fractional time doesn't cross backward
+    const targetDate = new Date(excelEpoch.getTime() + (num * 86400000) + (12 * 3600 * 1000));
     if (!isNaN(targetDate.getTime())) {
       const y = targetDate.getUTCFullYear();
       const m = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
@@ -256,14 +264,15 @@ export function sanitizeDateForPostgres(value: any): string | null {
     }
   }
 
-  // 5. Attempt general Date parse, strip out timezone labels
+  // 5. Attempt general Date parse without timezone backwards jump
   try {
     const cleaned = str.replace(/\b(gmt[+-]\d+|utc[+-]\d+|[a-z]{3,4}\b)/gi, '').trim();
     const parsed = new Date(cleaned);
     if (!isNaN(parsed.getTime())) {
-      const y = parsed.getFullYear();
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const d = String(parsed.getDate()).padStart(2, '0');
+      const midday = new Date(parsed.getTime() + 12 * 60 * 60 * 1000);
+      const y = midday.getUTCFullYear();
+      const m = String(midday.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(midday.getUTCDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
     }
   } catch {}

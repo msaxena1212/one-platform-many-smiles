@@ -7,7 +7,8 @@ import {
   type FieldComparison, 
   type DependencyCheckItem, 
   type ImportOperation,
-  getCellValue
+  getCellValue,
+  sanitizeDateForPostgres
 } from '../types';
 import { getErrorDefinition } from '../error-codes';
 import { referenceDropdowns } from '../../reference-data';
@@ -182,6 +183,19 @@ export const propertyAdapter: EntityImportAdapter = {
         
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitized = sanitizeDateForPostgres(cellValue);
+          if (sanitized) {
+            normalized[col.key] = sanitized;
+          } else {
+            errors.push({
+              row: context.rowNumber,
+              field: col.label,
+              code: 'VAL_003',
+              message: `Invalid date format for "${col.label}". Expected YYYY-MM-DD, DD/MM/YYYY or standard Excel date.`,
+              severity: 'ERROR',
+            });
+          }
         } else if (col.type === 'number') {
           // no_of_floors accepts expressions like "GF + 7" (= 8 floors)
           const num = col.key === 'no_of_floors' ? parseFloors(strVal) : Number(strVal.replace(/,/g, ''));

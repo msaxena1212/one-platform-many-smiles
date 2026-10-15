@@ -63,6 +63,7 @@ import { generateTemplateWorkbook, downloadTemplateFile } from "@/lib/excel-impo
 import { ResultExcelGenerator } from "@/lib/excel-import/result-generator";
 import { getImportBatchHistory, getAuditLogs, clearAllImportHistory } from "@/lib/excel-import/storage-service";
 import { getCurrentProfile } from "@/lib/auth-guards";
+import { formatDateUniform } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/admin/imports")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -956,7 +957,7 @@ export function AdminExcelImportPage() {
               </div>
               <CardTitle className="text-lg font-bold">Import Processing Complete</CardTitle>
               <CardDescription className="font-mono text-[11px]">
-                Batch #{currentBatch.batchIdentifier} • {new Date().toLocaleDateString()}
+                Batch #{currentBatch.batchIdentifier} • {formatDateUniform(new Date())}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-5 space-y-4">

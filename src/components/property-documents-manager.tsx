@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { formatDateUniform } from "@/lib/date-utils";
 
 export interface PropertyDocument {
   id: string;
@@ -367,7 +368,7 @@ export function PropertyDocumentsManager({
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-foreground truncate">{doc.name}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {doc.type} - {formatFileSize(doc.size)} - {new Date(doc.uploadedAt).toLocaleDateString()}
+                        {doc.type} - {formatFileSize(doc.size)} - {formatDateUniform(doc.uploadedAt)}
                       </p>
                     </div>
                   </div>

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { fetchARLedgers, ARLedger } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Wallet, AlertCircle } from "lucide-react";
+import { formatDateUniform } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/finance/receivables")({
   component: FinanceReceivables,
@@ -32,7 +33,7 @@ function FinanceReceivables() {
                 <div key={l.id} className="flex justify-between p-3 border rounded-lg">
                   <div>
                     <p className="font-semibold">{l.reference}</p>
-                    <p className="text-sm text-muted-foreground">{new Date(l.date).toLocaleDateString()}</p>
+                    <p className="text-sm text-muted-foreground">{formatDateUniform(l.date)}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-bold">QAR {l.amount}</p>
