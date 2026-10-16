@@ -4387,6 +4387,24 @@ function BankAccountSubModule() {
     toast.success(`Account "${account.account_title || account.account_number}" marked as ${newStatus}`);
   }
 
+  async function handleDeleteAccount(account: FinBankAccount) {
+    if (!confirm(`Are you sure you want to permanently delete account "${account.account_title || account.account_number}" from the database?`)) {
+      return;
+    }
+    try {
+      await FinBankAccountsApi.delete(String(account.id));
+    } catch (err) {
+      console.warn("Supabase delete account error:", err);
+    }
+    setData(prev => {
+      const next = prev.filter(a => String(a.id) !== String(account.id));
+      try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    window.dispatchEvent(new Event("banks-updated"));
+    toast.success(`Account "${account.account_title || account.account_number}" deleted from database`);
+  }
+
   function getBankName(bankId: string) {
     const b = banksList.find(x => String(x.id) === String(bankId) || x.code === bankId);
     return b ? `${b.name} (${b.code})` : (banksList[0] ? `${banksList[0].name} (${banksList[0].code})` : "Qatar National Bank (QNB)");
@@ -4446,7 +4464,7 @@ function BankAccountSubModule() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -4465,6 +4483,15 @@ function BankAccountSubModule() {
                           title={isActive ? "Mark Inactive" : "Mark Active"}
                         >
                           {isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDeleteAccount(a)}
+                          title="Delete Bank Account"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </TableCell>

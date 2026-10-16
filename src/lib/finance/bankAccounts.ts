@@ -11,6 +11,7 @@ export interface CompanyBankAccount {
   currency: string;
   branch?: string;
   isDefault?: boolean;
+  status?: string;
 }
 
 export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
@@ -25,6 +26,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     currency: "QAR",
     branch: "Grand Hamad Main Branch",
     isDefault: true,
+    status: "Active",
   },
   {
     id: "cbq-escrow-02",
@@ -36,6 +38,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "CBQ Escrow Bank Account",
     currency: "QAR",
     branch: "West Bay Corporate Branch",
+    status: "Active",
   },
   {
     id: "doha-bank-03",
@@ -47,6 +50,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "Doha Bank Operating Account",
     currency: "QAR",
     branch: "Corniche Branch",
+    status: "Active",
   },
   {
     id: "qib-rental-04",
@@ -58,6 +62,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "QIB Islamic Rental Account",
     currency: "QAR",
     branch: "Salwa Road Branch",
+    status: "Active",
   },
   {
     id: "ahlibank-corp-05",
@@ -69,11 +74,13 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "Ahlibank Corporate Account",
     currency: "QAR",
     branch: "Al Sadd Branch",
+    status: "Active",
   },
 ];
 
 /**
  * Fetch company bank accounts from fin_bank_accounts or fallback to standard master list.
+ * Only returns active accounts for transactions like PDC bank deposit.
  */
 export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> {
   try {
@@ -82,11 +89,18 @@ export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> 
       .select('*, fin_banks(name, code, swift_code)')
       .limit(50);
 
-    if (error || !data || data.length === 0) {
-      return DEFAULT_COMPANY_BANK_ACCOUNTS;
+    if (error || !data) {
+      return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
     }
 
-    return data.map((item: any, idx: number) => ({
+    // Filter to strictly ACTIVE bank accounts only (exclude deactivated accounts)
+    const activeData = data.filter((item: any) => item.status !== 'Inactive' && item.status !== 'inactive');
+
+    if (activeData.length === 0) {
+      return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
+    }
+
+    return activeData.map((item: any, idx: number) => ({
       id: String(item.id || `bank-acc-${idx}`),
       bankName: item.fin_banks?.name || item.bank_name || 'Operating Bank',
       accountTitle: item.account_title || item.name || 'Bank Operating Account',
@@ -97,8 +111,9 @@ export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> 
       currency: item.currency || 'QAR',
       branch: item.branch,
       isDefault: idx === 0,
+      status: item.status || 'Active',
     }));
   } catch {
-    return DEFAULT_COMPANY_BANK_ACCOUNTS;
+    return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
   }
 }

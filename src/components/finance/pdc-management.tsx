@@ -193,7 +193,16 @@ function GlConfirmModal({
     red: "bg-red-100 text-red-800",
   };
 
-  const selectedBank = bankAccounts.find(b => b.id === selectedBankAccountId) || bankAccounts[0];
+  const activeBankAccounts = useMemo(() => {
+    return (bankAccounts || []).filter(
+      (b) => (b as any).status !== "Inactive" && (b as any).status !== "inactive"
+    );
+  }, [bankAccounts]);
+
+  const selectedBank =
+    activeBankAccounts.find((b) => b.id === selectedBankAccountId) ||
+    activeBankAccounts[0] ||
+    bankAccounts[0];
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
@@ -245,7 +254,7 @@ function GlConfirmModal({
                 <SelectValue placeholder="Select Destination Bank Account" />
               </SelectTrigger>
               <SelectContent>
-                {bankAccounts.map((b) => (
+                {activeBankAccounts.map((b) => (
                   <SelectItem key={b.id} value={b.id} className="text-xs">
                     <div className="flex flex-col py-0.5">
                       <span className="font-semibold">{b.accountTitle} ({b.bankName})</span>
@@ -764,17 +773,41 @@ export function PdcManagement() {
   const [depositDate, setDepositDate] = useState<string>(new Date().toISOString().split("T")[0]);
 
   useEffect(() => {
-    fetchCompanyBankAccounts().then((accounts) => {
-      if (accounts && accounts.length > 0) {
-        setBankAccounts(accounts);
-        const def = accounts.find((a) => a.isDefault) || accounts[0];
-        if (def) setSelectedBankAccountId(def.id);
-      }
-    });
+    const loadAccounts = () => {
+      fetchCompanyBankAccounts().then((accounts) => {
+        const activeOnly = (accounts || []).filter(
+          (a) => (a as any).status !== "Inactive" && (a as any).status !== "inactive"
+        );
+        if (activeOnly.length > 0) {
+          setBankAccounts(activeOnly);
+          setSelectedBankAccountId((prev) => {
+            if (activeOnly.some((a) => a.id === prev)) return prev;
+            const def = activeOnly.find((a) => a.isDefault) || activeOnly[0];
+            return def ? def.id : activeOnly[0].id;
+          });
+        }
+      });
+    };
+    loadAccounts();
+    window.addEventListener("banks-updated", loadAccounts);
+    return () => window.removeEventListener("banks-updated", loadAccounts);
   }, []);
 
   // ── Open GL Confirm Modal ──────────────────────────────────────────────────
   function openGlConfirm(pdc: any, action: "deposit" | "clear" | "return" | "cancel") {
+    fetchCompanyBankAccounts().then((accounts) => {
+      const activeOnly = (accounts || []).filter(
+        (a) => (a as any).status !== "Inactive" && (a as any).status !== "inactive"
+      );
+      if (activeOnly.length > 0) {
+        setBankAccounts(activeOnly);
+        setSelectedBankAccountId((prev) => {
+          if (activeOnly.some((a) => a.id === prev)) return prev;
+          const def = activeOnly.find((a) => a.isDefault) || activeOnly[0];
+          return def ? def.id : activeOnly[0].id;
+        });
+      }
+    });
     setPendingActionPdc(pdc);
     setPendingAction(action);
     setCancelReason("");
