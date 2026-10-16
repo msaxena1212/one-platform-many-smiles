@@ -886,6 +886,31 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [custTypeFilter, setCustTypeFilter] = useState("all");
   const [custStatusFilter, setCustStatusFilter] = useState("all");
 
+  // Filter states for Agreement Terms tab
+  const [agreementPropertyFilter, setAgreementPropertyFilter] = useState("all");
+  const [agreementUnitFilter, setAgreementUnitFilter] = useState("all");
+  const [agreementFreqFilter, setAgreementFreqFilter] = useState("all");
+  const [agreementPdcFilter, setAgreementPdcFilter] = useState("all");
+  const [agreementNoticeFilter, setAgreementNoticeFilter] = useState("all");
+  const [agreementSearchQuery, setAgreementSearchQuery] = useState("");
+
+  // Filter states for Keys & Check-In tab
+  const [keysPropertyFilter, setKeysPropertyFilter] = useState("all");
+  const [keysUnitFilter, setKeysUnitFilter] = useState("all");
+  const [keysStatusFilter, setKeysStatusFilter] = useState("all");
+  const [keysNoticeFilter, setKeysNoticeFilter] = useState("all");
+  const [keysHandoverFilter, setKeysHandoverFilter] = useState("all");
+  const [keysCheckInFilter, setKeysCheckInFilter] = useState("all");
+  const [keysSearchQuery, setKeysSearchQuery] = useState("");
+
+  // Filter states for SRS Workflow & Audit History tab
+  const [auditStageFilter, setAuditStageFilter] = useState("all");
+  const [auditOwnerFilter, setAuditOwnerFilter] = useState("all");
+  const [auditStatusFilter, setAuditStatusFilter] = useState("all");
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
+  const [auditSearchQuery, setAuditSearchQuery] = useState("");
+
 
   // Voucher Approval & Revenue Recognition modal states
   const [voucherApprovalOpen, setVoucherApprovalOpen] = useState(false);
@@ -13095,81 +13120,265 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="agreement">
-          <Card>
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle>Lease Agreement Terms & Payment Schedule Rules</CardTitle>
-                <CardDescription>Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.</CardDescription>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                onClick={() => {
-                  exportToExcel(
-                    (leases || []).map((l) => ({
-                      "Lease ID": l.id,
-                      "Customer / Tenant": l.tenantName || "—",
-                      "Property": l.property || "—",
-                      "Unit": l.unit || "—",
-                      "Monthly Rent (QAR)": l.monthlyRent || 0,
-                      "Payment Frequency": (l.paymentFrequency || "monthly").replace("_", " "),
-                      "PDC Cheque Count": l.pdcCount || 12,
-                      "Grace Period (Days)": l.gracePeriodDays || 7,
-                      "Late Penalties": l.penalties || "5%",
-                      "Maintenance Responsibility": l.maintenanceResponsibility || "Landlord",
-                      "Utility Responsibility": l.utilityResponsibility || "Tenant",
-                      "Parking Details": l.parkingDetails || "Dedicated Parking",
-                      "Notice Period (Days)": l.noticePeriodDays || 60,
-                      "Special Conditions": l.specialConditions || "Standard Tenancy",
-                    })),
-                    `Agreement_Terms_Export_${new Date().toISOString().split("T")[0]}`
-                  );
-                }}
-              >
-                <Download className="h-3.5 w-3.5" /> Export to Excel
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={["Lease", "Rent / Frequency", "PDCs", "Grace / Penalty", "Responsibilities", "Facilities / Clauses", "Renewal Notice", "Actions"]}
-                rows={(leases || []).map((lease) => [
-                  `${lease?.tenantName || "Tenant"} / ${lease?.unit || "Unit"} (${lease?.property || "Property"})`,
-                  `${formatMoney(lease?.monthlyRent)} / ${(lease?.paymentFrequency || "monthly").replace("_", " ")}`,
-                  `${lease?.pdcCount || 12} cheques`,
-                  `${lease?.gracePeriodDays || 7} days / ${lease?.penalties || "5%"}`,
-                  `Maintenance: ${lease?.maintenanceResponsibility || "Landlord"}; Utilities: ${lease?.utilityResponsibility || "Tenant"}`,
-                  `${lease?.parkingDetails || "Dedicated Parking"}; ${lease?.specialConditions || "Standard Tenancy"}`,
-                  `${lease?.noticePeriodDays || 60} days`,
-                  <div key="actions" className="flex justify-end">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        if (!lease?.id) return;
-                        setSelectedLeaseForTerms(lease.id);
-                        setAgreementTermsForm({
-                          paymentFrequency: lease.paymentFrequency,
-                          pdcCount: lease.pdcCount,
-                          gracePeriodDays: lease.gracePeriodDays,
-                          penalties: lease.penalties,
-                          maintenanceResponsibility: lease.maintenanceResponsibility,
-                          utilityResponsibility: lease.utilityResponsibility,
-                          parkingDetails: lease.parkingDetails,
-                          specialConditions: lease.specialConditions,
-                          noticePeriodDays: lease.noticePeriodDays,
-                        });
-                        setEditTermsOpen(true);
-                      }}
-                    >
-                      Edit Terms
-                    </Button>
+        <TabsContent value="agreement" className="space-y-4">
+          {(() => {
+            const allAgreements = leases || [];
+
+            // Unique options for cross-filtering
+            const uniqueProps = Array.from(new Set(allAgreements.map((l) => l.property).filter(Boolean))).sort() as string[];
+            const uniqueUnits = Array.from(
+              new Set(
+                allAgreements
+                  .filter((l) => agreementPropertyFilter === "all" || l.property === agreementPropertyFilter)
+                  .map((l) => l.unit)
+                  .filter(Boolean)
+              )
+            ).sort() as string[];
+
+            const freqLabels: Record<string, string> = {
+              monthly: "Monthly",
+              quarterly: "Quarterly",
+              semi_annual: "Semi-Annual",
+              semi_annually: "Semi-Annually",
+              annual: "Annual",
+              annually: "Annually",
+            };
+            const uniqueFreqs = Array.from(new Set(allAgreements.map((l) => (l.paymentFrequency || "monthly").toLowerCase()))).sort() as string[];
+            const uniquePdcs = Array.from(new Set(allAgreements.map((l) => Number(l.pdcCount || 12)))).sort((a, b) => a - b);
+            const uniqueNotices = Array.from(new Set(allAgreements.map((l) => Number(l.noticePeriodDays || 60)))).sort((a, b) => a - b);
+
+            const filteredAgreements = allAgreements.filter((l) => {
+              if (agreementPropertyFilter !== "all" && l.property !== agreementPropertyFilter) return false;
+              if (agreementUnitFilter !== "all" && l.unit !== agreementUnitFilter) return false;
+              if (agreementFreqFilter !== "all" && (l.paymentFrequency || "monthly").toLowerCase() !== agreementFreqFilter.toLowerCase()) return false;
+              if (agreementPdcFilter !== "all" && String(l.pdcCount || 12) !== agreementPdcFilter) return false;
+              if (agreementNoticeFilter !== "all" && String(l.noticePeriodDays || 60) !== agreementNoticeFilter) return false;
+
+              if (agreementSearchQuery.trim()) {
+                const q = agreementSearchQuery.toLowerCase().trim();
+                const match =
+                  (l.tenantName || "").toLowerCase().includes(q) ||
+                  (l.property || "").toLowerCase().includes(q) ||
+                  (l.unit || "").toLowerCase().includes(q) ||
+                  (l.id || "").toLowerCase().includes(q) ||
+                  (l.paymentFrequency || "").toLowerCase().includes(q) ||
+                  (l.maintenanceResponsibility || "").toLowerCase().includes(q) ||
+                  (l.utilityResponsibility || "").toLowerCase().includes(q) ||
+                  (l.parkingDetails || "").toLowerCase().includes(q) ||
+                  (l.specialConditions || "").toLowerCase().includes(q) ||
+                  (l.penalties || "").toLowerCase().includes(q) ||
+                  String(l.monthlyRent || "").includes(q);
+                if (!match) return false;
+              }
+              return true;
+            });
+
+            const isFiltered =
+              agreementPropertyFilter !== "all" ||
+              agreementUnitFilter !== "all" ||
+              agreementFreqFilter !== "all" ||
+              agreementPdcFilter !== "all" ||
+              agreementNoticeFilter !== "all" ||
+              agreementSearchQuery.trim() !== "";
+
+            const resetFilters = () => {
+              setAgreementPropertyFilter("all");
+              setAgreementUnitFilter("all");
+              setAgreementFreqFilter("all");
+              setAgreementPdcFilter("all");
+              setAgreementNoticeFilter("all");
+              setAgreementSearchQuery("");
+            };
+
+            return (
+              <Card>
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold">Lease Agreement Terms &amp; Payment Schedule Rules</CardTitle>
+                        <Badge variant="outline" className="text-[11px] font-normal">
+                          {filteredAgreements.length} {filteredAgreements.length === 1 ? "agreement" : "agreements"}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Agreement data now includes payment frequency, PDC count, grace/penalty terms, maintenance, utilities, parking, special clauses and notice period.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isFiltered && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs text-muted-foreground gap-1"
+                          onClick={resetFilters}
+                        >
+                          <RotateCcw className="h-3 w-3" /> Reset Filters
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                        onClick={() => {
+                          exportToExcel(
+                            filteredAgreements.map((l) => ({
+                              "Lease ID": l.id,
+                              "Customer / Tenant": l.tenantName || "—",
+                              "Property": l.property || "—",
+                              "Unit": l.unit || "—",
+                              "Monthly Rent (QAR)": l.monthlyRent || 0,
+                              "Payment Frequency": (l.paymentFrequency || "monthly").replace("_", " "),
+                              "PDC Cheque Count": l.pdcCount || 12,
+                              "Grace Period (Days)": l.gracePeriodDays || 7,
+                              "Late Penalties": l.penalties || "5%",
+                              "Maintenance Responsibility": l.maintenanceResponsibility || "Landlord",
+                              "Utility Responsibility": l.utilityResponsibility || "Tenant",
+                              "Parking Details": l.parkingDetails || "Dedicated Parking",
+                              "Notice Period (Days)": l.noticePeriodDays || 60,
+                              "Special Conditions": l.specialConditions || "Standard Tenancy",
+                            })),
+                            `Agreement_Terms_Export_${new Date().toISOString().split("T")[0]}`
+                          );
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
+                    </div>
                   </div>
-                ])}
-              />
-            </CardContent>
-          </Card>
+
+                  {/* Multi-Dimensional Filter & Search Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
+                    {/* Search Input */}
+                    <div className="relative md:col-span-2">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search tenant, unit, property, clauses..."
+                        value={agreementSearchQuery}
+                        onChange={(e) => setAgreementSearchQuery(e.target.value)}
+                        className="pl-8 h-8 text-xs bg-background"
+                      />
+                    </div>
+
+                    {/* Property Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={agreementPropertyFilter}
+                        onValueChange={(val) => {
+                          setAgreementPropertyFilter(val);
+                          if (val !== "all" && agreementUnitFilter !== "all") {
+                            const unitMatches = allAgreements.some((l) => l.property === val && l.unit === agreementUnitFilter);
+                            if (!unitMatches) setAgreementUnitFilter("all");
+                          }
+                        }}
+                        placeholder={`All Properties (${uniqueProps.length})`}
+                        emptyText="No properties found"
+                        options={[
+                          { label: `All Properties (${uniqueProps.length})`, value: "all" },
+                          ...uniqueProps.map((p) => ({ label: p, value: p })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Unit Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={agreementUnitFilter}
+                        onValueChange={(val) => {
+                          setAgreementUnitFilter(val);
+                          if (val !== "all") {
+                            const matchLease = allAgreements.find((l) => l.unit === val);
+                            if (matchLease && agreementPropertyFilter === "all" && matchLease.property) {
+                              setAgreementPropertyFilter(matchLease.property);
+                            }
+                          }
+                        }}
+                        placeholder={`All Units (${uniqueUnits.length})`}
+                        emptyText="No units found"
+                        options={[
+                          { label: `All Units (${uniqueUnits.length})`, value: "all" },
+                          ...uniqueUnits.map((u) => ({ label: u, value: u })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Frequency Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={agreementFreqFilter}
+                        onValueChange={setAgreementFreqFilter}
+                        placeholder="All Frequencies"
+                        emptyText="No frequencies found"
+                        options={[
+                          { label: "All Frequencies", value: "all" },
+                          ...uniqueFreqs.map((f) => ({
+                            label: freqLabels[f] || f.charAt(0).toUpperCase() + f.slice(1).replace("_", " "),
+                            value: f,
+                          })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* PDC Count Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={agreementPdcFilter}
+                        onValueChange={setAgreementPdcFilter}
+                        placeholder="All PDC Counts"
+                        emptyText="No counts found"
+                        options={[
+                          { label: "All PDC Counts", value: "all" },
+                          ...uniquePdcs.map((cnt) => ({
+                            label: `${cnt} cheques`,
+                            value: String(cnt),
+                          })),
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <DataTable
+                    key={`agreements-${agreementPropertyFilter}-${agreementUnitFilter}-${agreementFreqFilter}-${agreementPdcFilter}-${agreementNoticeFilter}-${agreementSearchQuery}`}
+                    columns={["Lease", "Rent / Frequency", "PDCs", "Grace / Penalty", "Responsibilities", "Facilities / Clauses", "Renewal Notice", "Actions"]}
+                    rows={filteredAgreements.map((lease) => [
+                      `${lease?.tenantName || "Tenant"} / ${lease?.unit || "Unit"} (${lease?.property || "Property"})`,
+                      `${formatMoney(lease?.monthlyRent)} / ${(lease?.paymentFrequency || "monthly").replace("_", " ")}`,
+                      `${lease?.pdcCount || 12} cheques`,
+                      `${lease?.gracePeriodDays || 7} days / ${lease?.penalties || "5%"}`,
+                      `Maintenance: ${lease?.maintenanceResponsibility || "Landlord"}; Utilities: ${lease?.utilityResponsibility || "Tenant"}`,
+                      `${lease?.parkingDetails || "Dedicated Parking"}; ${lease?.specialConditions || "Standard Tenancy"}`,
+                      `${lease?.noticePeriodDays || 60} days`,
+                      <div key="actions" className="flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (!lease?.id) return;
+                            setSelectedLeaseForTerms(lease.id);
+                            setAgreementTermsForm({
+                              paymentFrequency: lease.paymentFrequency,
+                              pdcCount: lease.pdcCount,
+                              gracePeriodDays: lease.gracePeriodDays,
+                              penalties: lease.penalties,
+                              maintenanceResponsibility: lease.maintenanceResponsibility,
+                              utilityResponsibility: lease.utilityResponsibility,
+                              parkingDetails: lease.parkingDetails,
+                              specialConditions: lease.specialConditions,
+                              noticePeriodDays: lease.noticePeriodDays,
+                            });
+                            setEditTermsOpen(true);
+                          }}
+                        >
+                          Edit Terms
+                        </Button>
+                      </div>,
+                    ])}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="signatures">
@@ -13364,180 +13573,391 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           </TabsContent>
 
           <TabsContent value="keys" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <CardTitle>Key Issue, Handover & Check-In</CardTitle>
-                  <CardDescription>No key issue is allowed unless collection is complete and the lease is fully signed.</CardDescription>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                  onClick={() => {
-                    exportToExcel(
-                      (leases || []).map((lease) => {
+            {(() => {
+              const allLeases = leases || [];
+
+              // Unique options for cross-filtering
+              const uniqueProps = Array.from(new Set(allLeases.map((l) => l.property).filter(Boolean))).sort() as string[];
+              const uniqueUnits = Array.from(
+                new Set(
+                  allLeases
+                    .filter((l) => keysPropertyFilter === "all" || l.property === keysPropertyFilter)
+                    .map((l) => l.unit)
+                    .filter(Boolean)
+                )
+              ).sort() as string[];
+              const uniqueStatuses = Array.from(new Set(allLeases.map((l) => l.status).filter(Boolean))).sort() as string[];
+
+              const filteredKeysList = allLeases.filter((lease) => {
+                const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+                const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+                const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+
+                // Property filter
+                if (keysPropertyFilter !== "all" && lease?.property !== keysPropertyFilter) return false;
+
+                // Unit filter
+                if (keysUnitFilter !== "all" && lease?.unit !== keysUnitFilter) return false;
+
+                // Status filter
+                if (keysStatusFilter !== "all" && (lease?.status || "").toLowerCase() !== keysStatusFilter.toLowerCase()) return false;
+
+                // Key Notice filter
+                if (keysNoticeFilter !== "all") {
+                  if (keysNoticeFilter === "notified" && notice && notice.status !== "notified") return false;
+                  if (keysNoticeFilter === "pending" && (!notice || notice.status !== "pending")) return false;
+                }
+
+                // Handover filter
+                if (keysHandoverFilter !== "all") {
+                  if (keysHandoverFilter === "handed_over" && handover && handover.status === "pending") return false;
+                  if (keysHandoverFilter === "pending" && (!handover || handover.status !== "pending")) return false;
+                }
+
+                // Check-in filter
+                if (keysCheckInFilter !== "all") {
+                  if (keysCheckInFilter === "checked_in" && checkIn && checkIn.status === "pending") return false;
+                  if (keysCheckInFilter === "pending" && (!checkIn || checkIn.status !== "pending")) return false;
+                }
+
+                // Search query
+                if (keysSearchQuery.trim()) {
+                  const q = keysSearchQuery.toLowerCase().trim();
+                  const match =
+                    (lease?.tenantName || "").toLowerCase().includes(q) ||
+                    (lease?.property || "").toLowerCase().includes(q) ||
+                    (lease?.unit || "").toLowerCase().includes(q) ||
+                    (lease?.id || "").toLowerCase().includes(q) ||
+                    (lease?.status || "").toLowerCase().includes(q);
+                  if (!match) return false;
+                }
+
+                return true;
+              });
+
+              const isFiltered =
+                keysPropertyFilter !== "all" ||
+                keysUnitFilter !== "all" ||
+                keysStatusFilter !== "all" ||
+                keysNoticeFilter !== "all" ||
+                keysHandoverFilter !== "all" ||
+                keysCheckInFilter !== "all" ||
+                keysSearchQuery.trim() !== "";
+
+              const resetFilters = () => {
+                setKeysPropertyFilter("all");
+                setKeysUnitFilter("all");
+                setKeysStatusFilter("all");
+                setKeysNoticeFilter("all");
+                setKeysHandoverFilter("all");
+                setKeysCheckInFilter("all");
+                setKeysSearchQuery("");
+              };
+
+              return (
+                <Card>
+                  <CardHeader className="pb-3 pt-4 px-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base font-semibold">Key Issue, Handover &amp; Check-In</CardTitle>
+                          <Badge variant="outline" className="text-[11px] font-normal">
+                            {filteredKeysList.length} {filteredKeysList.length === 1 ? "record" : "records"}
+                          </Badge>
+                        </div>
+                        <CardDescription className="text-xs">
+                          No key issue is allowed unless collection is complete and the lease is fully signed.
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isFiltered && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-xs text-muted-foreground gap-1"
+                            onClick={resetFilters}
+                          >
+                            <RotateCcw className="h-3 w-3" /> Reset Filters
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                          onClick={() => {
+                            exportToExcel(
+                              filteredKeysList.map((lease) => {
+                                const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+                                const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+                                const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+                                return {
+                                  "Customer": lease?.tenantName || "—",
+                                  "Property": lease?.property || "—",
+                                  "Unit": lease?.unit || "—",
+                                  "Lease Status": lease?.status || "—",
+                                  "Notice Status": notice ? notice.status : "Notified",
+                                  "Handover Date": handover?.handoverAt || lease?.startDate || "—",
+                                  "Keys Delivered": handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "2 keys, 2 cards",
+                                  "Check-In Status": checkIn ? "Checked In" : "Checked In",
+                                  "Unit Condition": checkIn?.condition || "Good",
+                                  "Audit Photos Count": checkIn?.photos || 8,
+                                };
+                              }),
+                              `Key_Handover_Checkin_Export_${new Date().toISOString().split("T")[0]}`
+                            );
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5" /> Export to Excel
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Multi-Dimensional Filter & Search Bar */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
+                      {/* Search Input */}
+                      <div className="relative md:col-span-2">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Search customer, unit, property, lease ID..."
+                          value={keysSearchQuery}
+                          onChange={(e) => setKeysSearchQuery(e.target.value)}
+                          className="pl-8 h-8 text-xs bg-background"
+                        />
+                      </div>
+
+                      {/* Property Filter */}
+                      <div>
+                        <SearchableSelect
+                          value={keysPropertyFilter}
+                          onValueChange={(val) => {
+                            setKeysPropertyFilter(val);
+                            if (val !== "all" && keysUnitFilter !== "all") {
+                              const unitMatches = allLeases.some((l) => l.property === val && l.unit === keysUnitFilter);
+                              if (!unitMatches) setKeysUnitFilter("all");
+                            }
+                          }}
+                          placeholder={`All Properties (${uniqueProps.length})`}
+                          emptyText="No properties found"
+                          options={[
+                            { label: `All Properties (${uniqueProps.length})`, value: "all" },
+                            ...uniqueProps.map((p) => ({ label: p, value: p })),
+                          ]}
+                        />
+                      </div>
+
+                      {/* Unit Filter */}
+                      <div>
+                        <SearchableSelect
+                          value={keysUnitFilter}
+                          onValueChange={(val) => {
+                            setKeysUnitFilter(val);
+                            if (val !== "all") {
+                              const matchLease = allLeases.find((l) => l.unit === val);
+                              if (matchLease && keysPropertyFilter === "all" && matchLease.property) {
+                                setKeysPropertyFilter(matchLease.property);
+                              }
+                            }
+                          }}
+                          placeholder={`All Units (${uniqueUnits.length})`}
+                          emptyText="No units found"
+                          options={[
+                            { label: `All Units (${uniqueUnits.length})`, value: "all" },
+                            ...uniqueUnits.map((u) => ({ label: u, value: u })),
+                          ]}
+                        />
+                      </div>
+
+                      {/* Lease Status Filter */}
+                      <div>
+                        <SearchableSelect
+                          value={keysStatusFilter}
+                          onValueChange={setKeysStatusFilter}
+                          placeholder="All Statuses"
+                          emptyText="No statuses found"
+                          options={[
+                            { label: "All Statuses", value: "all" },
+                            ...uniqueStatuses.map((s) => ({
+                              label: s.charAt(0).toUpperCase() + s.slice(1),
+                              value: s,
+                            })),
+                          ]}
+                        />
+                      </div>
+
+                      {/* Key Notice Filter */}
+                      <div>
+                        <SearchableSelect
+                          value={keysNoticeFilter}
+                          onValueChange={setKeysNoticeFilter}
+                          placeholder="All Notices"
+                          emptyText="No notice status found"
+                          options={[
+                            { label: "All Notices", value: "all" },
+                            { label: "Notified", value: "notified" },
+                            { label: "Pending Notice", value: "pending" },
+                          ]}
+                        />
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <DataTable
+                      key={`keys-${keysPropertyFilter}-${keysUnitFilter}-${keysStatusFilter}-${keysNoticeFilter}-${keysHandoverFilter}-${keysCheckInFilter}-${keysSearchQuery}`}
+                      columns={["Customer", "Property / Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
+                      rows={filteredKeysList.map((lease) => {
                         const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
                         const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
                         const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
-                        return {
-                          "Customer": lease?.tenantName || "—",
-                          "Property": lease?.property || "—",
-                          "Unit": lease?.unit || "—",
-                          "Lease Status": lease?.status || "—",
-                          "Notice Status": notice ? notice.status : "Notified",
-                          "Handover Date": handover?.handoverAt || lease?.startDate || "—",
-                          "Keys Delivered": handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "2 keys, 2 cards",
-                          "Check-In Status": checkIn ? "Checked In" : "Checked In",
-                          "Unit Condition": checkIn?.condition || "Good",
-                          "Audit Photos Count": checkIn?.photos || 8,
-                        };
-                      }),
-                      `Key_Handover_Checkin_Export_${new Date().toISOString().split("T")[0]}`
-                    );
-                  }}
-                >
-                  <Download className="h-3.5 w-3.5" /> Export to Excel
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <DataTable
-                  columns={["Customer", "Property / Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
-                  rows={(leases || []).map((lease) => {
-                    const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
-                    const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
-                    const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
-                    return [
-                      <div key="cust" className="flex flex-col">
-                        <span className="font-semibold text-foreground text-xs">{lease?.tenantName || "Tenant"}</span>
-                        <span className="text-[10px] text-muted-foreground">{lease?.id?.slice(0, 8)}</span>
-                      </div>,
-                      <div key="prop" className="flex flex-col">
-                        <span className="font-mono text-xs font-bold text-foreground">{lease?.unit || "—"}</span>
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{lease?.property || "—"}</span>
-                      </div>,
-                      <StatusBadge key="status" value={lease?.status} />,
-                      notice ? (
-                        <div key="notice" className="flex flex-col gap-0.5">
-                          <StatusBadge value={notice.status} />
-                          <span className="text-[10px] text-muted-foreground">{notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}</span>
-                        </div>
-                      ) : (
-                        <div key="notice" className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">✉️ Notified</span>
-                          <span className="text-[10px] text-muted-foreground">{lease?.startDate || "-"}</span>
-                        </div>
-                      ),
-                      handover ? (
-                        <div key="handover" className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
-                          <span className="text-[10px] text-muted-foreground">{handover.keys || 2}× keys · {handover.accessCards || 2} cards</span>
-                        </div>
-                      ) : (
-                        <div key="handover" className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">✅ Handed Over</span>
-                          <span className="text-[10px] text-muted-foreground">2× keys · 2 cards</span>
-                        </div>
-                      ),
-                      checkIn ? (
-                        <div key="checkin" className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
-                          <span className="text-[10px] text-muted-foreground">{checkIn.condition || "Good"} · {checkIn.photos || 8} photos</span>
-                        </div>
-                      ) : (
-                        <div key="checkin" className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">🏠 Checked In</span>
-                          <span className="text-[10px] text-muted-foreground">Good · 8 photos</span>
-                        </div>
-                      ),
-                      <div key="actions" className="flex items-center justify-end gap-1.5 flex-nowrap">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!!notice}
-                          className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${notice ? "opacity-50" : ""}`}
-                          onClick={() => {
-                            setKeysWorkflowLease(lease);
-                            setKeyNotifyForm({
-                              handoverAt: lease?.startDate || addDays(today, 1),
-                              handoverTime: "10:00",
-                              recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"],
-                              authorizedCollector: lease?.tenantName || "",
-                              keysSummary: "2 metal keys, 2 access cards, 1 parking remote",
-                              staffContact: "Property Manager - +974 4400 2200",
-                              outstandingRequirements: "None",
-                              note: "",
-                            });
-                            setKeyNotifyOpen(true);
-                          }}
-                        >
-                          {notice ? "Notified ✓" : "Send Notice"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-[11px] font-medium whitespace-nowrap border-green-300 text-green-700 hover:bg-green-50"
-                          onClick={() => {
-                            if (handover) {
-                              setSelectedHandover(handover);
-                            } else {
-                              setSelectedHandover({
-                                id: `hnd-${lease?.id}`,
-                                leaseId: lease?.id,
-                                handoverAt: lease?.startDate ? `${lease.startDate} 10:00 AM` : "2026-04-01 10:00 AM",
-                                keys: 2,
-                                keyType: "Metal door keys (Master & Duplicate)",
-                                accessCards: 2,
-                                parkingRemotes: 1,
-                                parkingDeviceDetails: "Remote #R-402, RFID Gate Tag #GT-881, Bay P1-14",
-                                electricityMeterReading: "12,450 kWh",
-                                waterMeterReading: "840 m³",
-                                unitCondition: "Good",
-                                cleanliness: "Clean",
-                                acWorking: true,
-                                plumbingOk: true,
-                                electricalOk: true,
-                                doorsWindowsOk: true,
-                                idVerified: true,
-                                photosTaken: 6,
-                                acknowledged: true,
-                                issuedBy: "Property Manager",
-                                collectorName: lease?.tenantName || "Tenant",
-                                collectorIdNumber: "29463401928 (QID Verified)",
-                                tenantAcknowledgement: "I hereby confirm receipt of the above keys, access cards, and devices in good working order. I accept the property in the documented condition with all meter readings verified.",
-                                assetsSnapshot: [
-                                  { id: "a1", name: "Split Air Conditioning Units (x3)", code: "HVAC-SPL-01", condition: "Excellent", remarks: "Serviced, clean filters, cooling tested OK ✓" },
-                                  { id: "a2", name: "Built-in Gas Cooktop & Oven", code: "APP-KIT-02", condition: "Good", remarks: "Ignition and all burners verified working ✓" },
-                                  { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", code: "APP-REF-03", condition: "Good", remarks: "Clean, defrosted, temperature tested ✓" },
-                                  { id: "a4", name: "Electric Water Heater (80L)", code: "PLM-WTR-01", condition: "Excellent", remarks: "Thermostat and safety valve inspected ✓" },
-                                  { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", code: "FUR-WRD-01", condition: "Excellent", remarks: "Hinges and sliding tracks aligned ✓" },
-                                ],
-                              } as any);
-                            }
-                            setHandoverViewOpen(true);
-                          }}
-                        >
-                          View Receipt
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!notice}
-                          className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}
-                          onClick={() => {
-                            setKeysWorkflowLease(lease);
-                            setHandoverActiveTab("details");
-                            setHandoverOpen(true);
-                          }}
-                        >
-                          Complete Handover
-                        </Button>
-                      </div>,
-                    ];
-                  })}
-                />
-              </CardContent>
-            </Card>
+                        return [
+                          <div key="cust" className="flex flex-col">
+                            <span className="font-semibold text-foreground text-xs">{lease?.tenantName || "Tenant"}</span>
+                            <span className="text-[10px] text-muted-foreground">{lease?.id?.slice(0, 8)}</span>
+                          </div>,
+                          <div key="prop" className="flex flex-col">
+                            <span className="font-mono text-xs font-bold text-foreground">{lease?.unit || "—"}</span>
+                            <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{lease?.property || "—"}</span>
+                          </div>,
+                          <StatusBadge key="status" value={lease?.status} />,
+                          notice ? (
+                            <div key="notice" className="flex flex-col gap-0.5">
+                              <StatusBadge value={notice.status} />
+                              <span className="text-[10px] text-muted-foreground">
+                                {notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}
+                              </span>
+                            </div>
+                          ) : (
+                            <div key="notice" className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">
+                                ✉️ Notified
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">{lease?.startDate || "-"}</span>
+                            </div>
+                          ),
+                          handover ? (
+                            <div key="handover" className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
+                                ✅ Handed Over
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {handover.keys || 2}× keys · {handover.accessCards || 2} cards
+                              </span>
+                            </div>
+                          ) : (
+                            <div key="handover" className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
+                                ✅ Handed Over
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">2× keys · 2 cards</span>
+                            </div>
+                          ),
+                          checkIn ? (
+                            <div key="checkin" className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
+                                🏠 Checked In
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {checkIn.condition || "Good"} · {checkIn.photos || 8} photos
+                              </span>
+                            </div>
+                          ) : (
+                            <div key="checkin" className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
+                                🏠 Checked In
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">Good · 8 photos</span>
+                            </div>
+                          ),
+                          <div key="actions" className="flex items-center justify-end gap-1.5 flex-nowrap">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!!notice}
+                              className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${notice ? "opacity-50" : ""}`}
+                              onClick={() => {
+                                setKeysWorkflowLease(lease);
+                                setKeyNotifyForm({
+                                  handoverAt: lease?.startDate || addDays(today, 1),
+                                  handoverTime: "10:00",
+                                  recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"],
+                                  authorizedCollector: lease?.tenantName || "",
+                                  keysSummary: "2 metal keys, 2 access cards, 1 parking remote",
+                                  staffContact: "Property Manager - +974 4400 2200",
+                                  outstandingRequirements: "None",
+                                  note: "",
+                                });
+                                setKeyNotifyOpen(true);
+                              }}
+                            >
+                              {notice ? "Notified ✓" : "Send Notice"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px] font-medium whitespace-nowrap border-green-300 text-green-700 hover:bg-green-50"
+                              onClick={() => {
+                                if (handover) {
+                                  setSelectedHandover(handover);
+                                } else {
+                                  setSelectedHandover({
+                                    id: `hnd-${lease?.id}`,
+                                    leaseId: lease?.id,
+                                    handoverAt: lease?.startDate ? `${lease.startDate} 10:00 AM` : "2026-04-01 10:00 AM",
+                                    keys: 2,
+                                    keyType: "Metal door keys (Master & Duplicate)",
+                                    accessCards: 2,
+                                    parkingRemotes: 1,
+                                    parkingDeviceDetails: "Remote #R-402, RFID Gate Tag #GT-881, Bay P1-14",
+                                    electricityMeterReading: "12,450 kWh",
+                                    waterMeterReading: "840 m³",
+                                    unitCondition: "Good",
+                                    cleanliness: "Clean",
+                                    acWorking: true,
+                                    plumbingOk: true,
+                                    electricalOk: true,
+                                    doorsWindowsOk: true,
+                                    idVerified: true,
+                                    photosTaken: 6,
+                                    acknowledged: true,
+                                    issuedBy: "Property Manager",
+                                    collectorName: lease?.tenantName || "Tenant",
+                                    collectorIdNumber: "29463401928 (QID Verified)",
+                                    tenantAcknowledgement:
+                                      "I hereby confirm receipt of the above keys, access cards, and devices in good working order. I accept the property in the documented condition with all meter readings verified.",
+                                    assetsSnapshot: [
+                                      { id: "a1", name: "Split Air Conditioning Units (x3)", code: "HVAC-SPL-01", condition: "Excellent", remarks: "Serviced, clean filters, cooling tested OK ✓" },
+                                      { id: "a2", name: "Built-in Gas Cooktop & Oven", code: "APP-KIT-02", condition: "Good", remarks: "Ignition and all burners verified working ✓" },
+                                      { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", code: "APP-REF-03", condition: "Good", remarks: "Clean, defrosted, temperature tested ✓" },
+                                      { id: "a4", name: "Electric Water Heater (80L)", code: "PLM-WTR-01", condition: "Excellent", remarks: "Thermostat and safety valve inspected ✓" },
+                                      { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", code: "FUR-WRD-01", condition: "Excellent", remarks: "Hinges and sliding tracks aligned ✓" },
+                                    ],
+                                  } as any);
+                                }
+                                setHandoverViewOpen(true);
+                              }}
+                            >
+                              View Receipt
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!notice}
+                              className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}
+                              onClick={() => {
+                                setKeysWorkflowLease(lease);
+                                setHandoverActiveTab("details");
+                                setHandoverOpen(true);
+                              }}
+                            >
+                              Complete Handover
+                            </Button>
+                          </div>,
+                        ];
+                      })}
+                    />
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="renewals" className="space-y-4">
@@ -14776,66 +15196,213 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="audit">
-          <Card>
-            <CardHeader className="pb-3 pt-4 px-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base font-semibold">SRS Workflow &amp; Audit History</CardTitle>
-                  <CardDescription className="text-xs">Each stage records responsible department, input, approval, system status and output for future reference and audit.</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
-                    onClick={() => {
-                      const data = auditEvents.map(event => ({
-                        "Timestamp / Date": event.at,
-                        "Workflow Stage": event.stage,
-                        "Department / Owner": event.owner,
-                        "Input / Data": event.input,
-                        "Approval / Verifier": event.approval,
-                        "Status": event.status,
-                        "System Output / Artifact": event.output
-                      }));
+        <TabsContent value="audit" className="space-y-4">
+          {(() => {
+            const allEvents = auditEvents || [];
 
-                      exportToExcel({
-                        filename: `audit_workflow_history_${new Date().toISOString().slice(0, 10)}`,
-                        sheetName: "Audit History",
-                        data,
-                        headers: [
-                          { key: "Timestamp / Date", label: "Timestamp / Date", width: 20 },
-                          { key: "Workflow Stage", label: "Workflow Stage", width: 22 },
-                          { key: "Department / Owner", label: "Department / Owner", width: 20 },
-                          { key: "Input / Data", label: "Input / Data", width: 35 },
-                          { key: "Approval / Verifier", label: "Approval / Verifier", width: 20 },
-                          { key: "Status", label: "Status", width: 16 },
-                          { key: "System Output / Artifact", label: "System Output / Artifact", width: 35 },
-                        ]
-                      });
-                    }}
-                  >
-                    <Download className="h-3.5 w-3.5" /> Export to Excel
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={["Date", "Stage", "Owner", "Input", "Approval", "Status", "Output"]}
-                rows={auditEvents.map((event) => [
-                  event.at,
-                  event.stage,
-                  event.owner,
-                  event.input,
-                  event.approval,
-                  <StatusBadge key="status" value={event.status} />,
-                  event.output,
-                ])}
-              />
-            </CardContent>
-          </Card>
+            // Unique options for cross-filtering
+            const uniqueStages = Array.from(new Set(allEvents.map((e) => e.stage).filter(Boolean))).sort() as string[];
+            const uniqueOwners = Array.from(new Set(allEvents.map((e) => e.owner).filter(Boolean))).sort() as string[];
+            const uniqueStatuses = Array.from(new Set(allEvents.map((e) => e.status).filter(Boolean))).sort() as string[];
+
+            const filteredEvents = allEvents.filter((event) => {
+              // Stage filter
+              if (auditStageFilter !== "all" && event.stage !== auditStageFilter) return false;
+
+              // Owner / Department filter
+              if (auditOwnerFilter !== "all" && event.owner !== auditOwnerFilter) return false;
+
+              // Status filter
+              if (auditStatusFilter !== "all" && (event.status || "").toLowerCase() !== auditStatusFilter.toLowerCase()) return false;
+
+              // Date range
+              if (auditDateFrom && event.at && event.at < auditDateFrom) return false;
+              if (auditDateTo && event.at && event.at > auditDateTo) return false;
+
+              // Search query
+              if (auditSearchQuery.trim()) {
+                const q = auditSearchQuery.toLowerCase().trim();
+                const match =
+                  (event.stage || "").toLowerCase().includes(q) ||
+                  (event.owner || "").toLowerCase().includes(q) ||
+                  (event.input || "").toLowerCase().includes(q) ||
+                  (event.approval || "").toLowerCase().includes(q) ||
+                  (event.status || "").toLowerCase().includes(q) ||
+                  (event.output || "").toLowerCase().includes(q) ||
+                  (event.at || "").toLowerCase().includes(q);
+                if (!match) return false;
+              }
+
+              return true;
+            });
+
+            const isFiltered =
+              auditStageFilter !== "all" ||
+              auditOwnerFilter !== "all" ||
+              auditStatusFilter !== "all" ||
+              auditDateFrom !== "" ||
+              auditDateTo !== "" ||
+              auditSearchQuery.trim() !== "";
+
+            const resetFilters = () => {
+              setAuditStageFilter("all");
+              setAuditOwnerFilter("all");
+              setAuditStatusFilter("all");
+              setAuditDateFrom("");
+              setAuditDateTo("");
+              setAuditSearchQuery("");
+            };
+
+            return (
+              <Card>
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold">SRS Workflow &amp; Audit History</CardTitle>
+                        <Badge variant="outline" className="text-[11px] font-normal">
+                          {filteredEvents.length} {filteredEvents.length === 1 ? "event" : "events"}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Each stage records responsible department, input, approval, system status and output for future reference and audit.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isFiltered && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-xs text-muted-foreground gap-1"
+                          onClick={resetFilters}
+                        >
+                          <RotateCcw className="h-3 w-3" /> Reset Filters
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                        onClick={() => {
+                          const data = filteredEvents.map((event) => ({
+                            "Timestamp / Date": event.at,
+                            "Workflow Stage": event.stage,
+                            "Department / Owner": event.owner,
+                            "Input / Data": event.input,
+                            "Approval / Verifier": event.approval,
+                            "Status": event.status,
+                            "System Output / Artifact": event.output,
+                          }));
+
+                          exportToExcel({
+                            filename: `audit_workflow_history_${new Date().toISOString().slice(0, 10)}`,
+                            sheetName: "Audit History",
+                            data,
+                            headers: [
+                              { key: "Timestamp / Date", label: "Timestamp / Date", width: 20 },
+                              { key: "Workflow Stage", label: "Workflow Stage", width: 22 },
+                              { key: "Department / Owner", label: "Department / Owner", width: 20 },
+                              { key: "Input / Data", label: "Input / Data", width: 35 },
+                              { key: "Approval / Verifier", label: "Approval / Verifier", width: 20 },
+                              { key: "Status", label: "Status", width: 16 },
+                              { key: "System Output / Artifact", label: "System Output / Artifact", width: 35 },
+                            ],
+                          });
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Multi-Dimensional Filter & Search Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
+                    {/* Search Input */}
+                    <div className="relative md:col-span-2">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search stage, owner, input, output..."
+                        value={auditSearchQuery}
+                        onChange={(e) => setAuditSearchQuery(e.target.value)}
+                        className="pl-8 h-8 text-xs bg-background"
+                      />
+                    </div>
+
+                    {/* Stage Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={auditStageFilter}
+                        onValueChange={setAuditStageFilter}
+                        placeholder={`All Stages (${uniqueStages.length})`}
+                        emptyText="No stages found"
+                        options={[
+                          { label: `All Stages (${uniqueStages.length})`, value: "all" },
+                          ...uniqueStages.map((s) => ({ label: s, value: s })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Owner / Dept Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={auditOwnerFilter}
+                        onValueChange={setAuditOwnerFilter}
+                        placeholder={`All Owners (${uniqueOwners.length})`}
+                        emptyText="No owners found"
+                        options={[
+                          { label: `All Owners (${uniqueOwners.length})`, value: "all" },
+                          ...uniqueOwners.map((o) => ({ label: o, value: o })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Status Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={auditStatusFilter}
+                        onValueChange={setAuditStatusFilter}
+                        placeholder="All Statuses"
+                        emptyText="No statuses found"
+                        options={[
+                          { label: "All Statuses", value: "all" },
+                          ...uniqueStatuses.map((s) => ({
+                            label: s.charAt(0).toUpperCase() + s.slice(1),
+                            value: s,
+                          })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Date From Filter */}
+                    <div>
+                      <Input
+                        type="date"
+                        title="Filter Date"
+                        value={auditDateFrom}
+                        onChange={(e) => setAuditDateFrom(e.target.value)}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <DataTable
+                    key={`audit-${auditStageFilter}-${auditOwnerFilter}-${auditStatusFilter}-${auditDateFrom}-${auditSearchQuery}`}
+                    columns={["Date", "Stage", "Owner", "Input", "Approval", "Status", "Output"]}
+                    rows={filteredEvents.map((event) => [
+                      event.at,
+                      event.stage,
+                      event.owner,
+                      event.input,
+                      event.approval,
+                      <StatusBadge key="status" value={event.status} />,
+                      event.output,
+                    ])}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
         </TabsContent>
 
         
