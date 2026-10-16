@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Settings, Calendar, MapPin, Users, UserCheck, Layers, LayoutDashboard,
   Clock, BookOpen, FileText, PlusCircle, MinusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
@@ -3859,32 +3860,170 @@ function ReceivableInvoiceSubModule() {
 
 function BankSubModule() {
   const [open, setOpen] = useState(false);
+  const [editingBank, setEditingBank] = useState<FinBank | null>(null);
   const [data, setData] = useState<FinBank[]>([]);
-  const [form, setForm] = useState({ code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" });
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<{
+    code: string;
+    name: string;
+    swift_code: string;
+    status: 'Active' | 'Inactive';
+  }>({
+    code: "",
+    name: "",
+    swift_code: "",
+    status: "Active"
+  });
 
-  useEffect(() => { load(); }, []);
+  const LOCAL_STORAGE_KEY = "pms_fin_banks_override_v2";
+
+  useEffect(() => {
+    load();
+    const handleSync = () => load();
+    window.addEventListener("banks-updated", handleSync);
+    return () => window.removeEventListener("banks-updated", handleSync);
+  }, []);
+
   async function load() {
+    setLoading(true);
     try {
       const res = await FinBanksApi.fetchAll();
-      setData(res.length > 0 ? res : [
-        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
-        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" },
-        { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA" },
-        { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA" },
-      ]);
-    } catch {
-      setData([
-        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
-        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" }
-      ]);
+      if (res && res.length > 0) {
+        const list: FinBank[] = res.map(b => ({
+          ...b,
+          status: (b.status || 'Active') as 'Active' | 'Inactive'
+        }));
+        setData(list);
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list)); } catch {}
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch fin_banks from Supabase, loading cache/fallback", e);
     }
+
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setData(parsed);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {}
+
+    const defaults: FinBank[] = [
+      { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA", status: "Active" },
+      { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA", status: "Active" },
+      { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA", status: "Active" },
+      { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA", status: "Active" },
+      { id: "5", code: "MAR", name: "Masraf Al Rayan", swift_code: "MARKQAQA", status: "Active" },
+      { id: "6", code: "DUKHAN", name: "Dukhan Bank", swift_code: "BARQAQA", status: "Active" }
+    ];
+    setData(defaults);
+    setLoading(false);
   }
 
-  async function handleAdd() {
-    try { await FinBanksApi.create(form); } catch { }
-    setData(prev => [{ id: String(Date.now()), ...form }, ...prev]);
-    toast.success("Bank registered");
+  function handleOpenAdd() {
+    setEditingBank(null);
+    setForm({ code: "", name: "", swift_code: "", status: "Active" });
+    setOpen(true);
+  }
+
+  function handleOpenEdit(bank: FinBank) {
+    setEditingBank(bank);
+    setForm({
+      code: bank.code || "",
+      name: bank.name || "",
+      swift_code: bank.swift_code || "",
+      status: (bank.status || "Active") as "Active" | "Inactive"
+    });
+    setOpen(true);
+  }
+
+  async function handleSave() {
+    if (!form.code.trim() || !form.name.trim()) {
+      toast.error("Please enter both bank code and bank name");
+      return;
+    }
+
+    if (editingBank) {
+      const updatedBank: FinBank = {
+        ...editingBank,
+        code: form.code.trim().toUpperCase(),
+        name: form.name.trim(),
+        swift_code: form.swift_code.trim().toUpperCase(),
+        status: form.status
+      };
+
+      try {
+        await FinBanksApi.update(String(editingBank.id), {
+          code: updatedBank.code,
+          name: updatedBank.name,
+          swift_code: updatedBank.swift_code,
+          status: updatedBank.status
+        });
+      } catch (err) {
+        console.warn("Supabase bank update error:", err);
+      }
+
+      setData(prev => {
+        const next = prev.map(b => String(b.id) === String(editingBank.id) ? updatedBank : b);
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      window.dispatchEvent(new Event("banks-updated"));
+      toast.success(`Bank "${updatedBank.name}" updated successfully`);
+    } else {
+      const newBankPayload = {
+        code: form.code.trim().toUpperCase(),
+        name: form.name.trim(),
+        swift_code: form.swift_code.trim().toUpperCase(),
+        status: form.status
+      };
+
+      let createdBank: FinBank = { id: String(Date.now()), ...newBankPayload };
+      try {
+        const res = await FinBanksApi.create(newBankPayload);
+        if (res && res.id) {
+          createdBank = { ...res, status: res.status || form.status };
+        }
+      } catch (err) {
+        console.warn("Supabase bank create error:", err);
+      }
+
+      setData(prev => {
+        const next = [createdBank, ...prev];
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      window.dispatchEvent(new Event("banks-updated"));
+      toast.success(`Bank "${createdBank.name}" registered successfully`);
+    }
+
     setOpen(false);
+  }
+
+  async function handleToggleStatus(bank: FinBank) {
+    const newStatus: 'Active' | 'Inactive' = bank.status === 'Inactive' ? 'Active' : 'Inactive';
+    const updatedBank: FinBank = { ...bank, status: newStatus };
+
+    try {
+      await FinBanksApi.update(String(bank.id), { status: newStatus });
+    } catch (err) {
+      console.warn("Supabase bank status update error:", err);
+    }
+
+    setData(prev => {
+      const next = prev.map(b => String(b.id) === String(bank.id) ? updatedBank : b);
+      try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    window.dispatchEvent(new Event("banks-updated"));
+    toast.success(`Bank "${bank.name}" marked as ${newStatus}`);
   }
 
   return (
@@ -3894,35 +4033,133 @@ function BankSubModule() {
           <h3 className="text-sm font-semibold">Registered Banking Institutions</h3>
           <p className="text-xs text-muted-foreground">List of financial institutions for collection, disbursement, and PDC deposit clearing.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Bank</Button>
+        <Button size="sm" onClick={handleOpenAdd} className="gap-2">
+          <Plus className="h-4 w-4" /> Add Bank
+        </Button>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
-          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">Code</TableHead><TableHead className="font-bold">Bank Name</TableHead><TableHead className="font-bold">SWIFT / Routing Code</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Code</TableHead>
+              <TableHead className="font-bold">Bank Name</TableHead>
+              <TableHead className="font-bold">SWIFT / Routing Code</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="text-right font-bold">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {data.map(b => (
-              <TableRow key={b.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono font-bold text-primary">{b.code}</TableCell>
-                <TableCell className="font-semibold">{b.name}</TableCell>
-                <TableCell className="font-mono text-xs">{b.swift_code}</TableCell>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground text-xs">
+                  {loading ? "Loading banks..." : "No banks registered yet."}
+                </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              data.map(b => {
+                const isActive = b.status !== 'Inactive';
+                return (
+                  <TableRow key={b.id} className="hover:bg-muted/30 text-xs">
+                    <TableCell className="font-mono font-bold text-primary">{b.code}</TableCell>
+                    <TableCell className="font-semibold">{b.name}</TableCell>
+                    <TableCell className="font-mono text-xs">{b.swift_code || "—"}</TableCell>
+                    <TableCell>
+                      {isActive ? (
+                        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 border-emerald-500/30 text-[10px] font-medium">
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground/30 text-[10px] font-medium">
+                          Inactive
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs gap-1 hover:text-primary"
+                          onClick={() => handleOpenEdit(b)}
+                          title="Edit Bank"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span>Edit</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-7 px-2 text-[11px] ${isActive ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'}`}
+                          onClick={() => handleToggleStatus(b)}
+                          title={isActive ? "Mark Inactive" : "Mark Active"}
+                        >
+                          {isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Bank Institution</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editingBank ? "Edit Bank Institution" : "Add Bank Institution"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {editingBank ? "Update details or status for this registered bank." : "Register a new financial institution for treasury accounts."}
+            </DialogDescription>
+          </DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Bank Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
-            <div><Label>Bank Full Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div><Label>SWIFT Code</Label><Input value={form.swift_code} onChange={e => setForm({ ...form, swift_code: e.target.value })} /></div>
+            <div>
+              <Label>Bank Code <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. QNB, CBQ"
+                value={form.code}
+                onChange={e => setForm({ ...form, code: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Bank Full Name <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. Qatar National Bank (QNB)"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>SWIFT Code / Routing Code</Label>
+              <Input
+                placeholder="e.g. QNBAQAQA"
+                value={form.swift_code}
+                onChange={e => setForm({ ...form, swift_code: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v: 'Active' | 'Inactive') => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Select Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active" className="text-xs">Active</SelectItem>
+                  <SelectItem value="Inactive" className="text-xs">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save Bank</Button>
+            <Button onClick={handleSave}>
+              {editingBank ? "Update Bank" : "Save Bank"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3932,49 +4169,227 @@ function BankSubModule() {
 
 function BankAccountSubModule() {
   const [open, setOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<FinBankAccount | null>(null);
   const [data, setData] = useState<FinBankAccount[]>([]);
   const [banksList, setBanksList] = useState<FinBank[]>([]);
-  const [form, setForm] = useState({ bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Main Rent Operating Account", currency: "QAR", opening_balance: 1500000 });
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<{
+    bank_id: string;
+    account_number: string;
+    account_title: string;
+    currency: string;
+    opening_balance: number;
+    status: 'Active' | 'Inactive';
+  }>({
+    bank_id: "",
+    account_number: "",
+    account_title: "",
+    currency: "QAR",
+    opening_balance: 0,
+    status: "Active"
+  });
 
-  useEffect(() => { load(); }, []);
+  const LOCAL_STORAGE_KEY = "pms_fin_bank_accounts_override_v2";
+
+  useEffect(() => {
+    load();
+    const handleSync = () => load();
+    window.addEventListener("banks-updated", handleSync);
+    return () => window.removeEventListener("banks-updated", handleSync);
+  }, []);
+
   async function load() {
-    try {
-      const [resAcc, resBanks] = await Promise.all([
-        FinBankAccountsApi.fetchAll().catch(() => []),
-        FinBanksApi.fetchAll().catch(() => [])
-      ]);
-      const defaultBanks: FinBank[] = [
-        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA" },
-        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA" },
-        { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA" },
-        { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA" },
-        { id: "5", code: "MAR", name: "Masraf Al Rayan", swift_code: "MARKQAQA" },
-        { id: "6", code: "DUKHAN", name: "Dukhan Bank", swift_code: "BARQAQA" },
-      ];
-      setBanksList(resBanks.length > 0 ? resBanks : defaultBanks);
+    setLoading(true);
 
-      setData(resAcc.length > 0 ? resAcc : [
-        { id: "1", bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 },
-        { id: "2", bank_id: "2", account_number: "QA88CBQA00000000987654321", account_title: "ZYNO Escrow & Deposits Account (CBQ)", currency: "QAR", opening_balance: 450000 },
-        { id: "3", bank_id: "3", account_number: "QA22DOHB00000000554433221", account_title: "ZYNO Payroll & Disbursement (Doha Bank)", currency: "QAR", opening_balance: 200000 },
-      ] as FinBankAccount[]);
-    } catch {
-      setData([
-        { id: "1", bank_id: "1", account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000 }
-      ] as FinBankAccount[]);
+    // 1. Fetch available banks from Supabase / cache
+    let loadedBanks: FinBank[] = [];
+    try {
+      const resBanks = await FinBanksApi.fetchAll();
+      if (resBanks && resBanks.length > 0) {
+        loadedBanks = resBanks.map(b => ({
+          ...b,
+          status: (b.status || 'Active') as 'Active' | 'Inactive'
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to fetch fin_banks for accounts submodule", e);
     }
+
+    if (loadedBanks.length === 0) {
+      try {
+        const cachedBanks = localStorage.getItem("pms_fin_banks_override_v2");
+        if (cachedBanks) {
+          const parsed = JSON.parse(cachedBanks);
+          if (Array.isArray(parsed) && parsed.length > 0) loadedBanks = parsed;
+        }
+      } catch {}
+    }
+
+    if (loadedBanks.length === 0) {
+      loadedBanks = [
+        { id: "1", code: "QNB", name: "Qatar National Bank (QNB)", swift_code: "QNBAQAQA", status: "Active" },
+        { id: "2", code: "CBQ", name: "Commercial Bank of Qatar (CBQ)", swift_code: "CBQAQAQA", status: "Active" },
+        { id: "3", code: "DOHA", name: "Doha Bank QPSC", swift_code: "DOHBQAQA", status: "Active" },
+        { id: "4", code: "QIB", name: "Qatar Islamic Bank (QIB)", swift_code: "QISBQAQA", status: "Active" },
+        { id: "5", code: "MAR", name: "Masraf Al Rayan", swift_code: "MARKQAQA", status: "Active" },
+        { id: "6", code: "DUKHAN", name: "Dukhan Bank", swift_code: "BARQAQA", status: "Active" },
+      ];
+    }
+    setBanksList(loadedBanks);
+
+    // 2. Fetch bank accounts from Supabase / cache
+    try {
+      const resAcc = await FinBankAccountsApi.fetchAll();
+      if (resAcc && resAcc.length > 0) {
+        const list: FinBankAccount[] = resAcc.map(a => ({
+          ...a,
+          status: (a.status || 'Active') as 'Active' | 'Inactive'
+        }));
+        setData(list);
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(list)); } catch {}
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch bank accounts from Supabase", e);
+    }
+
+    try {
+      const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setData(parsed);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {}
+
+    const defaults: FinBankAccount[] = [
+      { id: "1", bank_id: String(loadedBanks[0]?.id || "1"), account_number: "QA55QNBA00000000123456789", account_title: "ZYNO Operations & Collection (QNB)", currency: "QAR", opening_balance: 1500000, status: "Active" },
+      { id: "2", bank_id: String(loadedBanks[1]?.id || "2"), account_number: "QA88CBQA00000000987654321", account_title: "ZYNO Escrow & Deposits Account (CBQ)", currency: "QAR", opening_balance: 450000, status: "Active" },
+      { id: "3", bank_id: String(loadedBanks[2]?.id || "3"), account_number: "QA22DOHB00000000554433221", account_title: "ZYNO Payroll & Disbursement (Doha Bank)", currency: "QAR", opening_balance: 200000, status: "Active" },
+    ];
+    setData(defaults);
+    setLoading(false);
   }
 
-  async function handleAdd() {
-    try { await FinBankAccountsApi.create(form); } catch { }
-    setData(prev => [{ id: String(Date.now()), ...form } as FinBankAccount, ...prev]);
-    toast.success("Bank account created and mapped to GL Account 12000");
+  function handleOpenAdd() {
+    setEditingAccount(null);
+    setForm({
+      bank_id: banksList[0]?.id ? String(banksList[0].id) : "",
+      account_number: "",
+      account_title: "",
+      currency: "QAR",
+      opening_balance: 0,
+      status: "Active"
+    });
+    setOpen(true);
+  }
+
+  function handleOpenEdit(account: FinBankAccount) {
+    setEditingAccount(account);
+    setForm({
+      bank_id: account.bank_id ? String(account.bank_id) : (banksList[0]?.id ? String(banksList[0].id) : ""),
+      account_number: account.account_number || "",
+      account_title: account.account_title || "",
+      currency: account.currency || "QAR",
+      opening_balance: Number(account.opening_balance) || 0,
+      status: (account.status || "Active") as "Active" | "Inactive"
+    });
+    setOpen(true);
+  }
+
+  async function handleSave() {
+    if (!form.account_number.trim() || !form.account_title.trim()) {
+      toast.error("Please enter both account number and account title");
+      return;
+    }
+
+    if (editingAccount) {
+      const updatedAccount: FinBankAccount = {
+        ...editingAccount,
+        bank_id: form.bank_id,
+        account_number: form.account_number.trim(),
+        account_title: form.account_title.trim(),
+        currency: form.currency.trim().toUpperCase() || "QAR",
+        opening_balance: Number(form.opening_balance) || 0,
+        status: form.status
+      };
+
+      try {
+        await FinBankAccountsApi.update(String(editingAccount.id), {
+          bank_id: updatedAccount.bank_id,
+          account_number: updatedAccount.account_number,
+          account_title: updatedAccount.account_title,
+          currency: updatedAccount.currency,
+          opening_balance: updatedAccount.opening_balance,
+          status: updatedAccount.status
+        });
+      } catch (err) {
+        console.warn("Supabase account update error:", err);
+      }
+
+      setData(prev => {
+        const next = prev.map(a => String(a.id) === String(editingAccount.id) ? updatedAccount : a);
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      toast.success(`Bank account ${updatedAccount.account_number} updated successfully`);
+    } else {
+      const newAccountPayload = {
+        bank_id: form.bank_id,
+        account_number: form.account_number.trim(),
+        account_title: form.account_title.trim(),
+        currency: form.currency.trim().toUpperCase() || "QAR",
+        opening_balance: Number(form.opening_balance) || 0,
+        status: form.status
+      };
+
+      let createdAccount: FinBankAccount = { id: String(Date.now()), ...newAccountPayload };
+      try {
+        const res = await FinBankAccountsApi.create(newAccountPayload);
+        if (res && res.id) {
+          createdAccount = { ...res, status: res.status || form.status };
+        }
+      } catch (err) {
+        console.warn("Supabase account create error:", err);
+      }
+
+      setData(prev => {
+        const next = [createdAccount, ...prev];
+        try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      toast.success("Bank account created and mapped to GL Account 12000");
+    }
+
     setOpen(false);
+  }
+
+  async function handleToggleStatus(account: FinBankAccount) {
+    const newStatus: 'Active' | 'Inactive' = account.status === 'Inactive' ? 'Active' : 'Inactive';
+    const updatedAccount: FinBankAccount = { ...account, status: newStatus };
+
+    try {
+      await FinBankAccountsApi.update(String(account.id), { status: newStatus });
+    } catch (err) {
+      console.warn("Supabase account status update error:", err);
+    }
+
+    setData(prev => {
+      const next = prev.map(a => String(a.id) === String(account.id) ? updatedAccount : a);
+      try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+
+    toast.success(`Account "${account.account_title || account.account_number}" marked as ${newStatus}`);
   }
 
   function getBankName(bankId: string) {
     const b = banksList.find(x => String(x.id) === String(bankId) || x.code === bankId);
-    return b ? b.name : "Qatar National Bank (QNB)";
+    return b ? `${b.name} (${b.code})` : (banksList[0] ? `${banksList[0].name} (${banksList[0].code})` : "Qatar National Bank (QNB)");
   }
 
   return (
@@ -3984,7 +4399,9 @@ function BankAccountSubModule() {
           <h3 className="text-sm font-semibold">Bank Accounts Portfolio & IBAN Register</h3>
           <p className="text-xs text-muted-foreground">Corporate treasury accounts linked to GL cash and bank clearing sub-ledgers.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Bank Account</Button>
+        <Button size="sm" onClick={handleOpenAdd} className="gap-2">
+          <Plus className="h-4 w-4" /> Add Bank Account
+        </Button>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
@@ -3996,49 +4413,150 @@ function BankAccountSubModule() {
               <TableHead className="font-bold">Account Title</TableHead>
               <TableHead className="font-bold">Currency</TableHead>
               <TableHead className="text-right font-bold">Current Balance (QAR)</TableHead>
+              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="text-right font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map(a => (
-              <TableRow key={a.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-semibold text-primary">{getBankName(a.bank_id ?? "")}</TableCell>
-                <TableCell className="font-mono font-bold">{a.account_number}</TableCell>
-                <TableCell className="font-medium">{a.account_title}</TableCell>
-                <TableCell><Badge variant="outline" className="text-[10px]">{a.currency}</Badge></TableCell>
-                <TableCell className="text-right font-mono font-bold text-emerald-600">{Number(a.opening_balance).toLocaleString()}</TableCell>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-6 text-muted-foreground text-xs">
+                  {loading ? "Loading bank accounts..." : "No bank accounts registered yet."}
+                </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              data.map(a => {
+                const isActive = a.status !== 'Inactive';
+                return (
+                  <TableRow key={a.id} className="hover:bg-muted/30 text-xs">
+                    <TableCell className="font-semibold text-primary">{getBankName(a.bank_id ?? "")}</TableCell>
+                    <TableCell className="font-mono font-bold">{a.account_number}</TableCell>
+                    <TableCell className="font-medium">{a.account_title}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px]">{a.currency}</Badge></TableCell>
+                    <TableCell className="text-right font-mono font-bold text-emerald-600">{Number(a.opening_balance).toLocaleString()}</TableCell>
+                    <TableCell>
+                      {isActive ? (
+                        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 border-emerald-500/30 text-[10px] font-medium">
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground/30 text-[10px] font-medium">
+                          Inactive
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs gap-1 hover:text-primary"
+                          onClick={() => handleOpenEdit(a)}
+                          title="Edit Bank Account"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span>Edit</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={`h-7 px-2 text-[11px] ${isActive ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40' : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'}`}
+                          onClick={() => handleToggleStatus(a)}
+                          title={isActive ? "Mark Inactive" : "Mark Active"}
+                        >
+                          {isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Add Bank Account</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editingAccount ? "Edit Bank Account" : "Add Bank Account"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {editingAccount ? "Update treasury account attributes, institution link, or active status." : "Register an operating or escrow bank account mapped to the general ledger."}
+            </DialogDescription>
+          </DialogHeader>
           <div className="space-y-3 py-2 text-xs">
             <div>
               <Label>Select Bank Institution <span className="text-destructive">*</span></Label>
               <Select value={form.bank_id} onValueChange={v => setForm({ ...form, bank_id: v })}>
-                <SelectTrigger className="text-xs"><SelectValue placeholder="Select Registered Bank" /></SelectTrigger>
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Select Registered Bank" />
+                </SelectTrigger>
                 <SelectContent>
                   {banksList.map(b => (
                     <SelectItem key={b.id} value={String(b.id)} className="text-xs">
-                      {b.name} ({b.code})
+                      <span className="font-medium">{b.name} ({b.code})</span>
+                      {b.status === 'Inactive' && (
+                        <span className="ml-2 text-muted-foreground text-[10px]">(Inactive)</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>IBAN / Account Number</Label><Input value={form.account_number} onChange={e => setForm({ ...form, account_number: e.target.value })} /></div>
-            <div><Label>Account Title</Label><Input value={form.account_title} onChange={e => setForm({ ...form, account_title: e.target.value })} /></div>
+            <div>
+              <Label>IBAN / Account Number <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. QA55QNBA00000000123456789"
+                value={form.account_number}
+                onChange={e => setForm({ ...form, account_number: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Account Title <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="e.g. ZYNO Main Operations Account"
+                value={form.account_title}
+                onChange={e => setForm({ ...form, account_title: e.target.value })}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Currency</Label><Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} /></div>
-              <div><Label>Opening Balance (QAR)</Label><Input type="number" value={form.opening_balance} onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) || 0 })} /></div>
+              <div>
+                <Label>Currency</Label>
+                <Input
+                  value={form.currency}
+                  onChange={e => setForm({ ...form, currency: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Opening Balance (QAR)</Label>
+                <Input
+                  type="number"
+                  value={form.opening_balance}
+                  onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v: 'Active' | 'Inactive') => setForm({ ...form, status: v })}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Select Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active" className="text-xs">Active</SelectItem>
+                  <SelectItem value="Inactive" className="text-xs">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save Account</Button>
+            <Button onClick={handleSave}>
+              {editingAccount ? "Update Account" : "Save Account"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

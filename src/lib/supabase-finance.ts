@@ -68,6 +68,7 @@ export type FinBank = {
   code: string;
   name: string;
   swift_code?: string;
+  status?: 'Active' | 'Inactive';
 };
 
 export type FinBankAccount = {
@@ -77,6 +78,7 @@ export type FinBankAccount = {
   account_title: string;
   currency: string;
   opening_balance: number;
+  status?: 'Active' | 'Inactive';
 };
 
 export type FinBankReconciliation = {
