@@ -911,6 +911,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [auditDateTo, setAuditDateTo] = useState("");
   const [auditSearchQuery, setAuditSearchQuery] = useState("");
 
+  // Filter states for Signatures & Collection Workflow tab
+  const [sigPropertyFilter, setSigPropertyFilter] = useState("all");
+  const [sigUnitFilter, setSigUnitFilter] = useState("all");
+  const [sigStatusFilter, setSigStatusFilter] = useState("all");
+  const [sigCollectionFilter, setSigCollectionFilter] = useState("all");
+  const [sigDocumentFilter, setSigDocumentFilter] = useState("all");
+  const [sigSearchQuery, setSigSearchQuery] = useState("");
+
 
   // Voucher Approval & Revenue Recognition modal states
   const [voucherApprovalOpen, setVoucherApprovalOpen] = useState(false);
@@ -13381,196 +13389,423 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           })()}
         </TabsContent>
 
-        <TabsContent value="signatures">
-          <Card>
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <CardTitle>Lease Signature & Collection Workflow</CardTitle>
-                <CardDescription>Actions are gated by document verification, collection receipt and landlord signature.</CardDescription>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                onClick={() => {
-                  exportToExcel(
-                    (leases || []).map((l) => ({
-                      "Lease ID": l.id,
-                      "Customer / Tenant": l.tenantName || "—",
-                      "Property": l.property || "—",
-                      "Unit": l.unit || "—",
-                      "Start Date": l.startDate || "—",
-                      "End Date": l.endDate || "—",
-                      "Security Deposit (QAR)": l.securityDeposit || 0,
-                      "Status": l.status,
-                      "Signed Document": l.signedDocument || "—",
-                      "Shared With Tenant": l.sharedWithTenant ? "Yes" : "No",
-                      "Collection Completed": l.collectionCompleted ? "Yes" : "No",
-                      "Landlord Signed": l.landlordSigned ? "Yes" : "No",
-                    })),
-                    `Signatures_Workflow_Export_${new Date().toISOString().split("T")[0]}`
-                  );
-                }}
-              >
-                <Download className="h-3.5 w-3.5" /> Export to Excel
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={["Lease", "Tenant", "Period", "Deposit", "Status", "Signature Package", "Actions"]}
-                rows={(leases || []).map((lease) => {
-                  return [
-                    `${lease?.property || "Property"} / ${lease?.unit || "Unit"}`,
-                    lease?.tenantName || "Tenant",
-                    `${lease?.startDate || "-"} to ${lease?.endDate || "-"}`,
-                    formatMoney(lease?.securityDeposit),
-                    <StatusBadge key="status" value={lease?.status} />,
-                    `Agreement: ${lease?.signedDocument || "-"}; shared: ${lease?.sharedWithTenant ? "Yes" : "No"}`,
-                    <div key="actions" className="flex flex-wrap justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => downloadLeaseAgreement(lease)}><Download className="mr-2 h-4 w-4" />Download Agreement</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSignatureWorkflowLease(lease); setUploadAgreementForm({ file: "", fileName: "", remarks: "" }); setUploadAgreementOpen(true); }}><Upload className="mr-2 h-4 w-4" />Upload Agreement</Button>
-                      <Button size="sm" variant="outline" disabled={lease?.collectionCompleted} title={lease?.collectionCompleted ? "Collection already recorded — cannot re-collect" : undefined} onClick={() => {
-                        setSignatureWorkflowLease(lease);
-                        const count = lease?.pdcCount || 12;
-                        const totalRent = (lease?.monthlyRent || 0) * count;
-                        const regAmt = lease?.monthlyRent || 0;
-                        function addMonthToDate(baseDateStr: string, monthOffset: number): string {
-                          const d = new Date(baseDateStr);
-                          if (isNaN(d.getTime())) return today.toISOString().split("T")[0];
-                          const day = d.getDate();
-                          const targetMonthRaw = d.getMonth() + monthOffset;
-                          const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
-                          const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
-                          const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-                          const finalDay = Math.min(day, lastDay);
-                          return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
-                        }
-                        const leaseStartStr = lease?.startDate || today.toISOString().split("T")[0];
-                        const firstChequeStr = leaseStartStr;
-                        const generated = Array.from({ length: count }, (_, i) => {
-                          let amount = regAmt;
-                          if (i === count - 1 && count > 1) {
-                            amount = Math.max(0, totalRent - regAmt * (count - 1));
-                          }
-                          const tsDate = new Date(leaseStartStr);
-                          tsDate.setMonth(tsDate.getMonth() + i);
-                          const tenureStartStr = !isNaN(tsDate.getTime()) ? tsDate.toISOString().split("T")[0] : leaseStartStr;
-                          const teDate = new Date(leaseStartStr);
-                          teDate.setMonth(teDate.getMonth() + i + 1);
-                          teDate.setDate(teDate.getDate() - 1);
-                          const tenureEndStr = !isNaN(teDate.getTime()) ? teDate.toISOString().split("T")[0] : leaseStartStr;
-                          const maturityStr = addMonthToDate(firstChequeStr, i);
-                          return {
-                            chequeNo: `PDC-${(lease?.unit || "Unit").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                            bank: "QNB",
-                            date: maturityStr,
-                            amount,
-                            period: `Cheque ${i + 1} of ${count}`,
-                            tenureStart: tenureStartStr,
-                            tenureEnd: tenureEndStr,
-                            file: "",
-                          };
-                        });
-                        setCollectForm({
-                          paymentMode: "PDC",
-                          chequeBank: "QNB",
-                          payerName: lease?.tenantName || "Tenant",
-                          depositAmount: String(lease?.securityDeposit || 0),
-                          depositMode: "Cash",
-                          depositChequeNo: "",
-                          depositChequeBank: "",
-                          utilityDeposit: "",
-                          qatarCoolDeposit: "",
-                          reservationDeposit: "",
-                          serviceFeeDeposit: "",
-                          guaranteeChequeDeposit: "",
-                          guaranteeChequeNo: "",
-                          guaranteeChequeBank: "QNB",
-                          agencyCommission: "",
-                          adminCharges: "",
-                          cashierName: "",
-                          notes: "",
-                          receiptFile: "",
-                          pdcCount: count,
-                          startDate: lease?.startDate || "",
-                          endDate: lease?.endDate || "",
-                          firstChequeDate: lease?.startDate || "",
-                          regularChequeAmount: String(lease?.monthlyRent || 0),
-                          customCheques: generated,
-                        });
-                        setCollectOpen(true);
-                      }}>{lease?.collectionCompleted ? <><Lock className="mr-1 h-3 w-3" />Collected</> : "Collect"}</Button>
+        <TabsContent value="signatures" className="space-y-4">
+          {(() => {
+            const allLeases = leases || [];
+
+            // Unique options for dropdowns
+            const uniqueProps = Array.from(new Set(allLeases.map((l) => l.property).filter(Boolean))).sort() as string[];
+            const uniqueUnits = Array.from(
+              new Set(
+                allLeases
+                  .filter((l) => sigPropertyFilter === "all" || l.property === sigPropertyFilter)
+                  .map((l) => l.unit)
+                  .filter(Boolean)
+              )
+            ).sort() as string[];
+            const uniqueStatuses = Array.from(new Set(allLeases.map((l) => l.status).filter(Boolean))).sort() as string[];
+
+            const filteredSignatures = allLeases.filter((lease) => {
+              // Property filter
+              if (sigPropertyFilter !== "all" && lease?.property !== sigPropertyFilter) return false;
+
+              // Unit filter
+              if (sigUnitFilter !== "all" && lease?.unit !== sigUnitFilter) return false;
+
+              // Lease Status filter
+              if (sigStatusFilter !== "all" && (lease?.status || "").toLowerCase() !== sigStatusFilter.toLowerCase()) return false;
+
+              // Collection filter
+              if (sigCollectionFilter !== "all") {
+                if (sigCollectionFilter === "completed" && !lease?.collectionCompleted) return false;
+                if (sigCollectionFilter === "pending" && lease?.collectionCompleted) return false;
+              }
+
+              // Document / Signature filter
+              if (sigDocumentFilter !== "all") {
+                if (sigDocumentFilter === "uploaded" && !lease?.signedDocument) return false;
+                if (sigDocumentFilter === "pending_upload" && lease?.signedDocument) return false;
+                if (sigDocumentFilter === "shared" && !lease?.sharedWithTenant) return false;
+              }
+
+              // Live search query
+              if (sigSearchQuery.trim()) {
+                const q = sigSearchQuery.toLowerCase().trim();
+                const match =
+                  (lease?.tenantName || "").toLowerCase().includes(q) ||
+                  (lease?.property || "").toLowerCase().includes(q) ||
+                  (lease?.unit || "").toLowerCase().includes(q) ||
+                  (lease?.id || "").toLowerCase().includes(q) ||
+                  (lease?.signedDocument || "").toLowerCase().includes(q) ||
+                  (lease?.status || "").toLowerCase().includes(q) ||
+                  (lease?.startDate || "").includes(q) ||
+                  (lease?.endDate || "").includes(q) ||
+                  String(lease?.securityDeposit || "").includes(q);
+                if (!match) return false;
+              }
+
+              return true;
+            });
+
+            const isFiltered =
+              sigPropertyFilter !== "all" ||
+              sigUnitFilter !== "all" ||
+              sigStatusFilter !== "all" ||
+              sigCollectionFilter !== "all" ||
+              sigDocumentFilter !== "all" ||
+              sigSearchQuery.trim() !== "";
+
+            const resetFilters = () => {
+              setSigPropertyFilter("all");
+              setSigUnitFilter("all");
+              setSigStatusFilter("all");
+              setSigCollectionFilter("all");
+              setSigDocumentFilter("all");
+              setSigSearchQuery("");
+            };
+
+            return (
+              <Card>
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold">Lease Signature &amp; Collection Workflow</CardTitle>
+                        <Badge variant="outline" className="text-[11px] font-normal">
+                          {filteredSignatures.length} {filteredSignatures.length === 1 ? "lease" : "leases"}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Actions are gated by document verification, collection receipt and landlord signature.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isFiltered && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          disabled={!lease?.collectionCompleted}
-                          title={!lease?.collectionCompleted ? "Receipt is generated once all PDCs and Security Deposits are collected" : undefined}
-                          className={lease?.collectionCompleted ? "text-primary border-primary/50 gap-1" : "gap-1 opacity-50"}
-                          onClick={() => {
-                            if (!lease) return;
-                            const leasePdcs = (pdcs || []).filter(p => p.leaseId === lease.id);
-                            const leaseVouchers = (vouchers || []).filter(v => v.leaseId === lease.id);
-                            const pdcTot = leasePdcs.reduce((s, p) => s + (p.amount || 0), 0) || ((lease.monthlyRent || 0) * (lease.pdcCount || 12));
-                            const totalCol = pdcTot + (lease.securityDeposit || 0);
-                            const rec: TenantReceiptDetails = {
-                              receiptNo: `REC-${(lease.id || "").toUpperCase()}`,
-                              acknowledgementNo: `ACK-${(lease.id || "").toUpperCase()}`,
-                              date: lease.startDate || (today instanceof Date ? today.toISOString().split("T")[0] : ""),
-                              tenantName: lease.tenantName || "Tenant",
-                              tenantPhone: (lease as any).phone || "",
-                              tenantEmail: (lease as any).email || "",
-                              tenantQid: (lease as any).qatarId || "",
-                              propertyName: lease.property || "",
-                              unitRef: lease.unit || "",
-                              leaseNo: `LES-${(lease.id || "").toUpperCase()}`,
-                              leaseStartDate: lease.startDate || "",
-                              leaseEndDate: lease.endDate || "",
-                              monthlyRent: lease.monthlyRent || 0,
-                              totalContractRent: pdcTot,
-                              depositAmount: lease.securityDeposit || 0,
-                              depositMode: "Cash / PDC",
-                              pdcCount: leasePdcs.length || lease.pdcCount || 12,
-                              pdcs: leasePdcs.length > 0 ? leasePdcs.map((p, idx) => ({
-                                chequeNo: p.chequeNo || "",
-                                bank: p.bank || "QNB",
-                                date: p.date || "",
-                                amount: p.amount || 0,
-                                period: p.period || ((p as any).tenureStart && (p as any).tenureEnd ? `${(p as any).tenureStart} to ${(p as any).tenureEnd}` : `Cheque ${idx + 1}`),
-                                tenureStart: (p as any).tenureStart || addDays(new Date(lease.startDate || today), idx * 30),
-                                tenureEnd: (p as any).tenureEnd || addDays(new Date(lease.startDate || today), idx * 30 + 29),
-                              })) : Array.from({ length: lease.pdcCount || 12 }, (_, i) => ({
-                                chequeNo: `PDC-${(lease.unit || "").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                                bank: "QNB",
-                                date: addDays(new Date(lease.startDate || today), i * 30),
-                                amount: i === (lease.pdcCount || 12) - 1 ? Math.max(0, pdcTot - (lease.monthlyRent || 0) * ((lease.pdcCount || 12) - 1)) : (lease.monthlyRent || 0),
-                                period: `${addDays(new Date(lease.startDate || today), i * 30)} to ${addDays(new Date(lease.startDate || today), i * 30 + 29)}`,
-                                tenureStart: addDays(new Date(lease.startDate || today), i * 30),
-                                tenureEnd: addDays(new Date(lease.startDate || today), i * 30 + 29),
-                              })),
-                              vouchers: leaseVouchers.map(v => ({
-                                receiptNo: v.receiptNo,
-                                name: v.name,
-                                amount: v.amount,
-                                method: v.method,
-                                debit: v.debit,
-                                credit: v.credit,
-                              })),
-                              totalCollected: totalCol,
-                              cashierName: "Finance Cashier",
-                              notes: "Official receipt acknowledged for lease security deposit and rent PDC schedule.",
-                            };
-                            setReceiptModalData(rec);
-                            setReceiptModalOpen(true);
-                          }}>
-                          <Receipt className="h-3.5 w-3.5" /> View Receipt
+                          variant="ghost"
+                          className="h-8 text-xs text-muted-foreground gap-1"
+                          onClick={resetFilters}
+                        >
+                          <RotateCcw className="h-3 w-3" /> Reset Filters
                         </Button>
-                      </div>,
-                    ];
-                  })}
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                        onClick={() => {
+                          exportToExcel(
+                            filteredSignatures.map((l) => ({
+                              "Lease ID": l.id,
+                              "Customer / Tenant": l.tenantName || "—",
+                              "Property": l.property || "—",
+                              "Unit": l.unit || "—",
+                              "Start Date": l.startDate || "—",
+                              "End Date": l.endDate || "—",
+                              "Security Deposit (QAR)": l.securityDeposit || 0,
+                              "Status": l.status,
+                              "Signed Document": l.signedDocument || "—",
+                              "Shared With Tenant": l.sharedWithTenant ? "Yes" : "No",
+                              "Collection Completed": l.collectionCompleted ? "Yes" : "No",
+                              "Landlord Signed": l.landlordSigned ? "Yes" : "No",
+                            })),
+                            `Signatures_Workflow_Export_${new Date().toISOString().split("T")[0]}`
+                          );
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Multi-Dimensional Filter & Search Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
+                    {/* Search Input */}
+                    <div className="relative md:col-span-2">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search tenant, property, unit, document..."
+                        value={sigSearchQuery}
+                        onChange={(e) => setSigSearchQuery(e.target.value)}
+                        className="pl-8 h-8 text-xs bg-background"
+                      />
+                    </div>
+
+                    {/* Property Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={sigPropertyFilter}
+                        onValueChange={(val) => {
+                          setSigPropertyFilter(val);
+                          if (val !== "all" && sigUnitFilter !== "all") {
+                            const unitMatches = allLeases.some((l) => l.property === val && l.unit === sigUnitFilter);
+                            if (!unitMatches) setSigUnitFilter("all");
+                          }
+                        }}
+                        placeholder={`All Properties (${uniqueProps.length})`}
+                        emptyText="No properties found"
+                        options={[
+                          { label: `All Properties (${uniqueProps.length})`, value: "all" },
+                          ...uniqueProps.map((p) => ({ label: p, value: p })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Unit Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={sigUnitFilter}
+                        onValueChange={(val) => {
+                          setSigUnitFilter(val);
+                          if (val !== "all") {
+                            const matchLease = allLeases.find((l) => l.unit === val);
+                            if (matchLease && sigPropertyFilter === "all" && matchLease.property) {
+                              setSigPropertyFilter(matchLease.property);
+                            }
+                          }
+                        }}
+                        placeholder={`All Units (${uniqueUnits.length})`}
+                        emptyText="No units found"
+                        options={[
+                          { label: `All Units (${uniqueUnits.length})`, value: "all" },
+                          ...uniqueUnits.map((u) => ({ label: u, value: u })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Collection Status Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={sigCollectionFilter}
+                        onValueChange={setSigCollectionFilter}
+                        placeholder="All Collections"
+                        emptyText="No collection status found"
+                        options={[
+                          { label: "All Collections", value: "all" },
+                          { label: "Collections Completed", value: "completed" },
+                          { label: "Pending Collection", value: "pending" },
+                        ]}
+                      />
+                    </div>
+
+                    {/* Lease Status Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={sigStatusFilter}
+                        onValueChange={setSigStatusFilter}
+                        placeholder="All Statuses"
+                        emptyText="No statuses found"
+                        options={[
+                          { label: "All Statuses", value: "all" },
+                          ...uniqueStatuses.map((s) => ({
+                            label: s.charAt(0).toUpperCase() + s.slice(1),
+                            value: s,
+                          })),
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <DataTable
+                    key={`signatures-${sigPropertyFilter}-${sigUnitFilter}-${sigStatusFilter}-${sigCollectionFilter}-${sigDocumentFilter}-${sigSearchQuery}`}
+                    columns={["Lease", "Tenant", "Period", "Deposit", "Status", "Signature Package", "Actions"]}
+                    rows={filteredSignatures.map((lease) => {
+                      return [
+                        `${lease?.property || "Property"} / ${lease?.unit || "Unit"}`,
+                        lease?.tenantName || "Tenant",
+                        `${lease?.startDate || "-"} to ${lease?.endDate || "-"}`,
+                        formatMoney(lease?.securityDeposit),
+                        <StatusBadge key="status" value={lease?.status} />,
+                        `Agreement: ${lease?.signedDocument || "-"}; shared: ${lease?.sharedWithTenant ? "Yes" : "No"}`,
+                        <div key="actions" className="flex flex-wrap justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => downloadLeaseAgreement(lease)}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download Agreement
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSignatureWorkflowLease(lease);
+                              setUploadAgreementForm({ file: "", fileName: "", remarks: "" });
+                              setUploadAgreementOpen(true);
+                            }}
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Upload Agreement
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={lease?.collectionCompleted}
+                            title={lease?.collectionCompleted ? "Collection already recorded — cannot re-collect" : undefined}
+                            onClick={() => {
+                              setSignatureWorkflowLease(lease);
+                              const count = lease?.pdcCount || 12;
+                              const totalRent = (lease?.monthlyRent || 0) * count;
+                              const regAmt = lease?.monthlyRent || 0;
+                              function addMonthToDate(baseDateStr: string, monthOffset: number): string {
+                                const d = new Date(baseDateStr);
+                                if (isNaN(d.getTime())) return today.toISOString().split("T")[0];
+                                const day = d.getDate();
+                                const targetMonthRaw = d.getMonth() + monthOffset;
+                                const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
+                                const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                                const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                                const finalDay = Math.min(day, lastDay);
+                                return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
+                              }
+                              const leaseStartStr = lease?.startDate || today.toISOString().split("T")[0];
+                              const firstChequeStr = leaseStartStr;
+                              const generated = Array.from({ length: count }, (_, i) => {
+                                let amount = regAmt;
+                                if (i === count - 1 && count > 1) {
+                                  amount = Math.max(0, totalRent - regAmt * (count - 1));
+                                }
+                                const tsDate = new Date(leaseStartStr);
+                                tsDate.setMonth(tsDate.getMonth() + i);
+                                const tenureStartStr = !isNaN(tsDate.getTime()) ? tsDate.toISOString().split("T")[0] : leaseStartStr;
+                                const teDate = new Date(leaseStartStr);
+                                teDate.setMonth(teDate.getMonth() + i + 1);
+                                teDate.setDate(teDate.getDate() - 1);
+                                const tenureEndStr = !isNaN(teDate.getTime()) ? teDate.toISOString().split("T")[0] : leaseStartStr;
+                                const maturityStr = addMonthToDate(firstChequeStr, i);
+                                return {
+                                  chequeNo: `PDC-${(lease?.unit || "Unit").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                                  bank: "QNB",
+                                  date: maturityStr,
+                                  amount,
+                                  period: `Cheque ${i + 1} of ${count}`,
+                                  tenureStart: tenureStartStr,
+                                  tenureEnd: tenureEndStr,
+                                  file: "",
+                                };
+                              });
+                              setCollectForm({
+                                paymentMode: "PDC",
+                                chequeBank: "QNB",
+                                payerName: lease?.tenantName || "Tenant",
+                                depositAmount: String(lease?.securityDeposit || 0),
+                                depositMode: "Cash",
+                                depositChequeNo: "",
+                                depositChequeBank: "",
+                                utilityDeposit: "",
+                                qatarCoolDeposit: "",
+                                reservationDeposit: "",
+                                serviceFeeDeposit: "",
+                                guaranteeChequeDeposit: "",
+                                guaranteeChequeNo: "",
+                                guaranteeChequeBank: "QNB",
+                                agencyCommission: "",
+                                adminCharges: "",
+                                cashierName: "",
+                                notes: "",
+                                receiptFile: "",
+                                pdcCount: count,
+                                startDate: lease?.startDate || "",
+                                endDate: lease?.endDate || "",
+                                firstChequeDate: lease?.startDate || "",
+                                regularChequeAmount: String(lease?.monthlyRent || 0),
+                                customCheques: generated,
+                              });
+                              setCollectOpen(true);
+                            }}
+                          >
+                            {lease?.collectionCompleted ? (
+                              <>
+                                <Lock className="mr-1 h-3 w-3" />
+                                Collected
+                              </>
+                            ) : (
+                              "Collect"
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!lease?.collectionCompleted}
+                            title={!lease?.collectionCompleted ? "Receipt is generated once all PDCs and Security Deposits are collected" : undefined}
+                            className={lease?.collectionCompleted ? "text-primary border-primary/50 gap-1" : "gap-1 opacity-50"}
+                            onClick={() => {
+                              if (!lease) return;
+                              const leasePdcs = (pdcs || []).filter((p) => p.leaseId === lease.id);
+                              const leaseVouchers = (vouchers || []).filter((v) => v.leaseId === lease.id);
+                              const pdcTot = leasePdcs.reduce((s, p) => s + (p.amount || 0), 0) || (lease.monthlyRent || 0) * (lease.pdcCount || 12);
+                              const totalCol = pdcTot + (lease.securityDeposit || 0);
+                              const rec: TenantReceiptDetails = {
+                                receiptNo: `REC-${(lease.id || "").toUpperCase()}`,
+                                acknowledgementNo: `ACK-${(lease.id || "").toUpperCase()}`,
+                                date: lease.startDate || (today instanceof Date ? today.toISOString().split("T")[0] : ""),
+                                tenantName: lease.tenantName || "Tenant",
+                                tenantPhone: (lease as any).phone || "",
+                                tenantEmail: (lease as any).email || "",
+                                tenantQid: (lease as any).qatarId || "",
+                                propertyName: lease.property || "",
+                                unitRef: lease.unit || "",
+                                leaseNo: `LES-${(lease.id || "").toUpperCase()}`,
+                                leaseStartDate: lease.startDate || "",
+                                leaseEndDate: lease.endDate || "",
+                                monthlyRent: lease.monthlyRent || 0,
+                                totalContractRent: pdcTot,
+                                depositAmount: lease.securityDeposit || 0,
+                                depositMode: "Cash / PDC",
+                                pdcCount: leasePdcs.length || lease.pdcCount || 12,
+                                pdcs:
+                                  leasePdcs.length > 0
+                                    ? leasePdcs.map((p, idx) => ({
+                                        chequeNo: p.chequeNo || "",
+                                        bank: p.bank || "QNB",
+                                        date: p.date || "",
+                                        amount: p.amount || 0,
+                                        period:
+                                          p.period ||
+                                          ((p as any).tenureStart && (p as any).tenureEnd
+                                            ? `${(p as any).tenureStart} to ${(p as any).tenureEnd}`
+                                            : `Cheque ${idx + 1}`),
+                                        tenureStart: (p as any).tenureStart || addDays(new Date(lease.startDate || today), idx * 30),
+                                        tenureEnd: (p as any).tenureEnd || addDays(new Date(lease.startDate || today), idx * 30 + 29),
+                                      }))
+                                    : Array.from({ length: lease.pdcCount || 12 }, (_, i) => ({
+                                        chequeNo: `PDC-${(lease.unit || "").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                                        bank: "QNB",
+                                        date: addDays(new Date(lease.startDate || today), i * 30),
+                                        amount:
+                                          i === (lease.pdcCount || 12) - 1
+                                            ? Math.max(0, pdcTot - (lease.monthlyRent || 0) * ((lease.pdcCount || 12) - 1))
+                                            : lease.monthlyRent || 0,
+                                        period: `${addDays(new Date(lease.startDate || today), i * 30)} to ${addDays(new Date(lease.startDate || today), i * 30 + 29)}`,
+                                        tenureStart: addDays(new Date(lease.startDate || today), i * 30),
+                                        tenureEnd: addDays(new Date(lease.startDate || today), i * 30 + 29),
+                                      })),
+                                vouchers: leaseVouchers.map((v) => ({
+                                  receiptNo: v.receiptNo,
+                                  name: v.name,
+                                  amount: v.amount,
+                                  method: v.method,
+                                  debit: v.debit,
+                                  credit: v.credit,
+                                })),
+                                totalCollected: totalCol,
+                                cashierName: "Finance Cashier",
+                                notes: "Official receipt acknowledged for lease security deposit and rent PDC schedule.",
+                              };
+                              setReceiptModalData(rec);
+                              setReceiptModalOpen(true);
+                            }}
+                          >
+                            <Receipt className="h-3.5 w-3.5" /> View Receipt
+                          </Button>
+                        </div>,
+                      ];
+                    })}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
+        </TabsContent>
 
           <TabsContent value="keys" className="space-y-4">
             {(() => {
