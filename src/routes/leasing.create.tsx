@@ -9,31 +9,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { supabase } from "@/lib/supabase";
 import {
   AlertCircle,
   BadgeCheck,
   Banknote,
   Bell,
   CalendarClock,
+  Check,
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
   DoorOpen,
   FileCheck2,
   FileSignature,
+  Info,
   Key,
   KeyRound,
   Loader2,
   Lock,
   LogOut,
+  Plus,
   Receipt,
   RefreshCw,
   ShieldCheck,
+  TrendingUp,
   UserPlus,
   Wallet,
   XCircle,
@@ -459,6 +465,17 @@ function addDays(date: Date, days: number) {
   return next.toISOString().split("T")[0];
 }
 
+function addMonths(dateStr: string, months: number) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = d.getDate();
+  d.setMonth(d.getMonth() + months);
+  if (d.getDate() !== day) {
+    d.setDate(0);
+  }
+  return d.toISOString().split("T")[0];
+}
+
 function isExpired(date: string) {
   return new Date(date) < today;
 }
@@ -675,7 +692,48 @@ function LeasingPage() {
   // ── Renewals Dialog ──────────────────────────────────────────────
   const [renewalResponseOpen, setRenewalResponseOpen] = useState(false);
   const [selectedRenewal, setSelectedRenewal] = useState<RenewalCase | null>(null);
-  const [renewalResponseForm, setRenewalResponseForm] = useState({ response: "confirm" as "confirm" | "non_renewal", confirmedRent: "", notes: "", updateStatus: "awaiting_response" as RenewalCase["status"] });
+  const [renewalResponseForm, setRenewalResponseForm] = useState({
+    response: "confirm" as "confirm" | "non_renewal",
+    confirmedRent: "",
+    notes: "",
+    updateStatus: "awaiting_response" as RenewalCase["status"],
+    // ── Provision: Create New Lease ──
+    createNewLease: true,
+    termDuration: "12" as "6" | "12" | "24" | "custom",
+    startDate: "",
+    endDate: "",
+    contractNumber: "",
+    paymentFrequency: "monthly" as Lease["paymentFrequency"],
+    gracePeriodDays: "5",
+    noticePeriodDays: "60",
+    // ── Provision: Create New PDCs ──
+    generatePdcs: true,
+    pdcCount: "12",
+    pdcBank: "Qatar National Bank (QNB)",
+    pdcStartChequeNo: "",
+    pdcFirstDate: "",
+    pdcAmountPerCheque: "",
+    pdcStatus: "received" as PdcStatus,
+    // ── Provision: Pay Increased Rent (Optional) ──
+    payIncreasedRent: false,
+    increasedRentAmount: "",
+    increasedRentType: "difference" as "difference" | "first_month" | "custom",
+    rentPaymentMethod: "Bank Transfer",
+    rentReceiptNo: "",
+    rentPayerBank: "Qatar National Bank (QNB)",
+    rentPaymentDate: today.toISOString().split("T")[0],
+    rentNotes: "",
+    // ── Provision: Pay / Top-up Security Deposit (Optional) ──
+    paySecurityDeposit: false,
+    securityDepositAmount: "",
+    securityDepositType: "differential" as "differential" | "full" | "custom",
+    securityMethod: "Bank Transfer",
+    securityReceiptNo: "",
+    securityChequeNo: "",
+    securityChequeDate: today.toISOString().split("T")[0],
+    securityBank: "Qatar National Bank (QNB)",
+    securityNotes: "",
+  });
 
   // ── Checkout Dialogs ─────────────────────────────────────────────
   const [startCheckoutOpen, setStartCheckoutOpen] = useState(false);
@@ -1449,9 +1507,82 @@ function LeasingPage() {
     }
   }
 
+  function openRenewalModal(renewal: RenewalCase) {
+    const lease = leases.find((l) => l.id === renewal.leaseId);
+    const oldRent = lease?.monthlyRent || 0;
+    const proposedRent = renewal.proposedRent || oldRent;
+    const oldSecurity = lease?.securityDeposit || oldRent;
+    const rentDiff = Math.max(0, proposedRent - oldRent);
+    const securityDiff = Math.max(0, proposedRent - oldSecurity);
+
+    const newStart = lease?.endDate ? addDays(new Date(lease.endDate), 1) : today.toISOString().split("T")[0];
+    const newEnd = lease?.endDate ? addDays(new Date(lease.endDate), 366) : addDays(new Date(), 365);
+    const renewalSeq = (leases.filter((l) => l.unit === lease?.unit).length) + 1;
+    const contractNo = `${lease?.contractNumber ? lease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (lease?.unit || "").replace(/\s+/g, ""))}-R${renewalSeq}`;
+
+    setSelectedRenewal(renewal);
+    setRenewalResponseForm({
+      response: "confirm",
+      confirmedRent: String(proposedRent),
+      notes: "",
+      updateStatus: "awaiting_response",
+      // New Lease Provision
+      createNewLease: true,
+      termDuration: "12",
+      startDate: newStart,
+      endDate: newEnd,
+      contractNumber: contractNo,
+      paymentFrequency: lease?.paymentFrequency || "monthly",
+      gracePeriodDays: String(lease?.gracePeriodDays || 5),
+      noticePeriodDays: String(lease?.noticePeriodDays || 60),
+      // New PDCs Provision
+      generatePdcs: true,
+      pdcCount: "12",
+      pdcBank: "Qatar National Bank (QNB)",
+      pdcStartChequeNo: `PDC-${(lease?.unit || "Unit").replace(/\W/g, "")}-R${renewalSeq}-001`,
+      pdcFirstDate: newStart,
+      pdcAmountPerCheque: String(proposedRent),
+      pdcStatus: "received",
+      // Increased Rent Provision (Optional)
+      payIncreasedRent: false,
+      increasedRentAmount: String(rentDiff > 0 ? rentDiff : proposedRent),
+      increasedRentType: rentDiff > 0 ? "difference" : "first_month",
+      rentPaymentMethod: "Bank Transfer",
+      rentReceiptNo: `REC-RENT-${Date.now().toString().slice(-6)}`,
+      rentPayerBank: "Qatar National Bank (QNB)",
+      rentPaymentDate: today.toISOString().split("T")[0],
+      rentNotes: `Rent payment for renewed lease ${contractNo}`,
+      // Security Deposit Provision (Optional)
+      paySecurityDeposit: false,
+      securityDepositAmount: String(securityDiff > 0 ? securityDiff : 0),
+      securityDepositType: securityDiff > 0 ? "differential" : "full",
+      securityMethod: "Bank Transfer",
+      securityReceiptNo: `REC-SD-${Date.now().toString().slice(-6)}`,
+      securityChequeNo: "",
+      securityChequeDate: today.toISOString().split("T")[0],
+      securityBank: "Qatar National Bank (QNB)",
+      securityNotes: `Additional security deposit for renewed lease ${contractNo}`,
+    });
+    setRenewalResponseOpen(true);
+  }
+
   function renewLease(renewal: RenewalCase) {
     const oldLease = leases.find((item) => item.id === renewal.leaseId);
     if (!oldLease) return;
+
+    if (renewalResponseForm.response === "non_renewal") {
+      setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_declined" } : item)));
+      recordAudit({
+        stage: "Lease Renewal Process",
+        owner: "Leasing Department",
+        input: `${oldLease.tenantName} (${oldLease.unit}), Tenant opted for non-renewal. Notes: ${renewalResponseForm.notes || "None"}`,
+        approval: "Tenant Non-Renewal Notice",
+        status: "declined",
+        output: "Lease marked for non-renewal. Move-out inspection and settlement scheduling initiated.",
+      });
+      return;
+    }
+
     // Check for tenant documents that may have expired during the previous lease term
     const expiredDocs = documents
       .filter((d) => d.customerId === oldLease.customerId && d.mandatory && d.expiryDate && new Date(d.expiryDate) < today)
@@ -1462,31 +1593,226 @@ function LeasingPage() {
       );
       if (!proceed) return;
     }
-    const renewed: Lease = {
-      ...oldLease,
-      id: `l${leases.length + 1}`,
-      renewalOf: oldLease.id,
-      startDate: addDays(new Date(oldLease.endDate), 1),
-      endDate: addDays(new Date(oldLease.endDate), 366),
-      monthlyRent: renewal.proposedRent,
-      status: "documents_pending" as LeaseStatus,
-      tenantSignedAt: undefined,
-      landlordSignedAt: undefined,
-      signedDocument: undefined,
-      receivedBy: undefined,
-      landlordPackageSubmittedAt: undefined,
-      sharedWithTenant: false,
-      collectionCompleted: false,
-    };
-    setLeases((items) => [renewed, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
-    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed" } : item)));
+
+    const agreedRent = renewalResponseForm.confirmedRent && Number(renewalResponseForm.confirmedRent) > 0
+      ? Number(renewalResponseForm.confirmedRent)
+      : (renewal.proposedRent || oldLease.monthlyRent);
+
+    const newStartDate = renewalResponseForm.startDate || addDays(new Date(oldLease.endDate), 1);
+    const newEndDate = renewalResponseForm.endDate || addDays(new Date(oldLease.endDate), 366);
+    const renewedId = `l-ren-${Date.now()}`;
+    const renewalSeq = (leases.filter((l) => l.unit === oldLease.unit).length) + 1;
+    const contractNo = renewalResponseForm.contractNumber || `${oldLease.contractNumber ? oldLease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (oldLease.unit || "").replace(/\s+/g, ""))}-R${renewalSeq}`;
+
+    // Additional security deposit calculation
+    const depositTopUp = renewalResponseForm.paySecurityDeposit && Number(renewalResponseForm.securityDepositAmount) > 0
+      ? Number(renewalResponseForm.securityDepositAmount)
+      : 0;
+    const newSecurityDeposit = (oldLease.securityDeposit || agreedRent) + depositTopUp;
+
+    const pdcCount = renewalResponseForm.generatePdcs
+      ? Number(renewalResponseForm.pdcCount) || 12
+      : 0;
+
+    let renewed: Lease | null = null;
+    if (renewalResponseForm.createNewLease) {
+      renewed = {
+        ...oldLease,
+        id: renewedId,
+        contractNumber: contractNo,
+        renewalOf: oldLease.id,
+        startDate: newStartDate,
+        endDate: newEndDate,
+        monthlyRent: agreedRent,
+        securityDeposit: newSecurityDeposit,
+        pdcCount: pdcCount,
+        paymentFrequency: renewalResponseForm.paymentFrequency || oldLease.paymentFrequency || "monthly",
+        gracePeriodDays: Number(renewalResponseForm.gracePeriodDays) || oldLease.gracePeriodDays || 5,
+        noticePeriodDays: Number(renewalResponseForm.noticePeriodDays) || oldLease.noticePeriodDays || 60,
+        status: "documents_pending" as LeaseStatus,
+        tenantSignedAt: undefined,
+        landlordSignedAt: undefined,
+        signedDocument: undefined,
+        receivedBy: undefined,
+        landlordPackageSubmittedAt: undefined,
+        sharedWithTenant: false,
+        collectionCompleted: false,
+      };
+      setLeases((items) => [renewed!, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
+    } else {
+      // Just mark existing lease as renewed without creating a new lease record
+      setLeases((items) => items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus, monthlyRent: agreedRent } : item)));
+    }
+
+    // Generate PDCs if provision is enabled
+    const renewalPdcs: Pdc[] = [];
+    if (renewalResponseForm.generatePdcs && pdcCount > 0) {
+      const baseRentPerCheque = renewalResponseForm.pdcAmountPerCheque && Number(renewalResponseForm.pdcAmountPerCheque) > 0
+        ? Number(renewalResponseForm.pdcAmountPerCheque)
+        : agreedRent;
+      const bankName = renewalResponseForm.pdcBank || "Qatar National Bank (QNB)";
+      const firstDateStr = renewalResponseForm.pdcFirstDate || newStartDate;
+      const startChequeNumMatch = renewalResponseForm.pdcStartChequeNo.match(/\d+$/);
+      const baseChequeNum = startChequeNumMatch ? parseInt(startChequeNumMatch[0], 10) : 1;
+      const prefix = startChequeNumMatch ? renewalResponseForm.pdcStartChequeNo.slice(0, startChequeNumMatch.index) : `PDC-${(oldLease.unit || "Unit").replace(/\W/g, "")}-R${renewalSeq}-`;
+
+      // Determine month increment step based on frequency or count
+      const monthsStep = pdcCount === 4 ? 3 : pdcCount === 2 ? 6 : pdcCount === 1 ? 12 : 1;
+
+      for (let index = 0; index < pdcCount; index++) {
+        const bd = new Date(firstDateStr);
+        const day = bd.getDate();
+        const rawMonth = bd.getMonth() + (index * monthsStep);
+        const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
+        const mo = ((rawMonth % 12) + 12) % 12;
+        const lastDay = new Date(yr, mo + 1, 0).getDate();
+        const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+
+        const tsDate = new Date(firstDateStr);
+        tsDate.setMonth(tsDate.getMonth() + (index * monthsStep));
+        const teDate = new Date(firstDateStr);
+        teDate.setMonth(teDate.getMonth() + ((index + 1) * monthsStep));
+        teDate.setDate(teDate.getDate() - 1);
+
+        const chequeNumber = startChequeNumMatch
+          ? `${prefix}${String(baseChequeNum + index).padStart(startChequeNumMatch[0].length, "0")}`
+          : `${prefix}${String(index + 1).padStart(3, "0")}`;
+
+        renewalPdcs.push({
+          id: `p-ren-${Date.now()}-${index + 1}`,
+          leaseId: renewed ? renewed.id : oldLease.id,
+          chequeNo: chequeNumber,
+          bank: bankName,
+          date: maturityStr,
+          amount: baseRentPerCheque,
+          status: (renewalResponseForm.pdcStatus || "received") as PdcStatus,
+        });
+      }
+      setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== (renewed ? renewed.id : oldLease.id))]);
+    }
+
+    // Process Increased Rent Payment (Optional)
+    const newVouchers: Voucher[] = [];
+    if (renewalResponseForm.payIncreasedRent && Number(renewalResponseForm.increasedRentAmount) > 0) {
+      const rentAmt = Number(renewalResponseForm.increasedRentAmount);
+      const rentMethod = renewalResponseForm.rentPaymentMethod || "Bank Transfer";
+      const rentRef = renewalResponseForm.rentReceiptNo || `REC-RENT-${Date.now().toString().slice(-6)}`;
+      const isCash = rentMethod === "Cash";
+      const isPdc = rentMethod === "Cheque" || rentMethod === "PDC";
+      const rentVoucher: Voucher = {
+        id: `v-ren-rent-${Date.now()}`,
+        leaseId: renewed ? renewed.id : oldLease.id,
+        name: `Receipt Voucher - Rent Increase / Advance (${rentMethod})`,
+        receiptNo: rentRef,
+        method: rentMethod,
+        period: "Renewed Lease Rent Differential",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Rental Revenue (41100001)",
+        amount: rentAmt,
+        status: "posted",
+      };
+      newVouchers.push(rentVoucher);
+
+      // Post GL to Supabase fin_vouchers
+      const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
+      const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+      const postingDate = renewalResponseForm.rentPaymentDate || today.toISOString().split("T")[0];
+      void supabase.from("fin_vouchers").insert({
+        voucher_number: `VCH-RENT-${rentRef}`,
+        voucher_date: postingDate,
+        voucher_type: "RV",
+        description: `Rent Increase / Advance Received — ${oldLease.tenantName} (${oldLease.unit}) [${rentRef}]`,
+        total_amount: rentAmt,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id").single().then(({ data: vData, error: vErr }) => {
+        if (!vErr && vData?.id) {
+          void supabase.from("fin_voucher_lines").insert([
+            { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: rentAmt, credit: 0, description: `Rent Differential — ${oldLease.tenantName}` },
+            { voucher_id: vData.id, account_code: "41100001", account_name: "Rental Revenue", debit: 0, credit: rentAmt, description: `Rent Differential — ${oldLease.tenantName}` },
+          ]);
+        }
+      }).catch(err => console.warn("[renewLease] Rent GL posting note:", err));
+    }
+
+    // Process Security Deposit Top-Up / Payment (Optional)
+    if (renewalResponseForm.paySecurityDeposit && depositTopUp > 0) {
+      const sdMethod = renewalResponseForm.securityMethod || "Bank Transfer";
+      const sdRef = renewalResponseForm.securityReceiptNo || `SD-REN-${Date.now().toString().slice(-6)}`;
+      const isCash = sdMethod === "Cash";
+      const isPdc = sdMethod === "Cheque" || sdMethod === "PDC" || sdMethod === "Guarantee Cheque";
+      const sdVoucher: Voucher = {
+        id: `v-ren-sd-${Date.now()}`,
+        leaseId: renewed ? renewed.id : oldLease.id,
+        name: `Receipt Voucher - Security Deposit Top-Up (${sdMethod})`,
+        receiptNo: sdRef,
+        method: sdMethod,
+        period: "Renewed Lease Security Deposit",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Security Deposit Liability (21500001)",
+        amount: depositTopUp,
+        status: "posted",
+      };
+      newVouchers.push(sdVoucher);
+
+      // If paid by cheque/PDC, register deposit PDC
+      if (isPdc && renewalResponseForm.securityChequeNo) {
+        setPdcs((items) => [
+          {
+            id: `p-sd-ren-${Date.now()}`,
+            leaseId: renewed ? renewed.id : oldLease.id,
+            chequeNo: renewalResponseForm.securityChequeNo,
+            bank: renewalResponseForm.securityBank || "Qatar National Bank (QNB)",
+            date: renewalResponseForm.securityChequeDate || newStartDate,
+            amount: depositTopUp,
+            status: "received" as PdcStatus,
+          },
+          ...items,
+        ]);
+      }
+
+      // Post GL to Supabase fin_vouchers
+      const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
+      const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+      const postingDate = renewalResponseForm.securityChequeDate || today.toISOString().split("T")[0];
+      void supabase.from("fin_vouchers").insert({
+        voucher_number: `VCH-SD-${sdRef}`,
+        voucher_date: postingDate,
+        voucher_type: "RV",
+        description: `Security Deposit Top-Up — ${oldLease.tenantName} (${oldLease.unit}) [${sdRef}]`,
+        total_amount: depositTopUp,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id").single().then(({ data: vData, error: vErr }) => {
+        if (!vErr && vData?.id) {
+          void supabase.from("fin_voucher_lines").insert([
+            { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: depositTopUp, credit: 0, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
+            { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
+          ]);
+        }
+      }).catch(err => console.warn("[renewLease] SD GL posting note:", err));
+    }
+
+    if (newVouchers.length > 0) {
+      setVouchers((items) => [...newVouchers, ...items]);
+      window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+    }
+
+    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed", proposedRent: agreedRent } : item)));
+
+    const provisionsSummary: string[] = [];
+    if (renewalResponseForm.createNewLease) provisionsSummary.push(`New Agreement: ${contractNo}`);
+    if (renewalResponseForm.generatePdcs && pdcCount > 0) provisionsSummary.push(`${pdcCount} PDCs scheduled`);
+    if (renewalResponseForm.payIncreasedRent && Number(renewalResponseForm.increasedRentAmount) > 0) provisionsSummary.push(`Rent Payment: ${formatMoney(Number(renewalResponseForm.increasedRentAmount))}`);
+    if (renewalResponseForm.paySecurityDeposit && depositTopUp > 0) provisionsSummary.push(`Deposit Top-Up: ${formatMoney(depositTopUp)}`);
+
     recordAudit({
       stage: "Lease Renewal Process",
       owner: "Leasing Department",
-      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
+      input: `${oldLease.tenantName} (${oldLease.unit}), renewed period ${newStartDate} to ${newEndDate}, Agreed Rent: QR ${agreedRent.toLocaleString()}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
-      output: "Renewed lease linked to previous lease history; document review recommended for expired credentials",
+      output: `Renewal completed. Provisions executed: ${provisionsSummary.join(", ") || "Decision recorded"}. Notes: ${renewalResponseForm.notes || "None"}`,
     });
   }
 
@@ -2761,34 +3087,682 @@ function LeasingPage() {
 
       {/* ── RENEWAL RESPONSE DIALOG ───────────────────────────── */}
       <Dialog open={renewalResponseOpen} onOpenChange={setRenewalResponseOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Tenant Renewal Response</DialogTitle>
-            <DialogDescription>Record tenant's decision regarding lease renewal.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Tenant Response">
-              <Select value={renewalResponseForm.response} onValueChange={v => setRenewalResponseForm(f => ({ ...f, response: v as any }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="confirm">Confirmed Renewal</SelectItem>
-                  <SelectItem value="non_renewal">Non-Renewal / Vacating</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            {renewalResponseForm.response === "confirm" && (
-              <Field label="Confirmed Monthly Rent (QR)">
-                <Input type="number" value={renewalResponseForm.confirmedRent} onChange={e => setRenewalResponseForm(f => ({ ...f, confirmedRent: e.target.value }))} placeholder={`Proposed: QR ${selectedRenewal?.proposedRent}`} />
-              </Field>
-            )}
-            <Field label="Notes">
-              <Textarea rows={2} value={renewalResponseForm.notes} onChange={e => setRenewalResponseForm(f => ({ ...f, notes: e.target.value }))} placeholder="Negotiation notes, special terms..." />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenewalResponseOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (selectedRenewal) renewLease(selectedRenewal); setRenewalResponseOpen(false); }}><RefreshCw className="mr-2 h-4 w-4" /> Confirm Response</Button>
-          </DialogFooter>
+        <DialogContent className="sm:max-w-[720px] max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0 border-border/80 shadow-2xl rounded-2xl bg-card">
+          {(() => {
+            const oldLeaseForModal = leases.find((l) => l.id === selectedRenewal?.leaseId);
+            const oldRentForModal = oldLeaseForModal?.monthlyRent || 0;
+            const oldSecurityForModal = oldLeaseForModal?.securityDeposit || oldRentForModal;
+            const numAgreedRent = Number(renewalResponseForm.confirmedRent) || 0;
+            const rentDiffForModal = Math.max(0, numAgreedRent - oldRentForModal);
+            const rentPctChange = oldRentForModal > 0 ? Math.round(((numAgreedRent - oldRentForModal) / oldRentForModal) * 100) : 0;
+            const securityDiffForModal = Math.max(0, numAgreedRent - oldSecurityForModal);
+            const activeProvisionsCount = [
+              renewalResponseForm.createNewLease,
+              renewalResponseForm.generatePdcs,
+              renewalResponseForm.payIncreasedRent,
+              renewalResponseForm.paySecurityDeposit,
+            ].filter(Boolean).length;
+
+            return (
+              <>
+                <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-4 border-b flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-sm">
+                      <RefreshCw className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-base font-bold">Tenant Renewal Decision</DialogTitle>
+                      <DialogDescription className="text-xs text-muted-foreground">
+                        Record decision for {oldLeaseForModal?.tenantName || "Tenant"} — {oldLeaseForModal?.unit || "Unit"}.
+                      </DialogDescription>
+                    </div>
+                  </div>
+                  {renewalResponseForm.response === "confirm" && (
+                    <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-background/80 text-[11px] font-medium shadow-xs">
+                      <span className="text-muted-foreground">Current Rent:</span>
+                      <strong>{formatMoney(oldRentForModal)}</strong>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(92vh-130px)]">
+                  {/* Top Decision Field */}
+                  <Field label="Tenant Formal Response">
+                    <Select
+                      value={renewalResponseForm.response}
+                      onValueChange={(v) => setRenewalResponseForm((f) => ({ ...f, response: v as any }))}
+                    >
+                      <SelectTrigger className="font-medium"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="confirm">✅ Confirmed Renewal (Accepts extension)</SelectItem>
+                        <SelectItem value="non_renewal">❌ Non-Renewal (Will vacate upon expiry)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  {renewalResponseForm.response === "confirm" && (
+                    <>
+                      {/* Agreed Monthly Rent Field & Comparison Bar */}
+                      <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Agreed Monthly Rent (QR)
+                          </Label>
+                          <div className="flex items-center gap-2 text-xs">
+                            {rentDiffForModal > 0 ? (
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 font-semibold gap-1">
+                                <TrendingUp className="h-3 w-3" /> +{formatMoney(rentDiffForModal)}/mo (+{rentPctChange}%)
+                              </Badge>
+                            ) : numAgreedRent === oldRentForModal ? (
+                              <Badge variant="outline" className="border-slate-300 bg-slate-50 text-slate-700 dark:bg-slate-900 font-normal">
+                                Maintained unchanged
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700 font-normal">
+                                Discount: -{formatMoney(Math.abs(numAgreedRent - oldRentForModal))}/mo
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Input
+                          type="number"
+                          value={renewalResponseForm.confirmedRent}
+                          onChange={(e) => {
+                            const newRentStr = e.target.value;
+                            const newRent = Number(newRentStr) || 0;
+                            const rDiff = Math.max(0, newRent - oldRentForModal);
+                            const sDiff = Math.max(0, newRent - oldSecurityForModal);
+                            setRenewalResponseForm((f) => {
+                              const mult = f.paymentFrequency === "quarterly" ? 3 : f.paymentFrequency === "semi-annual" || f.paymentFrequency === "half_yearly" ? 6 : f.paymentFrequency === "yearly" || f.paymentFrequency === "annual" ? 12 : 1;
+                              return {
+                                ...f,
+                                confirmedRent: newRentStr,
+                                pdcAmountPerCheque: String(newRent * mult),
+                                increasedRentAmount: f.increasedRentType === "difference" ? String(rDiff) : f.increasedRentType === "first_month" ? String(newRent) : f.increasedRentAmount,
+                                securityDepositAmount: f.securityDepositType === "differential" ? String(sDiff) : f.securityDepositType === "full" ? String(newRent) : f.securityDepositAmount,
+                              };
+                            });
+                          }}
+                          placeholder={`Proposed: QR ${selectedRenewal?.proposedRent}`}
+                          className="text-base font-bold bg-background"
+                        />
+                      </div>
+
+                      {/* PROVISION 1: CREATE NEW LEASE */}
+                      <div className="rounded-xl border border-primary/20 bg-card p-4 space-y-3.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                              <FileCheck2 className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-foreground">Provision: Create New Lease Agreement</h4>
+                              <p className="text-[11px] text-muted-foreground">Register new contract record linked to prior lease</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="toggle-new-lease-lc" className="text-xs font-semibold cursor-pointer">
+                              {renewalResponseForm.createNewLease ? "Enabled" : "Disabled"}
+                            </Label>
+                            <Switch
+                              id="toggle-new-lease-lc"
+                              checked={renewalResponseForm.createNewLease}
+                              onCheckedChange={(checked) => setRenewalResponseForm((f) => ({ ...f, createNewLease: checked }))}
+                            />
+                          </div>
+                        </div>
+
+                        {renewalResponseForm.createNewLease && (
+                          <div className="pt-2 border-t space-y-3 text-xs">
+                            <div>
+                              <Label className="text-[11px] text-muted-foreground mb-1.5 block">Term Duration</Label>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {[
+                                  { id: "12", label: "1 Year (12 Mo)" },
+                                  { id: "6", label: "6 Months" },
+                                  { id: "24", label: "2 Years (24 Mo)" },
+                                  { id: "custom", label: "Custom Dates" },
+                                ].map((opt) => (
+                                  <Button
+                                    key={opt.id}
+                                    type="button"
+                                    size="sm"
+                                    variant={renewalResponseForm.termDuration === opt.id ? "default" : "outline"}
+                                    className="h-8 text-xs font-medium"
+                                    onClick={() => {
+                                      if (opt.id === "custom") {
+                                        setRenewalResponseForm((f) => ({ ...f, termDuration: "custom" }));
+                                      } else {
+                                        const months = parseInt(opt.id, 10);
+                                        const startD = renewalResponseForm.startDate || today.toISOString().split("T")[0];
+                                        const endD = addMonths(startD, months);
+                                        const defaultPdcs = opt.id === "6" ? (renewalResponseForm.paymentFrequency === "quarterly" ? "2" : "6") : opt.id === "12" ? (renewalResponseForm.paymentFrequency === "quarterly" ? "4" : "12") : "24";
+                                        setRenewalResponseForm((f) => ({
+                                          ...f,
+                                          termDuration: opt.id as any,
+                                          endDate: endD,
+                                          pdcCount: defaultPdcs,
+                                        }));
+                                      }
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="New Lease Start Date">
+                                <Input
+                                  type="date"
+                                  value={renewalResponseForm.startDate}
+                                  onChange={(e) => {
+                                    const s = e.target.value;
+                                    const dur = renewalResponseForm.termDuration !== "custom" ? parseInt(renewalResponseForm.termDuration, 10) : 12;
+                                    const nextEnd = addMonths(s, dur);
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      startDate: s,
+                                      endDate: f.termDuration === "custom" ? f.endDate : nextEnd,
+                                      pdcFirstDate: s,
+                                    }));
+                                  }}
+                                />
+                              </Field>
+                              <Field label="New Lease End Date">
+                                <Input
+                                  type="date"
+                                  value={renewalResponseForm.endDate}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, endDate: e.target.value, termDuration: "custom" }))}
+                                />
+                              </Field>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Contract Number / Reference">
+                                <Input
+                                  value={renewalResponseForm.contractNumber}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, contractNumber: e.target.value }))}
+                                  placeholder="e.g. SLT-OS4026-R2"
+                                />
+                              </Field>
+                              <Field label="Payment Frequency">
+                                <Select
+                                  value={renewalResponseForm.paymentFrequency}
+                                  onValueChange={(freq: any) => {
+                                    const durMonths = renewalResponseForm.termDuration === "6" ? 6 : renewalResponseForm.termDuration === "24" ? 24 : 12;
+                                    let count = 12;
+                                    let mult = 1;
+                                    if (freq === "quarterly") {
+                                      count = Math.max(1, Math.round(durMonths / 3));
+                                      mult = 3;
+                                    } else if (freq === "semi-annual" || freq === "half_yearly") {
+                                      count = Math.max(1, Math.round(durMonths / 6));
+                                      mult = 6;
+                                    } else if (freq === "yearly" || freq === "annual") {
+                                      count = 1;
+                                      mult = durMonths;
+                                    } else {
+                                      count = durMonths;
+                                      mult = 1;
+                                    }
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      paymentFrequency: freq,
+                                      pdcCount: String(count),
+                                      pdcAmountPerCheque: String(numAgreedRent * mult),
+                                    }));
+                                  }}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="monthly">Monthly (12 cheques/yr)</SelectItem>
+                                    <SelectItem value="quarterly">Quarterly (4 cheques/yr)</SelectItem>
+                                    <SelectItem value="semi-annual">Semi-Annual (2 cheques/yr)</SelectItem>
+                                    <SelectItem value="annual">Annual / Lump Sum (1 cheque/yr)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* PROVISION 2: CREATE NEW PDCS */}
+                      <div className="rounded-xl border border-primary/20 bg-card p-4 space-y-3.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                              <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-foreground">Provision: Issue & Register New PDCs</h4>
+                              <p className="text-[11px] text-muted-foreground">Generate post-dated cheques schedule for renewal term</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="toggle-pdcs-lc" className="text-xs font-semibold cursor-pointer">
+                              {renewalResponseForm.generatePdcs ? "Enabled" : "Disabled"}
+                            </Label>
+                            <Switch
+                              id="toggle-pdcs-lc"
+                              checked={renewalResponseForm.generatePdcs}
+                              onCheckedChange={(checked) => setRenewalResponseForm((f) => ({ ...f, generatePdcs: checked }))}
+                            />
+                          </div>
+                        </div>
+
+                        {renewalResponseForm.generatePdcs && (
+                          <div className="pt-2 border-t space-y-3 text-xs">
+                            <div className="grid grid-cols-3 gap-3">
+                              <Field label="No. of Cheques">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max="36"
+                                  value={renewalResponseForm.pdcCount}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, pdcCount: e.target.value }))}
+                                />
+                              </Field>
+                              <Field label="Amount per Cheque (QR)">
+                                <Input
+                                  type="number"
+                                  value={renewalResponseForm.pdcAmountPerCheque}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, pdcAmountPerCheque: e.target.value }))}
+                                />
+                              </Field>
+                              <Field label="Bank Name">
+                                <Select
+                                  value={renewalResponseForm.pdcBank}
+                                  onValueChange={(v) => setRenewalResponseForm((f) => ({ ...f, pdcBank: v }))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Qatar National Bank (QNB)">Qatar National Bank (QNB)</SelectItem>
+                                    <SelectItem value="Commercial Bank of Qatar (CBQ)">Commercial Bank (CBQ)</SelectItem>
+                                    <SelectItem value="Doha Bank">Doha Bank</SelectItem>
+                                    <SelectItem value="Qatar Islamic Bank (QIB)">Qatar Islamic Bank (QIB)</SelectItem>
+                                    <SelectItem value="Masraf Al Rayan">Masraf Al Rayan</SelectItem>
+                                    <SelectItem value="Ahlibank">Ahlibank</SelectItem>
+                                    <SelectItem value="Dukhan Bank">Dukhan Bank</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Starting Cheque No.">
+                                <Input
+                                  value={renewalResponseForm.pdcStartChequeNo}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, pdcStartChequeNo: e.target.value }))}
+                                  placeholder="e.g. PDC-OS4026-R2-001"
+                                />
+                              </Field>
+                              <Field label="First Cheque Maturity">
+                                <Input
+                                  type="date"
+                                  value={renewalResponseForm.pdcFirstDate}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, pdcFirstDate: e.target.value }))}
+                                />
+                              </Field>
+                            </div>
+
+                            <div className="rounded-lg bg-muted/40 p-2.5 flex items-center justify-between text-[11px] text-muted-foreground border">
+                              <span className="flex items-center gap-1.5">
+                                <Info className="h-3.5 w-3.5 text-primary" />
+                                <span>PDC Schedule Summary:</span>
+                              </span>
+                              <strong className="text-foreground">
+                                {renewalResponseForm.pdcCount} cheques × {formatMoney(Number(renewalResponseForm.pdcAmountPerCheque) || 0)} = {formatMoney((Number(renewalResponseForm.pdcCount) || 0) * (Number(renewalResponseForm.pdcAmountPerCheque) || 0))}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* PROVISION 3: PAY INCREASED RENT (OPTIONAL) */}
+                      <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+                              <Wallet className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-bold text-foreground">Provision: Pay Increased Rent</h4>
+                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-muted-foreground">Optional</Badge>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">Collect rent difference or advance upfront with instant receipt voucher</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="toggle-pay-rent-lc" className="text-xs font-semibold cursor-pointer">
+                              {renewalResponseForm.payIncreasedRent ? "Enabled" : "Off"}
+                            </Label>
+                            <Switch
+                              id="toggle-pay-rent-lc"
+                              checked={renewalResponseForm.payIncreasedRent}
+                              onCheckedChange={(checked) => setRenewalResponseForm((f) => ({ ...f, payIncreasedRent: checked }))}
+                            />
+                          </div>
+                        </div>
+
+                        {renewalResponseForm.payIncreasedRent && (
+                          <div className="pt-2 border-t space-y-3 text-xs">
+                            <div>
+                              <Label className="text-[11px] text-muted-foreground mb-1.5 block">Payment Preset</Label>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.increasedRentType === "difference" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() =>
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      increasedRentType: "difference",
+                                      increasedRentAmount: String(rentDiffForModal),
+                                    }))
+                                  }
+                                >
+                                  Rent Difference ({formatMoney(rentDiffForModal)})
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.increasedRentType === "first_month" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() =>
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      increasedRentType: "first_month",
+                                      increasedRentAmount: String(numAgreedRent),
+                                    }))
+                                  }
+                                >
+                                  Full 1st Month ({formatMoney(numAgreedRent)})
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.increasedRentType === "custom" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() => setRenewalResponseForm((f) => ({ ...f, increasedRentType: "custom" }))}
+                                >
+                                  Custom Amount
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Rent Amount to Pay (QR)">
+                                <Input
+                                  type="number"
+                                  value={renewalResponseForm.increasedRentAmount}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, increasedRentAmount: e.target.value, increasedRentType: "custom" }))}
+                                />
+                              </Field>
+                              <Field label="Payment Method">
+                                <Select
+                                  value={renewalResponseForm.rentPaymentMethod}
+                                  onValueChange={(v) => setRenewalResponseForm((f) => ({ ...f, rentPaymentMethod: v }))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                                    <SelectItem value="Cash">Cash</SelectItem>
+                                    <SelectItem value="Credit Card">Credit Card / POS</SelectItem>
+                                    <SelectItem value="Cheque">Cheque</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                              <Field label="Receipt / Ref No.">
+                                <Input
+                                  value={renewalResponseForm.rentReceiptNo}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, rentReceiptNo: e.target.value }))}
+                                />
+                              </Field>
+                              <Field label="Payment Date">
+                                <Input
+                                  type="date"
+                                  value={renewalResponseForm.rentPaymentDate}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, rentPaymentDate: e.target.value }))}
+                                />
+                              </Field>
+                              <Field label="Payer Bank">
+                                <Input
+                                  value={renewalResponseForm.rentPayerBank}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, rentPayerBank: e.target.value }))}
+                                />
+                              </Field>
+                            </div>
+
+                            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2.5 flex items-center gap-2 text-[11px] text-emerald-800 dark:text-emerald-300">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <span>A posted Receipt Voucher (RV) will be created and credited to <strong>Rental Revenue (41100001)</strong> immediately.</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* PROVISION 4: PAY SECURITY DEPOSIT (OPTIONAL) */}
+                      <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600">
+                              <ShieldCheck className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-xs font-bold text-foreground">Provision: Pay Security Deposit</h4>
+                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 text-muted-foreground">Optional</Badge>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">Top-up shortfall or collect renewed security deposit liability</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label htmlFor="toggle-pay-sec-lc" className="text-xs font-semibold cursor-pointer">
+                              {renewalResponseForm.paySecurityDeposit ? "Enabled" : "Off"}
+                            </Label>
+                            <Switch
+                              id="toggle-pay-sec-lc"
+                              checked={renewalResponseForm.paySecurityDeposit}
+                              onCheckedChange={(checked) => setRenewalResponseForm((f) => ({ ...f, paySecurityDeposit: checked }))}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Metrics bar */}
+                        <div className="grid grid-cols-3 gap-2 p-2.5 rounded-lg bg-muted/30 border text-[11px]">
+                          <div>
+                            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Current Deposit Held</span>
+                            <strong className="text-foreground">{formatMoney(oldSecurityForModal)}</strong>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">New Deposit Target</span>
+                            <strong className="text-foreground">{formatMoney(numAgreedRent)}</strong>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Shortfall / Top-up</span>
+                            <strong className={securityDiffForModal > 0 ? "text-amber-600 font-bold" : "text-emerald-600 font-semibold"}>
+                              {securityDiffForModal > 0 ? `+${formatMoney(securityDiffForModal)}` : "Fully Covered"}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {renewalResponseForm.paySecurityDeposit && (
+                          <div className="pt-2 border-t space-y-3 text-xs">
+                            <div>
+                              <Label className="text-[11px] text-muted-foreground mb-1.5 block">Deposit Preset</Label>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.securityDepositType === "differential" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() =>
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      securityDepositType: "differential",
+                                      securityDepositAmount: String(securityDiffForModal),
+                                    }))
+                                  }
+                                >
+                                  Top-Up Shortfall ({formatMoney(securityDiffForModal)})
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.securityDepositType === "full" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() =>
+                                    setRenewalResponseForm((f) => ({
+                                      ...f,
+                                      securityDepositType: "full",
+                                      securityDepositAmount: String(numAgreedRent),
+                                    }))
+                                  }
+                                >
+                                  Full Deposit ({formatMoney(numAgreedRent)})
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={renewalResponseForm.securityDepositType === "custom" ? "default" : "outline"}
+                                  className="h-8 text-xs font-medium"
+                                  onClick={() => setRenewalResponseForm((f) => ({ ...f, securityDepositType: "custom" }))}
+                                >
+                                  Custom Amount
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Deposit Amount to Pay (QR)">
+                                <Input
+                                  type="number"
+                                  value={renewalResponseForm.securityDepositAmount}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, securityDepositAmount: e.target.value, securityDepositType: "custom" }))}
+                                />
+                              </Field>
+                              <Field label="Payment Method">
+                                <Select
+                                  value={renewalResponseForm.securityMethod}
+                                  onValueChange={(v) => setRenewalResponseForm((f) => ({ ...f, securityMethod: v }))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                                    <SelectItem value="Cash">Cash</SelectItem>
+                                    <SelectItem value="Credit Card">Credit Card</SelectItem>
+                                    <SelectItem value="Cheque">Cheque (Security Cheque)</SelectItem>
+                                    <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </Field>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Receipt No.">
+                                <Input
+                                  value={renewalResponseForm.securityReceiptNo}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, securityReceiptNo: e.target.value }))}
+                                />
+                              </Field>
+                              <Field label="Bank">
+                                <Input
+                                  value={renewalResponseForm.securityBank}
+                                  onChange={(e) => setRenewalResponseForm((f) => ({ ...f, securityBank: e.target.value }))}
+                                />
+                              </Field>
+                            </div>
+
+                            {(renewalResponseForm.securityMethod === "Cheque" || renewalResponseForm.securityMethod === "Guarantee Cheque") && (
+                              <div className="grid grid-cols-2 gap-3">
+                                <Field label="Security Cheque No.">
+                                  <Input
+                                    value={renewalResponseForm.securityChequeNo}
+                                    onChange={(e) => setRenewalResponseForm((f) => ({ ...f, securityChequeNo: e.target.value }))}
+                                    placeholder="e.g. SEC-009182"
+                                  />
+                                </Field>
+                                <Field label="Cheque Date">
+                                  <Input
+                                    type="date"
+                                    value={renewalResponseForm.securityChequeDate}
+                                    onChange={(e) => setRenewalResponseForm((f) => ({ ...f, securityChequeDate: e.target.value }))}
+                                  />
+                                </Field>
+                              </div>
+                            )}
+
+                            <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2.5 flex items-center gap-2 text-[11px] text-indigo-800 dark:text-indigo-300">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <span>Security deposit will be credited to <strong>Account 21500001 (Security Deposit Liability)</strong>.</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Negotiation & Confirmation Notes */}
+                  <Field label="Negotiation & Confirmation Notes">
+                    <Textarea
+                      rows={2}
+                      value={renewalResponseForm.notes}
+                      onChange={(e) => setRenewalResponseForm((f) => ({ ...f, notes: e.target.value }))}
+                      placeholder="Special agreed terms, discount notes, or move-out confirmation..."
+                      className="text-xs"
+                    />
+                  </Field>
+                </div>
+
+                <div className="px-6 py-3.5 bg-muted/40 border-t flex items-center justify-between">
+                  <div className="text-xs text-muted-foreground hidden sm:block">
+                    {renewalResponseForm.response === "confirm" ? (
+                      <span>
+                        Active provisions:{" "}
+                        <strong>
+                          {[
+                            renewalResponseForm.createNewLease && "New Lease",
+                            renewalResponseForm.generatePdcs && `${renewalResponseForm.pdcCount} PDCs`,
+                            renewalResponseForm.payIncreasedRent && "Rent Payment",
+                            renewalResponseForm.paySecurityDeposit && "Deposit Top-Up",
+                          ]
+                            .filter(Boolean)
+                            .join(", ") || "None"}
+                        </strong>
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 font-semibold">Tenant vacating at expiry</span>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2.5 w-full sm:w-auto">
+                    <Button variant="outline" size="sm" onClick={() => setRenewalResponseOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (selectedRenewal) renewLease(selectedRenewal);
+                        setRenewalResponseOpen(false);
+                      }}
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      {renewalResponseForm.response === "confirm"
+                        ? `Confirm Decision (${activeProvisionsCount} Provisions)`
+                        : "Confirm Non-Renewal"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -3565,7 +4539,7 @@ function LeasingPage() {
                     <StatusBadge key="status" value={renewal.status} />,
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setRenewals((items) => items.map((item) => item.id === renewal.id ? { ...item, status: "under_discussion" } : item))}>Discuss</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "", updateStatus: "renewal_confirmed" as RenewalCase["status"] }); setRenewalResponseOpen(true); }}>Renew</Button>
+                      <Button size="sm" variant="outline" onClick={() => openRenewalModal(renewal)}>Renew</Button>
                       {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "", outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", missingItems: "", cleaningCharges: "0", restorationCharges: "0" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
                     </div>,
                   ];
