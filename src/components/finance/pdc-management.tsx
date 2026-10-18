@@ -649,35 +649,7 @@ export function PdcManagement() {
         });
       }
 
-      // Step 4: Add any unconsumed fin_pdc_register rows (standalone rows created in finance)
-      for (const fList of finByCheque.values()) {
-        for (const f of fList) {
-          if (f._used) continue;
-          if (f.original_pdc_id != null) continue; // Never duplicate rows shadowed from pdcs table
-          const rowKey = `fin-${f.id}`;
-          if (!dbDataMap.has(rowKey)) {
-            const fDate = toYmd(f.cheque_date || f.maturity_date) || "2026-08-01";
-            dbDataMap.set(rowKey, {
-              id: f.id,
-              fin_id: f.id,
-              entry_date: f.created_at ? toYmd(f.created_at) : "2026-08-01",
-              cheque_date: fDate,
-              cheque_number: f.cheque_number || String(f.id),
-              amount: Number(f.amount) || 0,
-              paid_amount: f.paid_amount != null ? Number(f.paid_amount) : undefined,
-              status: normalizeStatus(f.status),
-              bank_name: f.bank_name || f.bank || "Qatar National Bank (QNB)",
-              property_name: f.property_name || f.property_code || "—",
-              unit_ref: f.unit_name || f.unit_ref || "—",
-              tenant_name: f.tenant_name || "—",
-              lease_start: f.lease_start,
-              lease_end: f.lease_end,
-              monthly_rent: Number(f.amount) || 0,
-              _source: "fin_pdc_register",
-            });
-          }
-        }
-      }
+      // Authoritative dataset is strictly the pdcs table (matches PDC vouchers 1-to-1)
 
       // If a lease is closed / vacated, all unpresented future PDCs beyond the vacate date are Returned
       for (const p of dbDataMap.values()) {
@@ -1377,6 +1349,18 @@ export function PdcManagement() {
             unit_id: String(unitId),
             unitCode: unit,
             lease_id: String(dbLeaseId),
+          });
+
+          await supabase.from("pdcs").insert({
+            cheque_number: row.chequeNo,
+            maturity_date: row.chequeDate,
+            amount: amt,
+            property_code: prop,
+            unit_name: unit,
+            tenant_name: tenant,
+            bank: row.bank || "Qatar National Bank (QNB)",
+            status: "In Hand",
+            lease_id: dbLeaseId || null,
           });
         } catch (e: any) {
           console.warn("[receivePdc] Notice during receive:", e?.message);

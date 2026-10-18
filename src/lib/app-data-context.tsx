@@ -639,9 +639,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      // Also include any standalone fin_pdc_register rows created in finance (skip if shadowed from pdcs)
+      // Also include any genuine standalone fin_pdc_register rows created in finance (must have unit/tenant)
       (pdcsRes.data || []).forEach((f: any) => {
-        if (!usedFinIds.has(String(f.id)) && f.original_pdc_id == null) {
+        if (!usedFinIds.has(String(f.id)) && f.original_pdc_id == null && (f.unit_name || f.unit_ref || f.tenant_name)) {
           allRawPdcs.push({
             ...f,
             id: `fin-${f.id}`,
