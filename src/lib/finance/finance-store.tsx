@@ -580,6 +580,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       // Step A: Build primary map from pdcs table keyed by row ID
       const pdcIdMap = new Map<string, any>();   // rowKey → merged row
       const pdcsByChq = new Map<string, string[]>(); // cheque_number → list of rowKeys
+      const pdcsBySlNo = new Map<number, string>(); // sl_no → rowKey
 
       for (const p of (pdcsTableRes.data || [])) {
         const rowKey  = String(p.id);
@@ -598,6 +599,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         };
 
         pdcIdMap.set(rowKey, row);
+        if (p.sl_no != null) {
+          pdcsBySlNo.set(Number(p.sl_no), rowKey);
+        }
         if (chqNo) {
           const list = pdcsByChq.get(chqNo) || [];
           list.push(rowKey);
@@ -612,36 +616,30 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const chqNo      = p.cheque_number ? String(p.cheque_number).trim() : null;
         const pDate      = toYmdFSD(p.cheque_date || p.maturity_date);
         const pAmt       = Number(p.amount || 0);
+        const origId     = p.original_pdc_id != null ? Number(p.original_pdc_id) : null;
 
         let matchedKey: string | null = null;
-        if (chqNo && pdcsByChq.has(chqNo)) {
+        // 1. Try deterministic match via original_pdc_id === pdcs.sl_no
+        if (origId != null && pdcsBySlNo.has(origId)) {
+          const key = pdcsBySlNo.get(origId)!;
+          if (!usedPdcKeys.has(key)) {
+            matchedKey = key;
+          }
+        }
+
+        // 2. Fall back to cheque_number candidates
+        if (!matchedKey && chqNo && pdcsByChq.has(chqNo)) {
           const candidateKeys = pdcsByChq.get(chqNo)!;
           const availableKeys = candidateKeys.filter(k => !usedPdcKeys.has(k));
 
-          // 1. Try exact amount + close date (within 2 days for timezone tolerance)
+          // 2a. Try exact amount + close date (within 2 days for timezone tolerance)
           matchedKey = availableKeys.find(k => {
             const row = pdcIdMap.get(k);
             return Math.abs(row.amount - pAmt) < 0.01 && daysDiffFSD(row.cheque_date, pDate) <= 2;
           }) || null;
 
-          // 2. Try close date match
-          if (!matchedKey) {
-            matchedKey = availableKeys.find(k => {
-              const row = pdcIdMap.get(k);
-              return daysDiffFSD(row.cheque_date, pDate) <= 2;
-            }) || null;
-          }
-
-          // 3. Try exact amount match
-          if (!matchedKey) {
-            matchedKey = availableKeys.find(k => {
-              const row = pdcIdMap.get(k);
-              return Math.abs(row.amount - pAmt) < 0.01;
-            }) || null;
-          }
-
-          // 4. If only 1 candidate available, match it
-          if (!matchedKey && availableKeys.length === 1) {
+          // 2b. If only 1 candidate available and amounts match, match it
+          if (!matchedKey && availableKeys.length === 1 && Math.abs(pdcIdMap.get(availableKeys[0])?.amount - pAmt) < 0.01) {
             matchedKey = availableKeys[0];
           }
         }
@@ -665,8 +663,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             cheque_date: existing.cheque_date || pDate || "",
             status: mergedStatus,
           });
-        } else {
-          // fin_pdc_register row with no matching pdcs entry — add it with its own unique key
+        } else if (p.original_pdc_id == null) {
+          // fin_pdc_register standalone row with no matching pdcs entry (never add if it shadowed a pdcs row)
           const newKey = `freg-${p.id}`;
           if (!pdcIdMap.has(newKey)) {
             pdcIdMap.set(newKey, {

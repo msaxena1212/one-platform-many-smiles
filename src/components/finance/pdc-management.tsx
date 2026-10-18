@@ -550,9 +550,13 @@ export function PdcManagement() {
         return Math.abs(Math.round((t1 - t2) / 86400000));
       };
 
-      // Step 1: Index fin_pdc_register by cheque_number
+      // Step 1: Index fin_pdc_register by original_pdc_id and cheque_number
+      const finByOriginalId = new Map<number, any>();
       const finByCheque = new Map<string, any[]>();
       for (const f of rawFinRegister) {
+        if (f.original_pdc_id != null) {
+          finByOriginalId.set(Number(f.original_pdc_id), f);
+        }
         const chq = String(f.cheque_number || "").trim();
         if (!chq) continue;
         const list = finByCheque.get(chq) || [];
@@ -573,35 +577,31 @@ export function PdcManagement() {
         const chq = String(p.cheque_number || p.id || "").trim();
         const pDate = toYmd(p.maturity_date || p.deposit_date || p.created_at);
         const pAmt = Number(p.amount) || 0;
+        const sl = p.sl_no != null ? Number(p.sl_no) : null;
 
-        // Match with fin_pdc_register by cheque_number + amount + date
-        const candidates = (finByCheque.get(chq) || []).filter(c => !c._used);
+        // Deterministic matching: 1. Try original_pdc_id === p.sl_no first
         let matchedFin: any = null;
+        if (sl != null && finByOriginalId.has(sl)) {
+          const candidate = finByOriginalId.get(sl);
+          if (!candidate._used) {
+            matchedFin = candidate;
+          }
+        }
 
-        // 1. Exact amount + close date (within 2 days for timezone tolerance)
-        matchedFin = candidates.find(c => {
-          const cDate = toYmd(c.cheque_date || c.maturity_date);
-          return Math.abs(Number(c.amount) - pAmt) < 0.01 && daysDiff(cDate, pDate) <= 2;
-        }) || null;
-
-        // 2. If no match, try close date
+        // 2. Otherwise match with fin_pdc_register candidates by cheque_number + amount + date
         if (!matchedFin) {
+          const candidates = (finByCheque.get(chq) || []).filter(c => !c._used);
+
+          // 2a. Exact amount + close date (within 2 days for timezone tolerance)
           matchedFin = candidates.find(c => {
             const cDate = toYmd(c.cheque_date || c.maturity_date);
-            return daysDiff(cDate, pDate) <= 2;
+            return Math.abs(Number(c.amount) - pAmt) < 0.01 && daysDiff(cDate, pDate) <= 2;
           }) || null;
-        }
 
-        // 3. If no match, try exact amount
-        if (!matchedFin) {
-          matchedFin = candidates.find(c => {
-            return Math.abs(Number(c.amount) - pAmt) < 0.01;
-          }) || null;
-        }
-
-        // 4. If only 1 candidate remains, match it
-        if (!matchedFin && candidates.length === 1) {
-          matchedFin = candidates[0];
+          // 2b. If only 1 candidate remains and amounts match, match it
+          if (!matchedFin && candidates.length === 1 && Math.abs(Number(candidates[0].amount) - pAmt) < 0.01) {
+            matchedFin = candidates[0];
+          }
         }
 
         if (matchedFin) {
@@ -653,6 +653,7 @@ export function PdcManagement() {
       for (const fList of finByCheque.values()) {
         for (const f of fList) {
           if (f._used) continue;
+          if (f.original_pdc_id != null) continue; // Never duplicate rows shadowed from pdcs table
           const rowKey = `fin-${f.id}`;
           if (!dbDataMap.has(rowKey)) {
             const fDate = toYmd(f.cheque_date || f.maturity_date) || "2026-08-01";

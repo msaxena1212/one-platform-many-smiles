@@ -580,46 +580,76 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       const mappedLeases: PmsLease[] = [...existingLeases, ...unitContracts];
 
-      // Build lookup from pdcs table by compound key (unit||cheque) and cheque number
-      const pdcsLookup = new Map<string, any>();
-      (altPdcsRes.data || []).forEach((p: any) => {
-        const u = (p.unit_name || p.unit_ref || "").trim();
-        const c = String(p.cheque_number || p.id).trim();
-        if (c) {
-          if (u) pdcsLookup.set(`${u}||${c}`, p);
-          if (!pdcsLookup.has(c)) pdcsLookup.set(c, p);
+      // Step A: Primary dataset is pdcs table (authoritative for property, unit, tenant, date, amount)
+      // Index fin_pdc_register by original_pdc_id and by cheque_number
+      const finByOriginalId = new Map<number, any>();
+      const finByChequeContext = new Map<string, any[]>();
+      (pdcsRes.data || []).forEach((f: any) => {
+        if (f.original_pdc_id != null) {
+          finByOriginalId.set(Number(f.original_pdc_id), f);
+        }
+        const chq = String(f.cheque_number || "").trim();
+        if (chq) {
+          const list = finByChequeContext.get(chq) || [];
+          list.push(f);
+          finByChequeContext.set(chq, list);
         }
       });
 
-      // Combine PDCs preserving ALL unique records by row ID
+      const usedFinIds = new Set<string>();
       const allRawPdcs: any[] = [];
-      const seenPdcIds = new Set<string>();
 
-      (pdcsRes.data || []).forEach((p: any) => {
-        const id = `fin-${p.id}`;
-        if (!seenPdcIds.has(id)) {
-          seenPdcIds.add(id);
-          const chq = String(p.cheque_number || "").trim();
-          const u = (p.unit_name || p.unit_ref || "").trim();
-          const matched = (u && chq ? pdcsLookup.get(`${u}||${chq}`) : null) || (chq ? pdcsLookup.get(chq) : null);
-
-          allRawPdcs.push({
-            ...p,
-            id: String(p.id),
-            property_name: matched?.property_name || matched?.property_code || p.property_name || p.property_code || "",
-            unit_name: matched?.unit_name || matched?.unit_ref || p.unit_name || p.unit_ref || "",
-            tenant_name: matched?.tenant_name || matched?.drawer_name || p.tenant_name || p.drawer_name || "",
-            bank: matched?.bank || p.bank || p.bank_name || "QNB",
-          });
+      (altPdcsRes.data || []).forEach((p: any) => {
+        const sl = p.sl_no != null ? Number(p.sl_no) : null;
+        let matchedFin: any = null;
+        if (sl != null && finByOriginalId.has(sl)) {
+          matchedFin = finByOriginalId.get(sl);
+        } else {
+          const chq = String(p.cheque_number || p.id || "").trim();
+          const pAmt = Number(p.amount) || 0;
+          const pDate = (p.maturity_date || p.cheque_date || "").split("T")[0];
+          const candidates = (finByChequeContext.get(chq) || []).filter(c => !usedFinIds.has(String(c.id)));
+          matchedFin = candidates.find(c => {
+            const cDate = (c.cheque_date || c.maturity_date || "").split("T")[0];
+            return Math.abs(Number(c.amount) - pAmt) < 0.01 && (!pDate || !cDate || cDate === pDate);
+          }) || candidates[0] || null;
         }
+
+        if (matchedFin) {
+          usedFinIds.add(String(matchedFin.id));
+        }
+
+        const rawFinStatus = (matchedFin?.status || "").toLowerCase().replace(/_/g, " ").trim();
+        const rawPdcStatus = (p.status || "").toLowerCase().replace(/_/g, " ").trim();
+        const isFinal = (s: string) => ["cleared", "returned", "bounced", "cancelled", "replaced", "partial cash"].includes(s);
+        let finalStatus = rawPdcStatus || rawFinStatus || "received";
+        if (isFinal(rawPdcStatus)) finalStatus = rawPdcStatus;
+        else if (isFinal(rawFinStatus)) finalStatus = rawFinStatus;
+        else if (rawPdcStatus === "deposited" || rawFinStatus === "deposited") finalStatus = "deposited";
+
+        allRawPdcs.push({
+          ...p,
+          id: String(p.id),
+          fin_id: matchedFin?.id,
+          property_name: p.property_code || p.property_name || "",
+          unit_name: p.unit_name || p.unit_ref || "",
+          tenant_name: p.tenant_name || p.drawer_name || "",
+          bank: p.bank || matchedFin?.bank_name || matchedFin?.bank || "QNB",
+          status: finalStatus,
+        });
       });
 
-      // Also add any pdcs table entries not covered
-      (altPdcsRes.data || []).forEach((p: any) => {
-        const chq = String(p.cheque_number || p.id).trim();
-        const covered = allRawPdcs.some(f => String(f.cheque_number || f.id).trim() === chq);
-        if (!covered) {
-          allRawPdcs.push(p);
+      // Also include any standalone fin_pdc_register rows created in finance (skip if shadowed from pdcs)
+      (pdcsRes.data || []).forEach((f: any) => {
+        if (!usedFinIds.has(String(f.id)) && f.original_pdc_id == null) {
+          allRawPdcs.push({
+            ...f,
+            id: `fin-${f.id}`,
+            property_name: f.property_name || f.property_code || "",
+            unit_name: f.unit_name || f.unit_ref || "",
+            tenant_name: f.tenant_name || "",
+            bank: f.bank_name || f.bank || "QNB",
+          });
         }
       });
 
