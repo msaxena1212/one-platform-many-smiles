@@ -36,6 +36,7 @@ import {
   depositPdc,
   clearPdc,
   returnPdc,
+  bouncePdc,
   cancelPdc,
   cashDepositInPlaceOfPdc,
   receivePdc,
@@ -871,7 +872,12 @@ export function PdcManagement() {
       } else if (action === "cancel") {
         await cancelPdc(id, String(chqNo), cancelReason || "Cancelled by Finance Officer");
       } else {
-        await returnPdc(id, String(chqNo));
+        const wasDepositedOrCleared = (pdc.status || "").toLowerCase() === "deposited" || (pdc.status || "").toLowerCase() === "cleared";
+        if (wasDepositedOrCleared) {
+          await bouncePdc(id, String(chqNo), cancelReason || "Cheque Dishonoured / Bounced by Bank");
+        } else {
+          await returnPdc(id, String(chqNo));
+        }
       }
 
       // 3. Immediately reflect in local FinanceStore vouchers so General Ledger updates without waiting for network/socket

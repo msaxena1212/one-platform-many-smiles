@@ -6591,23 +6591,101 @@ function RevenueGenerationSubModule() {
 }
 
 function ProfitAndLossSubModule() {
-  const { profitAndLossReport: pl, isSyncing, refreshFinanceData } = useFinanceStore();
+  const { profitAndLossReport: plOverall, allLedgerTransactions, isSyncing, refreshFinanceData } = useFinanceStore();
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("all");
+
+  const periodOptions = useMemo(() => {
+    const set = new Set<string>();
+    allLedgerTransactions.forEach(tx => {
+      if (tx.date && tx.date.length >= 7) {
+        set.add(tx.date.slice(0, 7));
+      }
+    });
+    set.add("2026-10");
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [allLedgerTransactions]);
+
+  const pl = useMemo(() => {
+    if (selectedPeriod === "all") return plOverall;
+    let rentalRevenue = 0;
+    let otherRevenue = 0;
+    let maintenanceExpense = 0;
+    let payrollExpense = 0;
+    let utilitiesExpense = 0;
+    let cleaningExpense = 0;
+    let totalRevenue = 0;
+    let totalExpenses = 0;
+
+    allLedgerTransactions.forEach(tx => {
+      if (!tx.date || !tx.date.startsWith(selectedPeriod)) return;
+      if (tx.account_type === "Revenue") {
+        const netRev = (tx.credit || 0) - (tx.debit || 0);
+        totalRevenue += netRev;
+        if (tx.account_code.startsWith("411")) rentalRevenue += netRev;
+        else otherRevenue += netRev;
+      } else if (tx.account_type === "Expenses") {
+        const netExp = (tx.debit || 0) - (tx.credit || 0);
+        totalExpenses += netExp;
+        if (tx.account_code.startsWith("51101")) payrollExpense += netExp;
+        else if (tx.account_code.startsWith("51003")) utilitiesExpense += netExp;
+        else if (
+          tx.account_code === "51004007" ||
+          tx.account_code === "51001002" ||
+          tx.account_code === "51002002"
+        ) cleaningExpense += netExp;
+        else maintenanceExpense += netExp;
+      }
+    });
+
+    const netProfit = totalRevenue - totalExpenses;
+    return {
+      rentalRevenue,
+      otherRevenue,
+      totalRevenue,
+      maintenanceExpense,
+      payrollExpense,
+      utilitiesExpense,
+      cleaningExpense,
+      totalExpenses,
+      netProfit,
+    };
+  }, [selectedPeriod, plOverall, allLedgerTransactions]);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L) — Live</h3>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={refreshFinanceData}
-          disabled={isSyncing}
-          className="h-7 text-xs gap-1.5"
-          title="Refresh P&L Report from DB"
-        >
-          <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
-          {isSyncing ? "Syncing..." : "Refresh"}
-        </Button>
+      <div className="flex justify-between items-center gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L) — Live</h3>
+          <p className="text-xs text-muted-foreground">
+            {selectedPeriod === "all" ? "Consolidated financial performance across all periods" : `Performance report for month: ${selectedPeriod === "2026-10" ? "Oct-26 (October 2026)" : selectedPeriod}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+            <SelectTrigger className="h-7 text-xs w-[180px]">
+              <SelectValue placeholder="Select Period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Periods (Consolidated)</SelectItem>
+              {periodOptions.map((period) => (
+                <SelectItem key={period} value={period}>
+                  {period === "2026-10" ? "Oct-26 (October 2026)" : period}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refreshFinanceData}
+            disabled={isSyncing}
+            className="h-7 text-xs gap-1.5"
+            title="Refresh P&L Report from DB"
+          >
+            <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
+            {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
+        </div>
       </div>
       <Card className="p-5 space-y-3 text-xs shadow-sm bg-card">
         <div className="flex justify-between items-center font-bold text-sm border-b pb-2">

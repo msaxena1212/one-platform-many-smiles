@@ -76,15 +76,15 @@ export async function executeMonthEndRevenueRecognition(
         source_type: "REVENUE_RECOGNITION",
         lines: [
           {
-            account_code: "1200",
-            account_name: "Deferred Rental Revenue / Receivable",
+            account_code: "12413",
+            account_name: "Tenant Receivables",
             debit: totalEarned,
             credit: 0,
             description: `Accrual realization for ${closingMonth}`,
           },
           {
-            account_code: "4000",
-            account_name: "Rental Revenue - Operational",
+            account_code: "41100001",
+            account_name: "Rental Revenue",
             debit: 0,
             credit: totalEarned,
             description: `Rental Revenue recognized for ${closingMonth}`,
