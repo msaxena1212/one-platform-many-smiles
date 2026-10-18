@@ -59,7 +59,7 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
     try {
       const { data: finRow } = await supabase
         .from('fin_pdc_register')
-        .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status, cheque_date')
+        .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status, cheque_date, original_pdc_id')
         .eq('id', Number(pdcId))
         .maybeSingle();
 
@@ -77,6 +77,7 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
           status: finRow.status,
           maturity_date: finRow.cheque_date,
           finId: Number(pdcId),
+          sl_no: finRow.original_pdc_id != null ? Number(finRow.original_pdc_id) : undefined,
         };
       }
     } catch {
@@ -88,7 +89,7 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
   try {
     const { data: pdc } = await supabase
       .from('pdcs')
-      .select('id, amount, unit_name, cheque_number, status, status_pdc, maturity_date, property_code, tenant_name')
+      .select('id, sl_no, amount, unit_name, cheque_number, status, status_pdc, maturity_date, property_code, tenant_name')
       .eq('id', String(pdcId))
       .maybeSingle();
 
@@ -105,6 +106,7 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
         status:        pdc.status_pdc || pdc.status || 'In Hand',
         maturity_date: pdc.maturity_date,
         pdcId:         pdc.id,
+        sl_no:         pdc.sl_no != null ? Number(pdc.sl_no) : undefined,
       };
     }
   } catch {
@@ -197,6 +199,32 @@ export async function receivePdc(payload: {
  *   Entry A: Dr 12000001 Bank / Cr 12900001 PDC In Hand
  *   Entry B: Dr 21400[unit SL] PDC Received / Cr 12413[unit SL] Tenant Receivable
  */
+/** Helper to deterministically sync status updates to fin_pdc_register without cross-tenant collisions */
+async function syncFinPdcRegister(ctx: any, updates: Record<string, any>) {
+  try {
+    if (ctx?.sl_no != null) {
+      await supabase
+        .from('fin_pdc_register')
+        .update(updates)
+        .eq('original_pdc_id', ctx.sl_no);
+      return;
+    }
+    if (ctx?.cheque_number && ctx?.amount) {
+      let q = supabase
+        .from('fin_pdc_register')
+        .update(updates)
+        .eq('cheque_number', ctx.cheque_number)
+        .eq('amount', ctx.amount);
+      if (ctx.maturity_date) {
+        q = q.eq('cheque_date', ctx.maturity_date);
+      }
+      await q;
+    }
+  } catch (err: any) {
+    console.warn('[pdcService] fin_pdc_register sync notice:', err?.message || err);
+  }
+}
+
 export interface DepositPdcOptions {
   bankAccountId?: string;
   bankAccountName?: string;
@@ -270,11 +298,9 @@ export async function depositPdc(
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[depositPdc] legacy pdcs id sync warning:', legacyError.message);
 
-  // If pdcId is UUID, also update matching row in fin_pdc_register by specific date/amount
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    let q = supabase.from('fin_pdc_register').update(finUpdate).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-    if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-    await q.limit(1).catch(() => {});
+  // If pdcId is UUID, also update matching row in fin_pdc_register
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, finUpdate);
   }
 }
 
@@ -324,7 +350,9 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   if (!isNaN(Number(pdcId))) {
     // Set session variable so the guard trigger (trg_fin_guard_pdc_auto_clear) allows
     // this MANUAL clear to proceed. Without this, the trigger silently reverts the status.
-    await supabase.rpc('set_config', { setting: 'app.pdc_manual_clear', value: 'true', is_local: true }).maybeSingle().catch(() => {});
+    try {
+      await supabase.rpc('set_config', { setting: 'app.pdc_manual_clear', value: 'true', is_local: true });
+    } catch { /* continue */ }
 
     const { error: finError } = await supabase
       .from('fin_pdc_register')
@@ -340,11 +368,9 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[clearPdc] legacy pdcs id sync warning:', legacyError.message);
 
-  // If pdcId is UUID, also update matching row in fin_pdc_register by specific date/amount
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    let q = supabase.from('fin_pdc_register').update({ status: 'Cleared', cleared_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-    if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-    await q.limit(1).catch(() => {});
+  // If pdcId is UUID, also update matching row in fin_pdc_register
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Cleared', cleared_date: today });
   }
 }
 
@@ -430,12 +456,8 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    try {
-      let q = supabase.from('fin_pdc_register').update({ status: 'Returned', returned_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-      await q.limit(1);
-    } catch { /* continue */ }
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Returned', returned_date: today });
   }
 }
 
@@ -595,12 +617,8 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    try {
-      let q = supabase.from('fin_pdc_register').update({ status: 'Bounced', returned_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-      await q.limit(1);
-    } catch { /* continue */ }
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Bounced', returned_date: today });
   }
 }
 
@@ -709,12 +727,8 @@ export async function cashDepositInPlaceOfPdc(
     .eq('id', String(pdcId));
   if (idErr) console.warn('[cashDepositInPlaceOfPdc] pdcs id update warning:', idErr.message);
 
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    try {
-      let q = supabase.from('fin_pdc_register').update({ status: 'Replaced', deposit_date: dateStr }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-      await q.limit(1);
-    } catch { /* continue */ }
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Replaced', deposit_date: dateStr });
   }
 }
 
@@ -786,12 +800,8 @@ export async function cancelPdc(
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
-  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
-    try {
-      let q = supabase.from('fin_pdc_register').update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
-      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
-      await q.limit(1);
-    } catch { /* continue */ }
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null });
   }
 
   // ── GL posting ───────────────────────────────────────────────────────────
