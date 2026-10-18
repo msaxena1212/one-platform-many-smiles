@@ -52,50 +52,44 @@ export class PdcStateError extends Error {
 
 /** Fetch amount, tenant_id, property_id, unit_id for a PDC row from any source */
 async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
-  // Try fin_pdc_register first (has normalized IDs)
-  try {
-    const filter = chequeNo
-      ? isNaN(Number(pdcId))
-        ? `cheque_number.eq.${chequeNo}`
-        : `id.eq.${pdcId},cheque_number.eq.${chequeNo}`
-      : isNaN(Number(pdcId))
-        ? `cheque_number.eq.${pdcId}`
-        : `id.eq.${pdcId}`;
+  const isNumericId = !isNaN(Number(pdcId)) && typeof pdcId !== "object";
 
-    const { data: finRow } = await supabase
-      .from('fin_pdc_register')
-      .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status')
-      .or(filter)
-      .maybeSingle();
+  // If numeric ID, try fin_pdc_register first
+  if (isNumericId) {
+    try {
+      const { data: finRow } = await supabase
+        .from('fin_pdc_register')
+        .select('amount, tenant_id, property_id, unit_id, cheque_number, pdc_type, status, cheque_date')
+        .eq('id', Number(pdcId))
+        .maybeSingle();
 
-    if (finRow && Number(finRow.amount) > 0) {
-      const rawChq = finRow.cheque_number || String(chequeNo ?? pdcId);
-      const derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
-      return {
-        amount:      Number(finRow.amount),
-        tenant_id:   finRow.tenant_id   ? String(finRow.tenant_id)   : '00000000-0000-0000-0000-000000000003',
-        property_id: finRow.property_id ? String(finRow.property_id) : '00000000-0000-0000-0000-000000000001',
-        unit_id:     finRow.unit_id     ? String(finRow.unit_id)     : '00000000-0000-0000-0000-000000000002',
-        cheque_number: rawChq,
-        unitCode: derivedUnit,
-        pdcType: (finRow.pdc_type as PdcType | null) ?? 'RENT_PDC',
-        status: finRow.status,
-      };
+      if (finRow && Number(finRow.amount) > 0) {
+        const rawChq = finRow.cheque_number || String(chequeNo ?? pdcId);
+        const derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
+        return {
+          amount:      Number(finRow.amount),
+          tenant_id:   finRow.tenant_id   ? String(finRow.tenant_id)   : '00000000-0000-0000-0000-000000000003',
+          property_id: finRow.property_id ? String(finRow.property_id) : '00000000-0000-0000-0000-000000000001',
+          unit_id:     finRow.unit_id     ? String(finRow.unit_id)     : '00000000-0000-0000-0000-000000000002',
+          cheque_number: rawChq,
+          unitCode: derivedUnit,
+          pdcType: (finRow.pdc_type as PdcType | null) ?? 'RENT_PDC',
+          status: finRow.status,
+          maturity_date: finRow.cheque_date,
+          finId: Number(pdcId),
+        };
+      }
+    } catch {
+      // fallback
     }
-  } catch (e) {
-    // fallback
   }
 
-  // Fallback: try pdcs table
+  // If UUID or string ID, query pdcs table directly by id
   try {
     const { data: pdc } = await supabase
       .from('pdcs')
-      .select('amount, unit_name, cheque_number, status, status_pdc')
-      .or(
-        chequeNo
-          ? `id.eq.${String(pdcId)},cheque_number.eq.${chequeNo}`
-          : `id.eq.${String(pdcId)},cheque_number.eq.${String(pdcId)}`,
-      )
+      .select('id, amount, unit_name, cheque_number, status, status_pdc, maturity_date, property_code, tenant_name')
+      .eq('id', String(pdcId))
       .maybeSingle();
 
     if (pdc && Number(pdc.amount) > 0) {
@@ -109,9 +103,11 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
         unitCode:      derivedUnit,
         pdcType:       'RENT_PDC' as PdcType,
         status:        pdc.status_pdc || pdc.status || 'In Hand',
+        maturity_date: pdc.maturity_date,
+        pdcId:         pdc.id,
       };
     }
-  } catch (e) {
+  } catch {
     // fallback
   }
 
@@ -267,19 +263,19 @@ export async function depositPdc(
   if (options?.bankAccountName) legacyUpdate.bank_account = options.bankAccountName;
   if (options?.depositSlipNo) legacyUpdate.deposit_slip_no = options.depositSlipNo;
 
-  if (chequeNo) {
-    const { error } = await supabase
-      .from('pdcs')
-      .update(legacyUpdate)
-      .eq('cheque_number', chequeNo);
-    if (error) console.warn('[depositPdc] legacy pdcs sync warning:', error.message);
-  }
-
+  // Update target PDC strictly by ID (never mass-update by cheque_number)
   const { error: legacyError } = await supabase
     .from('pdcs')
     .update(legacyUpdate)
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[depositPdc] legacy pdcs id sync warning:', legacyError.message);
+
+  // If pdcId is UUID, also update matching row in fin_pdc_register by specific date/amount
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    let q = supabase.from('fin_pdc_register').update(finUpdate).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+    if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+    await q.limit(1).catch(() => {});
+  }
 }
 
 /**
@@ -316,9 +312,6 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
     if (!isNaN(Number(pdcId))) {
       await supabase.from('fin_pdc_register').update({ status: 'Deposited', deposit_date: today }).eq('id', Number(pdcId));
     }
-    if (chequeNo) {
-      await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('cheque_number', chequeNo);
-    }
     await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', String(pdcId));
   }
 
@@ -340,19 +333,19 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
     if (finError) console.warn('[clearPdc] fin_pdc_register id update warning:', finError.message);
   }
 
-  if (chequeNo) {
-    const { error } = await supabase
-      .from('pdcs')
-      .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
-      .eq('cheque_number', chequeNo);
-    if (error) console.warn('[clearPdc] legacy pdcs sync warning:', error.message);
-  }
-
+  // Update target PDC strictly by ID
   const { error: legacyError } = await supabase
     .from('pdcs')
     .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[clearPdc] legacy pdcs id sync warning:', legacyError.message);
+
+  // If pdcId is UUID, also update matching row in fin_pdc_register by specific date/amount
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    let q = supabase.from('fin_pdc_register').update({ status: 'Cleared', cleared_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+    if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+    await q.limit(1).catch(() => {});
+  }
 }
 
 /**
@@ -420,7 +413,7 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
     );
   }
 
-  // 3. Update status to Returned (NOT bounced)
+  // 3. Update status to Returned (NOT bounced) strictly for target PDC
   if (!isNaN(Number(pdcId))) {
     try {
       await supabase
@@ -430,28 +423,20 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
     } catch { /* continue */ }
   }
 
-  if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Returned', returned_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: 'returned', status_pdc: 'returned', returned_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-  }
-
   try {
     await supabase
       .from('pdcs')
       .update({ status: 'returned', status_pdc: 'returned', returned_date: today })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
+
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    try {
+      let q = supabase.from('fin_pdc_register').update({ status: 'Returned', returned_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+      await q.limit(1);
+    } catch { /* continue */ }
+  }
 }
 
 /**
@@ -593,7 +578,7 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
     }
   }
 
-  // Update status to Bounced
+  // Update target PDC strictly by ID
   if (!isNaN(Number(pdcId))) {
     try {
       await supabase
@@ -603,28 +588,20 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
     } catch { /* continue */ }
   }
 
-  if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Bounced', returned_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: 'bounced', status_pdc: 'bounced', returned_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-  }
-
   try {
     await supabase
       .from('pdcs')
       .update({ status: 'bounced', status_pdc: 'bounced', returned_date: today })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
+
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    try {
+      let q = supabase.from('fin_pdc_register').update({ status: 'Bounced', returned_date: today }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+      await q.limit(1);
+    } catch { /* continue */ }
+  }
 }
 
 /**
@@ -717,7 +694,7 @@ export async function cashDepositInPlaceOfPdc(
     });
   }
 
-  // 3. Update registers
+  // 3. Update registers strictly for target PDC
   if (!isNaN(Number(pdcId))) {
     const { error } = await supabase
       .from('fin_pdc_register')
@@ -726,25 +703,19 @@ export async function cashDepositInPlaceOfPdc(
     if (error) console.warn('[cashDepositInPlaceOfPdc] fin_pdc_register update warning:', error.message);
   }
 
-  if (chequeNo) {
-    const { error: finErr } = await supabase
-      .from('fin_pdc_register')
-      .update({ status: 'Replaced', deposit_date: dateStr })
-      .eq('cheque_number', chequeNo);
-    if (finErr) console.warn('[cashDepositInPlaceOfPdc] fin_pdc_register cheque update warning:', finErr.message);
-
-    const { error: pdcErr } = await supabase
-      .from('pdcs')
-      .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
-      .eq('cheque_number', chequeNo);
-    if (pdcErr) console.warn('[cashDepositInPlaceOfPdc] pdcs cheque update warning:', pdcErr.message);
-  }
-
   const { error: idErr } = await supabase
     .from('pdcs')
     .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
     .eq('id', String(pdcId));
   if (idErr) console.warn('[cashDepositInPlaceOfPdc] pdcs id update warning:', idErr.message);
+
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    try {
+      let q = supabase.from('fin_pdc_register').update({ status: 'Replaced', deposit_date: dateStr }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+      await q.limit(1);
+    } catch { /* continue */ }
+  }
 }
 
 /**
@@ -807,30 +778,21 @@ export async function cancelPdc(
     } catch { /* continue */ }
   }
 
-  // 2. Update fin_pdc_register and pdcs by cheque_number
-  if (chequeNo) {
-    try {
-      await supabase
-        .from('fin_pdc_register')
-        .update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-
-    try {
-      await supabase
-        .from('pdcs')
-        .update({ status: 'cancelled', status_pdc: 'cancelled', cancelled_date: today })
-        .eq('cheque_number', chequeNo);
-    } catch { /* continue */ }
-  }
-
-  // 3. Update pdcs by id (UUID or string)
+  // 2. Update pdcs strictly by id (UUID or string)
   try {
     await supabase
       .from('pdcs')
       .update({ status: 'cancelled', status_pdc: 'cancelled', cancelled_date: today })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
+
+  if (isNaN(Number(pdcId)) && ctx.cheque_number && ctx.amount) {
+    try {
+      let q = supabase.from('fin_pdc_register').update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null }).eq('cheque_number', ctx.cheque_number).eq('amount', ctx.amount);
+      if (ctx.maturity_date) q = q.eq('cheque_date', ctx.maturity_date);
+      await q.limit(1);
+    } catch { /* continue */ }
+  }
 
   // ── GL posting ───────────────────────────────────────────────────────────
   try {

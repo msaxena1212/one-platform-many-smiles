@@ -531,21 +531,33 @@ export function PdcManagement() {
         return "In Hand";
       };
 
-      // Step 1: Index pdcs table by compound key (unit_name||cheque_number) and by cheque_number
-      const pdcsByCompound = new Map<string, any>();
-      const pdcsByCheque = new Map<string, any[]>();
+      // Helper to normalize date strings to YYYY-MM-DD
+      const toYmd = (val: any): string => {
+        if (!val) return "";
+        if (typeof val === "string") return val.split("T")[0];
+        try {
+          return new Date(val).toISOString().split("T")[0];
+        } catch {
+          return "";
+        }
+      };
 
-      for (const p of rawPdcsTable) {
-        const u = (p.unit_name || p.unit_ref || "").trim();
-        const chq = String(p.cheque_number || p.id || "").trim();
-        if (u && chq) {
-          pdcsByCompound.set(`${u}||${chq}`, p);
-        }
-        if (chq) {
-          const list = pdcsByCheque.get(chq) || [];
-          list.push(p);
-          pdcsByCheque.set(chq, list);
-        }
+      const daysDiff = (d1: string, d2: string): number => {
+        if (!d1 || !d2) return 9999;
+        const t1 = new Date(d1).getTime();
+        const t2 = new Date(d2).getTime();
+        if (isNaN(t1) || isNaN(t2)) return 9999;
+        return Math.abs(Math.round((t1 - t2) / 86400000));
+      };
+
+      // Step 1: Index fin_pdc_register by cheque_number
+      const finByCheque = new Map<string, any[]>();
+      for (const f of rawFinRegister) {
+        const chq = String(f.cheque_number || "").trim();
+        if (!chq) continue;
+        const list = finByCheque.get(chq) || [];
+        list.push({ ...f, _used: false });
+        finByCheque.set(chq, list);
       }
 
       // Step 2: Index units table by unit_ref/name for fallback tenant & property resolution
@@ -554,33 +566,52 @@ export function PdcManagement() {
         if (u.unit) unitsMap.set(u.unit.toLowerCase().trim(), u);
       });
 
-      // Step 3: Build merged dataset keeping EVERY fin_pdc_register row unique by row id
+      // Step 3: Primary dataset is pdcs table (authoritative for property, unit, tenant, date, amount)
       const dbDataMap = new Map<string, any>();
-      const coveredPdcIds = new Set<string>();
 
-      for (const f of rawFinRegister) {
-        const chq = String(f.cheque_number || f.id || "").trim();
-        const finUnit = (f.unit_name || f.unit_ref || "").trim();
-        
-        // Match with pdcs table
-        let matchedPdc: any = null;
-        if (finUnit && chq && pdcsByCompound.has(`${finUnit}||${chq}`)) {
-          matchedPdc = pdcsByCompound.get(`${finUnit}||${chq}`);
-        } else if (chq && pdcsByCheque.has(chq)) {
-          const candidates = pdcsByCheque.get(chq)!;
-          // If multiple, try to find one with matching amount or return first candidate
-          matchedPdc = candidates.find(c => Number(c.amount) === Number(f.amount)) || candidates[0];
+      for (const p of rawPdcsTable) {
+        const chq = String(p.cheque_number || p.id || "").trim();
+        const pDate = toYmd(p.maturity_date || p.deposit_date || p.created_at);
+        const pAmt = Number(p.amount) || 0;
+
+        // Match with fin_pdc_register by cheque_number + amount + date
+        const candidates = (finByCheque.get(chq) || []).filter(c => !c._used);
+        let matchedFin: any = null;
+
+        // 1. Exact amount + close date (within 2 days for timezone tolerance)
+        matchedFin = candidates.find(c => {
+          const cDate = toYmd(c.cheque_date || c.maturity_date);
+          return Math.abs(Number(c.amount) - pAmt) < 0.01 && daysDiff(cDate, pDate) <= 2;
+        }) || null;
+
+        // 2. If no match, try close date
+        if (!matchedFin) {
+          matchedFin = candidates.find(c => {
+            const cDate = toYmd(c.cheque_date || c.maturity_date);
+            return daysDiff(cDate, pDate) <= 2;
+          }) || null;
         }
 
-        if (matchedPdc?.id) {
-          coveredPdcIds.add(String(matchedPdc.id));
+        // 3. If no match, try exact amount
+        if (!matchedFin) {
+          matchedFin = candidates.find(c => {
+            return Math.abs(Number(c.amount) - pAmt) < 0.01;
+          }) || null;
         }
 
-        const propName = (f.property_name || f.property_code || matchedPdc?.property_code || matchedPdc?.property_name || "").trim();
-        const unitName = (finUnit || matchedPdc?.unit_name || matchedPdc?.unit_ref || "").trim();
-        let tenantName = (f.tenant_name || matchedPdc?.tenant_name || matchedPdc?.drawer_name || "").trim();
+        // 4. If only 1 candidate remains, match it
+        if (!matchedFin && candidates.length === 1) {
+          matchedFin = candidates[0];
+        }
 
-        // If tenant name still missing, check units table
+        if (matchedFin) {
+          matchedFin._used = true;
+        }
+
+        const propName = (p.property_code || p.property_name || "").trim();
+        const unitName = (p.unit_name || p.unit_ref || "").trim();
+        let tenantName = (p.tenant_name || p.drawer_name || "").trim();
+
         if ((!tenantName || tenantName === "—" || tenantName.toLowerCase() === "tenant") && unitName) {
           const unitMatch = unitsMap.get(unitName.toLowerCase());
           if (unitMatch?.currentTenant) {
@@ -588,57 +619,62 @@ export function PdcManagement() {
           }
         }
 
-        // Determine terminal status priority
-        const fStatus = normalizeStatus(f.status);
-        const pStatus = matchedPdc ? normalizeStatus(matchedPdc.status || matchedPdc.status_pdc) : "In Hand";
+        const pStatus = normalizeStatus(p.status || p.status_pdc);
+        const fStatus = matchedFin ? normalizeStatus(matchedFin.status) : "In Hand";
         const isFinalStatus = (s: string) => ["Cleared", "Returned", "Replaced", "Cancelled", "Partial Cash"].includes(s);
-        let finalStatus = fStatus;
-        if (isFinalStatus(pStatus)) finalStatus = pStatus;
-        else if (isFinalStatus(fStatus)) finalStatus = fStatus;
-        else if (pStatus === "Deposited" || fStatus === "Deposited") finalStatus = "Deposited";
+        let finalStatus = pStatus;
+        if (isFinalStatus(fStatus)) finalStatus = fStatus;
+        else if (isFinalStatus(pStatus)) finalStatus = pStatus;
+        else if (fStatus === "Deposited" || pStatus === "Deposited") finalStatus = "Deposited";
 
-        const rowKey = `fin-${f.id}`;
+        const rowKey = String(p.id);
         dbDataMap.set(rowKey, {
-          id: f.id,
-          entry_date: f.created_at ? f.created_at.split("T")[0] : matchedPdc?.created_at?.split("T")[0] || "2026-08-01",
-          cheque_date: f.cheque_date || f.maturity_date || matchedPdc?.maturity_date || "2026-08-01",
-          cheque_number: f.cheque_number || chq,
-          amount: Number(f.amount) || Number(matchedPdc?.amount) || 0,
-          paid_amount: f.paid_amount != null ? Number(f.paid_amount) : (matchedPdc?.paid_amount != null ? Number(matchedPdc.paid_amount) : undefined),
+          id: p.id,
+          fin_id: matchedFin?.id,
+          entry_date: p.created_at ? toYmd(p.created_at) : (matchedFin?.created_at ? toYmd(matchedFin.created_at) : "2026-08-01"),
+          cheque_date: pDate || toYmd(matchedFin?.cheque_date) || "2026-08-01",
+          cheque_number: p.cheque_number || chq,
+          amount: pAmt || Number(matchedFin?.amount) || 0,
+          paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : (matchedFin?.paid_amount != null ? Number(matchedFin.paid_amount) : undefined),
           status: finalStatus,
-          bank_name: f.bank_name || f.bank || matchedPdc?.bank || "Qatar National Bank (QNB)",
+          bank_name: p.bank || matchedFin?.bank_name || "Qatar National Bank (QNB)",
           property_name: propName || "—",
           unit_ref: unitName || "—",
-          tenant_name: tenantName && tenantName !== "Tenant" ? tenantName : (matchedPdc?.tenant_name || "—"),
-          lease_start: matchedPdc?.rent_from_date || matchedPdc?.lease_start,
-          lease_end: matchedPdc?.rent_to_date || matchedPdc?.lease_end,
-          monthly_rent: Number(f.amount) || Number(matchedPdc?.amount) || 0,
-          _source: "fin_pdc_register",
+          tenant_name: tenantName && tenantName !== "Tenant" ? tenantName : "—",
+          lease_id: p.lease_id,
+          lease_start: p.rent_from_date || p.lease_start,
+          lease_end: p.rent_to_date || p.lease_end,
+          monthly_rent: pAmt || 0,
+          _source: "pdcs_table",
         });
       }
 
-      // Also add any pdcs table rows not covered in fin_pdc_register
-      for (const p of rawPdcsTable) {
-        if (coveredPdcIds.has(String(p.id))) continue;
-        const rowKey = `pdc-${p.id}`;
-        if (!dbDataMap.has(rowKey)) {
-          dbDataMap.set(rowKey, {
-            id: p.id,
-            entry_date: p.created_at ? p.created_at.split("T")[0] : "2026-08-01",
-            cheque_date: p.maturity_date || p.deposit_date || (p.created_at ? p.created_at.split("T")[0] : "2026-08-01"),
-            cheque_number: p.cheque_number || String(p.id),
-            amount: Number(p.amount) || 0,
-            paid_amount: (p as any).paid_amount != null ? Number((p as any).paid_amount) : undefined,
-            status: normalizeStatus(p.status || p.status_pdc),
-            bank_name: p.bank || "Qatar National Bank (QNB)",
-            property_name: p.property_code || p.property_name || "—",
-            unit_ref: p.unit_name || p.unit_ref || "—",
-            tenant_name: p.tenant_name || "—",
-            lease_start: p.rent_from_date || p.lease_start,
-            lease_end: p.rent_to_date || p.lease_end,
-            monthly_rent: Number(p.amount) || 0,
-            _source: "pdcs_table",
-          });
+      // Step 4: Add any unconsumed fin_pdc_register rows (standalone rows created in finance)
+      for (const fList of finByCheque.values()) {
+        for (const f of fList) {
+          if (f._used) continue;
+          const rowKey = `fin-${f.id}`;
+          if (!dbDataMap.has(rowKey)) {
+            const fDate = toYmd(f.cheque_date || f.maturity_date) || "2026-08-01";
+            dbDataMap.set(rowKey, {
+              id: f.id,
+              fin_id: f.id,
+              entry_date: f.created_at ? toYmd(f.created_at) : "2026-08-01",
+              cheque_date: fDate,
+              cheque_number: f.cheque_number || String(f.id),
+              amount: Number(f.amount) || 0,
+              paid_amount: f.paid_amount != null ? Number(f.paid_amount) : undefined,
+              status: normalizeStatus(f.status),
+              bank_name: f.bank_name || f.bank || "Qatar National Bank (QNB)",
+              property_name: f.property_name || f.property_code || "—",
+              unit_ref: f.unit_name || f.unit_ref || "—",
+              tenant_name: f.tenant_name || "—",
+              lease_start: f.lease_start,
+              lease_end: f.lease_end,
+              monthly_rent: Number(f.amount) || 0,
+              _source: "fin_pdc_register",
+            });
+          }
         }
       }
 
@@ -827,15 +863,15 @@ export function PdcManagement() {
     const todayStr = new Date().toISOString().split("T")[0];
     const config = getActionConfig(action, chqNo, pdc.tenant_name || "Tenant", amt);
 
-    // 1. Immediately update UI local state & shared context
+    // 1. Immediately update UI local state & shared context strictly for the target PDC
     setPdcs(prev => prev.map(p =>
-      (String(p.id) === String(id) || String(p.cheque_number) === String(chqNo))
+      (String(p.id) === String(id))
         ? { ...p, status: config.newStatus }
         : p
     ));
 
     setSharedPdcs(prev => prev.map(p =>
-      (String(p.id) === String(id) || String((p as any).chequeNo) === String(chqNo))
+      (String(p.id) === String(id))
         ? { ...p, status: config.newSharedStatus }
         : p
     ));
@@ -1062,15 +1098,15 @@ export function PdcManagement() {
       // 1. Persist to DB using cashDepositInPlaceOfPdc (posts double entry and cancels cheque custody)
       await cashDepositInPlaceOfPdc(pdc.id, String(chqNo), confirmedAmt, cashNotes, receiptDate, cashCollectorName);
 
-      // 2. Update local state and shared context after successful persistence
+      // 2. Update local state and shared context strictly for the target PDC
       setPdcs(prev => prev.map(p =>
-        (String(p.id) === String(pdc.id) || String(p.cheque_number) === String(chqNo))
+        (String(p.id) === String(pdc.id))
           ? { ...p, status: nextStatus, paid_amount: newPaidTotal }
           : p
       ));
 
       setSharedPdcs(prev => prev.map(p =>
-        (String(p.id) === String(pdc.id) || String((p as any).chequeNo) === String(chqNo))
+        (String(p.id) === String(pdc.id))
           ? { ...p, status: isFullyPaid ? "replaced" : "partial_cash" as any, paid_amount: newPaidTotal }
           : p
       ));

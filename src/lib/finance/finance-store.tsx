@@ -558,13 +558,33 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const finPdcRes = { data: finPdcRows2 };
       const pdcsTableRes = { data: pdcsRows2 };
 
+      // Helper to normalize date strings to YYYY-MM-DD
+      const toYmdFSD = (d: any) => {
+        if (!d) return "";
+        if (typeof d === "string") return d.split("T")[0];
+        try {
+          return new Date(d).toISOString().split("T")[0];
+        } catch {
+          return "";
+        }
+      };
+
+      const daysDiffFSD = (d1: string, d2: string): number => {
+        if (!d1 || !d2) return 9999;
+        const t1 = new Date(d1).getTime();
+        const t2 = new Date(d2).getTime();
+        if (isNaN(t1) || isNaN(t2)) return 9999;
+        return Math.abs(Math.round((t1 - t2) / (86400000)));
+      };
+
       // Step A: Build primary map from pdcs table keyed by row ID
       const pdcIdMap = new Map<string, any>();   // rowKey → merged row
-      const chqToKey = new Map<string, string>(); // cheque_number → rowKey
+      const pdcsByChq = new Map<string, string[]>(); // cheque_number → list of rowKeys
 
       for (const p of (pdcsTableRes.data || [])) {
         const rowKey  = String(p.id);
         const chqNo   = p.cheque_number ? String(p.cheque_number).trim() : null;
+        const cDate   = toYmdFSD(p.maturity_date || p.cheque_date || p.created_at);
 
         const row = {
           id:            p.id,
@@ -572,23 +592,64 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           property_name: p.property_code || p.property_name || "",
           unit_ref:      p.unit_name || p.unit_ref || "",
           tenant_name:   p.tenant_name || p.drawer_name || "",
-          cheque_date:   p.maturity_date || p.cheque_date || (p.created_at ? String(p.created_at).split("T")[0] : ""),
+          cheque_date:   cDate || "",
           amount:        Number(p.amount || 0),
           status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
         };
 
         pdcIdMap.set(rowKey, row);
-        if (chqNo) chqToKey.set(chqNo, rowKey);
+        if (chqNo) {
+          const list = pdcsByChq.get(chqNo) || [];
+          list.push(rowKey);
+          pdcsByChq.set(chqNo, list);
+        }
       }
 
       // Step B: Merge fin_pdc_register into the map (update status / date; never overwrite display fields)
+      const usedPdcKeys = new Set<string>();
+
       for (const p of (finPdcRes.data || [])) {
         const chqNo      = p.cheque_number ? String(p.cheque_number).trim() : null;
-        const existingKey = chqNo ? chqToKey.get(chqNo) : null;
+        const pDate      = toYmdFSD(p.cheque_date || p.maturity_date);
+        const pAmt       = Number(p.amount || 0);
 
-        if (existingKey && pdcIdMap.has(existingKey)) {
+        let matchedKey: string | null = null;
+        if (chqNo && pdcsByChq.has(chqNo)) {
+          const candidateKeys = pdcsByChq.get(chqNo)!;
+          const availableKeys = candidateKeys.filter(k => !usedPdcKeys.has(k));
+
+          // 1. Try exact amount + close date (within 2 days for timezone tolerance)
+          matchedKey = availableKeys.find(k => {
+            const row = pdcIdMap.get(k);
+            return Math.abs(row.amount - pAmt) < 0.01 && daysDiffFSD(row.cheque_date, pDate) <= 2;
+          }) || null;
+
+          // 2. Try close date match
+          if (!matchedKey) {
+            matchedKey = availableKeys.find(k => {
+              const row = pdcIdMap.get(k);
+              return daysDiffFSD(row.cheque_date, pDate) <= 2;
+            }) || null;
+          }
+
+          // 3. Try exact amount match
+          if (!matchedKey) {
+            matchedKey = availableKeys.find(k => {
+              const row = pdcIdMap.get(k);
+              return Math.abs(row.amount - pAmt) < 0.01;
+            }) || null;
+          }
+
+          // 4. If only 1 candidate available, match it
+          if (!matchedKey && availableKeys.length === 1) {
+            matchedKey = availableKeys[0];
+          }
+        }
+
+        if (matchedKey && pdcIdMap.has(matchedKey)) {
+          usedPdcKeys.add(matchedKey);
           // Update the existing pdcs row — take the more advanced status, keep pdcs display fields
-          const existing      = pdcIdMap.get(existingKey)!;
+          const existing      = pdcIdMap.get(matchedKey)!;
           const rawFinStatus  = (p.status || "").toLowerCase().replace(/_/g, " ").trim();
           const rawPdcStatus  = existing.status;
 
@@ -598,15 +659,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           else if (isFinal(rawFinStatus))                                      mergedStatus = rawFinStatus;
           else if (rawPdcStatus === "deposited" || rawFinStatus === "deposited") mergedStatus = "deposited";
 
-          pdcIdMap.set(existingKey, {
+          pdcIdMap.set(matchedKey, {
             ...existing,
             // Take cheque_date from fin_pdc_register if pdcs table had it empty
-            cheque_date: existing.cheque_date || p.cheque_date || p.maturity_date || "",
+            cheque_date: existing.cheque_date || pDate || "",
             status: mergedStatus,
           });
         } else {
           // fin_pdc_register row with no matching pdcs entry — add it with its own unique key
-          const newKey = chqNo ? `freg-${chqNo}` : `freg-${p.id}`;
+          const newKey = `freg-${p.id}`;
           if (!pdcIdMap.has(newKey)) {
             pdcIdMap.set(newKey, {
               id:            p.id,
@@ -614,11 +675,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               property_name: p.property_name || p.property_code || "",
               unit_ref:      p.unit_name || p.unit_ref || "",
               tenant_name:   p.tenant_name || p.drawer_name || "",
-              cheque_date:   p.cheque_date || p.maturity_date || "",
-              amount:        Number(p.amount || 0),
+              cheque_date:   pDate || "",
+              amount:        pAmt,
               status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
             });
-            if (chqNo) chqToKey.set(chqNo, newKey);
           }
         }
       }
