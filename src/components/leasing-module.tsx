@@ -11291,14 +11291,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                 <div>
-                  <Label className="text-xs font-medium">Cheque / Maturity Date <span className="text-rose-500">*</span></Label>
+                  <Label className="text-xs font-medium">Cheque Date <span className="text-rose-500">*</span></Label>
                   <Input
                     type="date"
                     className="h-8 text-xs mt-1"
                     value={editPdcForm.maturityDate}
                     onChange={(e) => setEditPdcForm(f => ({ ...f, maturityDate: e.target.value }))}
                   />
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Primary maturity / due date</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Date written on cheque</p>
                 </div>
 
                 <div>
@@ -11324,14 +11324,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-medium">Bank Deposit Date</Label>
+                  <Label className="text-xs font-medium">Cheque Maturity Date</Label>
                   <Input
                     type="date"
                     className="h-8 text-xs mt-1"
                     value={editPdcForm.depositDate}
                     onChange={(e) => setEditPdcForm(f => ({ ...f, depositDate: e.target.value }))}
                   />
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Date submitted to bank</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Primary maturity / bank clearing date</p>
                 </div>
 
                 <div>
@@ -11409,41 +11409,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </div>
             </div>
 
-            {/* Section 3: Property & Unit Mapping */}
-            <div className="rounded-lg border p-3.5 space-y-3 bg-card">
-              <div className="flex items-center gap-2 font-semibold text-xs text-primary border-b pb-2">
-                <Building2 className="h-4 w-4" />
-                <span>Property, Unit &amp; Tenant Mapping</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <Label className="text-xs font-medium">Property Code</Label>
-                  <Input
-                    className="h-8 text-xs mt-1"
-                    value={editPdcForm.propertyCode}
-                    onChange={(e) => setEditPdcForm(f => ({ ...f, propertyCode: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium">Unit Name</Label>
-                  <Input
-                    className="h-8 text-xs font-mono mt-1"
-                    value={editPdcForm.unitName}
-                    onChange={(e) => setEditPdcForm(f => ({ ...f, unitName: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium">Tenant Name</Label>
-                  <Input
-                    className="h-8 text-xs mt-1"
-                    value={editPdcForm.tenantName}
-                    onChange={(e) => setEditPdcForm(f => ({ ...f, tenantName: e.target.value }))}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Section 4: Re-upload PDC Cheque Scans */}
+            {/* Section 3: Re-upload PDC Cheque Scans */}
             <div className="rounded-lg border p-3.5 space-y-3 bg-card">
               <div className="flex items-center justify-between border-b pb-2">
                 <div className="flex items-center gap-2 font-semibold text-xs text-primary">
@@ -11637,7 +11603,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
           <DialogFooter className="pt-2 border-t flex flex-col sm:flex-row items-center justify-between gap-2">
             <span className="text-[11px] text-muted-foreground">
-              Saves to Supabase <code className="text-[10px] font-mono">pdcs</code>, updates GL vouchers &amp; finance stores.
+              Saves and updates GL vouchers &amp; finance stores.
             </span>
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <Button

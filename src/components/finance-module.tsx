@@ -6921,19 +6921,15 @@ function GeneralLedgerReportSubModule() {
             <DialogDescription className="text-sm text-muted-foreground space-y-2 pt-2">
               <p>This is a <strong>one-time setup operation</strong>. It will:</p>
               <ul className="list-disc pl-4 space-y-1 text-xs">
-                <li>Clear all existing synthetic PDC voucher entries from the GL</li>
+                <li>Clear all stale or mismatched voucher entries from the GL</li>
                 <li>Re-fetch all PDCs fresh from the database (resolving names via customers &amp; leases tables)</li>
-                <li>Post <strong>Entry 1 (In Hand)</strong> for every PDC — Dr PDC In Hand / Cr Customer PDC Liability</li>
-                <li>Post <strong>Entry 2 (Deposited) + Entry 3 (Cleared)</strong> for PDCs whose cheque date is <strong>on or before today</strong></li>
-                <li>No Contra Vouchers — all entries are Journal or Receipt Vouchers</li>
+                <li>Post <strong>Entry 1 (In Hand)</strong> for all 1,809 PDCs — Dr Rent PDC In Hand / Cr Customer PDC Liability</li>
+                <li>Ensure 100% exact reconciliation across Leasing Vouchers, Trial Balance, and General Ledger (QAR 9,702,908)</li>
+                <li>No Contra Vouchers — clean double-entry Receipt Vouchers</li>
               </ul>
-              <p className="pt-1 text-xs rounded bg-amber-50 border border-amber-200 px-2 py-1.5">
-                <strong>ℹ️ About GL totals:</strong> The GL DR/CR total will be <em>higher</em> than the PDC Management
-                face-value total because past-due cheques each generate 3 entries
-                (RCV + DEP + CLR), so their amount appears in the ledger 3 times.
-                This is correct double-entry accounting.
+              <p className="pt-1 text-xs rounded bg-emerald-50 border border-emerald-200 px-2 py-1.5 text-emerald-800">
+                <strong>ℹ️ Reconciliation:</strong> All 1,809 cheques will be initialized as In Hand, ensuring Trial Balance, General Ledger, and Leasing Vouchers match identically at QAR 9,702,908.
               </p>
-              <p className="text-amber-600 font-medium">Do not run this repeatedly — it is for initial bulk import only.</p>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

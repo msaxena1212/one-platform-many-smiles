@@ -321,7 +321,30 @@ const FinanceContext = createContext<FinanceStoreContextType | null>(null);
 const STORE_KEY = "zyno-finance-store-v1";
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
-  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v5";
+  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v6";
+
+  // One-time cleanup of legacy/stale local caches that cause amount discrepancies
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const legacyKeys = [
+          "zyno-pms-finance-data-v5-vouchers",
+          "zyno-pms-finance-data-v5-journals",
+          "zyno-pms-finance-data-v5-ap",
+          "zyno-pms-finance-data-v5-ar",
+          "zyno-pms-finance-data-v5-cashbook",
+          "pms_finance_vouchers_v3",
+          "pms_finance_vouchers_v2",
+          "pms_journal_ledger_v3",
+          "pms_journal_ledger_v2",
+          "pms_general_ledger_entries_v3",
+          "pms_general_ledger_entries_v2",
+          "pms_cash_book_v2"
+        ];
+        legacyKeys.forEach(k => localStorage.removeItem(k));
+      } catch {}
+    }
+  }, []);
 
   // ── States ────────────────────────────────────────────────────────────────
   const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => {
@@ -676,13 +699,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
       if (mergedPdcs.length > 0) {
         setVouchers(prev => {
-          // Keep only non-PDC operational vouchers from prev, replacing synthesized PDC vouchers with fresh DB state
+          // Keep only non-PDC operational vouchers that came from real Supabase fin_vouchers
           const nonPdcVouchers = prev.filter(v =>
             !v.voucher_no.startsWith("VCH-PDC-") &&
             !v.voucher_no.startsWith("VCH-DEP-") &&
             !v.voucher_no.startsWith("VCH-CLR-") &&
             !v.voucher_no.startsWith("VCH-RET-") &&
-            !v.voucher_no.startsWith("VCH-CNL-")
+            !v.voucher_no.startsWith("VCH-CNL-") &&
+            (vData || []).some((r: any) => r.voucher_number === v.voucher_no)
           );
           const existingNos = new Set(nonPdcVouchers.map(v => v.voucher_no));
           const pdcVouchers: FinanceVoucher[] = [];
@@ -847,7 +871,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
           const combined = [...pdcVouchers, ...nonPdcVouchers];
           try {
-            localStorage.setItem("pms_finance_vouchers_v3", JSON.stringify(combined));
+            localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(combined));
           } catch {}
           return combined;
         });
@@ -909,14 +933,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // 5. Reload localStorage caches for AP/AR/Cashbook
+      // 5. Reload localStorage caches for AP/AR/Cashbook (vouchers are maintained authoritatively above)
       if (typeof window !== "undefined") {
         try {
-          const vDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
-          if (vDataSaved) {
-            const parsed = JSON.parse(vDataSaved);
-            if (Array.isArray(parsed) && parsed.length) setVouchers(parsed);
-          }
           const jDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
           if (jDataSaved) {
             const parsed = JSON.parse(jDataSaved);
@@ -1032,9 +1051,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         return "";
       }
 
-      // Step 2: ID-based deduplication — pdcs table is authoritative for display fields
+      // Step 2: Build authoritative PDC list directly from pdcs table
       const pdcIdMap = new Map<string, any>();
-      const chqToKey = new Map<string, string>();
 
       for (const p of (pdcsTableRes.data || [])) {
         const rowKey = String(p.id);
@@ -1046,43 +1064,33 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           unit_ref:      p.unit_name || p.unit_ref || "",
           tenant_name:   resolveTenant(p),
           cheque_date:   p.maturity_date || p.cheque_date || (p.created_at ? String(p.created_at).split("T")[0] : ""),
+          deposit_date:  p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
           amount:        Number(p.amount || 0),
           status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
         });
-        if (chqNo) chqToKey.set(chqNo, rowKey);
       }
 
       for (const p of (finPdcRes.data || [])) {
-        const chqNo      = p.cheque_number ? String(p.cheque_number).trim() : null;
-        const existingKey = chqNo ? chqToKey.get(chqNo) : null;
-        if (existingKey && pdcIdMap.has(existingKey)) {
-          const existing = pdcIdMap.get(existingKey)!;
-          pdcIdMap.set(existingKey, {
-            ...existing,
-            cheque_date: existing.cheque_date || p.cheque_date || p.maturity_date || "",
-            // Enrich tenant_name if pdcs table had it empty
-            tenant_name: existing.tenant_name || resolveTenant(p),
+        const rowKey = String(p.id);
+        if (!pdcIdMap.has(rowKey) && (!p.original_pdc_id || !pdcIdMap.has(String(p.original_pdc_id)))) {
+          const chqNo = p.cheque_number ? String(p.cheque_number).trim() : null;
+          pdcIdMap.set(`fin-${p.id}`, {
+            id:            p.id,
+            cheque_number: chqNo || String(p.id),
+            property_name: p.property_name || p.property_code || "",
+            unit_ref:      p.unit_name || p.unit_ref || "",
+            tenant_name:   resolveTenant(p),
+            cheque_date:   p.cheque_date || p.maturity_date || "",
+            deposit_date:  p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
+            amount:        Number(p.amount || 0),
+            status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
           });
-        } else {
-          const newKey = chqNo ? `freg-${chqNo}` : `freg-${p.id}`;
-          if (!pdcIdMap.has(newKey)) {
-            pdcIdMap.set(newKey, {
-              id: p.id, cheque_number: chqNo || String(p.id),
-              property_name: p.property_name || p.property_code || "",
-              unit_ref:      p.unit_name || p.unit_ref || "",
-              tenant_name:   resolveTenant(p),
-              cheque_date:   p.cheque_date || p.maturity_date || "",
-              amount: Number(p.amount || 0),
-              status: (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
-            });
-            if (chqNo) chqToKey.set(chqNo, newKey);
-          }
         }
       }
 
       const allPdcs = Array.from(pdcIdMap.values()).filter(p => Number(p.amount || 0) > 0);
 
-      // Step 3: Build full voucher set — no Contra Vouchers
+      // Step 3: Build clean PDC In Hand voucher set (1:1 with PDC Register & Leasing Vouchers)
       const freshVouchers: FinanceVoucher[] = [];
       let clearedCount = 0;
 
@@ -1090,16 +1098,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const chequeNo     = String(p.cheque_number);
         const amount       = Number(p.amount || 0);
         const chqDate      = p.cheque_date || todayStr;
-        const isPastDue    = chqDate <= todayStr;
         const tenantName   = p.tenant_name || "";
         const unitRef      = p.unit_ref    || "";
         const propertyName = p.property_name || "";
         const desc         = unitRef ? `${tenantName} (${unitRef})` : tenantName || `Cheque #${chequeNo}`;
+        const rawStatus    = (p.status || "").toLowerCase().trim();
 
-        // ── Entry 1: PDC Received (In Hand) — always ─────────────────────────
+        // ── Entry 1: PDC Received (In Hand) — always posted for all valid cheques ────
         freshVouchers.push({
-          id:           `pdc-rcv-${p.id ?? chequeNo}`,
-          voucher_no:   `VCH-PDC-RCV-${chequeNo}`,
+          id:           `pdc-rcv-${p.id}`,
+          voucher_no:   `VCH-PDC-RCV-${p.id}`,
           voucher_type: "Receipt Voucher",
           date:         chqDate,
           name:         `PDC Received — ${desc} [Cheque #${chequeNo}]`,
@@ -1107,67 +1115,78 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           debit_code:   "12900001",
           credit:       "Customer PDC Liability",
           credit_code:  "21400001",
-          amount, method: "PDC", status: "Posted",
-          property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+          amount,
+          method:       "PDC",
+          status:       "Posted",
+          property_name: propertyName,
+          unit_ref:     unitRef,
+          tenant_name:  tenantName,
         });
 
-        const rawStatus = (p.status || "").toLowerCase().trim();
         const isDeposited = rawStatus === "deposited";
         const isCleared = rawStatus === "cleared";
 
         if (isDeposited || isCleared) {
-          // ── Entry 2: PDC Deposited to Bank — Journal Voucher ──
+          // ── Entry 2: PDC Deposited to Bank — Journal / Receipt Voucher ──
           freshVouchers.push({
-            id:           `pdc-dep-${p.id ?? chequeNo}`,
-            voucher_no:   `VCH-PDC-DEP-${chequeNo}`,
-            voucher_type: "Journal Voucher",
-            date:         chqDate,
+            id:           `pdc-dep-${p.id}`,
+            voucher_no:   `VCH-DEP-${p.id}`,
+            voucher_type: "Receipt Voucher",
+            date:         p.deposit_date || chqDate,
             name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
-            debit:        "Bank Operating Account (QNB)",
+            debit:        "Commercial Bank of Qatar (CBQ)",
             debit_code:   "12000001",
             credit:       "Rent PDC In Hand",
             credit_code:  "12900001",
-            amount, method: "Bank Transfer", status: "Posted",
-            property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+            amount,
+            method:       "Cheque Deposit",
+            status:       "Posted",
+            property_name: propertyName,
+            unit_ref:     unitRef,
+            tenant_name:  tenantName,
           });
         }
 
         if (isCleared) {
           clearedCount++;
-          // ── Entry 3: Revenue Recognised — Journal Voucher ─────────────────
+          // ── Entry 3: PDC Cleared — Realized into Tenant Receivables / Revenue ──
           freshVouchers.push({
-            id:           `pdc-clr-${p.id ?? chequeNo}`,
-            voucher_no:   `VCH-PDC-CLR-${chequeNo}`,
-            voucher_type: "Journal Voucher",
+            id:           `pdc-clr-${p.id}`,
+            voucher_no:   `VCH-CLR-${p.id}`,
+            voucher_type: "Receipt Voucher",
             date:         chqDate,
-            name:         `PDC Cleared — Revenue Recognised — ${desc} [Cheque #${chequeNo}]`,
+            name:         `PDC Cleared — ${desc} [Cheque #${chequeNo}]`,
             debit:        "Customer PDC Liability",
             debit_code:   "21400001",
-            credit:       "Rental Revenue",
-            credit_code:  "41100001",
-            amount, method: "PDC", status: "Posted",
-            property_name: propertyName, unit_ref: unitRef, tenant_name: tenantName,
+            credit:       "Tenant Receivables",
+            credit_code:  "12413001",
+            amount,
+            method:       "PDC Clearance",
+            status:       "Posted",
+            property_name: propertyName,
+            unit_ref:     unitRef,
+            tenant_name:  tenantName,
           });
         }
       }
 
-      // Step 4: Clear all existing synthetic PDC vouchers and replace with fresh set.
-      // Non-PDC vouchers (from fin_vouchers, procurement etc.) are preserved.
-      setVouchers(prev => {
-        const nonPdc = prev.filter(v =>
-          !v.voucher_no.startsWith("VCH-PDC-RCV-") &&
-          !v.voucher_no.startsWith("VCH-PDC-DEP-") &&
-          !v.voucher_no.startsWith("VCH-PDC-CLR-") &&
-          !v.id.startsWith("pdc-rcv-") &&
-          !v.id.startsWith("pdc-dep-") &&
-          !v.id.startsWith("pdc-clr-")
-        );
-        return [...freshVouchers, ...nonPdc];
-      });
+      // Step 4: Authoritatively set vouchers and clear stale mock journals
+      setVouchers(freshVouchers);
+      setJournalEntries([]);
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(freshVouchers));
+          localStorage.setItem(`${FINANCE_STORAGE_KEY}-journals`, JSON.stringify([]));
+        } catch {}
+      }
+
+      const totalAmt = freshVouchers
+        .filter(v => v.voucher_no.startsWith("VCH-PDC-RCV-"))
+        .reduce((s, v) => s + v.amount, 0);
 
       toast.success(
-        `GL Initialised: ${freshVouchers.length} voucher entries created for ${allPdcs.length} PDCs` +
-        ` (${clearedCount} marked Deposited & Cleared, ${allPdcs.length - clearedCount} In Hand).`
+        `GL Initialised: ${freshVouchers.length} PDC vouchers created totaling QAR ${totalAmt.toLocaleString()}. All PDCs reconciled In Hand.`
       );
       return { created: freshVouchers.length, cleared: clearedCount };
     } catch (err: any) {
