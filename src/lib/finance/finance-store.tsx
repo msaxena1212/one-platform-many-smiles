@@ -669,24 +669,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             returned_date: toYmdFSD(p.returned_date) || "",
             status: mergedStatus,
           });
-        } else if (p.original_pdc_id == null) {
-          // fin_pdc_register standalone row with no matching pdcs entry (never add if it shadowed a pdcs row)
-          const newKey = `freg-${p.id}`;
-          if (!pdcIdMap.has(newKey)) {
-            pdcIdMap.set(newKey, {
-              id:            p.id,
-              cheque_number: chqNo || String(p.id),
-              property_name: p.property_name || p.property_code || "",
-              unit_ref:      p.unit_name || p.unit_ref || "",
-              tenant_name:   p.tenant_name || p.drawer_name || "",
-              cheque_date:   pDate || "",
-              deposit_date:  toYmdFSD(p.deposit_date) || "",
-              cleared_date:  toYmdFSD(p.cleared_date) || "",
-              returned_date: toYmdFSD(p.returned_date) || "",
-              amount:        pAmt,
-              status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
-            });
-          }
         }
       }
 
@@ -694,7 +676,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
       if (mergedPdcs.length > 0) {
         setVouchers(prev => {
-          const existingNos = new Set(prev.map(v => v.voucher_no));
+          // Keep only non-PDC operational vouchers from prev, replacing synthesized PDC vouchers with fresh DB state
+          const nonPdcVouchers = prev.filter(v =>
+            !v.voucher_no.startsWith("VCH-PDC-") &&
+            !v.voucher_no.startsWith("VCH-DEP-") &&
+            !v.voucher_no.startsWith("VCH-CLR-") &&
+            !v.voucher_no.startsWith("VCH-RET-") &&
+            !v.voucher_no.startsWith("VCH-CNL-")
+          );
+          const existingNos = new Set(nonPdcVouchers.map(v => v.voucher_no));
           const pdcVouchers: FinanceVoucher[] = [];
 
           for (const p of mergedPdcs) {
@@ -709,8 +699,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
             // ── Entry 1: PDC Collection / In Hand ──────────────────────────────
             // Dr 12900001 Rent PDC In Hand  /  Cr 21400001 Customer PDC Liability
-            const rcvNo = `VCH-PDC-RCV-${chequeNo}`;
+            const rcvNo = `VCH-PDC-RCV-${p.id ?? chequeNo}`;
             if (!existingNos.has(rcvNo)) {
+              existingNos.add(rcvNo);
               pdcVouchers.push({
                 id:           `pdc-rcv-${p.id ?? chequeNo}`,
                 voucher_no:   rcvNo,
@@ -731,17 +722,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             }
 
             // ── Entry 2: PDC Deposited to Bank ──────────────────────────────────
-            // Dr 12000001 Bank Operating Account  /  Cr 12900001 Rent PDC In Hand
+            // Dr 12000001 Commercial Bank of Qatar (CBQ)  /  Cr 12900001 Rent PDC In Hand
             if (st === "deposited" || st === "cleared") {
-              const depNo = `VCH-DEP-${chequeNo}`;
+              const depNo = `VCH-DEP-${p.id ?? chequeNo}`;
               if (!existingNos.has(depNo)) {
+                existingNos.add(depNo);
                 pdcVouchers.push({
                   id:           `pdc-dep-${p.id ?? chequeNo}`,
                   voucher_no:   depNo,
                   voucher_type: "Receipt Voucher",
                   date:         p.deposit_date || chqDate,
                   name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
-                  debit:        "Bank Operating Account",
+                  debit:        "Commercial Bank of Qatar (CBQ)",
                   debit_code:   "12000001",
                   credit:       "Rent PDC In Hand",
                   credit_code:  "12900001",
@@ -758,8 +750,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             // ── Entry 3: PDC Cleared by Bank ────────────────────────────────────
             // Dr 21400001 Customer PDC Liability  /  Cr 12413001 Tenant Receivables
             if (st === "cleared") {
-              const clrNo = `VCH-CLR-${chequeNo}`;
+              const clrNo = `VCH-CLR-${p.id ?? chequeNo}`;
               if (!existingNos.has(clrNo)) {
+                existingNos.add(clrNo);
                 pdcVouchers.push({
                   id:           `pdc-clr-${p.id ?? chequeNo}`,
                   voucher_no:   clrNo,
@@ -782,8 +775,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
             // ── Entry 4: PDC Returned / Bounced ─────────────────────────────────
             if (st === "bounced" || st === "returned") {
-              const retNo = `VCH-RET-${chequeNo}`;
+              const retNo = `VCH-RET-${p.id ?? chequeNo}`;
               if (!existingNos.has(retNo)) {
+                existingNos.add(retNo);
                 pdcVouchers.push({
                   id:           `pdc-ret-${p.id ?? chequeNo}`,
                   voucher_no:   retNo,
@@ -792,7 +786,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   name:         `PDC Cheque Returned / Dishonoured — ${desc} [Cheque #${chequeNo}]`,
                   debit:        "Rent PDC In Hand",
                   debit_code:   "12900001",
-                  credit:       "Bank Operating Account",
+                  credit:       "Commercial Bank of Qatar (CBQ)",
                   credit_code:  "12000001",
                   amount,
                   method:       "Cheque Return",
@@ -802,8 +796,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   tenant_name:  tenantName,
                 });
               }
-              const retArNo = `VCH-RET-AR-${chequeNo}`;
+              const retArNo = `VCH-RET-AR-${p.id ?? chequeNo}`;
               if (!existingNos.has(retArNo)) {
+                existingNos.add(retArNo);
                 pdcVouchers.push({
                   id:           `pdc-ret-ar-${p.id ?? chequeNo}`,
                   voucher_no:   retArNo,
@@ -826,8 +821,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
             // ── Entry 5: PDC Cancelled ──────────────────────────────────────────
             if (st === "cancelled") {
-              const cnlNo = `VCH-CNL-${chequeNo}`;
+              const cnlNo = `VCH-CNL-${p.id ?? chequeNo}`;
               if (!existingNos.has(cnlNo)) {
+                existingNos.add(cnlNo);
                 pdcVouchers.push({
                   id:           `pdc-cnl-${p.id ?? chequeNo}`,
                   voucher_no:   cnlNo,
@@ -849,7 +845,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          return pdcVouchers.length ? [...pdcVouchers, ...prev] : prev;
+          const combined = [...pdcVouchers, ...nonPdcVouchers];
+          try {
+            localStorage.setItem("pms_finance_vouchers_v3", JSON.stringify(combined));
+          } catch {}
+          return combined;
         });
       }
 
@@ -1694,8 +1694,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       // ── Type 1: Assets ──
       "10000": "Assets Control Account",
       "12000": "Bank Accounts",
-      "12000001": "Bank Operating Account (QNB)",
-      "12000002": "CBQ Escrow Bank Account",
+      "12000001": "Commercial Bank of Qatar (CBQ)",
+      "12000002": "Al Ameen Dukhan Bank",
+      "12000003": "Bank Operating Account (QNB)",
+      "12000004": "Doha Bank Operating Account",
+      "12000005": "Qatar Islamic Bank (QIB)",
       "12100": "Cash Accounts",
       "12100001": "Cash in Hand / Operating Cash",
       "12300001": "Advance to Vendors",

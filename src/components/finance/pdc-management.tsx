@@ -92,8 +92,8 @@ function getActionConfig(action: "deposit" | "clear" | "return" | "cancel", cheq
       newStatus: "Deposited",
       newSharedStatus: "deposited",
       impacts: [
-        { type: "Debit",  account: "Bank Operating Account", code: "12000", description: "Cash received into bank" },
-        { type: "Credit", account: "PDC In Hand",            code: "12900", description: "PDC cleared from holding account" },
+        { type: "Debit",  account: "Commercial Bank of Qatar (CBQ)", code: "12000001", description: "Cash received into bank" },
+        { type: "Credit", account: "Rent PDC In Hand",               code: "12900001", description: "PDC cleared from holding account" },
       ],
     };
   }
@@ -651,20 +651,6 @@ export function PdcManagement() {
       }
 
       // Authoritative dataset is strictly the pdcs table (matches PDC vouchers 1-to-1)
-
-      // If a lease is closed / vacated, all unpresented future PDCs beyond the vacate date are Returned
-      for (const p of dbDataMap.values()) {
-        const lease = leases?.find((l) => l.id === p.lease_id || (p.tenant_name && p.tenant_name !== "—" && l.tenantName === p.tenant_name) || (p.unit_ref && p.unit_ref !== "—" && l.unit === p.unit_ref));
-        if (lease && (lease.status === "closed" || (lease as any).earlyVacate)) {
-          const vacateDate = (lease as any).actualVacateDate || (lease as any).moveOutDate || lease.endDate;
-          if (vacateDate && p.cheque_date && new Date(p.cheque_date).getTime() > new Date(vacateDate).getTime()) {
-            if (p.status === "In Hand" || p.status === "Deposited") {
-              p.status = "Returned";
-            }
-          }
-        }
-      }
-
       const allPdcs = Array.from(dbDataMap.values());
       setPdcs(allPdcs);
     } catch (e: any) {
@@ -778,7 +764,7 @@ export function PdcManagement() {
 
   // ── Bank Accounts & Deposit State ─────────────────────────────────────────
   const [bankAccounts, setBankAccounts] = useState<CompanyBankAccount[]>(DEFAULT_COMPANY_BANK_ACCOUNTS);
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("qnb-main-01");
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("7");
   const [depositSlipNo, setDepositSlipNo] = useState<string>("");
   const [depositDate, setDepositDate] = useState<string>(new Date().toISOString().split("T")[0]);
 
@@ -887,14 +873,14 @@ export function PdcManagement() {
 
       if (action === "deposit") {
         addVoucher({
-          voucher_no: depositSlipNo ? `VCH-DEP-${depositSlipNo}` : `VCH-DEP-${chqNo}`,
+          voucher_no: depositSlipNo ? `VCH-DEP-${depositSlipNo}` : `VCH-DEP-${id}`,
           voucher_type: "Receipt Voucher",
           date: depositDate || todayStr,
-          name: `PDC Deposited to ${chosenBank?.accountTitle || 'Bank'} – ${chqNo} (${tenant} - ${unit})`,
-          debit: chosenBank?.accountTitle || "Bank Operating Account",
+          name: `PDC Deposited to ${chosenBank?.accountTitle || 'Commercial Bank of Qatar (CBQ)'} – ${chqNo} (${tenant} - ${unit})`,
+          debit: chosenBank?.accountTitle || "Commercial Bank of Qatar (CBQ)",
           debit_code: chosenBank?.glCode || "12000001",
-          credit: "PDC In Hand",
-          credit_code: "12900",
+          credit: "Rent PDC In Hand",
+          credit_code: "12900001",
           amount: amt,
           method: "Cheque Deposit",
           property_name: prop,
