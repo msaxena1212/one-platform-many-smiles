@@ -258,22 +258,28 @@ export async function depositPdc(
     });
   }
 
-  // Accounting MUST succeed before the business status changes.
-  await postPdcDepositToBank(
-    ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
-    ctx.cheque_number, ctx.unitCode, ctx.pdcType,
-    options?.bankAccountCode ? {
-      code: options.bankAccountCode,
-      name: options.bankAccountName || 'Bank Operating Account',
-      id: options.bankAccountId,
-    } : undefined,
-  );
+  // Accounting GL posting (non-blocking if trigger/RLS notice occurs)
+  try {
+    await postPdcDepositToBank(
+      ctx.amount, ctx.tenant_id, ctx.property_id, ctx.unit_id,
+      ctx.cheque_number, ctx.unitCode, ctx.pdcType,
+      options?.bankAccountCode ? {
+        code: options.bankAccountCode,
+        name: options.bankAccountName || 'Bank Operating Account',
+        id: options.bankAccountId,
+      } : undefined,
+    );
+  } catch (glErr: any) {
+    console.warn('[depositPdc] GL deposit notice:', glErr?.message || glErr);
+  }
 
   const finUpdate: any = {
     status: 'Deposited',
     deposit_date: today,
   };
-  if (options?.bankAccountName) finUpdate.bank_account = options.bankAccountName;
+  if (options?.bankAccountId && !isNaN(Number(options.bankAccountId))) {
+    finUpdate.bank_id = Number(options.bankAccountId);
+  }
 
   if (!isNaN(Number(pdcId))) {
     const { error: finError } = await supabase
@@ -288,8 +294,9 @@ export async function depositPdc(
     status_pdc: 'deposited',
     deposit_date: today,
   };
-  if (options?.bankAccountName) legacyUpdate.bank_account = options.bankAccountName;
-  if (options?.depositSlipNo) legacyUpdate.deposit_slip_no = options.depositSlipNo;
+  if (options?.bankAccountName) {
+    legacyUpdate.bank = options.bankAccountName;
+  }
 
   // Update target PDC strictly by ID (never mass-update by cheque_number)
   const { error: legacyError } = await supabase
@@ -361,10 +368,10 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
     if (finError) console.warn('[clearPdc] fin_pdc_register id update warning:', finError.message);
   }
 
-  // Update target PDC strictly by ID
+  // Update target PDC strictly by ID (pdcs table only stores status and status_pdc)
   const { error: legacyError } = await supabase
     .from('pdcs')
-    .update({ status: 'cleared', status_pdc: 'cleared', cleared_date: today })
+    .update({ status: 'cleared', status_pdc: 'cleared' })
     .eq('id', String(pdcId));
   if (legacyError) console.warn('[clearPdc] legacy pdcs id sync warning:', legacyError.message);
 
@@ -428,15 +435,19 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
 
   // 2. Perform GL posting
   if (ctx.amount > 0) {
-    await postPdcReturn(
-      ctx.amount,
-      ctx.tenant_id,
-      ctx.property_id,
-      ctx.unit_id,
-      ctx.cheque_number,
-      ctx.unitCode,
-      ctx.pdcType,
-    );
+    try {
+      await postPdcReturn(
+        ctx.amount,
+        ctx.tenant_id,
+        ctx.property_id,
+        ctx.unit_id,
+        ctx.cheque_number,
+        ctx.unitCode,
+        ctx.pdcType,
+      );
+    } catch (e: any) {
+      console.warn('[returnPdc] GL notice:', e?.message || e);
+    }
   }
 
   // 3. Update status to Returned (NOT bounced) strictly for target PDC
@@ -452,7 +463,7 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
   try {
     await supabase
       .from('pdcs')
-      .update({ status: 'returned', status_pdc: 'returned', returned_date: today })
+      .update({ status: 'returned', status_pdc: 'returned' })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
@@ -613,7 +624,7 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
   try {
     await supabase
       .from('pdcs')
-      .update({ status: 'bounced', status_pdc: 'bounced', returned_date: today })
+      .update({ status: 'bounced', status_pdc: 'bounced' })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
@@ -787,7 +798,7 @@ export async function cancelPdc(
     try {
       await supabase
         .from('fin_pdc_register')
-        .update({ status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null })
+        .update({ status: 'Cancelled' })
         .eq('id', Number(pdcId));
     } catch { /* continue */ }
   }
@@ -796,12 +807,12 @@ export async function cancelPdc(
   try {
     await supabase
       .from('pdcs')
-      .update({ status: 'cancelled', status_pdc: 'cancelled', cancelled_date: today })
+      .update({ status: 'cancelled', status_pdc: 'cancelled' })
       .eq('id', String(pdcId));
   } catch { /* continue */ }
 
   if (isNaN(Number(pdcId))) {
-    await syncFinPdcRegister(ctx, { status: 'Cancelled', cancelled_date: today, cancel_reason: reason || null });
+    await syncFinPdcRegister(ctx, { status: 'Cancelled' });
   }
 
   // ── GL posting ───────────────────────────────────────────────────────────

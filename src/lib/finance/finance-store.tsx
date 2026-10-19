@@ -392,7 +392,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       // 1. Pull existing fin_vouchers from Supabase
       const { data: vData, error: vError } = await supabase
         .from("fin_vouchers")
-        .select("*, fin_voucher_lines(account_code, account_name, debit, credit)")
+        .select("*, fin_voucher_lines(account_code, account_name, debit_amount, credit_amount)")
         .order("voucher_date", { ascending: false });
 
       if (!vError && vData) {
@@ -403,9 +403,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             .map(r => {
               const isPV = r.voucher_type === "PV";
               const isRV = r.voucher_type === "RV";
-              const lines: Array<{ account_code: string; account_name: string; debit: number; credit: number }> = r.fin_voucher_lines || [];
-              const drLine = lines.find(l => Number(l.debit) > 0);
-              const crLine = lines.find(l => Number(l.credit) > 0);
+              const lines: Array<{ account_code: string; account_name: string; debit_amount?: number; credit_amount?: number; debit?: number; credit?: number }> = r.fin_voucher_lines || [];
+              const drLine = lines.find(l => Number(l.debit_amount ?? l.debit) > 0);
+              const crLine = lines.find(l => Number(l.credit_amount ?? l.credit) > 0);
 
               const desc = (r.description || "").toLowerCase();
               let drCode = drLine?.account_code;
@@ -594,6 +594,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           unit_ref:      p.unit_name || p.unit_ref || "",
           tenant_name:   p.tenant_name || p.drawer_name || "",
           cheque_date:   cDate || "",
+          deposit_date:  toYmdFSD(p.deposit_date),
+          cleared_date:  "",
+          returned_date: "",
           amount:        Number(p.amount || 0),
           status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
         };
@@ -661,6 +664,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             ...existing,
             // Take cheque_date from fin_pdc_register if pdcs table had it empty
             cheque_date: existing.cheque_date || pDate || "",
+            deposit_date: existing.deposit_date || toYmdFSD(p.deposit_date) || "",
+            cleared_date: toYmdFSD(p.cleared_date) || "",
+            returned_date: toYmdFSD(p.returned_date) || "",
             status: mergedStatus,
           });
         } else if (p.original_pdc_id == null) {
@@ -674,6 +680,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               unit_ref:      p.unit_name || p.unit_ref || "",
               tenant_name:   p.tenant_name || p.drawer_name || "",
               cheque_date:   pDate || "",
+              deposit_date:  toYmdFSD(p.deposit_date) || "",
+              cleared_date:  toYmdFSD(p.cleared_date) || "",
+              returned_date: toYmdFSD(p.returned_date) || "",
               amount:        pAmt,
               status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
             });
@@ -696,11 +705,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             const unitRef      = p.unit_ref    || "";
             const propertyName = p.property_name || "";
             const desc         = unitRef ? `${tenantName} (${unitRef})` : tenantName || `Cheque #${chequeNo}`;
+            const st           = (p.status || "").toLowerCase();
 
-            // ── Entry 1 only: PDC Received ──────────────────────────────────────
+            // ── Entry 1: PDC Collection / In Hand ──────────────────────────────
             // Dr 12900001 Rent PDC In Hand  /  Cr 21400001 Customer PDC Liability
-            // This is ALWAYS created for every PDC (the moment the cheque is received).
-            // DEP/CLR/RET entries are written to fin_vouchers by PDC Management actions.
             const rcvNo = `VCH-PDC-RCV-${chequeNo}`;
             if (!existingNos.has(rcvNo)) {
               pdcVouchers.push({
@@ -720,6 +728,124 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 unit_ref:     unitRef,
                 tenant_name:  tenantName,
               });
+            }
+
+            // ── Entry 2: PDC Deposited to Bank ──────────────────────────────────
+            // Dr 12000001 Bank Operating Account  /  Cr 12900001 Rent PDC In Hand
+            if (st === "deposited" || st === "cleared") {
+              const depNo = `VCH-DEP-${chequeNo}`;
+              if (!existingNos.has(depNo)) {
+                pdcVouchers.push({
+                  id:           `pdc-dep-${p.id ?? chequeNo}`,
+                  voucher_no:   depNo,
+                  voucher_type: "Receipt Voucher",
+                  date:         p.deposit_date || chqDate,
+                  name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        "Bank Operating Account",
+                  debit_code:   "12000001",
+                  credit:       "Rent PDC In Hand",
+                  credit_code:  "12900001",
+                  amount,
+                  method:       "Cheque Deposit",
+                  status:       "Posted",
+                  property_name: propertyName,
+                  unit_ref:     unitRef,
+                  tenant_name:  tenantName,
+                });
+              }
+            }
+
+            // ── Entry 3: PDC Cleared by Bank ────────────────────────────────────
+            // Dr 21400001 Customer PDC Liability  /  Cr 12413001 Tenant Receivables
+            if (st === "cleared") {
+              const clrNo = `VCH-CLR-${chequeNo}`;
+              if (!existingNos.has(clrNo)) {
+                pdcVouchers.push({
+                  id:           `pdc-clr-${p.id ?? chequeNo}`,
+                  voucher_no:   clrNo,
+                  voucher_type: "Journal Voucher",
+                  date:         p.cleared_date || chqDate,
+                  name:         `PDC Cleared — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        "Customer PDC Liability",
+                  debit_code:   "21400001",
+                  credit:       "Tenant Receivables",
+                  credit_code:  "12413001",
+                  amount,
+                  method:       "Cheque Clearance",
+                  status:       "Posted",
+                  property_name: propertyName,
+                  unit_ref:     unitRef,
+                  tenant_name:  tenantName,
+                });
+              }
+            }
+
+            // ── Entry 4: PDC Returned / Bounced ─────────────────────────────────
+            if (st === "bounced" || st === "returned") {
+              const retNo = `VCH-RET-${chequeNo}`;
+              if (!existingNos.has(retNo)) {
+                pdcVouchers.push({
+                  id:           `pdc-ret-${p.id ?? chequeNo}`,
+                  voucher_no:   retNo,
+                  voucher_type: "Journal Voucher",
+                  date:         p.returned_date || chqDate,
+                  name:         `PDC Cheque Returned / Dishonoured — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        "Rent PDC In Hand",
+                  debit_code:   "12900001",
+                  credit:       "Bank Operating Account",
+                  credit_code:  "12000001",
+                  amount,
+                  method:       "Cheque Return",
+                  status:       "Posted",
+                  property_name: propertyName,
+                  unit_ref:     unitRef,
+                  tenant_name:  tenantName,
+                });
+              }
+              const retArNo = `VCH-RET-AR-${chequeNo}`;
+              if (!existingNos.has(retArNo)) {
+                pdcVouchers.push({
+                  id:           `pdc-ret-ar-${p.id ?? chequeNo}`,
+                  voucher_no:   retArNo,
+                  voucher_type: "Journal Voucher",
+                  date:         p.returned_date || chqDate,
+                  name:         `Tenant Dues Restored on Dishonour — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        "Tenant Receivables",
+                  debit_code:   "12413001",
+                  credit:       "Customer PDC Liability",
+                  credit_code:  "21400001",
+                  amount,
+                  method:       "Cheque Return",
+                  status:       "Posted",
+                  property_name: propertyName,
+                  unit_ref:     unitRef,
+                  tenant_name:  tenantName,
+                });
+              }
+            }
+
+            // ── Entry 5: PDC Cancelled ──────────────────────────────────────────
+            if (st === "cancelled") {
+              const cnlNo = `VCH-CNL-${chequeNo}`;
+              if (!existingNos.has(cnlNo)) {
+                pdcVouchers.push({
+                  id:           `pdc-cnl-${p.id ?? chequeNo}`,
+                  voucher_no:   cnlNo,
+                  voucher_type: "Journal Voucher",
+                  date:         chqDate,
+                  name:         `PDC Cancelled — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        "Customer PDC Liability",
+                  debit_code:   "21400001",
+                  credit:       "Rent PDC In Hand",
+                  credit_code:  "12900001",
+                  amount,
+                  method:       "Cancellation",
+                  status:       "Posted",
+                  property_name: propertyName,
+                  unit_ref:     unitRef,
+                  tenant_name:  tenantName,
+                });
+              }
             }
           }
 

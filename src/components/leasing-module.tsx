@@ -76,6 +76,10 @@ import {
   Phone,
   Filter,
   X,
+  Edit,
+  Save,
+  UploadCloud,
+  ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -96,6 +100,7 @@ import { receivePdc } from "@/lib/finance/pdcService";
 import { postGuaranteeCheque } from "@/lib/finance/posting-engine";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { getImpersonationSession } from "@/lib/impersonation";
+import { getCurrentProfile } from "@/lib/auth-guards";
 import { exportToExcel } from "@/lib/excel-export";
 import {
   AL_AMEEN_PAGE1_HEADER_BASE64,
@@ -431,6 +436,21 @@ type Voucher = {
   credit: string;
   amount: number;
   status: "draft" | "posted" | "shared";
+  property_name?: string;
+  unit_name?: string;
+  tenant_name?: string;
+  pdc_status?: string;
+  pdc_id?: string;
+  cheque_number?: string;
+  maturity_date?: string;
+  deposit_date?: string;
+  rent_from_date?: string;
+  rent_to_date?: string;
+  bank?: string;
+  bank_branch?: string;
+  cheque_front_url?: string;
+  cheque_back_url?: string;
+  raw_pdc?: any;
 };
 
 type AuditEvent = {
@@ -943,95 +963,430 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [voucherApprovalOpen, setVoucherApprovalOpen] = useState(false);
   const [revenueRecognitionOpen, setRevenueRecognitionOpen] = useState(false);
 
+  // ── Admin-Only PDC Edit & Re-upload Provision ─────────────────────────
+  const [currentAuthProfile, setCurrentAuthProfile] = useState<any>(null);
+
+  useEffect(() => {
+    getCurrentProfile().then(p => setCurrentAuthProfile(p)).catch(() => {});
+  }, []);
+
+  const isAdmin = useMemo(() => {
+    if (role === "admin") return true;
+    if (currentPath.startsWith("/admin")) return true;
+    if (currentAuthProfile?.role === "ADMIN" || currentAuthProfile?.role === "SUPER_ADMIN") return true;
+    if (typeof window !== "undefined") {
+      try {
+        const uRole = (localStorage.getItem("zyno_user_role") || localStorage.getItem("userRole") || "").toUpperCase();
+        if (uRole === "ADMIN" || uRole === "SUPER_ADMIN" || uRole === "SUPERADMIN") return true;
+        const demo = JSON.parse(localStorage.getItem("zyno_demo_session") || "{}");
+        if (demo.role && (demo.role.toUpperCase() === "ADMIN" || demo.role.toUpperCase() === "SUPER_ADMIN")) return true;
+      } catch {}
+    }
+    return false;
+  }, [role, currentPath, currentAuthProfile]);
+
+  const [editPdcModalOpen, setEditPdcModalOpen] = useState(false);
+  const [savingPdc, setSavingPdc] = useState(false);
+  const [editPdcForm, setEditPdcForm] = useState({
+    voucherId: "",
+    pdcId: "",
+    chequeNumber: "",
+    originalChequeNumber: "",
+    maturityDate: "",
+    depositDate: "",
+    rentFromDate: "",
+    rentToDate: "",
+    amount: "" as string | number,
+    bank: "",
+    bankBranch: "",
+    status: "in hand",
+    propertyCode: "",
+    unitName: "",
+    tenantName: "",
+    leaseId: "",
+    chequeFrontUrl: "",
+    chequeBackUrl: "",
+    newFrontFile: null as File | null,
+    newFrontPreview: "",
+    newBackFile: null as File | null,
+    newBackPreview: "",
+  });
+
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [viewingChequeUrl, setViewingChequeUrl] = useState("");
+  const [viewingChequeTitle, setViewingChequeTitle] = useState("");
+
+  const frontFileInputRef = useRef<HTMLInputElement>(null);
+  const backFileInputRef = useRef<HTMLInputElement>(null);
+
   // Direct-fetch vouchers: bypasses the context (which may silently fail before auth is ready)
   // and mirrors exactly what Finance → PDC Management does — fetching directly from the DB.
   const [directPdcVouchers, setDirectPdcVouchers] = useState<Voucher[]>([]);
   const [vouchersLoading, setVouchersLoading] = useState(false);
 
-  useEffect(() => {
-    if (activeTab !== "vouchers") return;
-
-    async function fetchVouchersDirectly() {
-      setVouchersLoading(true);
-      try {
-        // Helper to fetch all rows across PostgREST 1000-row default pages
-        async function fetchAllRows<T = any>(
-          queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
-        ): Promise<T[]> {
-          let rows: T[] = [];
-          let from = 0;
-          const pageSize = 1000;
-          while (true) {
-            try {
-              const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
-              if (res.error || !res.data || res.data.length === 0) break;
-              rows = rows.concat(res.data);
-              if (res.data.length < pageSize) break;
-              from += pageSize;
-            } catch {
-              break;
-            }
+  const fetchVouchersDirectly = useCallback(async () => {
+    setVouchersLoading(true);
+    try {
+      // Helper to fetch all rows across PostgREST 1000-row default pages
+      async function fetchAllRows<T = any>(
+        queryFn: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+      ): Promise<T[]> {
+        let rows: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          try {
+            const res = await Promise.resolve(queryFn(from, from + pageSize - 1));
+            if (res.error || !res.data || res.data.length === 0) break;
+            rows = rows.concat(res.data);
+            if (res.data.length < pageSize) break;
+            from += pageSize;
+          } catch {
+            break;
           }
-          return rows;
         }
-
-        // Fetch from pdcs table with full pagination (authoritative store of all 1,661 PDCs with properties, units, tenants)
-        const pdcsTableData = await fetchAllRows((from, to) =>
-          supabase.from("pdcs").select("*").order("maturity_date", { ascending: false }).range(from, to)
-        );
-
-        const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-
-        // Step 1: Synthesize vouchers directly from pdcs table preserving all distinct rows
-        const synthesized: Voucher[] = (pdcsTableData || []).map((p: any) => {
-          const resolvedProperty = p.property_code || p.property_name || "";
-          const resolvedUnit     = p.unit_name || p.unit_ref || "";
-          const resolvedTenant   = p.tenant_name || p.drawer_name || "";
-
-          const chqDate  = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
-          const isPastDue = chqDate <= todayStr;
-
-          // Derive display-facing PDC status strictly from stored DB status (manual workflow only)
-          const storedStatus = (p.status || "").toLowerCase().trim();
-          const pdcStatus = storedStatus || "in hand";
-
-          // Map to Voucher.status for existing metric counters
-          const vStatus: Voucher["status"] =
-            pdcStatus === "cleared" || pdcStatus === "deposited" ? "posted" :
-            pdcStatus === "returned" || pdcStatus === "bounced"  ? "draft"  :
-            pdcStatus === "cancelled"                            ? "shared" :
-            "posted";
-
-          return {
-            id:         `dpdc-${p.id}`,
-            leaseId:    resolvedTenant || "PDC",
-            name:       `Receipt Voucher - PDC (${p.cheque_number || "—"})`,
-            receiptNo:  `RV-PDC-${p.cheque_number || p.id}`,
-            method:     "PDC",
-            period:     chqDate,
-            debit:      "PDC In Hand (12900001)",
-            credit:     resolvedUnit ? `Customer(PDC)-${resolvedUnit} (21400)` : "Tenant Receivable (21400001)",
-            amount:     Number(p.amount || 0),
-            status:     vStatus,
-            // Rich display fields for table columns and filter dropdowns
-            property_name: resolvedProperty,
-            unit_name:     resolvedUnit,
-            tenant_name:   resolvedTenant,
-            pdc_status:    pdcStatus, // Raw PDC lifecycle status for badge rendering
-          } as Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string };
-        });
-
-        setDirectPdcVouchers(synthesized);
-      } catch (err) {
-        console.warn("[LeasingVouchers] Direct PDC fetch failed:", err);
-      } finally {
-        setVouchersLoading(false);
+        return rows;
       }
+
+      // Fetch from pdcs table with full pagination (authoritative store of all 1,661 PDCs with properties, units, tenants)
+      const pdcsTableData = await fetchAllRows((from, to) =>
+        supabase.from("pdcs").select("*").order("maturity_date", { ascending: false }).range(from, to)
+      );
+
+      const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+      // Synthesize vouchers directly from pdcs table preserving all distinct rows
+      const synthesized: Voucher[] = (pdcsTableData || []).map((p: any) => {
+        const resolvedProperty = p.property_code || p.property_name || "";
+        const resolvedUnit     = p.unit_name || p.unit_ref || "";
+        const resolvedTenant   = p.tenant_name || p.drawer_name || "";
+
+        const chqDate  = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
+        const isPastDue = chqDate <= todayStr;
+
+        // Derive display-facing PDC status strictly from stored DB status (manual workflow only)
+        const storedStatus = (p.status || "").toLowerCase().trim();
+        const pdcStatus = storedStatus || "in hand";
+
+        // Map to Voucher.status for existing metric counters
+        const vStatus: Voucher["status"] =
+          pdcStatus === "cleared" || pdcStatus === "deposited" ? "posted" :
+          pdcStatus === "returned" || pdcStatus === "bounced"  ? "draft"  :
+          pdcStatus === "cancelled"                            ? "shared" :
+          "posted";
+
+        return {
+          id:               `dpdc-${p.id}`,
+          pdc_id:           p.id,
+          leaseId:          resolvedTenant || "PDC",
+          name:             `Receipt Voucher - PDC (${p.cheque_number || "—"})`,
+          receiptNo:        `RV-PDC-${p.cheque_number || p.id}`,
+          method:           "PDC",
+          period:           chqDate,
+          debit:            "PDC In Hand (12900001)",
+          credit:           resolvedUnit ? `Customer(PDC)-${resolvedUnit} (21400)` : "Tenant Receivable (21400001)",
+          amount:           Number(p.amount || 0),
+          status:           vStatus,
+          property_name:    resolvedProperty,
+          unit_name:        resolvedUnit,
+          tenant_name:      resolvedTenant,
+          pdc_status:       pdcStatus,
+          cheque_number:    p.cheque_number || "",
+          maturity_date:    p.maturity_date ? String(p.maturity_date).split("T")[0] : chqDate,
+          deposit_date:     p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
+          rent_from_date:   p.rent_from_date ? String(p.rent_from_date).split("T")[0] : "",
+          rent_to_date:     p.rent_to_date ? String(p.rent_to_date).split("T")[0] : "",
+          bank:             p.bank || "",
+          bank_branch:      p.bank_branch || "",
+          cheque_front_url: p.cheque_front_url || "",
+          cheque_back_url:  p.cheque_back_url || "",
+          raw_pdc:          p,
+        } as Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string };
+      });
+
+      setDirectPdcVouchers(synthesized);
+    } catch (err) {
+      console.warn("[LeasingVouchers] Direct PDC fetch failed:", err);
+    } finally {
+      setVouchersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "vouchers") {
+      void fetchVouchersDirectly();
+    }
+  }, [activeTab, fetchVouchersDirectly, leases]);
+
+  // Listen for global pdc updates from other tabs / cashier / pdc-management
+  useEffect(() => {
+    const handlePdcUpdated = () => {
+      if (activeTab === "vouchers") {
+        void fetchVouchersDirectly();
+      }
+    };
+    window.addEventListener("pdc_updated", handlePdcUpdated);
+    window.addEventListener("finance_vouchers_updated", handlePdcUpdated);
+    return () => {
+      window.removeEventListener("pdc_updated", handlePdcUpdated);
+      window.removeEventListener("finance_vouchers_updated", handlePdcUpdated);
+    };
+  }, [activeTab, fetchVouchersDirectly]);
+
+  const handleOpenEditPdc = (voucher: Voucher) => {
+    const vv = voucher as any;
+    const chq = vv.cheque_number || (voucher.receiptNo ? voucher.receiptNo.replace(/^RV-PDC-/, "") : "") || "";
+    const pDate = vv.maturity_date || vv.period || today.toISOString().split("T")[0];
+    const rawPdc = vv.raw_pdc || {};
+
+    setEditPdcForm({
+      voucherId: voucher.id,
+      pdcId: vv.pdc_id || rawPdc.id || (voucher.id.startsWith("dpdc-") ? voucher.id.replace("dpdc-", "") : ""),
+      chequeNumber: chq,
+      originalChequeNumber: chq,
+      maturityDate: pDate ? String(pDate).split("T")[0] : "",
+      depositDate: vv.deposit_date ? String(vv.deposit_date).split("T")[0] : (rawPdc.deposit_date ? String(rawPdc.deposit_date).split("T")[0] : ""),
+      rentFromDate: vv.rent_from_date ? String(vv.rent_from_date).split("T")[0] : (rawPdc.rent_from_date ? String(rawPdc.rent_from_date).split("T")[0] : ""),
+      rentToDate: vv.rent_to_date ? String(vv.rent_to_date).split("T")[0] : (rawPdc.rent_to_date ? String(rawPdc.rent_to_date).split("T")[0] : ""),
+      amount: voucher.amount || rawPdc.amount || 0,
+      bank: vv.bank || rawPdc.bank || "",
+      bankBranch: vv.bank_branch || rawPdc.bank_branch || "",
+      status: (vv.pdc_status || rawPdc.status || "in hand").toLowerCase(),
+      propertyCode: vv.property_name || rawPdc.property_code || "",
+      unitName: vv.unit_name || rawPdc.unit_name || "",
+      tenantName: vv.tenant_name || rawPdc.tenant_name || "",
+      leaseId: voucher.leaseId || rawPdc.lease_id || "",
+      chequeFrontUrl: vv.cheque_front_url || rawPdc.cheque_front_url || "",
+      chequeBackUrl: vv.cheque_back_url || rawPdc.cheque_back_url || "",
+      newFrontFile: null,
+      newFrontPreview: "",
+      newBackFile: null,
+      newBackPreview: "",
+    });
+    setEditPdcModalOpen(true);
+  };
+
+  const uploadChequeFile = async (file: File, prefix: string): Promise<string> => {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `vouchers/${prefix}_${Date.now()}.${ext}`;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from("pdc-cheques")
+        .upload(path, file, { upsert: true });
+
+      if (!error && data?.path) {
+        const { data: pubData } = supabase.storage
+          .from("pdc-cheques")
+          .getPublicUrl(data.path);
+        if (pubData?.publicUrl) {
+          return pubData.publicUrl;
+        }
+      }
+    } catch (storageErr) {
+      console.warn("[uploadChequeFile] Supabase Storage upload failed, using Data URL fallback:", storageErr);
     }
 
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+  };
 
-    fetchVouchersDirectly();
-  }, [activeTab, leases]);
+  const handleSaveEditedPdc = async () => {
+    if (!editPdcForm.chequeNumber.trim()) {
+      toast.error("Cheque Number is required.");
+      return;
+    }
+    if (!editPdcForm.maturityDate) {
+      toast.error("Cheque Maturity Date is required.");
+      return;
+    }
+    if (Number(editPdcForm.amount) <= 0) {
+      toast.error("Amount must be greater than 0.");
+      return;
+    }
+
+    setSavingPdc(true);
+    try {
+      // 1. Upload new cheque images if provided
+      let frontUrl = editPdcForm.chequeFrontUrl;
+      let backUrl = editPdcForm.chequeBackUrl;
+
+      if (editPdcForm.newFrontFile) {
+        frontUrl = await uploadChequeFile(editPdcForm.newFrontFile, `front_${editPdcForm.chequeNumber}`);
+      }
+      if (editPdcForm.newBackFile) {
+        backUrl = await uploadChequeFile(editPdcForm.newBackFile, `back_${editPdcForm.chequeNumber}`);
+      }
+
+      // 2. Prepare payload for pdcs table
+      const pdcUpdate: any = {
+        cheque_number: editPdcForm.chequeNumber.trim(),
+        maturity_date: editPdcForm.maturityDate,
+        deposit_date: editPdcForm.depositDate || null,
+        rent_from_date: editPdcForm.rentFromDate || null,
+        rent_to_date: editPdcForm.rentToDate || null,
+        amount: Number(editPdcForm.amount),
+        bank: editPdcForm.bank.trim(),
+        bank_branch: editPdcForm.bankBranch.trim(),
+        status: editPdcForm.status,
+        status_pdc: editPdcForm.status,
+        property_code: editPdcForm.propertyCode.trim(),
+        unit_name: editPdcForm.unitName.trim(),
+        tenant_name: editPdcForm.tenantName.trim(),
+        cheque_front_url: frontUrl || null,
+        cheque_back_url: backUrl || null,
+      };
+
+      if (editPdcForm.pdcId) {
+        await supabase.from("pdcs").update(pdcUpdate).eq("id", editPdcForm.pdcId);
+      } else {
+        await supabase.from("pdcs").update(pdcUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
+      }
+
+      // 3. Update fin_pdc_register table
+      const finStatusMap: Record<string, string> = {
+        "in hand": "In Hand",
+        "deposited": "Deposited",
+        "cleared": "Cleared",
+        "returned": "Returned",
+        "bounced": "Bounced",
+        "cancelled": "Cancelled",
+        "replaced": "Replaced",
+      };
+      const finStatus = finStatusMap[editPdcForm.status.toLowerCase()] || editPdcForm.status;
+
+      const finUpdate: any = {
+        cheque_number: editPdcForm.chequeNumber.trim(),
+        cheque_date: editPdcForm.maturityDate,
+        amount: Number(editPdcForm.amount),
+        status: finStatus,
+        deposit_date: editPdcForm.depositDate || null,
+        property_id: editPdcForm.propertyCode.trim(),
+        unit_id: editPdcForm.unitName.trim(),
+      };
+
+      if (editPdcForm.pdcId) {
+        await supabase.from("fin_pdc_register").update(finUpdate).eq("original_pdc_id", editPdcForm.pdcId);
+      }
+      await supabase.from("fin_pdc_register").update(finUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
+
+      // 4. Update fin_vouchers if matched
+      try {
+        await supabase.from("fin_vouchers")
+          .update({
+            voucher_date: editPdcForm.maturityDate,
+            total_amount: Number(editPdcForm.amount),
+          })
+          .or(`reference_no.eq.${editPdcForm.originalChequeNumber},voucher_number.ilike.%${editPdcForm.originalChequeNumber}%`);
+      } catch (e) {
+        console.warn("[handleSaveEditedPdc] fin_vouchers update warning:", e);
+      }
+
+      // 5. Update local directPdcVouchers state
+      setDirectPdcVouchers((prev) =>
+        prev.map((v) => {
+          const isTarget = v.id === editPdcForm.voucherId || (v as any).pdc_id === editPdcForm.pdcId || (v as any).cheque_number === editPdcForm.originalChequeNumber;
+          if (!isTarget) return v;
+          return {
+            ...v,
+            name: `Receipt Voucher - PDC (${editPdcForm.chequeNumber})`,
+            receiptNo: `RV-PDC-${editPdcForm.chequeNumber}`,
+            period: editPdcForm.maturityDate,
+            amount: Number(editPdcForm.amount),
+            property_name: editPdcForm.propertyCode,
+            unit_name: editPdcForm.unitName,
+            tenant_name: editPdcForm.tenantName,
+            pdc_status: editPdcForm.status,
+            cheque_number: editPdcForm.chequeNumber,
+            maturity_date: editPdcForm.maturityDate,
+            deposit_date: editPdcForm.depositDate,
+            rent_from_date: editPdcForm.rentFromDate,
+            rent_to_date: editPdcForm.rentToDate,
+            bank: editPdcForm.bank,
+            bank_branch: editPdcForm.bankBranch,
+            cheque_front_url: frontUrl,
+            cheque_back_url: backUrl,
+          } as any;
+        })
+      );
+
+      // 6. Update AppData context (pdcs, vouchers, units, leases)
+      setPdcs((prev) =>
+        prev.map((p) => {
+          const isMatch = p.id === editPdcForm.pdcId || p.chequeNo === editPdcForm.originalChequeNumber;
+          if (!isMatch) return p;
+          return {
+            ...p,
+            chequeNo: editPdcForm.chequeNumber,
+            date: editPdcForm.maturityDate,
+            period: editPdcForm.maturityDate,
+            amount: Number(editPdcForm.amount),
+            bank: editPdcForm.bank,
+            status: editPdcForm.status as any,
+            file: frontUrl || p.file,
+          };
+        })
+      );
+
+      setVouchers((prev) =>
+        prev.map((v) => {
+          const isMatch = v.id === editPdcForm.voucherId || (v.receiptNo && v.receiptNo.includes(editPdcForm.originalChequeNumber));
+          if (!isMatch) return v;
+          return {
+            ...v,
+            period: editPdcForm.maturityDate,
+            amount: Number(editPdcForm.amount),
+            receiptNo: `RV-PDC-${editPdcForm.chequeNumber}`,
+          };
+        })
+      );
+
+      if (editPdcForm.unitName) {
+        setUnits((prev) =>
+          prev.map((u) => {
+            if (u.unit.toLowerCase() !== editPdcForm.unitName.toLowerCase()) return u;
+            return {
+              ...u,
+              property: editPdcForm.propertyCode || u.property,
+              currentTenant: editPdcForm.tenantName || u.currentTenant,
+            };
+          })
+        );
+      }
+
+      // 7. Refresh Finance Store & GL
+      try {
+        const finStore = useFinanceStore.getState();
+        await finStore.refreshFinanceData();
+        await finStore.load(false);
+      } catch (fErr) {
+        console.warn("[handleSaveEditedPdc] Finance store refresh warning:", fErr);
+      }
+
+      // 8. Re-fetch direct vouchers from DB to guarantee full alignment
+      void fetchVouchersDirectly();
+      if (typeof refetchData === "function") {
+        void refetchData();
+      }
+
+      // 9. Dispatch Global Events
+      window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+      window.dispatchEvent(new CustomEvent("finance_reports_refresh"));
+      window.dispatchEvent(new CustomEvent("pdc_updated", { detail: { chequeNumber: editPdcForm.chequeNumber } }));
+
+      toast.success(`PDC #${editPdcForm.chequeNumber} updated successfully! Finance Reports, Unit ${editPdcForm.unitName}, and Property ${editPdcForm.propertyCode} synchronized.`);
+      setEditPdcModalOpen(false);
+    } catch (err: any) {
+      console.error("[handleSaveEditedPdc] Error updating PDC:", err);
+      toast.error(`Failed to update PDC: ${err.message || "Unknown error"}`);
+    } finally {
+      setSavingPdc(false);
+    }
+  };
 
   // ── Customer Master: 3-source direct fetch ─────────────────────────────────
   // Queries fin_pdc_register (the real PDC table with tenant_name), pdcs, and
@@ -1223,7 +1578,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       }
 
       // 2. Check if cheque number is present in receiptNo or name
-      if (!prop || !unit || !tenant) {
+      if (!prop || !unit || !tenant || !v.pdc_id) {
         const chqMatch = (v.receiptNo || v.name || "").match(/RV-PDC-([A-Za-z0-9_-]+)/) || (v.name || "").match(/PDC\s*\(([^)]+)\)/);
         if (chqMatch) {
           const chq = chqMatch[1].trim();
@@ -1232,6 +1587,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             if (!prop) prop = matchedPdc.propertyName || matchedPdc.property_name || matchedPdc.property_code || "";
             if (!unit) unit = matchedPdc.unitName || matchedPdc.unit_name || matchedPdc.unit_ref || "";
             if (!tenant) tenant = matchedPdc.tenantName || matchedPdc.tenant_name || matchedPdc.drawer_name || matchedPdc.payerName || "";
+            if (!v.pdc_id) v.pdc_id = matchedPdc.id;
+            if (!v.cheque_number) v.cheque_number = matchedPdc.cheque_number || matchedPdc.chequeNo || chq;
+            if (!v.maturity_date) v.maturity_date = matchedPdc.maturity_date || matchedPdc.date || v.period;
+            if (!v.deposit_date) v.deposit_date = matchedPdc.deposit_date;
+            if (!v.rent_from_date) v.rent_from_date = matchedPdc.rent_from_date;
+            if (!v.rent_to_date) v.rent_to_date = matchedPdc.rent_to_date;
+            if (!v.bank) v.bank = matchedPdc.bank;
+            if (!v.bank_branch) v.bank_branch = matchedPdc.bank_branch;
+            if (!v.cheque_front_url) v.cheque_front_url = matchedPdc.cheque_front_url || matchedPdc.file;
+            if (!v.cheque_back_url) v.cheque_back_url = matchedPdc.cheque_back_url;
+            if (!v.raw_pdc) v.raw_pdc = matchedPdc;
           }
         }
       }
@@ -10870,6 +11236,481 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         </DialogContent>
       </Dialog>
 
+      {/* ── ADMIN ONLY: EDIT PDC VOUCHER & RE-UPLOAD COPY MODAL ── */}
+      <Dialog open={editPdcModalOpen} onOpenChange={setEditPdcModalOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader className="pb-2 border-b">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                  <Receipt className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <DialogTitle className="text-base font-bold text-foreground">
+                      Edit PDC Details &amp; Lifecycle Dates
+                    </DialogTitle>
+                    <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-wider bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800">
+                      Admin Only
+                    </Badge>
+                  </div>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    Update cheque dates, amounts, status, or re-upload scanned copies. Synced automatically to Finance Reports, General Ledger, Unit schedules, and Property cash flows.
+                  </DialogDescription>
+                </div>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Quick Context Summary Banner */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded-lg bg-muted/40 border text-xs">
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Cheque No</span>
+                <span className="font-mono font-bold text-foreground">{editPdcForm.originalChequeNumber || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Property</span>
+                <span className="font-medium text-foreground">{editPdcForm.propertyCode || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Unit</span>
+                <span className="font-mono font-semibold text-foreground">{editPdcForm.unitName || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[11px]">Tenant / Payer</span>
+                <span className="font-medium text-foreground truncate block">{editPdcForm.tenantName || "—"}</span>
+              </div>
+            </div>
+
+            {/* Section 1: Dates & Lifecycle */}
+            <div className="rounded-lg border p-3.5 space-y-3 bg-card">
+              <div className="flex items-center gap-2 font-semibold text-xs text-primary border-b pb-2">
+                <CalendarClock className="h-4 w-4" />
+                <span>PDC Dates &amp; Cheque Lifecycle</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <Label className="text-xs font-medium">Cheque / Maturity Date <span className="text-rose-500">*</span></Label>
+                  <Input
+                    type="date"
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.maturityDate}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, maturityDate: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Primary maturity / due date</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">PDC Lifecycle Status</Label>
+                  <Select
+                    value={editPdcForm.status}
+                    onValueChange={(val) => setEditPdcForm(f => ({ ...f, status: val }))}
+                  >
+                    <SelectTrigger className="h-8 text-xs mt-1">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="in hand">In Hand (Received)</SelectItem>
+                      <SelectItem value="deposited">Deposited (In Bank)</SelectItem>
+                      <SelectItem value="cleared">Cleared (Realized)</SelectItem>
+                      <SelectItem value="returned">Returned</SelectItem>
+                      <SelectItem value="bounced">Bounced</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="replaced">Replaced</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Banking status in PDC register</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Bank Deposit Date</Label>
+                  <Input
+                    type="date"
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.depositDate}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, depositDate: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Date submitted to bank</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Rent Period From</Label>
+                  <Input
+                    type="date"
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.rentFromDate}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, rentFromDate: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Rent tenure start</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Rent Period To</Label>
+                  <Input
+                    type="date"
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.rentToDate}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, rentToDate: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Rent tenure end</p>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Cheque Number <span className="text-rose-500">*</span></Label>
+                  <Input
+                    type="text"
+                    className="h-8 text-xs font-mono mt-1"
+                    value={editPdcForm.chequeNumber}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, chequeNumber: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Leaf / serial number</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Financial & Banking Information */}
+            <div className="rounded-lg border p-3.5 space-y-3 bg-card">
+              <div className="flex items-center gap-2 font-semibold text-xs text-primary border-b pb-2">
+                <Banknote className="h-4 w-4" />
+                <span>Financial &amp; Bank Details</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <Label className="text-xs font-medium">Amount (QAR) <span className="text-rose-500">*</span></Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    className="h-8 text-xs font-mono font-semibold mt-1"
+                    value={editPdcForm.amount}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, amount: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Drawn On Bank</Label>
+                  <Input
+                    className="h-8 text-xs mt-1"
+                    placeholder="e.g. Qatar National Bank (QNB)"
+                    value={editPdcForm.bank}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, bank: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs font-medium">Bank Branch</Label>
+                  <Input
+                    className="h-8 text-xs mt-1"
+                    placeholder="e.g. Main Branch / Grand Hamad"
+                    value={editPdcForm.bankBranch}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, bankBranch: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Property & Unit Mapping */}
+            <div className="rounded-lg border p-3.5 space-y-3 bg-card">
+              <div className="flex items-center gap-2 font-semibold text-xs text-primary border-b pb-2">
+                <Building2 className="h-4 w-4" />
+                <span>Property, Unit &amp; Tenant Mapping</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <Label className="text-xs font-medium">Property Code</Label>
+                  <Input
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.propertyCode}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, propertyCode: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Unit Name</Label>
+                  <Input
+                    className="h-8 text-xs font-mono mt-1"
+                    value={editPdcForm.unitName}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, unitName: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-medium">Tenant Name</Label>
+                  <Input
+                    className="h-8 text-xs mt-1"
+                    value={editPdcForm.tenantName}
+                    onChange={(e) => setEditPdcForm(f => ({ ...f, tenantName: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Re-upload PDC Cheque Scans */}
+            <div className="rounded-lg border p-3.5 space-y-3 bg-card">
+              <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex items-center gap-2 font-semibold text-xs text-primary">
+                  <Upload className="h-4 w-4" />
+                  <span>Re-upload Cheque Scanned Copy</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">Scans stored securely in Supabase</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Front Copy */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Cheque Copy (Front)</Label>
+                  {editPdcForm.newFrontPreview ? (
+                    <div className="rounded-lg border border-primary/50 bg-primary/5 p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <img
+                          src={editPdcForm.newFrontPreview}
+                          alt="New Front Preview"
+                          className="h-12 w-20 object-cover rounded border bg-background shrink-0"
+                        />
+                        <div className="truncate">
+                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50">New Copy Selected</Badge>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{editPdcForm.newFrontFile?.name}</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                        onClick={() => setEditPdcForm(f => ({ ...f, newFrontFile: null, newFrontPreview: "" }))}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : editPdcForm.chequeFrontUrl ? (
+                    <div className="rounded-lg border bg-muted/20 p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <img
+                          src={editPdcForm.chequeFrontUrl}
+                          alt="Current Front Copy"
+                          className="h-12 w-20 object-cover rounded border bg-background shrink-0 cursor-pointer hover:opacity-80"
+                          onClick={() => {
+                            setViewingChequeUrl(editPdcForm.chequeFrontUrl);
+                            setViewingChequeTitle(`PDC #${editPdcForm.chequeNumber} — Front Copy`);
+                            setImageViewerOpen(true);
+                          }}
+                        />
+                        <div className="truncate">
+                          <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300 bg-blue-50">Current Copy Attached</Badge>
+                          <button
+                            type="button"
+                            className="text-[11px] text-primary underline block mt-0.5 cursor-pointer"
+                            onClick={() => {
+                              setViewingChequeUrl(editPdcForm.chequeFrontUrl);
+                              setViewingChequeTitle(`PDC #${editPdcForm.chequeNumber} — Front Copy`);
+                              setImageViewerOpen(true);
+                            }}
+                          >
+                            View Full Copy
+                          </button>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1 cursor-pointer"
+                        onClick={() => frontFileInputRef.current?.click()}
+                      >
+                        <UploadCloud className="h-3 w-3" /> Replace
+                      </Button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => frontFileInputRef.current?.click()}
+                      className="rounded-lg border-2 border-dashed border-border hover:border-primary/50 p-4 text-center cursor-pointer transition-colors bg-muted/10 hover:bg-muted/20"
+                    >
+                      <UploadCloud className="h-5 w-5 text-muted-foreground mx-auto mb-1" />
+                      <p className="text-xs font-medium text-foreground">Click to upload front scan</p>
+                      <p className="text-[10px] text-muted-foreground">PNG, JPG, or PDF</p>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    ref={frontFileInputRef}
+                    className="hidden"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const previewUrl = URL.createObjectURL(file);
+                        setEditPdcForm(f => ({ ...f, newFrontFile: file, newFrontPreview: previewUrl }));
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Back Copy (Endorsement) */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold">Cheque Copy (Back / Endorsement)</Label>
+                  {editPdcForm.newBackPreview ? (
+                    <div className="rounded-lg border border-primary/50 bg-primary/5 p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <img
+                          src={editPdcForm.newBackPreview}
+                          alt="New Back Preview"
+                          className="h-12 w-20 object-cover rounded border bg-background shrink-0"
+                        />
+                        <div className="truncate">
+                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300 bg-emerald-50">New Copy Selected</Badge>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{editPdcForm.newBackFile?.name}</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                        onClick={() => setEditPdcForm(f => ({ ...f, newBackFile: null, newBackPreview: "" }))}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : editPdcForm.chequeBackUrl ? (
+                    <div className="rounded-lg border bg-muted/20 p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <img
+                          src={editPdcForm.chequeBackUrl}
+                          alt="Current Back Copy"
+                          className="h-12 w-20 object-cover rounded border bg-background shrink-0 cursor-pointer hover:opacity-80"
+                          onClick={() => {
+                            setViewingChequeUrl(editPdcForm.chequeBackUrl);
+                            setViewingChequeTitle(`PDC #${editPdcForm.chequeNumber} — Back Copy`);
+                            setImageViewerOpen(true);
+                          }}
+                        />
+                        <div className="truncate">
+                          <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-300 bg-blue-50">Back Copy Attached</Badge>
+                          <button
+                            type="button"
+                            className="text-[11px] text-primary underline block mt-0.5 cursor-pointer"
+                            onClick={() => {
+                              setViewingChequeUrl(editPdcForm.chequeBackUrl);
+                              setViewingChequeTitle(`PDC #${editPdcForm.chequeNumber} — Back Copy`);
+                              setImageViewerOpen(true);
+                            }}
+                          >
+                            View Full Copy
+                          </button>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1 cursor-pointer"
+                        onClick={() => backFileInputRef.current?.click()}
+                      >
+                        <UploadCloud className="h-3 w-3" /> Replace
+                      </Button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => backFileInputRef.current?.click()}
+                      className="rounded-lg border-2 border-dashed border-border hover:border-primary/50 p-4 text-center cursor-pointer transition-colors bg-muted/10 hover:bg-muted/20"
+                    >
+                      <UploadCloud className="h-5 w-5 text-muted-foreground mx-auto mb-1" />
+                      <p className="text-xs font-medium text-foreground">Click to upload back copy</p>
+                      <p className="text-[10px] text-muted-foreground">Optional endorsement scan</p>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    ref={backFileInputRef}
+                    className="hidden"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const previewUrl = URL.createObjectURL(file);
+                        setEditPdcForm(f => ({ ...f, newBackFile: file, newBackPreview: previewUrl }));
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground">
+              Saves to Supabase <code className="text-[10px] font-mono">pdcs</code>, updates GL vouchers &amp; finance stores.
+            </span>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs cursor-pointer"
+                disabled={savingPdc}
+                onClick={() => setEditPdcModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium cursor-pointer"
+                disabled={savingPdc}
+                onClick={handleSaveEditedPdc}
+              >
+                {savingPdc ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving &amp; Syncing…
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-3.5 w-3.5" /> Save PDC &amp; Update Reports
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── IMAGE VIEWER MODAL ── */}
+      <Dialog open={imageViewerOpen} onOpenChange={setImageViewerOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="p-3 border-b flex flex-row items-center justify-between">
+            <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+              <Eye className="h-4 w-4 text-primary" />
+              {viewingChequeTitle || "Cheque Document Preview"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-muted/30 min-h-[300px]">
+            {viewingChequeUrl.startsWith("data:application/pdf") || viewingChequeUrl.endsWith(".pdf") ? (
+              <iframe src={viewingChequeUrl} className="w-full h-[550px] rounded border" title="PDF Preview" />
+            ) : (
+              <img
+                src={viewingChequeUrl}
+                alt={viewingChequeTitle}
+                className="max-h-[620px] max-w-full rounded object-contain shadow-md"
+              />
+            )}
+          </div>
+          <DialogFooter className="p-2.5 border-t bg-muted/20 flex justify-between sm:justify-between items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 cursor-pointer"
+              onClick={() => {
+                const a = document.createElement("a");
+                a.href = viewingChequeUrl;
+                a.download = `${(viewingChequeTitle || "cheque_scan").replace(/[^\w\s-]/g, "_")}.png`;
+                a.click();
+              }}
+            >
+              <Download className="h-3.5 w-3.5" /> Download Copy
+            </Button>
+            <Button variant="ghost" size="sm" className="text-xs cursor-pointer" onClick={() => setImageViewerOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── SECURITY DEPOSIT SETTLE & REFUND MODAL (2-STEP WIZARD) ─────────────── */}
       <Dialog open={settleRefundOpen} onOpenChange={setSettleRefundOpen}>
         <DialogContent className="sm:max-w-[580px] max-h-[90vh] overflow-y-auto">
@@ -15912,7 +16753,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     ) : (
                       <DataTable
                         key={`vouchers-${voucherPropertyFilter}-${voucherUnitFilter}-${voucherCustomerFilter}-${voucherMethodFilter}-${voucherStatusFilter}-${voucherSearchQuery}`}
-                        columns={["Voucher / Receipt", "Property", "Unit", "Customer", "Method / Period", "Amount", "Status"]}
+                        columns={
+                          isAdmin
+                            ? ["Voucher / Receipt", "Property", "Unit", "Customer", "Method / Period", "Amount", "Status", "PDC Copy", "Actions"]
+                            : ["Voucher / Receipt", "Property", "Unit", "Customer", "Method / Period", "Amount", "Status", "PDC Copy"]
+                        }
                         rows={filteredVouchers.map((voucher) => {
                           const vv = voucher as any;
                           const vName   = voucher.name || "Voucher";
@@ -15938,6 +16783,68 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">In Hand</span>;
                           })();
 
+                          // Check if this row is a PDC voucher
+                          const isPdc = Boolean(
+                            vv.pdc_id ||
+                            vv.cheque_number ||
+                            (voucher.method && voucher.method.toUpperCase().includes("PDC")) ||
+                            (voucher.name && voucher.name.includes("PDC")) ||
+                            (voucher.receiptNo && voucher.receiptNo.includes("PDC"))
+                          );
+
+                          // PDC Scanned Copy thumbnail / button
+                          const copyCell = vv.cheque_front_url ? (
+                            <div key="copy" className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingChequeUrl(vv.cheque_front_url);
+                                  setViewingChequeTitle(`PDC #${vv.cheque_number || voucher.receiptNo} — Front Copy`);
+                                  setImageViewerOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-[11px] font-medium transition-colors cursor-pointer"
+                                title="Click to view scanned copy"
+                              >
+                                <Eye className="h-3 w-3" />
+                                <span>View</span>
+                              </button>
+                              {vv.cheque_back_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingChequeUrl(vv.cheque_back_url);
+                                    setViewingChequeTitle(`PDC #${vv.cheque_number || voucher.receiptNo} — Back Copy`);
+                                    setImageViewerOpen(true);
+                                  }}
+                                  className="text-[10px] text-muted-foreground hover:text-foreground underline cursor-pointer"
+                                  title="View back of cheque"
+                                >
+                                  (Back)
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span key="nocopy" className="text-muted-foreground/60 text-[11px] italic">No copy</span>
+                          );
+
+                          // Admin Actions: Edit PDC
+                          const actionsCell = isAdmin ? (
+                            <div key="act" className="flex items-center justify-end gap-1.5">
+                              {isPdc ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10 hover:border-primary shadow-xs font-medium cursor-pointer"
+                                  onClick={() => handleOpenEditPdc(voucher)}
+                                >
+                                  <Edit className="h-3 w-3" /> Edit PDC
+                                </Button>
+                              ) : (
+                                <span className="text-muted-foreground text-xs">—</span>
+                              )}
+                            </div>
+                          ) : null;
+
                           return [
                             <span key="vname" className="font-medium text-foreground">{`${vName} / ${voucher.receiptNo || "—"}`}</span>,
                             <span key="vprop" className="text-xs text-muted-foreground">{vProp}</span>,
@@ -15946,6 +16853,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             `${voucher.method || "—"} / ${voucher.period || "—"}`,
                             formatMoney(Number(voucher.amount) || 0),
                             pdcStatusBadge,
+                            copyCell,
+                            ...(isAdmin && actionsCell ? [actionsCell] : []),
                           ];
                         })}
                       />

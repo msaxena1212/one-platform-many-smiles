@@ -374,7 +374,7 @@ function saveReceiptHistory(history: Record<string, TenantReceiptDetails[]>) {
 export function PdcManagement() {
   const routeSearch = useSearch({ strict: false }) as { collect?: string };
   const { pdcs: sharedPdcs, setPdcs: setSharedPdcs, leases, units, customers } = useAppData();
-  const { addCashBookEntry, addVoucher } = useFinanceStore();
+  const { addCashBookEntry, addVoucher, refreshFinanceData } = useFinanceStore();
   const [pdcs, setPdcs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -988,6 +988,8 @@ export function PdcManagement() {
 
       toast.success(`Cheque #${chqNo} marked as ${config.newStatus}. Database & GL updated.`);
       await new Promise(r => setTimeout(r, 400));
+      refreshFinanceData();
+      await load(false);
     } catch (e: any) {
       toast.error(e.message || "Action failed. Please try again.");
     } finally {
@@ -1207,6 +1209,8 @@ export function PdcManagement() {
           : `Partial cash payment of QAR ${confirmedAmt.toLocaleString()} recorded for Cheque #${chqNo}. Receipt #${receiptNum} generated. Remaining due: QAR ${remainingAfter.toLocaleString()}.`
       );
       await new Promise(r => setTimeout(r, 400));
+      refreshFinanceData();
+      await load(false);
     } catch (e: any) {
       toast.error(e.message || "Failed to process cash replacement.");
     } finally {
