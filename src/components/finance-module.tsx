@@ -2589,15 +2589,28 @@ function TrialBalanceSimpleSubModule() {
 
 function TrialBalanceFullSubModule() {
   const { trialBalanceDetailed } = useFinanceStore();
-  const totalDr = trialBalanceDetailed.reduce((s, a) => s + Math.max(0, a.debit), 0);
-  const totalCr = trialBalanceDetailed.reduce((s, a) => s + Math.max(0, a.credit), 0);
+
+  // ── Group accounts by class ──────────────────────────────────────────────
+  const CLASS_ORDER: Array<{ type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses"; label: string; prefix: string; colorDr: string; colorCr: string; bg: string; border: string }> = [
+    { type: "Assets",      label: "1000 — Assets",                    prefix: "1", colorDr: "text-emerald-700", colorCr: "text-emerald-500", bg: "bg-emerald-50/60 dark:bg-emerald-950/20", border: "border-emerald-200 dark:border-emerald-800" },
+    { type: "Liabilities", label: "2000 — Liabilities",               prefix: "2", colorDr: "text-amber-700",   colorCr: "text-amber-600",   bg: "bg-amber-50/60 dark:bg-amber-950/20",   border: "border-amber-200 dark:border-amber-800"   },
+    { type: "Capital",     label: "3000 — Capital & Owner Equity",     prefix: "3", colorDr: "text-blue-700",    colorCr: "text-blue-600",    bg: "bg-blue-50/60 dark:bg-blue-950/20",     border: "border-blue-200 dark:border-blue-800"     },
+    { type: "Revenue",     label: "4000 — Revenue",                    prefix: "4", colorDr: "text-indigo-700",  colorCr: "text-indigo-600",  bg: "bg-indigo-50/60 dark:bg-indigo-950/20", border: "border-indigo-200 dark:border-indigo-800" },
+    { type: "Expenses",    label: "5000 — Expenses",                   prefix: "5", colorDr: "text-rose-700",    colorCr: "text-rose-600",    bg: "bg-rose-50/60 dark:bg-rose-950/20",     border: "border-rose-200 dark:border-rose-800"     },
+  ];
+
+  const sorted = [...trialBalanceDetailed].sort((a, b) => a.code.localeCompare(b.code));
+  const totalDr = sorted.reduce((s, a) => s + a.debit, 0);
+  const totalCr = sorted.reduce((s, a) => s + a.credit, 0);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Detailed General Ledger Trial Balance</h3>
-          <p className="text-xs text-muted-foreground">Full debit/credit schedule across all operational GL sub-accounts — live from all posted transactions.</p>
+          <p className="text-xs text-muted-foreground">
+            Full debit/credit schedule across all GL accounts — live from posted transactions. Zero-balance accounts included for completeness.
+          </p>
         </div>
         <Badge variant="outline" className="font-mono">{trialBalanceDetailed.length} Accounts</Badge>
       </div>
@@ -2606,31 +2619,79 @@ function TrialBalanceFullSubModule() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs">
-              <TableHead className="font-bold">Code</TableHead>
+              <TableHead className="font-bold w-24">Code</TableHead>
               <TableHead className="font-bold">Account Name</TableHead>
-              <TableHead className="font-bold">Type</TableHead>
-              <TableHead className="text-right font-bold">Debit (QAR)</TableHead>
-              <TableHead className="text-right font-bold">Credit (QAR)</TableHead>
+              <TableHead className="font-bold w-32">Class</TableHead>
+              <TableHead className="text-right font-bold w-36">Debit (QAR)</TableHead>
+              <TableHead className="text-right font-bold w-36">Credit (QAR)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="text-xs">
-            {trialBalanceDetailed.sort((a, b) => a.code.localeCompare(b.code)).map(acc => (
-              <TableRow key={acc.code} className="hover:bg-muted/30">
-                <TableCell className="font-mono font-bold text-primary">{acc.code}</TableCell>
-                <TableCell className="font-medium">{acc.name}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={`text-[10px] font-semibold ${acc.type === 'Assets' ? 'text-emerald-700' : acc.type === 'Liabilities' ? 'text-amber-700' : acc.type === 'Revenue' ? 'text-indigo-700' : acc.type === 'Expenses' ? 'text-rose-700' : 'text-blue-700'}`}>
-                    {acc.type}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right font-mono text-blue-600 font-semibold">{acc.debit > 0 ? acc.debit.toLocaleString() : "—"}</TableCell>
-                <TableCell className="text-right font-mono text-emerald-600 font-semibold">{acc.credit > 0 ? acc.credit.toLocaleString() : "—"}</TableCell>
-              </TableRow>
-            ))}
+            {CLASS_ORDER.map(cls => {
+              const accounts = sorted.filter(a => a.type === cls.type);
+              const classDr = accounts.reduce((s, a) => s + a.debit, 0);
+              const classCr = accounts.reduce((s, a) => s + a.credit, 0);
+              return (
+                <>
+                  {/* Class header row */}
+                  <TableRow key={`header-${cls.type}`} className={`${cls.bg} border-t`}>
+                    <TableCell colSpan={5} className={`py-2 px-3 font-bold text-[11px] uppercase tracking-wide ${cls.colorDr}`}>
+                      {cls.label}
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Account rows */}
+                  {accounts.map(acc => {
+                    const isZero = acc.debit === 0 && acc.credit === 0;
+                    return (
+                      <TableRow
+                        key={acc.code}
+                        className={`hover:bg-muted/30 ${isZero ? "opacity-50" : ""}`}
+                      >
+                        <TableCell className="font-mono font-bold text-primary pl-6">{acc.code}</TableCell>
+                        <TableCell className="font-medium">
+                          {acc.name}
+                          {isZero && <span className="ml-2 text-[10px] text-muted-foreground italic">(nil)</span>}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] font-semibold ${cls.colorDr}`}
+                          >
+                            {acc.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className={`text-right font-mono font-semibold ${isZero ? "text-muted-foreground" : "text-blue-600"}`}>
+                          {acc.debit > 0 ? acc.debit.toLocaleString() : "—"}
+                        </TableCell>
+                        <TableCell className={`text-right font-mono font-semibold ${isZero ? "text-muted-foreground" : "text-emerald-600"}`}>
+                          {acc.credit > 0 ? acc.credit.toLocaleString() : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {/* Class subtotal row */}
+                  <TableRow key={`subtotal-${cls.type}`} className={`${cls.bg} border-b font-semibold`}>
+                    <TableCell colSpan={3} className={`pl-6 text-[11px] font-semibold ${cls.colorDr}`}>
+                      Subtotal — {cls.type}
+                    </TableCell>
+                    <TableCell className={`text-right font-mono text-[11px] font-bold ${cls.colorDr}`}>
+                      {classDr > 0 ? classDr.toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className={`text-right font-mono text-[11px] font-bold ${cls.colorCr}`}>
+                      {classCr > 0 ? classCr.toLocaleString() : "—"}
+                    </TableCell>
+                  </TableRow>
+                </>
+              );
+            })}
+
+            {/* Grand Total */}
             <TableRow className="font-bold border-t-2 bg-muted/20">
-              <TableCell colSpan={3}>Grand Total</TableCell>
-              <TableCell className="text-right font-mono font-bold text-primary">{totalDr.toLocaleString()} QAR</TableCell>
-              <TableCell className="text-right font-mono font-bold text-primary">{totalCr.toLocaleString()} QAR</TableCell>
+              <TableCell colSpan={3} className="text-sm font-bold">Grand Total</TableCell>
+              <TableCell className="text-right font-mono font-bold text-primary text-sm">{totalDr.toLocaleString()} QAR</TableCell>
+              <TableCell className="text-right font-mono font-bold text-primary text-sm">{totalCr.toLocaleString()} QAR</TableCell>
             </TableRow>
           </TableBody>
         </Table>
