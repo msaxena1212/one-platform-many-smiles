@@ -48,7 +48,7 @@ import {
 } from "@/lib/finance/bankAccounts";
 import { collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
-import { useFinanceStore } from "@/lib/finance/finance-store";
+import { useFinanceStore, resolvePdcBankGl } from "@/lib/finance/finance-store";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 import {
   Dialog,
@@ -891,16 +891,17 @@ export function PdcManagement() {
         // If the cheque was still "In Hand", clearPdc auto-runs deposit first.
         // Mirror both GL legs in FinanceStore so reports update immediately.
         const wasInHand = (pdc.status || "").toLowerCase() === "in hand" || (pdc.status || "") === "In Hand";
+        const bankInfo = resolvePdcBankGl(pdc.bank || chosenBank?.accountTitle || chosenBank?.glCode);
         if (wasInHand) {
           addVoucher({
             voucher_no: `VCH-DEP-${chqNo}`,
             voucher_type: "Receipt Voucher",
             date: todayStr,
-            name: `PDC Deposited to Bank (auto) – ${chqNo} (${tenant} - ${unit})`,
-            debit: "Bank Operating Account",
-            debit_code: "12000",
-            credit: "PDC In Hand",
-            credit_code: "12900",
+            name: `PDC Deposited to ${bankInfo.glName} (auto) – ${chqNo} (${tenant} - ${unit})`,
+            debit: bankInfo.glName,
+            debit_code: bankInfo.glCode,
+            credit: "Rent PDC In Hand",
+            credit_code: "12900001",
             amount: amt,
             method: "Cheque Deposit",
             property_name: prop,
@@ -913,10 +914,10 @@ export function PdcManagement() {
           voucher_type: "Journal Voucher",
           date: todayStr,
           name: `PDC Cleared – ${chqNo} (${tenant} - ${unit})`,
-          debit: "Customer(PDC) - Unit Account",
-          debit_code: "21400",
-          credit: "Receivable - Unit Account",
-          credit_code: "12413",
+          debit: "Customer PDC Liability",
+          debit_code: "21400001",
+          credit: "Tenant Receivables",
+          credit_code: "12413001",
           amount: amt,
           method: "Cheque Clearance",
           property_name: prop,
@@ -924,15 +925,16 @@ export function PdcManagement() {
           tenant_name: tenant,
         });
       } else if (action === "return") {
+        const bankInfo = resolvePdcBankGl(pdc.bank || chosenBank?.accountTitle || chosenBank?.glCode);
         addVoucher({
           voucher_no: `VCH-RET-${chqNo}`,
           voucher_type: "Journal Voucher",
           date: todayStr,
           name: `PDC Cheque Returned / Dishonoured – ${chqNo} (${tenant} - ${unit})`,
-          debit: "PDC In Hand",
-          debit_code: "12900",
-          credit: "Bank Operating Account",
-          credit_code: "12000",
+          debit: "Rent PDC In Hand",
+          debit_code: "12900001",
+          credit: bankInfo.glName,
+          credit_code: bankInfo.glCode,
           amount: amt,
           method: "Cheque Return",
           property_name: prop,
@@ -945,9 +947,9 @@ export function PdcManagement() {
           date: todayStr,
           name: `Tenant Dues Restored on Dishonour – ${chqNo} (${tenant} - ${unit})`,
           debit: "Tenant Receivables",
-          debit_code: "12413",
+          debit_code: "12413001",
           credit: "Customer PDC Liability",
-          credit_code: "21400",
+          credit_code: "21400001",
           amount: amt,
           method: "Cheque Return",
           property_name: prop,
@@ -961,9 +963,9 @@ export function PdcManagement() {
           date: todayStr,
           name: `PDC Cancelled – ${chqNo} (${tenant} - ${unit}) [${cancelReason}]`,
           debit: "Customer PDC Liability",
-          debit_code: "21400",
-          credit: "PDC In Hand",
-          credit_code: "12900",
+          debit_code: "21400001",
+          credit: "Rent PDC In Hand",
+          credit_code: "12900001",
           amount: amt,
           method: "Cancellation",
           property_name: prop,

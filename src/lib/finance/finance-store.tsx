@@ -320,6 +320,75 @@ const FinanceContext = createContext<FinanceStoreContextType | null>(null);
 
 const STORE_KEY = "zyno-finance-store-v1";
 
+export function resolvePdcBankGl(bank?: string | number | null): { glCode: string; glName: string } {
+  if (!bank) {
+    return { glCode: "12000001", glName: "Commercial Bank of Qatar (CBQ)" };
+  }
+  const str = String(bank).toLowerCase().trim();
+
+  // Dukhan Bank / Al Ameen Dukhan Bank
+  if (
+    str.includes("dukhan") ||
+    str.includes("al ameen") ||
+    str.includes("100001761798") ||
+    str === "12000002" ||
+    str === "8" ||
+    str === "10"
+  ) {
+    return { glCode: "12000002", glName: "Al Ameen Dukhan Bank" };
+  }
+
+  // QNB
+  if (
+    str.includes("qnb") ||
+    str.includes("qatar national bank") ||
+    str.includes("0013-128940-001") ||
+    str === "12000003" ||
+    str === "5"
+  ) {
+    return { glCode: "12000003", glName: "Bank Operating Account (QNB)" };
+  }
+
+  // Doha Bank
+  if (
+    str.includes("doha") ||
+    str.includes("0078-439201-003") ||
+    str === "12000004" ||
+    str === "7"
+  ) {
+    return { glCode: "12000004", glName: "Doha Bank Operating Account" };
+  }
+
+  // QIB
+  if (
+    str.includes("qib") ||
+    str.includes("islamic") ||
+    str.includes("0091-554210-004") ||
+    str === "12000005" ||
+    str === "8"
+  ) {
+    return { glCode: "12000005", glName: "Qatar Islamic Bank (QIB)" };
+  }
+
+  // Commercial Bank of Qatar (CBQ)
+  if (
+    str.includes("cbq") ||
+    str.includes("commercial bank") ||
+    str.includes("4060692533001") ||
+    str === "12000001" ||
+    str === "6"
+  ) {
+    return { glCode: "12000001", glName: "Commercial Bank of Qatar (CBQ)" };
+  }
+
+  // Fallback: If it's already an 8-digit code
+  if (/^1200\d{4}$/.test(str)) {
+    return { glCode: str, glName: String(bank) };
+  }
+
+  return { glCode: "12000001", glName: "Commercial Bank of Qatar (CBQ)" };
+}
+
 export function FinanceProvider({ children }: { children: ReactNode }) {
   const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v6";
 
@@ -450,13 +519,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   drCode = "12900"; drName = "PDC In Hand (Guarantee)";
                   crCode = "21200"; crName = "Guarantee Cheque Liability";
                 } else if (desc.includes("pdc deposited to bank") || desc.includes("vch-dep-")) {
-                  drCode = "12000001"; drName = "Bank Operating Account";
-                  crCode = "12900"; crName = "PDC In Hand";
+                  const bInfo = resolvePdcBankGl(desc);
+                  drCode = bInfo.glCode; drName = bInfo.glName;
+                  crCode = "12900001"; crName = "Rent PDC In Hand";
                 } else if (desc.includes("pdc cleared") || desc.includes("vch-clr-")) {
-                  // PDC Cleared → recognize as Rental Revenue (GL 41100)
-                  // Debit: Customer PDC Liability cleared; Credit: Rental Revenue
-                  drCode = "21400"; drName = "Customer (PDC) Liability";
-                  crCode = "41100"; crName = "Rental Revenue";
+                  drCode = "21400001"; drName = "Customer PDC Liability";
+                  crCode = "12413001"; crName = "Tenant Receivables";
                 } else if (desc.includes("pdc returned on cash settlement") || desc.includes("vch-csh-ret-")) {
                   drCode = "21400"; drName = "Customer (PDC) Liability";
                   crCode = "12900"; crName = "PDC In Hand";
@@ -621,6 +689,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           cleared_date:  "",
           returned_date: "",
           amount:        Number(p.amount || 0),
+          bank:          p.bank || p.bank_name || p.deposit_bank || "",
+          bank_id:       p.bank_id || null,
           status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
         };
 
@@ -690,6 +760,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             deposit_date: existing.deposit_date || toYmdFSD(p.deposit_date) || "",
             cleared_date: toYmdFSD(p.cleared_date) || "",
             returned_date: toYmdFSD(p.returned_date) || "",
+            bank: existing.bank || p.bank_name || p.bank || "",
+            bank_id: existing.bank_id || p.bank_id || null,
             status: mergedStatus,
           });
         }
@@ -746,9 +818,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             }
 
             // ── Entry 2: PDC Deposited to Bank ──────────────────────────────────
-            // Dr 12000001 Commercial Bank of Qatar (CBQ)  /  Cr 12900001 Rent PDC In Hand
+            // Dr [Bank GL Code] [Bank Title]  /  Cr 12900001 Rent PDC In Hand
             if (st === "deposited" || st === "cleared") {
               const depNo = `VCH-DEP-${p.id ?? chequeNo}`;
+              const bankInfo = resolvePdcBankGl(p.bank || p.bank_name || p.bank_id);
               if (!existingNos.has(depNo)) {
                 existingNos.add(depNo);
                 pdcVouchers.push({
@@ -756,9 +829,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   voucher_no:   depNo,
                   voucher_type: "Receipt Voucher",
                   date:         p.deposit_date || chqDate,
-                  name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
-                  debit:        "Commercial Bank of Qatar (CBQ)",
-                  debit_code:   "12000001",
+                  name:         `PDC Deposited to ${bankInfo.glName} — ${desc} [Cheque #${chequeNo}]`,
+                  debit:        bankInfo.glName,
+                  debit_code:   bankInfo.glCode,
                   credit:       "Rent PDC In Hand",
                   credit_code:  "12900001",
                   amount,
@@ -800,6 +873,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             // ── Entry 4: PDC Returned / Bounced ─────────────────────────────────
             if (st === "bounced" || st === "returned") {
               const retNo = `VCH-RET-${p.id ?? chequeNo}`;
+              const bankInfo = resolvePdcBankGl(p.bank || p.bank_name || p.bank_id);
               if (!existingNos.has(retNo)) {
                 existingNos.add(retNo);
                 pdcVouchers.push({
@@ -810,8 +884,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   name:         `PDC Cheque Returned / Dishonoured — ${desc} [Cheque #${chequeNo}]`,
                   debit:        "Rent PDC In Hand",
                   debit_code:   "12900001",
-                  credit:       "Commercial Bank of Qatar (CBQ)",
-                  credit_code:  "12000001",
+                  credit:       bankInfo.glName,
+                  credit_code:  bankInfo.glCode,
                   amount,
                   method:       "Cheque Return",
                   status:       "Posted",
@@ -1066,6 +1140,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           cheque_date:   p.maturity_date || p.cheque_date || (p.created_at ? String(p.created_at).split("T")[0] : ""),
           deposit_date:  p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
           amount:        Number(p.amount || 0),
+          bank:          p.bank || p.bank_name || p.deposit_bank || "",
+          bank_id:       p.bank_id || null,
           status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
         });
       }
@@ -1083,6 +1159,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             cheque_date:   p.cheque_date || p.maturity_date || "",
             deposit_date:  p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
             amount:        Number(p.amount || 0),
+            bank:          p.bank_name || p.bank || "",
+            bank_id:       p.bank_id || null,
             status:        (p.status || "").toLowerCase().replace(/_/g, " ").trim(),
           });
         }
@@ -1127,15 +1205,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const isCleared = rawStatus === "cleared";
 
         if (isDeposited || isCleared) {
+          const bankInfo = resolvePdcBankGl(p.bank || p.bank_name || p.bank_id);
           // ── Entry 2: PDC Deposited to Bank — Journal / Receipt Voucher ──
           freshVouchers.push({
             id:           `pdc-dep-${p.id}`,
             voucher_no:   `VCH-DEP-${p.id}`,
             voucher_type: "Receipt Voucher",
             date:         p.deposit_date || chqDate,
-            name:         `PDC Deposited to Bank — ${desc} [Cheque #${chequeNo}]`,
-            debit:        "Commercial Bank of Qatar (CBQ)",
-            debit_code:   "12000001",
+            name:         `PDC Deposited to ${bankInfo.glName} — ${desc} [Cheque #${chequeNo}]`,
+            debit:        bankInfo.glName,
+            debit_code:   bankInfo.glCode,
             credit:       "Rent PDC In Hand",
             credit_code:  "12900001",
             amount,

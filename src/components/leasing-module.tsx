@@ -610,7 +610,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     setAuditEvents,
     refetchData,
   } = useAppData();
-  const { addCashBookEntry, addVoucher: addFinanceStoreVoucher } = useFinanceStore();
+  const { addCashBookEntry, addVoucher: addFinanceStoreVoucher, refreshFinanceData } = useFinanceStore();
   const [documents, setDocuments] = useState<TenantDocument[]>(initialDocuments);
   const [inspections, setInspections] = useState<Inspection[]>(() =>
     (contextCheckIns || []).map((ci: any) => ({
@@ -1151,7 +1151,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       amount: voucher.amount || rawPdc.amount || 0,
       bank: vv.bank || rawPdc.bank || "",
       bankBranch: vv.bank_branch || rawPdc.bank_branch || "",
-      status: (vv.pdc_status || rawPdc.status || "in hand").toLowerCase(),
+      status: "in hand",
       propertyCode: vv.property_name || rawPdc.property_code || "",
       unitName: vv.unit_name || rawPdc.unit_name || "",
       tenantName: vv.tenant_name || rawPdc.tenant_name || "",
@@ -1222,18 +1222,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         backUrl = await uploadChequeFile(editPdcForm.newBackFile, `back_${editPdcForm.chequeNumber}`);
       }
 
-      // 2. Prepare payload for pdcs table
+      // 2. Prepare payload for pdcs table (replacement cheque starts strictly in hand)
       const pdcUpdate: any = {
         cheque_number: editPdcForm.chequeNumber.trim(),
         maturity_date: editPdcForm.maturityDate,
-        deposit_date: editPdcForm.depositDate || null,
+        deposit_date: null,
         rent_from_date: editPdcForm.rentFromDate || null,
         rent_to_date: editPdcForm.rentToDate || null,
         amount: Number(editPdcForm.amount),
         bank: editPdcForm.bank.trim(),
         bank_branch: editPdcForm.bankBranch.trim(),
-        status: editPdcForm.status,
-        status_pdc: editPdcForm.status,
+        status: "in hand",
+        status_pdc: "in hand",
         property_code: editPdcForm.propertyCode.trim(),
         unit_name: editPdcForm.unitName.trim(),
         tenant_name: editPdcForm.tenantName.trim(),
@@ -1247,24 +1247,15 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         await supabase.from("pdcs").update(pdcUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
       }
 
-      // 3. Update fin_pdc_register table
-      const finStatusMap: Record<string, string> = {
-        "in hand": "In Hand",
-        "deposited": "Deposited",
-        "cleared": "Cleared",
-        "returned": "Returned",
-        "bounced": "Bounced",
-        "cancelled": "Cancelled",
-        "replaced": "Replaced",
-      };
-      const finStatus = finStatusMap[editPdcForm.status.toLowerCase()] || editPdcForm.status;
-
+      // 3. Update fin_pdc_register table (status strictly In Hand; reset any previous clearance/deposit dates)
       const finUpdate: any = {
         cheque_number: editPdcForm.chequeNumber.trim(),
         cheque_date: editPdcForm.maturityDate,
         amount: Number(editPdcForm.amount),
-        status: finStatus,
-        deposit_date: editPdcForm.depositDate || null,
+        status: "In Hand",
+        deposit_date: null,
+        cleared_date: null,
+        returned_date: null,
         property_id: editPdcForm.propertyCode.trim(),
         unit_id: editPdcForm.unitName.trim(),
       };
@@ -1360,9 +1351,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       // 7. Refresh Finance Store & GL
       try {
-        const finStore = useFinanceStore.getState();
-        await finStore.refreshFinanceData();
-        await finStore.load(false);
+        await refreshFinanceData();
       } catch (fErr) {
         console.warn("[handleSaveEditedPdc] Finance store refresh warning:", fErr);
       }
@@ -11302,25 +11291,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </div>
 
                 <div>
-                  <Label className="text-xs font-medium">PDC Lifecycle Status</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">PDC Lifecycle Status</Label>
+                    <Badge variant="outline" className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800">
+                      In Hand Only
+                    </Badge>
+                  </div>
                   <Select
-                    value={editPdcForm.status}
-                    onValueChange={(val) => setEditPdcForm(f => ({ ...f, status: val }))}
+                    value="in hand"
+                    onValueChange={() => {}}
+                    disabled
                   >
-                    <SelectTrigger className="h-8 text-xs mt-1">
-                      <SelectValue placeholder="Select status" />
+                    <SelectTrigger className="h-8 text-xs mt-1 bg-muted/40 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold cursor-not-allowed">
+                      <SelectValue placeholder="In Hand (Received)" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="in hand">In Hand (Received)</SelectItem>
-                      <SelectItem value="deposited">Deposited (In Bank)</SelectItem>
-                      <SelectItem value="cleared">Cleared (Realized)</SelectItem>
-                      <SelectItem value="returned">Returned</SelectItem>
-                      <SelectItem value="bounced">Bounced</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                      <SelectItem value="replaced">Replaced</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Banking status in PDC register</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    Replacement PDC is registered strictly as In Hand (Received)
+                  </p>
                 </div>
 
                 <div>

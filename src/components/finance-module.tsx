@@ -4168,6 +4168,7 @@ function BankSubModule() {
 }
 
 function BankAccountSubModule() {
+  const { trialBalanceDetailed } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<FinBankAccount | null>(null);
   const [data, setData] = useState<FinBankAccount[]>([]);
@@ -4445,13 +4446,21 @@ function BankAccountSubModule() {
             ) : (
               data.map(a => {
                 const isActive = a.status !== 'Inactive';
+                const isCbq = a.account_number?.includes('4060692533001') || a.account_title?.toLowerCase().includes('cbq');
+                const isDukhan = a.account_number?.includes('100001761798') || a.account_title?.toLowerCase().includes('dukhan');
+                const glMatch = trialBalanceDetailed.find(t => 
+                  t.code === (isDukhan ? "12000002" : isCbq ? "12000001" : (a as any).gl_code) ||
+                  t.name.toLowerCase().includes((a.account_title || "").toLowerCase())
+                );
+                const currentBalance = (Number(a.opening_balance) || 0) + (glMatch ? glMatch.balance : 0);
+
                 return (
                   <TableRow key={a.id} className="hover:bg-muted/30 text-xs">
                     <TableCell className="font-semibold text-primary">{getBankName(a.bank_id ?? "")}</TableCell>
                     <TableCell className="font-mono font-bold">{a.account_number}</TableCell>
                     <TableCell className="font-medium">{a.account_title}</TableCell>
                     <TableCell><Badge variant="outline" className="text-[10px]">{a.currency}</Badge></TableCell>
-                    <TableCell className="text-right font-mono font-bold text-emerald-600">{Number(a.opening_balance).toLocaleString()}</TableCell>
+                    <TableCell className="text-right font-mono font-bold text-emerald-600">{currentBalance.toLocaleString()} QAR</TableCell>
                     <TableCell>
                       {isActive ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25 border-emerald-500/30 text-[10px] font-medium">
