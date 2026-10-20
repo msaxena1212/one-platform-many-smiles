@@ -554,6 +554,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 }
               }
 
+              let vchTenant = "";
+              let vchUnit = "";
+              let vchProp = "";
+              if (r.description) {
+                const match = r.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+                if (match) {
+                  vchTenant = match[1].trim();
+                  vchUnit = match[2].trim();
+                  if (vchUnit.includes("-")) vchProp = vchUnit.split("-")[0].trim();
+                }
+              }
+
               return {
                 id: r.id,
                 voucher_no: r.voucher_number,
@@ -566,6 +578,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 credit_code: crCode || "41100",
                 amount: Number(r.total_amount) || 0,
                 status: r.status === "posted" ? "Posted" : "Draft" as FinanceVoucher["status"],
+                property_name: vchProp,
+                unit_ref: vchUnit,
+                tenant_name: vchTenant,
               };
             });
 
@@ -2154,6 +2169,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (u.includes("flat16") || u.includes("aaa")) propName = "Old Salata - Residence No:23";
         else if (u.includes("flat14") || u.includes("flat08") || u.includes("mansoura")) propName = "MANSOURA - BLDG06";
         else if (u.includes("002") || u.includes("neeman")) propName = "Neeman's New Building";
+        else if (unitName.includes("-")) propName = unitName.split("-")[0].trim();
         else if (!hasProp && propName) propName = propName; // keep existing
       }
 
@@ -2319,10 +2335,97 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     return list.sort((a, b) => new Date(a.date || "").getTime() - new Date(b.date || "").getTime());
   }, [journalEntries, grnMappings, payableInvoices, vouchers, receivableInvoices, legalReceivables, bankClearances]);
 
-  // Derived Trial Balance Detailed — 100% computed from allLedgerTransactions
-  const trialBalanceDetailed = useMemo(() => {
-    const map = new Map<string, { code: string; name: string; type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses"; debit: number; credit: number }>();
+  // Full Chart of Accounts — every GL account in the PMS, used to seed the
+  // Trial Balance so zero-balance accounts are always visible.
+  const FULL_COA: { code: string; name: string; type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses" }[] = [
+    // ── 1000x Assets ──────────────────────────────────────────────────────────
+    { code: "12000001", name: "Commercial Bank of Qatar (CBQ)", type: "Assets" },
+    { code: "12000002", name: "Al Ameen Dukhan Bank", type: "Assets" },
+    { code: "12000003", name: "Bank Operating Account (QNB)", type: "Assets" },
+    { code: "12000004", name: "Doha Bank Operating Account", type: "Assets" },
+    { code: "12000005", name: "Qatar Islamic Bank (QIB)", type: "Assets" },
+    { code: "12100001", name: "Cash In Hand", type: "Assets" },
+    { code: "12100002", name: "Petty Cash", type: "Assets" },
+    { code: "12413",    name: "Tenant Receivables (Control)", type: "Assets" },
+    { code: "12413001", name: "Tenant Receivables — Unit SL", type: "Assets" },
+    { code: "12414",    name: "Legal Receivables", type: "Assets" },
+    { code: "12900",    name: "PDC In Hand (Control)", type: "Assets" },
+    { code: "12900001", name: "Rent PDC In Hand", type: "Assets" },
+    { code: "12900002", name: "Deposit PDC In Hand", type: "Assets" },
+    { code: "13100",    name: "Prepaid Expenses", type: "Assets" },
+    { code: "13200",    name: "VAT Recoverable (Input Tax)", type: "Assets" },
+    { code: "14100",    name: "Fixed Assets — Buildings", type: "Assets" },
+    { code: "14200",    name: "Fixed Assets — Furniture & Fixtures", type: "Assets" },
+    { code: "14300",    name: "Fixed Assets — Office Equipment", type: "Assets" },
+    { code: "14900",    name: "Accumulated Depreciation", type: "Assets" },
+    { code: "15100",    name: "CWIP — Construction in Progress", type: "Assets" },
+    // ── 2000x Liabilities ────────────────────────────────────────────────────
+    { code: "21100",    name: "Refundable Deposit Liability (Control)", type: "Liabilities" },
+    { code: "21100001", name: "Reservation Advance Deposit", type: "Liabilities" },
+    { code: "21100002", name: "Admin Charges Liability", type: "Liabilities" },
+    { code: "21100003", name: "Qatar Cool Deposit Liability", type: "Liabilities" },
+    { code: "21100004", name: "Kahramaa Deposit Liability", type: "Liabilities" },
+    { code: "21100005", name: "Service Fee Deposit Liability", type: "Liabilities" },
+    { code: "21200",    name: "Guarantee Cheque Liability", type: "Liabilities" },
+    { code: "21200001", name: "Guarantee Cheque Liability — Unit SL", type: "Liabilities" },
+    { code: "21300",    name: "Accounts Payable (Control)", type: "Liabilities" },
+    { code: "21300001", name: "Vendor Payable — Trade", type: "Liabilities" },
+    { code: "21400",    name: "Customer PDC Liability (Control)", type: "Liabilities" },
+    { code: "21400001", name: "Customer PDC Liability — Unit SL", type: "Liabilities" },
+    { code: "21500",    name: "Security Deposit Liability (Control)", type: "Liabilities" },
+    { code: "21500001", name: "Security Deposit Liability — Unit SL", type: "Liabilities" },
+    { code: "22100001", name: "Accounts Payable / Expense Accrual", type: "Liabilities" },
+    { code: "22200",    name: "VAT Payable (Output Tax)", type: "Liabilities" },
+    { code: "22300",    name: "Payroll Payable", type: "Liabilities" },
+    { code: "22400",    name: "Unclaimed Deposits", type: "Liabilities" },
+    { code: "22500",    name: "Advance Rent Received", type: "Liabilities" },
+    // ── 3000x Capital / Equity ───────────────────────────────────────────────
+    { code: "31000",    name: "Owner / Investor Capital", type: "Capital" },
+    { code: "31100",    name: "Retained Earnings", type: "Capital" },
+    { code: "31200",    name: "Current Year Net Profit", type: "Capital" },
+    { code: "31300",    name: "Owner Drawings", type: "Capital" },
+    // ── 4000x Revenue ────────────────────────────────────────────────────────
+    { code: "41100",    name: "Rental Revenue", type: "Revenue" },
+    { code: "41200",    name: "Parking Revenue", type: "Revenue" },
+    { code: "41300",    name: "Utility Recovery Income", type: "Revenue" },
+    { code: "41400",    name: "Agency Commission Income", type: "Revenue" },
+    { code: "41500",    name: "Admin Fee Income", type: "Revenue" },
+    { code: "41600",    name: "Late Payment Penalty Income", type: "Revenue" },
+    { code: "41700",    name: "Lease Transfer Fee Income", type: "Revenue" },
+    { code: "41800",    name: "Reservation Forfeiture Income", type: "Revenue" },
+    { code: "41900",    name: "Other Income / Miscellaneous", type: "Revenue" },
+    // ── 5000x Expenses ───────────────────────────────────────────────────────
+    { code: "52100001", name: "Building Maintenance Expense", type: "Expenses" },
+    { code: "52100002", name: "Electrical Works Expense", type: "Expenses" },
+    { code: "52100003", name: "Plumbing Works Expense", type: "Expenses" },
+    { code: "52100004", name: "Civil Works Expense", type: "Expenses" },
+    { code: "52100005", name: "HVAC / AC Maintenance Expense", type: "Expenses" },
+    { code: "52100006", name: "Landscaping Expense", type: "Expenses" },
+    { code: "52100007", name: "Cleaning Services Expense", type: "Expenses" },
+    { code: "52100008", name: "General Maintenance Expense", type: "Expenses" },
+    { code: "52200",    name: "Utilities Expense", type: "Expenses" },
+    { code: "52300",    name: "Payroll / Salaries Expense", type: "Expenses" },
+    { code: "52400",    name: "Management Fee Expense", type: "Expenses" },
+    { code: "52500",    name: "Bank Charges Expense", type: "Expenses" },
+    { code: "52600",    name: "Depreciation Expense", type: "Expenses" },
+    { code: "52700",    name: "Legal & Professional Fees", type: "Expenses" },
+    { code: "52800",    name: "Insurance Expense", type: "Expenses" },
+    { code: "52900",    name: "Cheque Dishonour Charges", type: "Expenses" },
+    { code: "53000",    name: "Rent Discount / Waiver Expense", type: "Expenses" },
+    { code: "53100",    name: "Vendor Advance Applied", type: "Expenses" },
+    { code: "53200",    name: "Other Operating Expenses", type: "Expenses" },
+  ];
 
+  // Derived Trial Balance Detailed — seeded from full COA so zero-balance
+  // accounts always appear, then overlaid with actual transaction totals.
+  const trialBalanceDetailed = useMemo(() => {
+    // 1. Seed map with every account in the COA at zero debit/credit
+    const map = new Map<string, { code: string; name: string; type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses"; debit: number; credit: number }>();
+    FULL_COA.forEach(acct => {
+      map.set(acct.code, { code: acct.code, name: acct.name, type: acct.type, debit: 0, credit: 0 });
+    });
+
+    // 2. Overlay actual ledger transaction totals (adds accounts not in static COA too)
     allLedgerTransactions.forEach(tx => {
       const existing = map.get(tx.account_code) || {
         code: tx.account_code,
@@ -2340,6 +2443,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       ...a,
       balance: a.debit - a.credit
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allLedgerTransactions]);
 
   // Derived Trial Balance Summary — 100% computed by grouping account-level balances from trialBalanceDetailed

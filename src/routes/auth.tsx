@@ -86,13 +86,20 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
 
-    const trimmedEmail = email.trim();
+    let trimmedIdentifier = email.trim();
     const trimmedPassword = password.trim();
+
+    // If tenant entered 13-digit numeric Customer ID, map to synthetic tenant login email
+    if (/^\d{13}$/.test(trimmedIdentifier)) {
+      trimmedIdentifier = `${trimmedIdentifier}@tenant.zyno.com`;
+    } else if (!trimmedIdentifier.includes("@") && /^\d+$/.test(trimmedIdentifier) && trimmedIdentifier.length <= 13) {
+      trimmedIdentifier = `${trimmedIdentifier.padStart(13, "0")}@tenant.zyno.com`;
+    }
 
     try {
       clearDemoSession();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
+        email: trimmedIdentifier,
         password: trimmedPassword,
       });
 
@@ -318,14 +325,14 @@ function AuthPage() {
                   <form onSubmit={handleSignIn} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="email" className="text-xs text-slate-300 font-medium">
-                        Work Email Address
+                        Work Email or 13-Digit Customer ID
                       </Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                         <Input 
                           id="email" 
-                          type="email" 
-                          placeholder="name@organisation.com" 
+                          type="text" 
+                          placeholder="name@organisation.com or 13-digit Customer ID" 
                           className="pl-9 bg-slate-950/60 border-slate-700 text-slate-100 placeholder:text-slate-500 focus-visible:ring-emerald-500"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}

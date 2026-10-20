@@ -1,12 +1,13 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Bell, Lock, User, Eye, EyeOff, CheckCircle2, Shield } from "lucide-react";
+import { Bell, Lock, User, Eye, EyeOff, CheckCircle2, Shield, Copy } from "lucide-react";
 
 export const Route = createFileRoute("/portal/settings")({
   head: () => ({ meta: [{ title: "Account Settings — ZYNO Tenant Portal" }] }),
@@ -45,9 +46,25 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 function CustomerSettings() {
+  const [customerId, setCustomerId] = useState("");
   const [name, setName] = useState("Khalid Al-Mansouri");
   const [email, setEmail] = useState("khalid.almansouri@email.com");
   const [phone, setPhone] = useState("+974 5512 3456");
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        const meta = data.user.user_metadata || {};
+        if (meta.customer_id) setCustomerId(meta.customer_id);
+        if (meta.full_name) setName(meta.full_name);
+        if (data.user.email && !data.user.email.endsWith('@tenant.zyno.com')) {
+          setEmail(data.user.email);
+        } else {
+          setEmail("");
+        }
+      }
+    });
+  }, []);
   const [emergency, setEmergency] = useState({ name: "Fatima Al-Mansouri", phone: "+974 5599 8877", relation: "Spouse" });
   const [lang, setLang] = useState("English");
   const [notifications, setNotifications] = useState({ email: true, sms: true, push: false, whatsapp: true });
@@ -97,6 +114,37 @@ function CustomerSettings() {
             <CardHeader><CardTitle>Personal Information</CardTitle><CardDescription>Update your contact and emergency details</CardDescription></CardHeader>
             <CardContent className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
+                {customerId && (
+                  <div className="space-y-1.5 sm:col-span-2 p-3 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60">
+                    <Label htmlFor="p-custid" className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                      <Shield className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      13-Digit Customer ID (Unique Login ID)
+                    </Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input
+                        id="p-custid"
+                        value={customerId}
+                        readOnly
+                        className="font-mono text-sm font-bold bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 text-xs border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40"
+                        onClick={() => {
+                          navigator.clipboard.writeText(customerId);
+                          toast.success("Customer ID copied to clipboard!");
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Copy
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 mt-1">
+                      You can use this 13-digit numeric Customer ID along with your password to log in directly into the tenant portal.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="p-name">Full Name</Label>
                   <Input id="p-name" value={name} onChange={e => setName(e.target.value)} />

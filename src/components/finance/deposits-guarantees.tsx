@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building2, User, Hash, Info, Loader2, Plus, ShieldCheck, ArrowDownLeft, ArrowUpRight, BookmarkCheck, Landmark } from "lucide-react";
+import { Receipt, Banknote, AlertTriangle, CheckCircle2, Building, Building2, User, Home, Calendar, Search, ArrowUpDown, Filter, Hash, Info, Loader2, Plus, ShieldCheck, ArrowDownLeft, ArrowUpRight, BookmarkCheck, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { settleDeposit, collectSecurityDeposit } from "@/lib/finance/depositService";
@@ -231,10 +231,20 @@ export function DepositsGuarantees() {
     units,
     setUnits,
   } = useAppData();
-  const { addVoucher: addFinanceStoreVoucher, addReceivableInvoice, addCashBookEntry } = useFinanceStore();
   const [deposits, setDeposits] = useState<DepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+
+  // ── Multi-Dimensional Filter Bar State ──
+  const [selectedProperty, setSelectedProperty] = useState("all");
+  const [selectedUnit, setSelectedUnit] = useState("all");
+  const [selectedCustomer, setSelectedCustomer] = useState("all");
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [sortAsc, setSortAsc] = useState(false);
 
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<TenantReceiptDetails | null>(null);
@@ -314,8 +324,37 @@ export function DepositsGuarantees() {
     try {
       let dbData: any[] = [];
       try {
-        const { data, error } = await supabase.from("fin_deposits").select("*").order("created_at", { ascending: false });
-        if (!error && data) dbData = data;
+        const [depRes, vchRes] = await Promise.all([
+          supabase.from("fin_deposits").select("*").order("created_at", { ascending: false }),
+          supabase.from("fin_vouchers").select("reference_no, description, voucher_date").like("voucher_number", "VCH-SD-%")
+        ]);
+        if (!depRes.error && depRes.data) {
+          const vchByRef = new Map<string, any>();
+          (vchRes.data || []).forEach(v => {
+            if (v.reference_no) vchByRef.set(v.reference_no, v);
+          });
+          dbData = depRes.data.map((d: any) => {
+            const vch = vchByRef.get(d.receipt_ref);
+            let tenant = d.tenant_name || "";
+            let unit = d.unit_ref || "";
+            let prop = d.property_name || "";
+            if (vch?.description) {
+              const m = vch.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+              if (m) {
+                tenant = tenant || m[1].trim();
+                unit = unit || m[2].trim();
+                if (unit.includes("-")) prop = prop || unit.split("-")[0].trim();
+              }
+            }
+            return {
+              ...d,
+              tenant_name: tenant || d.tenant_name || "Valued Tenant",
+              unit_ref: unit || d.unit_ref || "—",
+              property_name: prop || d.property_name || "—",
+              created_at: d.created_at || vch?.voucher_date || d.deposit_date,
+            };
+          });
+        }
       } catch (e) { /* fallback */ }
 
       const contextDeposits: DepositRecord[] = (sharedVouchers || [])
@@ -361,52 +400,34 @@ export function DepositsGuarantees() {
         });
 
       const allMap = new Map<string, DepositRecord>();
-      const sigMap = new Map<string, DepositRecord>();
 
-      DEFAULT_GL21100_DEPOSITS.forEach(d => {
-        allMap.set(String(d.id), { ...d });
-        sigMap.set(getDepositSignature(d), { ...d });
-      });
-
-      dbData.forEach(d => {
-        const isSettledDb = d.status === "Settled" || d.status === "Refunded";
-        const rec: DepositRecord = {
-          id: d.id,
-          leaseId: d.lease_id,
-          deposit_type: d.deposit_type || "Refundable Deposit (21100)",
-          coa_account_code: d.coa_account_code || "21100 - Refundable Security Deposit",
-          amount: Number(d.amount) || 0,
-          status: isSettledDb ? "Settled" : "Refundable",
-          deduction_amount: d.deduction_amount != null ? Number(d.deduction_amount) : undefined,
-          refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
-          settled_at: d.settled_at,
-          property_name: d.property_name || "Old Salata - Residence No:23",
-          unit_ref: d.unit_ref || "AAA - Flat16",
-          tenant_name: d.tenant_name || "Valued Tenant",
-          lease_start_date: d.lease_start_date,
-          lease_end_date: d.lease_end_date,
-          created_at: d.created_at,
-        };
-        allMap.set(String(d.id), rec);
-        sigMap.set(getDepositSignature(rec), rec);
-      });
-
-      // Merge context vouchers without creating duplicate rows
-      contextDeposits.forEach(cd => {
-        const sig = getDepositSignature(cd);
-        const existing = sigMap.get(sig) || allMap.get(String(cd.id));
-        if (existing) {
-          if (cd.status === "Settled") {
-            existing.status = "Settled";
-            if (cd.deduction_amount != null) existing.deduction_amount = cd.deduction_amount;
-            if (cd.refund_amount != null) existing.refund_amount = cd.refund_amount;
-            if (cd.settled_at) existing.settled_at = cd.settled_at;
-          }
-        } else {
+      if (dbData.length > 0) {
+        dbData.forEach(d => {
+          const isSettledDb = d.status === "Settled" || d.status === "Refunded";
+          const rec: DepositRecord = {
+            id: d.id,
+            leaseId: d.lease_id,
+            deposit_type: d.deposit_type || "Security Deposit (21500)",
+            coa_account_code: d.coa_account_code || "21500 - Deposits - Leasing Customers",
+            amount: Number(d.amount) || 0,
+            status: isSettledDb ? "Settled" : "Refundable",
+            deduction_amount: d.deduction_amount != null ? Number(d.deduction_amount) : undefined,
+            refund_amount: d.refund_amount != null ? Number(d.refund_amount) : undefined,
+            settled_at: d.settled_at,
+            property_name: d.property_name || "—",
+            unit_ref: d.unit_ref || "—",
+            tenant_name: d.tenant_name || "Valued Tenant",
+            lease_start_date: d.lease_start_date,
+            lease_end_date: d.lease_end_date,
+            created_at: d.created_at,
+          };
+          allMap.set(String(d.id), rec);
+        });
+      } else {
+        contextDeposits.forEach(cd => {
           allMap.set(String(cd.id), cd);
-          sigMap.set(sig, cd);
-        }
-      });
+        });
+      }
 
       // Also propagate settlement status from any closed leases
       for (const d of allMap.values()) {
@@ -937,8 +958,92 @@ export function DepositsGuarantees() {
     setReceiptOpen(true);
   }
 
-  const totalPages = Math.max(1, Math.ceil(deposits.length / PAGE_SIZE));
-  const paginated = deposits.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const propertyOptions = useMemo(() => {
+    const set = new Set<string>();
+    deposits.forEach(d => { if (d.property_name && d.property_name !== "—") set.add(d.property_name); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [deposits]);
+
+  const unitOptions = useMemo(() => {
+    const set = new Set<string>();
+    deposits.forEach(d => {
+      if (selectedProperty !== "all" && d.property_name !== selectedProperty) return;
+      if (d.unit_ref && d.unit_ref !== "—") set.add(d.unit_ref);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  }, [deposits, selectedProperty]);
+
+  const customerOptions = useMemo(() => {
+    const set = new Set<string>();
+    deposits.forEach(d => { if (d.tenant_name && d.tenant_name !== "—") set.add(d.tenant_name); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [deposits]);
+
+  const monthOptions = useMemo(() => {
+    const set = new Set<string>();
+    deposits.forEach(d => {
+      const dt = d.settled_at || d.created_at || d.lease_start_date || "";
+      if (dt.length >= 7) set.add(dt.slice(0, 7));
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [deposits]);
+
+  const resetFilters = () => {
+    setSelectedProperty("all");
+    setSelectedUnit("all");
+    setSelectedCustomer("all");
+    setSelectedMonth("all");
+    setStatusFilter("all");
+    setSearchQuery("");
+    setFromDate("");
+    setToDate("");
+    setSortAsc(false);
+    setPage(1);
+  };
+
+  const filteredDeposits = useMemo(() => {
+    let list = deposits.filter(d => {
+      if (selectedProperty !== "all" && d.property_name !== selectedProperty) return false;
+      if (selectedUnit !== "all" && d.unit_ref !== selectedUnit) return false;
+      if (selectedCustomer !== "all" && d.tenant_name !== selectedCustomer) return false;
+      if (statusFilter !== "all" && d.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+      
+      const entryDate = (d.settled_at ? d.settled_at.split("T")[0] : (d.created_at ? d.created_at.split("T")[0] : (d.lease_start_date || "2026-08-01")));
+      if (selectedMonth !== "all" && !entryDate.startsWith(selectedMonth)) return false;
+      if (fromDate && entryDate < fromDate) return false;
+      if (toDate && entryDate > toDate) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const match =
+          (d.tenant_name || "").toLowerCase().includes(q) ||
+          (d.property_name || "").toLowerCase().includes(q) ||
+          (d.unit_ref || "").toLowerCase().includes(q) ||
+          (d.deposit_type || "").toLowerCase().includes(q) ||
+          (d.coa_account_code || "").toLowerCase().includes(q) ||
+          String(d.id).toLowerCase().includes(q) ||
+          String(d.amount).includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    list = [...list].sort((a, b) => {
+      const dateA = a.settled_at || a.created_at || a.lease_start_date || "";
+      const dateB = b.settled_at || b.created_at || b.lease_start_date || "";
+      const comp = dateA.localeCompare(dateB);
+      return sortAsc ? comp : -comp;
+    });
+
+    return list;
+  }, [deposits, selectedProperty, selectedUnit, selectedCustomer, selectedMonth, statusFilter, searchQuery, fromDate, toDate, sortAsc]);
+
+  const totalFilteredAmount = useMemo(() => {
+    return filteredDeposits.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+  }, [filteredDeposits]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDeposits.length / PAGE_SIZE));
+  const paginated = filteredDeposits.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <>
@@ -985,6 +1090,178 @@ export function DepositsGuarantees() {
             </div>
           </div>
 
+          {/* ── MULTI-DIMENSIONAL FILTER BAR (Property, Unit, Customer, Month, Date) ── */}
+          <div className="rounded-xl border bg-muted/25 p-3.5 space-y-3 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-primary" />
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                  Multi-Dimensional Filter Bar (Ascending Order)
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" className="h-6 text-xs text-muted-foreground hover:text-primary px-2" onClick={resetFilters}>
+                Reset All Filters
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {/* 1. Property Filter (Ascending) */}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <Building className="h-3 w-3" /> Property
+                </Label>
+                <Select value={selectedProperty} onValueChange={(v) => { setSelectedProperty(v); setSelectedUnit("all"); setPage(1); }}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="All Properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties ({propertyOptions.length})</SelectItem>
+                    {propertyOptions.map((prop) => (
+                      <SelectItem key={prop} value={prop}>{prop}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 2. Unit Filter (Ascending) */}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <Home className="h-3 w-3" /> Unit
+                </Label>
+                <Select value={selectedUnit} onValueChange={(v) => { setSelectedUnit(v); setPage(1); }}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="All Units" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Units ({unitOptions.length})</SelectItem>
+                    {unitOptions.map((u) => (
+                      <SelectItem key={u} value={u}>{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 3. Customer / Tenant Name Filter (Ascending) */}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <User className="h-3 w-3" /> Customer Name
+                </Label>
+                <Select value={selectedCustomer} onValueChange={(v) => { setSelectedCustomer(v); setPage(1); }}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="All Customers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Customers ({customerOptions.length})</SelectItem>
+                    {customerOptions.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 4. Month Filter (Ascending Chronological) */}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> Entry Month
+                </Label>
+                <Select value={selectedMonth} onValueChange={(v) => { setSelectedMonth(v); setPage(1); }}>
+                  <SelectTrigger className="h-8 text-xs bg-background font-mono">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Entry Months</SelectItem>
+                    {monthOptions.map((m) => {
+                      const [y, mm] = m.split("-");
+                      const monthName = new Date(Number(y), Number(mm) - 1, 1).toLocaleString("default", { month: "short", year: "numeric" });
+                      return (
+                        <SelectItem key={m} value={m} className="font-mono text-xs">
+                          {monthName} ({m})
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 5. Status Filter */}
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" /> Refund Status
+                </Label>
+                <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses ({deposits.length})</SelectItem>
+                    <SelectItem value="refundable">Refundable (Held)</SelectItem>
+                    <SelectItem value="settled">Settled / Refunded</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Sub-row: Date Range & Search & Sort Order */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-1">
+              <div className="sm:col-span-4 relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-8 text-xs bg-background"
+                  placeholder="Search receipt #, tenant, property, unit, GL..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                />
+              </div>
+
+              <div className="sm:col-span-3 flex items-center gap-1.5">
+                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">From Date:</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs bg-background"
+                  value={fromDate}
+                  onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+                />
+              </div>
+
+              <div className="sm:col-span-3 flex items-center gap-1.5">
+                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">To Date:</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs bg-background"
+                  value={toDate}
+                  onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+                />
+              </div>
+
+              <div className="sm:col-span-2 flex items-center gap-1.5 justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs w-full gap-1"
+                  onClick={() => setSortAsc(!sortAsc)}
+                  title="Toggle Ascending / Descending order"
+                >
+                  <ArrowUpDown className="h-3 w-3" /> {sortAsc ? "Sort: Ascending ↑" : "Sort: Descending ↓"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Status Summary Banner */}
+          <div className="flex items-center justify-between text-xs px-1 mb-3">
+            <span className="text-muted-foreground">
+              Showing <strong className="text-foreground">{filteredDeposits.length}</strong> of {deposits.length} deposits
+              {selectedProperty !== "all" ? ` • Property: ${selectedProperty}` : ""}
+              {selectedUnit !== "all" ? ` • Unit: ${selectedUnit}` : ""}
+              {selectedCustomer !== "all" ? ` • Customer: ${selectedCustomer}` : ""}
+              {selectedMonth !== "all" ? ` • Month: ${selectedMonth}` : ""}
+              {statusFilter !== "all" ? ` • Status: ${statusFilter}` : ""}
+            </span>
+            <span className="font-mono">
+              Filtered Total: <strong className="text-emerald-600 font-bold">QR {totalFilteredAmount.toLocaleString()}</strong>
+            </span>
+          </div>
+
           {loading ? <p className="text-sm text-muted-foreground py-4">Loading...</p> : (
             <>
               <div className="border rounded-lg overflow-hidden">
@@ -1004,7 +1281,7 @@ export function DepositsGuarantees() {
                   </TableHeader>
                   <TableBody>
                     {paginated.length === 0 && (
-                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No Deposits found. GL 21100 deposits auto-populate from Leasing Collections &amp; Agreements.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No deposits found matching your filter criteria.</TableCell></TableRow>
                     )}
                     {paginated.map(d => (
                       <TableRow key={String(d.id)} className="hover:bg-muted/30">
@@ -1062,9 +1339,9 @@ export function DepositsGuarantees() {
                 </Table>
               </div>
 
-              {deposits.length > PAGE_SIZE && (
+              {filteredDeposits.length > PAGE_SIZE && (
                 <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
-                  <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, deposits.length)} of {deposits.length}</span>
+                  <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filteredDeposits.length)} of {filteredDeposits.length}</span>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" className="h-7" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</Button>
                     {Array.from({ length: totalPages }, (_, i) => i + 1).filter(p => Math.abs(p - page) <= 2).map(p => (

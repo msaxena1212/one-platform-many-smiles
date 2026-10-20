@@ -98,6 +98,7 @@ type Unit = {
 
 type Customer = {
   id: string;
+  customerId?: string;
   name: string;
   type: "individual" | "company";
   qatarId: string;
@@ -1302,8 +1303,16 @@ function LeasingPage() {
       return;
     }
 
+    const numericIds = (customers || [])
+      .map((c) => (c as any).customerId || (c as any).tax_identification_no)
+      .filter((id) => id && /^\d{13}$/.test(id))
+      .map((id) => BigInt(id));
+    const maxId = numericIds.length > 0 ? numericIds.reduce((m, x) => x > m ? x : m, 1000000000000n) : 1000000000000n;
+    const generatedCustomerId = String(maxId + 1n);
+
     const customer: Customer = {
       id: `c${customers.length + 1}`,
+      customerId: generatedCustomerId,
       ...customerForm,
       status: "active",
     };
@@ -5010,8 +5019,11 @@ function LeasingPage() {
             </CardHeader>
             <CardContent>
               <DataTable
-                columns={["Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
+                columns={["Customer ID", "Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
                 rows={customers.map((customer) => [
+                  <span key="cust-id" className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
+                    {customer.customerId || (customer as any).tax_identification_no || "-"}
+                  </span>,
                   customer.name,
                   customer.type,
                   customer.qatarId || customer.passport || customer.crNumber || "-",

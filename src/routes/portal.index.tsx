@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   Home, CreditCard, Wrench, FileText, CalendarCheck2, Shield,
   ChevronRight, AlertTriangle, CheckCircle2, Clock, Building2,
-  ArrowRight, Bell, UserCheck
+  ArrowRight, Bell, UserCheck, Hash
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,20 @@ export const Route = createFileRoute("/portal/")({
 });
 
 function PortalHome() {
+  const [currentUser, setCurrentUser] = useState<{ name: string; customerId?: string } | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        const metadata = data.user.user_metadata || {};
+        setCurrentUser({
+          name: metadata.full_name || "Valued Tenant",
+          customerId: metadata.customer_id,
+        });
+      }
+    });
+  }, []);
+
   const openTickets = tickets.filter(t => t.status !== "closed" && t.status !== "resolved");
   const overdueInvoices = tenantInvoices.filter(i => i.status === "overdue");
   const outstandingInvoices = tenantInvoices.filter(i => i.status === "outstanding" || i.status === "overdue");
@@ -31,10 +47,21 @@ function PortalHome() {
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[oklch(0.28_0.06_200)] via-[oklch(0.32_0.08_195)] to-[oklch(0.22_0.05_210)] p-6 text-white sm:p-8">
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, oklch(0.8 0.1 195), transparent 60%)" }} />
         <div className="relative">
-          <p className="text-xs uppercase tracking-widest opacity-70">
-            {tenantLease.property} &middot; {tenantLease.unit}
-          </p>
-          <h2 className="mt-1 text-2xl font-semibold sm:text-3xl">Hello, Khalid 👋</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <p className="text-xs uppercase tracking-widest opacity-70">
+                {tenantLease.property} &middot; {tenantLease.unit}
+              </p>
+              <h2 className="mt-1 text-2xl font-semibold sm:text-3xl">Hello, {currentUser?.name || "Khalid"} 👋</h2>
+            </div>
+            {currentUser?.customerId && (
+              <div className="inline-flex items-center gap-1.5 self-start sm:self-center px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-xs font-mono font-medium">
+                <Hash className="h-3.5 w-3.5 text-emerald-300" />
+                <span className="opacity-75">Customer ID:</span>
+                <span className="font-bold tracking-wide text-emerald-300">{currentUser.customerId}</span>
+              </div>
+            )}
+          </div>
           <p className="mt-2 max-w-xl text-sm opacity-80">
             {openTickets.length > 0
               ? `You have ${openTickets.length} open maintenance request${openTickets.length > 1 ? "s" : ""}.`

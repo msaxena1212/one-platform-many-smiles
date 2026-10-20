@@ -1048,27 +1048,35 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         return rows;
       }
 
-      // Fetch from pdcs table with full pagination (authoritative store of all 1,661 PDCs with properties, units, tenants)
+      // 1. Fetch from pdcs table with full pagination (all 1,809 PDCs with property, unit, tenant)
       const pdcsTableData = await fetchAllRows((from, to) =>
         supabase.from("pdcs").select("*").order("maturity_date", { ascending: false }).range(from, to)
+      );
+
+      // 2. Fetch all 341 Security Deposits from fin_vouchers
+      const sdVouchersData = await fetchAllRows((from, to) =>
+        supabase
+          .from("fin_vouchers")
+          .select("*")
+          .or("source_type.eq.SECURITY_DEPOSIT,voucher_number.ilike.VCH-SD-%")
+          .order("voucher_date", { ascending: false })
+          .range(from, to)
       );
 
       const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
       // Synthesize vouchers directly from pdcs table preserving all distinct rows
-      const synthesized: Voucher[] = (pdcsTableData || []).map((p: any) => {
-        const resolvedProperty = p.property_code || p.property_name || "";
-        const resolvedUnit     = p.unit_name || p.unit_ref || "";
-        const resolvedTenant   = p.tenant_name || p.drawer_name || "";
+      const synthesizedPdcs: (Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string })[] = (pdcsTableData || []).map((p: any) => {
+        const resolvedProperty = (p.property_code || p.property_name || "").trim();
+        const resolvedUnit     = (p.unit_name || p.unit_ref || "").trim();
+        const resolvedTenant   = (p.tenant_name || p.drawer_name || "").trim();
 
         const chqDate  = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
-        const isPastDue = chqDate <= todayStr;
 
         // Derive display-facing PDC status strictly from stored DB status (manual workflow only)
         const storedStatus = (p.status || "").toLowerCase().trim();
         const pdcStatus = storedStatus || "in hand";
 
-        // Map to Voucher.status for existing metric counters
         const vStatus: Voucher["status"] =
           pdcStatus === "cleared" || pdcStatus === "deposited" ? "posted" :
           pdcStatus === "returned" || pdcStatus === "bounced"  ? "draft"  :
@@ -1079,7 +1087,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           id:               `dpdc-${p.id}`,
           pdc_id:           p.id,
           leaseId:          resolvedTenant || "PDC",
-          name:             `Receipt Voucher - PDC (${p.cheque_number || "—"})`,
+          name:             `Receipt Voucher - PDC #${p.cheque_number || "—"}${resolvedTenant ? ` (${resolvedTenant}${resolvedUnit ? ` - ${resolvedUnit}` : ""})` : ""}`,
           receiptNo:        `RV-PDC-${p.cheque_number || p.id}`,
           method:           "PDC",
           period:           chqDate,
@@ -1101,10 +1109,57 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           cheque_front_url: p.cheque_front_url || "",
           cheque_back_url:  p.cheque_back_url || "",
           raw_pdc:          p,
-        } as Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string };
+        };
       });
 
-      setDirectPdcVouchers(synthesized);
+      // Synthesize vouchers directly from fin_vouchers (Security Deposits)
+      const synthesizedSds: (Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string })[] = (sdVouchersData || []).map((v: any) => {
+        let tenantName = "";
+        let unitName = "";
+        let propertyName = "";
+        let parsedMethod = "Cash";
+
+        if (v.description) {
+          const match = v.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)\s*\|\s*(.*?)\s*\|\s*(.*)/i);
+          if (match) {
+            tenantName = match[1].trim();
+            unitName = match[2].trim();
+            parsedMethod = match[4].trim();
+            if (unitName.includes("-")) {
+              propertyName = unitName.split("-")[0].trim();
+            }
+          } else {
+            const fallback = v.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+            if (fallback) {
+              tenantName = fallback[1].trim();
+              unitName = fallback[2].trim();
+              if (unitName.includes("-")) {
+                propertyName = unitName.split("-")[0].trim();
+              }
+            }
+          }
+        }
+
+        return {
+          id:               v.id,
+          leaseId:          tenantName || "DEP",
+          name:             v.description || `Security Deposit Receipt - ${tenantName} (${unitName})`,
+          receiptNo:        v.reference_no || v.voucher_number,
+          method:           parsedMethod || "Cash",
+          period:           v.voucher_date ? String(v.voucher_date).split("T")[0] : todayStr,
+          debit:            "Cash In Hand / Bank (12000001)",
+          credit:           "Security Deposit Liability (21500)",
+          amount:           Number(v.total_amount || 0),
+          status:           "posted",
+          property_name:    propertyName,
+          unit_name:        unitName,
+          tenant_name:      tenantName,
+          pdc_status:       "in hand",
+          source_type:      "SECURITY_DEPOSIT",
+        } as any;
+      });
+
+      setDirectPdcVouchers([...synthesizedPdcs, ...synthesizedSds]);
     } catch (err) {
       console.warn("[LeasingVouchers] Direct PDC fetch failed:", err);
     } finally {
@@ -1431,9 +1486,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             c.first_name || c.last_name || "";
           if (!name || name.toLowerCase().includes("abc trading")) continue;
           const normKey = normalizeCustKey(name);
-          if (normKey && seenNames.has(normKey)) continue;
+          const customerId = c.tax_identification_no ||
+            (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') ||
+            c.customer_id || '';
           dbCustomerMap.set(String(c.id), {
-            id: c.id, name,
+            id: c.id,
+            customerId,
+            name,
             type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
             qatarId: c.qatar_id || c.qatarId || "",
             passport: c.passport_number || c.passport || "",
@@ -1473,13 +1532,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       if (custSearchQuery.trim()) {
         const q = custSearchQuery.trim().toLowerCase();
         const qDigits = custSearchQuery.trim().replace(/\D/g, "");
+        const custIdMatch = (customer?.customerId || "").toLowerCase().includes(q) || (customer?.tax_identification_no || "").toLowerCase().includes(q);
         const nameMatch = (customer?.name || "").toLowerCase().includes(q);
         const qidMatch  = (customer?.qatarId || "").toLowerCase().includes(q);
         const passMatch = (customer?.passport || "").toLowerCase().includes(q);
         const crMatch   = (customer?.crNumber || "").toLowerCase().includes(q);
         const rawPhone  = (customer?.mobile || (customer as any)?.phone || "").toLowerCase();
         const phoneMatch = rawPhone.includes(q) || (qDigits.length >= 4 && rawPhone.replace(/\D/g, "").includes(qDigits));
-        if (!nameMatch && !qidMatch && !passMatch && !crMatch && !phoneMatch) return false;
+        if (!custIdMatch && !nameMatch && !qidMatch && !passMatch && !crMatch && !phoneMatch) return false;
       }
 
       // 2. Customer Type filter
@@ -1539,16 +1599,64 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const seenIds = new Set<string>();
     const merged: (Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string })[] = [];
 
-    for (const rawV of [...(vouchers || []), ...directPdcVouchers]) {
+    // Strictly include only PDCs and Security Deposits. Prioritize directPdcVouchers for authoritative DB data.
+    for (const rawV of [...directPdcVouchers, ...(vouchers || [])]) {
       if (!rawV || seenIds.has(rawV.id)) continue;
-      seenIds.add(rawV.id);
 
       const v = { ...rawV } as any;
+
+      // Filter: strictly ONLY include PDCs and Security Deposits
+      const isPdc = Boolean(
+        rawV.id?.startsWith("dpdc-") ||
+        v.pdc_id ||
+        (v.method && String(v.method).toUpperCase().includes("PDC")) ||
+        (v.name && String(v.name).toUpperCase().includes("PDC")) ||
+        (v.receiptNo && String(v.receiptNo).startsWith("RV-PDC-"))
+      );
+      const isSd = Boolean(
+        v.source_type === "SECURITY_DEPOSIT" ||
+        (v.voucher_number && String(v.voucher_number).startsWith("VCH-SD-")) ||
+        (v.id && String(v.id).startsWith("VCH-SD-")) ||
+        (v.receiptNo && String(v.receiptNo).startsWith("RV-DEP-")) ||
+        (v.name && String(v.name).toLowerCase().includes("security deposit")) ||
+        v.method === "Security Deposit" ||
+        v.method === "Cash" ||
+        v.method === "Guarantee Cheque"
+      );
+
+      if (!isPdc && !isSd) {
+        continue;
+      }
+
+      seenIds.add(rawV.id);
+
       let prop = (v.property_name || "").trim();
       let unit = (v.unit_name || "").trim();
       let tenant = (v.tenant_name || "").trim();
 
-      // 1. Check if leaseId matches a lease or reservation
+      // 1. Check title / description regex for Security Deposit e.g. "Security Deposit Receipt - Mr. Name (OS40-12) | RV-DEP-000001 | Cash"
+      if (!prop || !unit || !tenant) {
+        const desc = v.name || v.description || "";
+        const sdMatch = desc.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+        if (sdMatch) {
+          if (!tenant) tenant = sdMatch[1].trim();
+          if (!unit) unit = sdMatch[2].trim();
+          if (!prop && unit.includes("-")) prop = unit.split("-")[0].trim();
+        }
+      }
+
+      // 2. Check title / description regex for PDC e.g. "(Tenant Name - Unit Name)"
+      if (!prop || !unit || !tenant) {
+        const desc = v.name || v.description || "";
+        const nameUnitMatch = desc.match(/\(([^)]+)\s*[-–]\s*([A-Za-z0-9_-]+)\)/);
+        if (nameUnitMatch) {
+          if (!tenant) tenant = nameUnitMatch[1].trim();
+          if (!unit) unit = nameUnitMatch[2].trim();
+          if (!prop && unit.includes("-")) prop = unit.split("-")[0].trim();
+        }
+      }
+
+      // 3. Check if leaseId matches a lease or reservation
       if ((!prop || !unit || !tenant) && v.leaseId) {
         const matchedLease = leaseById.get(v.leaseId) || leaseByTenant.get(v.leaseId.toLowerCase().trim());
         if (matchedLease) {
@@ -1566,7 +1674,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
       }
 
-      // 2. Check if cheque number is present in receiptNo or name
+      // 4. Check if cheque number is present in receiptNo or name
       if (!prop || !unit || !tenant || !v.pdc_id) {
         const chqMatch = (v.receiptNo || v.name || "").match(/RV-PDC-([A-Za-z0-9_-]+)/) || (v.name || "").match(/PDC\s*\(([^)]+)\)/);
         if (chqMatch) {
@@ -1591,36 +1699,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
       }
 
-      // 3. Check if credit / name / receipt contains unit name like Flat01 or Flat12
-      if (!prop || !unit || !tenant) {
-        const unitMatch = (v.credit || v.name || v.receiptNo || "").match(/Flat\s*\d+|Unit\s*\d+|Shop\s*\d+|Office\s*\d+|Villa\s*\d+/i);
-        if (unitMatch) {
-          const uKey = unitMatch[0].replace(/\s+/g, "").toLowerCase();
-          const matchedLease = leaseByUnit.get(uKey);
-          if (matchedLease) {
-            if (!prop) prop = matchedLease.property || "";
-            if (!unit) unit = matchedLease.unit || unitMatch[0];
-            if (!tenant) tenant = matchedLease.tenantName || "";
-          } else {
-            const matchedRes = resByUnit.get(uKey);
-            if (matchedRes) {
-              if (!prop) prop = matchedRes.property || "";
-              if (!unit) unit = matchedRes.unit || unitMatch[0];
-              if (!tenant) tenant = matchedRes.tenantName || "";
-            }
-          }
-        }
+      // 5. If property is missing but unit has standard Property-Unit format (e.g. OS40-12, WK95-01, BO61-32)
+      if (!prop && unit && unit.includes("-")) {
+        prop = unit.split("-")[0].trim();
       }
 
-      // 4. If still missing property but unit is known, look up in realUnits / units
+      // 6. If still missing property but unit is known, look up in realUnits / units
       if (!prop && unit) {
         const allU = (realUnits && realUnits.length > 0) ? realUnits : (units || []);
         const matchedU = allU.find((u: any) => (u.unit || "").toLowerCase() === unit.toLowerCase());
         if (matchedU) prop = matchedU.property;
       }
-
-      // No random fallback: unlinked vouchers stay with empty prop/unit/tenant
-      // so they don't inflate property/unit/customer unique counts.
 
       v.property_name = prop || "";
       v.unit_name = unit || "";
@@ -3250,8 +3339,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const primaryMob = customerForm.primaryMobile || customerForm.mobile || "";
     const primaryMail = customerForm.primaryEmail || customerForm.email || "";
 
+    const numericIds = (customers || [])
+      .map((c) => (c as any).customerId || (c as any).tax_identification_no)
+      .filter((id) => id && /^\d{13}$/.test(id))
+      .map((id) => BigInt(id));
+    const maxId = numericIds.length > 0 ? numericIds.reduce((m, x) => x > m ? x : m, 1000000000000n) : 1000000000000n;
+    const generatedCustomerId = String(maxId + 1n);
+
     const customer: Customer = {
       id: `c${customers.length + 1}`,
+      customerId: generatedCustomerId,
+      tax_identification_no: generatedCustomerId,
       ...customerForm,
       name: finalDisplayName,
       displayName: finalDisplayName,
@@ -13333,11 +13431,64 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </Button>
             </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            <Metric label="Total Vouchers" value={vouchersLoading ? "…" : allVouchers.length} icon={<Receipt className="h-4 w-4 text-blue-600" />} description="All leasing accounting records" />
-            <Metric label="Properties" value={vouchersLoading ? "…" : new Set(allVouchers.map(v => v?.property_name).filter(Boolean)).size} icon={<Building2 className="h-4 w-4 text-indigo-600" />} description="Distinct properties with vouchers" />
-            <Metric label="Units" value={vouchersLoading ? "…" : new Set(allVouchers.filter(v => v?.property_name && v?.unit_name).map(v => `${v.property_name}||${v.unit_name}`)).size} icon={<DoorOpen className="h-4 w-4 text-emerald-600" />} description="Distinct units billed" />
-            <Metric label="Customers" value={vouchersLoading ? "…" : new Set(allVouchers.map(v => (v?.tenant_name || "").trim().toLowerCase()).filter(Boolean)).size} icon={<Users className="h-4 w-4 text-amber-600" />} description="Distinct tenants with vouchers" />
+          <div className="grid gap-4 md:grid-cols-5">
+            <Metric
+              label="Total Vouchers"
+              value={vouchersLoading ? "…" : allVouchers.length}
+              icon={<Receipt className="h-4 w-4 text-blue-600" />}
+              description="1,809 PDCs + 341 Deposits"
+            />
+            <Metric
+              label="PDC Receipts"
+              value={
+                vouchersLoading
+                  ? "…"
+                  : allVouchers.filter((v) =>
+                      Boolean(
+                        v.id?.startsWith("dpdc-") ||
+                        (v as any).pdc_id ||
+                        (v.method && String(v.method).toUpperCase().includes("PDC")) ||
+                        (v.name && String(v.name).toUpperCase().includes("PDC")) ||
+                        (v.receiptNo && String(v.receiptNo).startsWith("RV-PDC-"))
+                      )
+                    ).length
+              }
+              icon={<CreditCard className="h-4 w-4 text-emerald-600" />}
+              description="Rent post-dated cheques in hand"
+            />
+            <Metric
+              label="Security Deposits"
+              value={
+                vouchersLoading
+                  ? "…"
+                  : allVouchers.filter((v) =>
+                      Boolean(
+                        (v as any).source_type === "SECURITY_DEPOSIT" ||
+                        (v as any).voucher_number?.startsWith("VCH-SD-") ||
+                        v.id?.startsWith("VCH-SD-") ||
+                        (v.receiptNo && String(v.receiptNo).startsWith("RV-DEP-")) ||
+                        (v.name && String(v.name).toLowerCase().includes("security deposit")) ||
+                        v.method === "Security Deposit" ||
+                        v.method === "Cash" ||
+                        v.method === "Guarantee Cheque"
+                      )
+                    ).length
+              }
+              icon={<ShieldCheck className="h-4 w-4 text-amber-600" />}
+              description="Deposit liabilities (GL 21500)"
+            />
+            <Metric
+              label="Units Billed"
+              value={vouchersLoading ? "…" : new Set(allVouchers.filter((v) => v?.property_name && v?.unit_name).map((v) => `${v.property_name}||${v.unit_name}`)).size}
+              icon={<DoorOpen className="h-4 w-4 text-indigo-600" />}
+              description={`${new Set(allVouchers.map((v) => v?.property_name).filter(Boolean)).size} properties billed`}
+            />
+            <Metric
+              label="Customers"
+              value={vouchersLoading ? "…" : new Set(allVouchers.map((v) => (v?.tenant_name || "").trim().toLowerCase()).filter(Boolean)).size}
+              icon={<Users className="h-4 w-4 text-purple-600" />}
+              description="Distinct tenants with vouchers"
+            />
           </div>
         </>
       )}
@@ -13744,7 +13895,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     onClick={() => {
                       exportToExcel(
                         allCustomers.map((c) => ({
-                          "Customer ID": c.id,
+                          "Customer ID": c.customerId || c.tax_identification_no || c.id,
                           "Customer Name": c.name || c.tenantName || "",
                           "Customer Type": c.type || "individual",
                           "National ID / QID": c.qid || c.nationalId || "",
@@ -13869,8 +14020,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </div>
               ) : (
                 <DataTable
-                  columns={["Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
+                  columns={["Customer ID", "Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
                   rows={filteredCustomers.map((customer) => [
+                    <span key="cust-id" className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
+                      {customer?.customerId || customer?.tax_identification_no || "-"}
+                    </span>,
                     <span key="name" className="flex items-center gap-1.5 font-medium">
                       {customer?.name || "-"}
                       {(customer as any)?._source === "pdc" && (
@@ -14385,6 +14539,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                               {/* Customer Name */}
                               <td className="px-3 py-2.5 border-r w-[240px] min-w-[240px] max-w-[240px]">
                                 <span className="font-semibold text-xs text-foreground block leading-tight truncate" title={cust.name}>{cust.name}</span>
+                                {cust.customerId && (
+                                  <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 my-0.5">
+                                    ID: {cust.customerId}
+                                  </span>
+                                )}
                                 {cust.qatarId && <span className="text-[10px] text-muted-foreground font-mono block">QID: {cust.qatarId}</span>}
                                 {cust.crNumber && !cust.qatarId && <span className="text-[10px] text-muted-foreground font-mono block">CR: {cust.crNumber}</span>}
                               </td>
@@ -16802,11 +16961,16 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             </div>
                           ) : null;
 
+                          const displayProp = (vv.property_name || vv.raw_pdc?.property_code || "").trim() || (vUnit !== "—" && vUnit.includes("-") ? vUnit.split("-")[0].trim() : vProp);
+                          const displayUnit = (vv.unit_name || vv.raw_pdc?.unit_name || "").trim() || vUnit;
+                          const displayCust = (vv.tenant_name || vv.raw_pdc?.tenant_name || "").trim() || vCust;
+                          const displayName = voucher.receiptNo && vName.includes(voucher.receiptNo) ? vName : `${vName} / ${voucher.receiptNo || "—"}`;
+
                           return [
-                            <span key="vname" className="font-medium text-foreground">{`${vName} / ${voucher.receiptNo || "—"}`}</span>,
-                            <span key="vprop" className="text-xs text-muted-foreground">{vProp}</span>,
-                            <span key="vunit" className="font-mono text-xs font-semibold text-foreground">{vUnit}</span>,
-                            <span key="vcust" className="text-xs font-medium text-foreground">{vCust}</span>,
+                            <span key="vname" className="font-medium text-foreground">{displayName}</span>,
+                            <span key="vprop" className="text-xs font-semibold text-foreground">{displayProp}</span>,
+                            <span key="vunit" className="font-mono text-xs font-semibold text-primary">{displayUnit}</span>,
+                            <span key="vcust" className="text-xs font-medium text-foreground">{displayCust}</span>,
                             `${voucher.method || "—"} / ${voucher.period || "—"}`,
                             formatMoney(Number(voucher.amount) || 0),
                             pdcStatusBadge,

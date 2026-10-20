@@ -42,6 +42,7 @@ export interface PmsUnit {
 
 export interface PmsCustomer {
   id: string;
+  customerId?: string;
   name: string;
   type: "individual" | "company";
   qatarId: string;
@@ -122,6 +123,9 @@ export interface PmsVoucher {
   settlement_deductions?: number;
   settlement_refund?: number;
   settlement_date?: string;
+  property_name?: string;
+  unit_name?: string;
+  tenant_name?: string;
 }
 
 export interface PmsKeyNotice {
@@ -430,8 +434,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (seenCustIds.has(id) || (normKey && seenCustNames.has(normKey))) continue;
         seenCustIds.add(id);
         if (normKey) seenCustNames.add(normKey);
+        const customerId = c.tax_identification_no || 
+          (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') || 
+          c.customer_id || '';
         mergedCustomers.push({
           id,
+          customerId,
           name,
           type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
           qatarId:  c.qatar_id || c.qatarId || "",
@@ -736,19 +744,52 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Map vouchers from fin_vouchers
-      const standardVouchers: PmsVoucher[] = (vouchersRes.data || []).map((v: any) => ({
-        id: v.id,
-        leaseId: v.party_id || v.tenant_id || v.lease_id || "",
-        name: v.narration || v.voucher_no || "General Voucher",
-        receiptNo: v.voucher_no || v.reference_no,
-        method: v.voucher_type === "Receipt" ? "Bank Transfer" : "Journal",
-        period: v.voucher_date,
-        debit: "Bank",
-        credit: "Receivable",
-        amount: Number(v.total_amount || 0),
-        status: (v.status as VoucherStatus) || "posted",
-      }));
+      const standardVouchers: PmsVoucher[] = (vouchersRes.data || [])
+        .filter((v: any) => v.source_type === "SECURITY_DEPOSIT" || (v.voucher_number || "").startsWith("VCH-SD-"))
+        .map((v: any) => {
+          let tenantName = "";
+          let unitName = "";
+          let propertyName = "";
+          let parsedMethod = "Cash";
+
+          if (v.description) {
+            const match = v.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)\s*\|\s*(.*?)\s*\|\s*(.*)/i);
+            if (match) {
+              tenantName = match[1].trim();
+              unitName = match[2].trim();
+              parsedMethod = match[4].trim();
+              if (unitName.includes("-")) {
+                propertyName = unitName.split("-")[0].trim();
+              }
+            } else {
+              const fallback = v.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+              if (fallback) {
+                tenantName = fallback[1].trim();
+                unitName = fallback[2].trim();
+                if (unitName.includes("-")) {
+                  propertyName = unitName.split("-")[0].trim();
+                }
+              }
+            }
+          }
+
+          return {
+            id: v.id,
+            leaseId: tenantName || "DEP",
+            name: v.description || `Security Deposit Receipt - ${tenantName} (${unitName})`,
+            receiptNo: v.reference_no || v.voucher_number,
+            method: parsedMethod || "Security Deposit",
+            period: v.voucher_date,
+            debit: "Cash In Hand / Bank (12000001)",
+            credit: "Security Deposit Liability (21500)",
+            amount: Number(v.total_amount || 0),
+            status: (v.status as VoucherStatus) || "posted",
+            tenant_name: tenantName,
+            unit_name: unitName,
+            property_name: propertyName,
+            source_type: "SECURITY_DEPOSIT",
+          };
+        });
 
       // Only include real vouchers from the database (fin_vouchers).
       // Do not synthesize placeholder or default deposit/PDC vouchers.
