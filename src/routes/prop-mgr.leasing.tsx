@@ -170,6 +170,11 @@ type Lease = {
   sharedWithTenant?: boolean;
   collectionCompleted: boolean;
   renewalOf?: string;
+  contractNumber?: string;
+  depositReceiptFile?: string;
+  depositMethod?: string;
+  depositReceiptNo?: string;
+  pdcBatchFile?: string;
 };
 
 type Pdc = {
@@ -256,7 +261,7 @@ type RenewalCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
-  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed";
+  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined";
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
@@ -2430,7 +2435,7 @@ function LeasingPage() {
             { voucher_id: vData.id, account_code: "41100001", account_name: "Rental Revenue", debit: 0, credit: rentAmt, description: `Rent Differential — ${oldLease.tenantName}` },
           ]);
         }
-      }).catch(err => console.warn("[renewLease] Rent GL posting note:", err));
+      }, err => console.warn("[renewLease] Rent GL posting note:", err));
     }
 
     // Process Security Deposit Top-Up / Payment (Optional)
@@ -2488,7 +2493,7 @@ function LeasingPage() {
             { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
           ]);
         }
-      }).catch(err => console.warn("[renewLease] SD GL posting note:", err));
+      }, err => console.warn("[renewLease] SD GL posting note:", err));
     }
 
     if (newVouchers.length > 0) {
@@ -2515,7 +2520,10 @@ function LeasingPage() {
 
     toast.success(`Lease renewed for ${oldLease.tenantName}! ${provisionsSummary.join(" | ")}`);
     if (renewalResponseForm.createNewLease) {
-      handleTabChange("signatures");
+      // Navigate to signatures tab after renewal
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", "signatures");
+      window.history.pushState({}, "", url.toString());
     }
   }
 

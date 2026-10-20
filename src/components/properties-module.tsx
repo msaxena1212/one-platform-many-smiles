@@ -484,7 +484,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
             ownershipType: ownType || "Owned",
             noOfUnits: unitsCount || "10",
             totalUnits: unitsCount || "10",
-          })
+          }) as any
         );
         count++;
       }
@@ -538,7 +538,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
               exportToExcel(
                 properties.map((p) => ({
                   "Property Code": p.property_code || p.id,
-                  "Property Name": p.title || p.name || "",
+                  "Property Name": p.title || (p as any).name || "",
                   "Property Type": p.property_type || "Residential",
                   "Category": p.property_category || "Building",
                   "Ownership": p.ownership_type || "Leased",
@@ -547,7 +547,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                   "Floors": p.no_of_floors || 0,
                   "Total Units": p.total_units || p.no_of_units || 0,
                   "Occupancy": occupancyData[p.id]?.occupancy || "0%",
-                  "Owner / Landlord": p.owner_landlord || "Al Ameen Real Estate",
+                  "Owner / Landlord": (p as any).owner_landlord || "Al Ameen Real Estate",
                   "Status": p.is_active !== false ? "Active" : "Inactive",
                 })),
                 `Properties_Master_${new Date().toISOString().split("T")[0]}`

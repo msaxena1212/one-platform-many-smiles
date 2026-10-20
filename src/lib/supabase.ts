@@ -1029,6 +1029,8 @@ export type Unit = {
   bedrooms?: number;
   bathrooms?: number;
   area?: string;
+  unit_area?: number | string;
+  unit_area_uom?: string;
   price?: number;
   status?: string;
   created_at: string;

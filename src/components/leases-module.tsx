@@ -333,7 +333,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             {/* New lease */}
             {role !== 'owner' && (
               <Button asChild size="sm" className="gap-1 text-xs h-8">
-                <Link to={`${basePath}/leases/new`}>+ New Lease</Link>
+                <Link to={`${basePath}/leases/new` as any}>+ New Lease</Link>
               </Button>
             )}
           </div>

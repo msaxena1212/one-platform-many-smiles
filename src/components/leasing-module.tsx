@@ -139,6 +139,8 @@ type Unit = {
 
 type Customer = {
   id: string;
+  customerId?: string;
+  tax_identification_no?: string;
   name: string;
   type: "individual" | "company";
   displayName?: string;
@@ -242,6 +244,12 @@ type TenantDocument = {
   reviewer: string;
   remarks: string;
   file?: string;
+  documentType?: string;
+  type?: string;
+  fileName?: string;
+  uploadedAt?: string;
+  createdAt?: string;
+  verifiedBy?: string;
 };
 
 type Lease = {
@@ -278,6 +286,10 @@ type Lease = {
   earlyVacate?: boolean;
   earlyVacateReason?: string;
   contractNumber?: string;
+  depositReceiptFile?: string;
+  depositMethod?: string;
+  depositReceiptNo?: string;
+  pdcBatchFile?: string;
 };
 
 type Pdc = {
@@ -291,6 +303,8 @@ type Pdc = {
   payerName?: string;
   period?: string;
   file?: string;
+  tenureStart?: string;
+  tenureEnd?: string;
 };
 
 type PdcRow = {
@@ -307,7 +321,7 @@ type KeyNotice = {
   recipient: string;
   handoverAt: string;
   handoverTime?: string;
-  status: "ready" | "sent" | "blocked";
+  status: "ready" | "sent" | "blocked" | "notified" | "pending";
   note: string;
   authorizedCollector?: string;
   keysSummary?: string;
@@ -341,7 +355,17 @@ type KeyHandover = {
   collectorIdNumber?: string;
   tenantAcknowledgement?: string;
   note?: string;
-  assetsSnapshot?: Array<{ id: string; name: string; code?: string; condition: string; remarks?: string }>;
+  status?: string;
+  assetsSnapshot?: Array<{
+    id: string;
+    name: string;
+    nameAr?: string;
+    code?: string;
+    condition: string;
+    conditionAr?: string;
+    remarks?: string;
+    remarksAr?: string;
+  }>;
   checkInRef?: { condition: string; electricityMeter: string; waterMeter: string; damages: string; pendingMaintenance?: string; photos: number };
 };
 
@@ -361,6 +385,7 @@ type Inspection = {
   pendingMaintenance?: string;
   acknowledged: boolean;
   photos: number;
+  status?: string;
 };
 
 type RenewalCase = {
@@ -396,6 +421,15 @@ type CheckoutCase = {
   utilityClearance: boolean;
   keysReturned: boolean;
   status: "planned" | "inspection_done" | "ready_for_settlement" | "closed";
+  electricityCleared?: boolean;
+  waterCleared?: boolean;
+  maintenanceCleared?: boolean;
+  depositAmount?: number;
+  deductions?: number;
+  settlementAmount?: number;
+  settlementMethod?: string;
+  settlementDate?: string;
+  notes?: string;
 };
 
 type Settlement = {
@@ -436,6 +470,9 @@ type Voucher = {
   credit: string;
   amount: number;
   status: "draft" | "posted" | "shared";
+  type?: string;
+  dueDate?: string;
+  date?: string;
   property_name?: string;
   unit_name?: string;
   tenant_name?: string;
@@ -4337,7 +4374,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: numAmount, description: `Security Deposit — ${tenantLabel}` },
         ]);
       }
-    }).catch(err => console.warn("[addSecurityDeposit] GL posting note:", err));
+    }, (err: any) => console.warn("[addSecurityDeposit] GL posting note:", err));
 
     // Notify Finance Store so GL / Trial Balance / Balance Sheet update immediately
     window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
@@ -4602,7 +4639,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
           ]);
         }
-      }).catch((err) => console.warn("[renewLease] SD GL posting note:", err));
+      }, (err: any) => console.warn("[renewLease] SD GL posting note:", err));
     }
 
     // Process Increased Rent Payment if provided
@@ -4846,7 +4883,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             { voucher_id: vData.id, account_code: "41100001", account_name: "Rental Revenue", debit: 0, credit: rentAmt, description: `Rent Differential — ${oldLease.tenantName}` },
           ]);
         }
-      }).catch(err => console.warn("[renewLease] Rent GL posting note:", err));
+      }, (err: any) => console.warn("[renewLease] Rent GL posting note:", err));
     }
 
     // Process Security Deposit Top-Up / Payment (Optional)
@@ -4906,7 +4943,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
           ]);
         }
-      }).catch(err => console.warn("[renewLease] SD GL posting note:", err));
+      }, (err: any) => console.warn("[renewLease] SD GL posting note:", err));
     }
 
     if (newVouchers.length > 0) {
@@ -15175,7 +15212,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                   file: "",
                                 };
                               });
-                              setCollectForm({
+                              setCollectForm((prev) => ({
+                                ...prev,
                                 paymentMode: "PDC",
                                 chequeBank: "QNB",
                                 payerName: lease?.tenantName || "Tenant",
@@ -15201,7 +15239,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 firstChequeDate: lease?.startDate || "",
                                 regularChequeAmount: String(lease?.monthlyRent || 0),
                                 customCheques: generated,
-                              });
+                              }));
                               setCollectOpen(true);
                             }}
                           >

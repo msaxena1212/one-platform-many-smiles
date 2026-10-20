@@ -139,7 +139,7 @@ export interface PmsKeyNotice {
   outstandingRequirements?: string;
   staffContact?: string;
   note?: string;
-  status: "ready" | "sent" | "blocked" | "pending";
+  status: "ready" | "sent" | "blocked" | "pending" | "notified";
 }
 
 export interface PmsHandover {
@@ -168,6 +168,7 @@ export interface PmsHandover {
   tenantAcknowledgement?: string;
   note?: string;
   acknowledged: boolean;
+  status?: string;
 }
 
 export interface PmsCheckIn {
@@ -204,6 +205,14 @@ export interface PmsReservation {
   tokenPaymentMode?: "Cash" | "Bank Transfer" | "Cheque";
   tokenReceiptNo?: string;
   tokenRefunded?: boolean;
+  reservedBy?: string;
+  createdAt?: string;
+  tokenCashierName?: string;
+  tokenPayerBank?: string;
+  tokenTransferRef?: string;
+  tokenTransferDate?: string;
+  tokenChequeNo?: string;
+  tokenChequeBank?: string;
 }
 
 export interface PmsAuditEvent {

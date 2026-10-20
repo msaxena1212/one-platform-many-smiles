@@ -231,6 +231,11 @@ export function DepositsGuarantees() {
     units,
     setUnits,
   } = useAppData();
+  const {
+    addVoucher: addFinanceStoreVoucher,
+    addReceivableInvoice,
+    addCashBookEntry,
+  } = useFinanceStore();
   const [deposits, setDeposits] = useState<DepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
