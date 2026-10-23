@@ -31,6 +31,7 @@ import {
   ArrowUpDown,
   ArrowRightLeft,
   Edit3,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -2105,9 +2106,6 @@ export function PdcManagement() {
                                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => openBankTransferModal(pdc)}>
                                         <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
                                       </Button>
-                                      <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-rose-300 text-rose-700 hover:bg-rose-50" onClick={() => openGlConfirm(pdc, "cancel")}>
-                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
-                                      </Button>
                                     </>
                                   )}
 
@@ -2156,9 +2154,6 @@ export function PdcManagement() {
                                       </Button>
                                       <Button size="sm" variant="outline" className="h-6 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 px-2" disabled={actionLoading} onClick={() => openBankTransferModal(pdc)}>
                                         <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
-                                      </Button>
-                                      <Button size="sm" variant="outline" className="h-6 text-xs border-rose-300 text-rose-700 hover:bg-rose-50 px-2" disabled={actionLoading} onClick={() => openGlConfirm(pdc, "cancel")}>
-                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
                                       </Button>
                                     </>
                                   )}
@@ -3021,113 +3016,135 @@ export function PdcManagement() {
 
       {/* ── BANK TRANSFER SETTLEMENT & CHEQUE CANCELLATION MODAL (2-STEP STEPPER) ────────── */}
       <Dialog open={bankTransferModalOpen} onOpenChange={setBankTransferModalOpen}>
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
-              <ArrowRightLeft className="h-5 w-5 text-blue-600" />
-              Bank Transfer in Place of Cheque
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              {bankTransferStep === 1
-                ? "Step 1 of 2: Enter bank transfer details, remitting bank, and destination account."
-                : "Step 2 of 2: Review General Ledger & Sub-Ledger double-entry posting impact."}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[640px] p-0 overflow-hidden rounded-2xl border shadow-2xl bg-background">
+          {/* Header & Stepper */}
+          <div className="bg-gradient-to-r from-blue-600/10 via-blue-500/5 to-transparent border-b px-6 pt-5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 flex-shrink-0">
+                <ArrowRightLeft className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Bank Transfer in Place of Cheque
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Settle PDC balance directly via company bank transfer and release cheque custody.
+                </DialogDescription>
+              </div>
+            </div>
 
-          {/* Stepper Tabs Bar */}
-          <div className="flex items-center gap-2 border-b pb-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setBankTransferStep(1)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
-                bankTransferStep === 1
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">1</span>
-              Transfer &amp; Bank Details
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (bankTransferAmount && parseFloat(bankTransferAmount) > 0) setBankTransferStep(2);
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
-                bankTransferStep === 2
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">2</span>
-              GL &amp; Accounting Impact
-            </button>
+            {/* Stepper Tabs Bar */}
+            <div className="flex items-center gap-2 mt-4 text-xs">
+              <button
+                type="button"
+                onClick={() => setBankTransferStep(1)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                  bankTransferStep === 1
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className={`h-4 w-4 rounded-full text-[10px] flex items-center justify-center font-bold ${bankTransferStep === 1 ? "bg-white/20 text-white" : "bg-muted-foreground/20 text-muted-foreground"}`}>1</span>
+                Transfer &amp; Bank Details
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (bankTransferAmount && parseFloat(bankTransferAmount) > 0) setBankTransferStep(2);
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                  bankTransferStep === 2
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className={`h-4 w-4 rounded-full text-[10px] flex items-center justify-center font-bold ${bankTransferStep === 2 ? "bg-white/20 text-white" : "bg-muted-foreground/20 text-muted-foreground"}`}>2</span>
+                GL Accounting Impact
+              </button>
+            </div>
           </div>
 
           {bankTransferPdc && (
-            <div className="space-y-3.5 py-1 text-xs">
+            <div className="px-6 py-4 space-y-4 max-h-[68vh] overflow-y-auto text-xs">
               {/* STEP 1: Transfer details */}
               {bankTransferStep === 1 && (
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   {/* Cheque Summary Card */}
-                  <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">Cheque Number:</span>
-                      <span className="font-mono font-bold text-primary">{bankTransferPdc.cheque_number}</span>
+                  <div className="rounded-xl border border-border/80 bg-muted/20 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-xs font-bold border-blue-300 bg-blue-50/70 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                          Cheque #{bankTransferPdc.cheque_number}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px] font-semibold">
+                          {bankTransferPdc.status || "In Hand"}
+                        </Badge>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-muted-foreground block">Cheque Amount</span>
+                        <span className="font-mono font-extrabold text-base text-foreground">
+                          QAR {Number(bankTransferPdc.amount || 0).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">Customer / Tenant:</span>
-                      <span className="font-semibold text-foreground">{bankTransferPdc.tenant_name || "Valued Tenant"}</span>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                          <User className="h-3 w-3 text-muted-foreground" /> Customer / Tenant
+                        </span>
+                        <p className="font-semibold text-foreground truncate">{bankTransferPdc.tenant_name || "Valued Tenant"}</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                          <Building className="h-3 w-3 text-muted-foreground" /> Property &amp; Unit
+                        </span>
+                        <p className="font-semibold text-foreground truncate">{bankTransferPdc.property_name || "—"} • {bankTransferPdc.unit_ref || "—"}</p>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">Property &amp; Unit:</span>
-                      <span>{bankTransferPdc.property_name || "—"} • {bankTransferPdc.unit_ref || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground font-medium">Original Cheque Amount:</span>
-                      <span className="font-mono font-bold text-foreground">QR {Number(bankTransferPdc.amount || 0).toLocaleString()}</span>
-                    </div>
+
                     {bankTransferPdc.paid_amount != null && bankTransferPdc.paid_amount > 0 && (
-                      <>
-                        <div className="flex justify-between text-blue-700 dark:text-blue-300">
-                          <span className="font-medium">Previously Paid:</span>
-                          <span className="font-mono font-bold">QR {Number(bankTransferPdc.paid_amount).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-amber-700 dark:text-amber-300 font-semibold border-t pt-1">
-                          <span>Remaining Balance Due:</span>
-                          <span className="font-mono font-bold">QR {Math.max(0, Number(bankTransferPdc.amount || 0) - Number(bankTransferPdc.paid_amount)).toLocaleString()}</span>
-                        </div>
-                      </>
+                      <div className="mt-1 pt-2 border-t border-border/50 flex items-center justify-between text-xs bg-amber-50/60 dark:bg-amber-950/30 -mx-3.5 -mb-3.5 px-3.5 py-2 rounded-b-xl">
+                        <span className="text-amber-800 dark:text-amber-300 font-medium text-[11px]">
+                          Previously Settled: <strong className="font-mono font-bold">QAR {Number(bankTransferPdc.paid_amount).toLocaleString()}</strong>
+                        </span>
+                        <span className="text-amber-900 dark:text-amber-200 font-bold text-[11px]">
+                          Balance Due: <strong className="font-mono text-xs">QAR {Math.max(0, Number(bankTransferPdc.amount || 0) - Number(bankTransferPdc.paid_amount)).toLocaleString()}</strong>
+                        </span>
+                      </div>
                     )}
                   </div>
 
                   {/* Transfer Amount & Settlement Date */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-[11px] font-semibold">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-foreground">
                         Transfer Amount (QAR) <span className="text-destructive">*</span>
                       </Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 text-xs font-mono font-bold"
-                        placeholder="Enter transfer amount"
-                        value={bankTransferAmount}
-                        onChange={(e) => setBankTransferAmount(e.target.value)}
-                      />
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">QAR</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="h-9 pl-12 text-sm font-mono font-bold"
+                          placeholder="0.00"
+                          value={bankTransferAmount}
+                          onChange={(e) => setBankTransferAmount(e.target.value)}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[11px] font-semibold">Transfer / Value Date</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-foreground">Transfer / Value Date</Label>
                       <Input
                         type="date"
-                        className="h-8 text-xs"
+                        className="h-9 text-xs"
                         value={bankTransferDate}
                         onChange={(e) => setBankTransferDate(e.target.value)}
                       />
                     </div>
                   </div>
 
-                  {/* Discrepancy indicator */}
+                  {/* Settlement Status Alert */}
                   {(() => {
                     const original = Number(bankTransferPdc.amount || 0);
                     const alreadyPaid = Number(bankTransferPdc.paid_amount || 0);
@@ -3136,20 +3153,20 @@ export function PdcManagement() {
 
                     if (actual === remaining && remaining > 0) {
                       return (
-                        <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-[11px] text-emerald-800 flex items-center gap-1.5">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-                          <span>This transfer of QR {actual.toLocaleString()} will <strong>fully settle</strong> the cheque (Cheque will be cancelled &amp; closed).</span>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/30 p-2.5 text-xs text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                          <span>This transfer of <strong>QAR {actual.toLocaleString()}</strong> will <strong>fully settle</strong> the cheque. PDC will be cancelled &amp; custody released.</span>
                         </div>
                       );
                     }
-                    if (actual < remaining) {
+                    if (actual < remaining && actual > 0) {
                       const stillRemaining = remaining - actual;
                       return (
-                        <div className="rounded-md border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-800 flex items-start gap-1.5">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/80 dark:bg-amber-950/30 p-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
                           <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
                           <span>
-                            <strong>Partial Settlement:</strong> Transferring QR {actual.toLocaleString()}.
-                            Remaining balance of <strong>QR {stillRemaining.toLocaleString()}</strong> will stay open for subsequent settlements.
+                            <strong>Partial Settlement:</strong> Transferring <strong>QAR {actual.toLocaleString()}</strong>.
+                            Remaining balance of <strong>QAR {stillRemaining.toLocaleString()}</strong> will stay open.
                           </span>
                         </div>
                       );
@@ -3157,87 +3174,104 @@ export function PdcManagement() {
                     return null;
                   })()}
 
-                  {/* Destination Bank Account Selection with Add / Update Options */}
-                  <div className="space-y-1.5 rounded-lg border bg-blue-50/30 dark:bg-blue-950/20 p-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-[11px] font-semibold text-blue-900 dark:text-blue-300">
-                        Receiving Company Bank Account <span className="text-destructive">*</span>
-                      </Label>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-5 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-100/60 px-1.5"
-                          onClick={() => openEditBankDetails()}
-                          title="Edit selected bank details and GL mappings"
-                        >
-                          <Edit3 className="h-3 w-3 mr-0.5" /> Edit Bank
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100/60 px-1.5"
-                          onClick={openAddNewBank}
-                          title="Add a new company bank account to Chart of Accounts"
-                        >
-                          <Plus className="h-3 w-3 mr-0.5" /> + Add Bank
-                        </Button>
-                      </div>
-                    </div>
+                  {/* Destination Bank Account Selection Cards */}
+                  {(() => {
+                    const displayAccounts = (bankAccounts && bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS)
+                      .filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
+                    const selectedBank = displayAccounts.find(b => b.id === bankTransferBankAccountId) || displayAccounts[0];
 
-                    <Select
-                      value={bankTransferBankAccountId}
-                      onValueChange={(val) => setBankTransferBankAccountId(val)}
-                    >
-                      <SelectTrigger className="h-8 text-xs bg-background">
-                        <SelectValue placeholder="Select destination bank account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS).map((b) => (
-                          <SelectItem key={b.id} value={b.id} className="text-xs">
-                            <span className="font-semibold">{b.bankName}</span> — {b.accountTitle} (A/C: {b.accountNumber} • GL: {b.glCode})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Active Bank Account Details Chip */}
-                    {(() => {
-                      const sel = (bankAccounts || []).find(b => b.id === bankTransferBankAccountId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === bankTransferBankAccountId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
-                      if (!sel) return null;
-                      return (
-                        <div className="text-[10px] text-muted-foreground bg-background/80 rounded p-1.5 border border-blue-200/50 space-y-0.5">
-                          <div className="flex justify-between">
-                            <span>A/C: <strong className="font-mono text-foreground">{sel.accountNumber}</strong></span>
-                            <span>GL Code: <strong className="font-mono text-blue-700">{sel.glCode}</strong> ({sel.glName || sel.accountTitle})</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>IBAN: <strong className="font-mono text-foreground">{sel.iban}</strong></span>
-                            <span>Branch: <strong className="text-foreground">{sel.branch || "Main"}</strong></span>
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold text-foreground">
+                            Receiving Company Bank Account <span className="text-destructive">*</span>
+                          </Label>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 gap-1"
+                              onClick={() => openEditBankDetails()}
+                              title="Edit selected bank details and GL mappings"
+                            >
+                              <Edit3 className="h-3 w-3 text-blue-600" /> Edit Bank
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 gap-1 text-emerald-600 hover:text-emerald-700"
+                              onClick={openAddNewBank}
+                              title="Add a new company bank account to Chart of Accounts"
+                            >
+                              <Plus className="h-3 w-3" /> Add Bank
+                            </Button>
                           </div>
                         </div>
-                      );
-                    })()}
-                  </div>
+
+                        {/* Interactive Bank Account Selection Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {displayAccounts.map((b) => {
+                            const isSelected = b.id === (selectedBank?.id || bankTransferBankAccountId);
+                            return (
+                              <div
+                                key={b.id}
+                                onClick={() => setBankTransferBankAccountId(b.id)}
+                                className={`cursor-pointer rounded-xl border p-3 transition-all text-left relative select-none ${
+                                  isSelected
+                                    ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/30 shadow-sm"
+                                    : "border-border/80 bg-card hover:bg-muted/40 hover:border-border"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-1 mb-1">
+                                  <span className="text-xs font-bold text-foreground leading-tight line-clamp-1">{b.bankName}</span>
+                                  {isSelected ? (
+                                    <span className="h-4 w-4 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
+                                      <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                    </span>
+                                  ) : (
+                                    <span className="h-4 w-4 rounded-full border border-muted-foreground/30 flex-shrink-0" />
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground font-medium truncate mb-2">{b.accountTitle}</div>
+                                <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[10px] font-mono">
+                                  <span className="text-muted-foreground">A/C: <span className="text-foreground font-semibold">{b.accountNumber}</span></span>
+                                  <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-bold">GL {b.glCode}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Active Bank Account Details Chip */}
+                        {selectedBank && (
+                          <div className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 border border-border/60 flex items-center justify-between">
+                            <span>IBAN: <strong className="font-mono text-foreground">{selectedBank.iban}</strong></span>
+                            <span>Branch: <strong className="text-foreground">{selectedBank.branch || "Main"}</strong></span>
+                            <span>GL Name: <strong className="text-blue-700 dark:text-blue-300 font-semibold">{selectedBank.glName || selectedBank.accountTitle}</strong></span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Wire Reference & Remitting Bank */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-[11px] font-semibold">Wire / Transaction Ref (UTR / Trans No)</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-foreground">Wire / Transaction Ref (UTR / Trans #)</Label>
                       <Input
-                        className="h-8 text-xs font-mono"
+                        className="h-9 text-xs font-mono"
                         placeholder="e.g. UTR-2026-98124"
                         value={bankTransferRef}
                         onChange={(e) => setBankTransferRef(e.target.value)}
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[11px] font-semibold">Tenant Remitting Bank</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-foreground">Tenant's Remitting Bank</Label>
                       <Input
-                        className="h-8 text-xs"
-                        placeholder="e.g. QNB, Commercial Bank, Doha Bank"
+                        className="h-9 text-xs"
+                        placeholder="e.g. Qatar National Bank (QNB)"
                         value={bankTransferRemittingBank}
                         onChange={(e) => setBankTransferRemittingBank(e.target.value)}
                       />
@@ -3245,11 +3279,11 @@ export function PdcManagement() {
                   </div>
 
                   {/* Remarks / Reason */}
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold">Remarks / Transfer Notes</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-foreground">Remarks / Transfer Notes</Label>
                     <Input
-                      className="h-8 text-xs"
-                      placeholder="e.g. Tenant paid rent via online bank transfer, original cheque cancelled"
+                      className="h-9 text-xs"
+                      placeholder="e.g. Tenant paid rent via online transfer, original cheque cancelled"
                       value={bankTransferNotes}
                       onChange={(e) => setBankTransferNotes(e.target.value)}
                     />
@@ -3259,34 +3293,36 @@ export function PdcManagement() {
 
               {/* STEP 2: Accounting & GL Impact */}
               {bankTransferStep === 2 && (
-                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5 space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <AlertTriangle className="h-3.5 w-3.5 text-blue-600" />
+                <div className="space-y-3 pr-1">
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 dark:bg-blue-950/20 p-4 space-y-3.5">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300">
+                      <AlertTriangle className="h-4 w-4 text-blue-600 flex-shrink-0" />
                       General Ledger &amp; Sub-Ledger (COA) Accounts Impacted
                     </div>
 
                     {/* Part 1: Direct Bank Receipt Group */}
                     {(() => {
-                      const sel = (bankAccounts || []).find(b => b.id === bankTransferBankAccountId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === bankTransferBankAccountId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
+                      const displayAccounts = (bankAccounts && bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS)
+                        .filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
+                      const sel = displayAccounts.find(b => b.id === bankTransferBankAccountId) || displayAccounts[0];
                       const confirmedAmt = parseFloat(bankTransferAmount) || Number(bankTransferPdc.amount || 0);
 
                       return (
                         <div className="space-y-2">
                           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                            Part 1: Electronic Bank Receipt
+                            Part 1: Electronic Bank Receipt Voucher
                           </div>
                           {/* Debit Card: Receiving Bank Account */}
-                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                          <div className="flex items-start gap-2.5 bg-background rounded-xl px-3.5 py-2.5 border border-border shadow-sm">
                             <div className="mt-0.5">
                               <ArrowUpRight className="h-4 w-4 text-emerald-600" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                                   Debit
                                 </span>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200">
                                   GL {sel.glCode}
                                 </span>
                                 <span className="text-xs font-semibold text-foreground">
@@ -3303,20 +3339,20 @@ export function PdcManagement() {
                           </div>
 
                           {/* Credit Card: Receivable - Unit Account */}
-                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                          <div className="flex items-start gap-2.5 bg-background rounded-xl px-3.5 py-2.5 border border-border shadow-sm">
                             <div className="mt-0.5">
                               <ArrowDownLeft className="h-4 w-4 text-amber-600" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                                   Credit
                                 </span>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200">
                                   GL 12413
                                 </span>
                                 <span className="text-xs font-semibold text-foreground">
-                                  Receivable- Unit Account
+                                  Receivable - Unit Account
                                 </span>
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -3336,26 +3372,26 @@ export function PdcManagement() {
                       const confirmedAmt = parseFloat(bankTransferAmount) || Number(bankTransferPdc.amount || 0);
 
                       return (
-                        <div className="space-y-2 pt-1 border-t border-blue-200/60">
+                        <div className="space-y-2 pt-2 border-t border-blue-200/60 dark:border-blue-900/40">
                           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                             Part 2: Original Cheque Cancellation &amp; Custody Reversal
                           </div>
 
                           {/* Debit Card: Customer PDC Liability Reversal */}
-                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                          <div className="flex items-start gap-2.5 bg-background rounded-xl px-3.5 py-2.5 border border-border shadow-sm">
                             <div className="mt-0.5">
                               <ArrowUpRight className="h-4 w-4 text-emerald-600" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                                   Debit
                                 </span>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-200">
                                   GL 21400
                                 </span>
                                 <span className="text-xs font-semibold text-foreground">
-                                  Customer(PDC)- Unit Account
+                                  Customer(PDC) - Unit Account
                                 </span>
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -3368,20 +3404,20 @@ export function PdcManagement() {
                           </div>
 
                           {/* Credit Card: PDC In Hand Reversal */}
-                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                          <div className="flex items-start gap-2.5 bg-background rounded-xl px-3.5 py-2.5 border border-border shadow-sm">
                             <div className="mt-0.5">
                               <ArrowDownLeft className="h-4 w-4 text-amber-600" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                                   Credit
                                 </span>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-200">
                                   GL 12900
                                 </span>
                                 <span className="text-xs font-semibold text-foreground">
-                                  PDC in hand
+                                  PDC in Hand
                                 </span>
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -3405,13 +3441,13 @@ export function PdcManagement() {
             </div>
           )}
 
-          <DialogFooter className="gap-2 border-t pt-2">
+          <div className="bg-muted/30 border-t px-6 py-3 flex items-center justify-end gap-2.5">
             <Button variant="outline" onClick={() => setBankTransferModalOpen(false)} disabled={actionLoading}>
               Cancel
             </Button>
             {bankTransferStep === 1 ? (
               <Button
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 onClick={() => setBankTransferStep(2)}
                 disabled={!bankTransferAmount || parseFloat(bankTransferAmount) <= 0}
               >
@@ -3423,15 +3459,15 @@ export function PdcManagement() {
                   ← Back to Details
                 </Button>
                 <Button
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
                   onClick={executeConfirmedBankTransfer}
                   disabled={actionLoading || !bankTransferAmount || parseFloat(bankTransferAmount) <= 0}
                 >
-                  {actionLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Recording Transfer &amp; GL…</> : "Confirm Transfer & Post GL"}
+                  {actionLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Recording Transfer &amp; GL…</> : "Confirm Transfer & Post GL"}
                 </Button>
               </>
             )}
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
