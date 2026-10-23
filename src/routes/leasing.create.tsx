@@ -2025,6 +2025,48 @@ function LeasingPage() {
       status: "closed",
       output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Available"}, full history retained`,
     });
+
+    // -- Persist checkout to Supabase so occupancy survives page refresh
+    if (lease) {
+      const dbUnitStatus = (settlement.unitDisposition || "Available").toLowerCase().includes("maintenance")
+        ? "Vacant - Under Maintenance"
+        : "Available";
+      const matchedUnit = units.find((u) => u.unit === lease.unit);
+      if (matchedUnit?.id) {
+        supabase
+          .from("units")
+          .update({
+            status: dbUnitStatus,
+            lease_status: "VACANT",
+            current_tenant: null,
+            contract_no: null,
+            contract_start_date: null,
+            contract_end_date: null,
+            current_rent: null,
+            updated_at: new Date().toISOString(),
+          } as any)
+          .eq("id", matchedUnit.id)
+          .then(({ error }: { error: any }) => {
+            if (error) { console.error("[Checkout] Failed to vacate unit:", error.message); }
+            else { window.dispatchEvent(new Event("pms_data_updated")); }
+          });
+      }
+      const leaseDbId =
+        lease.reservationId && !String(lease.reservationId).startsWith("res-")
+          ? lease.reservationId
+          : !String(lease.id).startsWith("L-") && !String(lease.id).startsWith("res-")
+          ? lease.id
+          : null;
+      if (leaseDbId) {
+        supabase
+          .from("leases")
+          .update({ lease_status: "CLOSED", updated_at: new Date().toISOString() } as any)
+          .eq("id", leaseDbId)
+          .then(({ error }: { error: any }) => {
+            if (error) console.error("[Checkout] Failed to close lease:", error.message);
+          });
+      }
+    }
   }
 
   function completeCheckIn(lease: Lease) {

@@ -377,7 +377,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           id: u.id,
           property: propTitle,
           unit: u.unit_ref || u.unit_name || u.unit_code || "Unit",
-          status: (u.status === "Occupied" || u.lease_status === "Leased" ? "Occupied" : u.status === "Available" ? "Available" : (u.status as UnitStatus)) || "Available",
+          status: (() => {
+            const ls = (u.lease_status || "").toUpperCase();
+            const st = (u.status || "").toLowerCase();
+            // Units explicitly vacated/closed — always show as Available regardless of stale fields
+            if (ls === "VACANT" || ls === "CLOSED" || ls === "TERMINATED") return "Available" as UnitStatus;
+            if (st === "available" || st === "vacant") return "Available" as UnitStatus;
+            if (st === "occupied" || ls === "LEASED") return "Occupied" as UnitStatus;
+            if (st === "reserved") return "Reserved" as UnitStatus;
+            if (st.includes("maintenance")) return "Vacant - Under Maintenance" as UnitStatus;
+            return (u.status as UnitStatus) || "Available";
+          })(),
           rent: Number(u.current_rent || u.price || 0),
         };
       });
@@ -549,9 +559,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       (unitsRes.data || []).forEach((u: any, idx: number) => {
         const isOccupied =
-          u.status?.toLowerCase() === "occupied" ||
+          (u.status?.toLowerCase() === "occupied" ||
           (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
-          (u.current_tenant && u.current_tenant.trim().length > 0);
+          (u.current_tenant && u.current_tenant.trim().length > 0)) &&
+          // Exclude vacated / closed units regardless of stale field values
+          u.lease_status?.toUpperCase() !== "VACANT" &&
+          u.lease_status?.toUpperCase() !== "CLOSED" &&
+          u.lease_status?.toUpperCase() !== "TERMINATED" &&
+          u.status?.toLowerCase() !== "available" &&
+          u.status?.toLowerCase() !== "vacant";
 
         if (isOccupied) {
           const propTitle = u.properties?.title || propMap.get(u.property_id) || u.property_id || "Property";

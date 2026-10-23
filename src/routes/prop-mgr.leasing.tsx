@@ -2548,6 +2548,58 @@ function LeasingPage() {
       status: "closed",
       output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Vacant - Available"}, and history retained`,
     });
+
+    // ── Persist checkout to Supabase so occupancy survives page refresh ──────
+    if (lease) {
+      const dbUnitStatus = (settlement.unitDisposition || "Available").toLowerCase().includes("maintenance")
+        ? "Vacant - Under Maintenance"
+        : "Available";
+
+      // 1. Update the unit in Supabase: clear tenant, contract, and rent fields
+      const matchedUnit = units.find((u) => u.unit === lease.unit);
+      if (matchedUnit?.id) {
+        supabase
+          .from("units")
+          .update({
+            status: dbUnitStatus,
+            lease_status: "VACANT",
+            current_tenant: null,
+            contract_no: null,
+            contract_start_date: null,
+            contract_end_date: null,
+            current_rent: null,
+            updated_at: new Date().toISOString(),
+          } as any)
+          .eq("id", matchedUnit.id)
+          .then(({ error }: { error: any }) => {
+            if (error) {
+              console.error("[Checkout] Failed to vacate unit in Supabase:", error.message);
+              toast.error("Could not update unit occupancy in the database — please refresh to verify.");
+            } else {
+              window.dispatchEvent(new Event("pms_data_updated"));
+            }
+          });
+      }
+
+      // 2. Update the lease status to CLOSED in Supabase
+      // reservationId holds the raw DB UUID for real DB leases
+      const leaseDbId =
+        lease.reservationId && !String(lease.reservationId).startsWith("res-")
+          ? lease.reservationId
+          : !String(lease.id).startsWith("L-") && !String(lease.id).startsWith("res-")
+          ? lease.id
+          : null;
+
+      if (leaseDbId) {
+        supabase
+          .from("leases")
+          .update({ lease_status: "CLOSED", updated_at: new Date().toISOString() } as any)
+          .eq("id", leaseDbId)
+          .then(({ error }: { error: any }) => {
+            if (error) console.error("[Checkout] Failed to close lease in Supabase:", error.message);
+          });
+      }
+    }
   }
 
   function issueKeyNotice(lease: Lease) {
