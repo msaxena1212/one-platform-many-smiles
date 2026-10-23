@@ -29,6 +29,8 @@ import {
   Home,
   User,
   ArrowUpDown,
+  ArrowRightLeft,
+  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -39,11 +41,13 @@ import {
   bouncePdc,
   cancelPdc,
   cashDepositInPlaceOfPdc,
+  bankTransferInPlaceOfPdc,
   receivePdc,
 } from "@/lib/finance/pdcService";
 import {
   DEFAULT_COMPANY_BANK_ACCOUNTS,
   fetchCompanyBankAccounts,
+  saveCompanyBankAccount,
   type CompanyBankAccount,
 } from "@/lib/finance/bankAccounts";
 import { collectSecurityDeposit } from "@/lib/finance/depositService";
@@ -401,6 +405,34 @@ export function PdcManagement() {
   const [cashReceiptDate, setCashReceiptDate] = useState(new Date().toISOString().split("T")[0]);
   const [cashNotes, setCashNotes] = useState("");
   const [cashCollectorName, setCashCollectorName] = useState("Finance Department");
+
+  // Bank Transfer Modal state
+  const [bankTransferModalOpen, setBankTransferModalOpen] = useState(false);
+  const [bankTransferStep, setBankTransferStep] = useState<1 | 2>(1);
+  const [bankTransferPdc, setBankTransferPdc] = useState<any | null>(null);
+  const [bankTransferAmount, setBankTransferAmount] = useState("");
+  const [bankTransferDate, setBankTransferDate] = useState(new Date().toISOString().split("T")[0]);
+  const [bankTransferRef, setBankTransferRef] = useState("");
+  const [bankTransferRemittingBank, setBankTransferRemittingBank] = useState("");
+  const [bankTransferNotes, setBankTransferNotes] = useState("");
+  const [bankTransferBankAccountId, setBankTransferBankAccountId] = useState("");
+
+  // Manage Bank Details modal state
+  const [manageBankModalOpen, setManageBankModalOpen] = useState(false);
+  const [bankEditMode, setBankEditMode] = useState<"add" | "edit">("edit");
+  const [bankForm, setBankForm] = useState<CompanyBankAccount>({
+    id: "",
+    bankName: "",
+    accountTitle: "",
+    accountNumber: "",
+    iban: "",
+    glCode: "12000001",
+    glName: "",
+    currency: "QAR",
+    branch: "",
+    swiftCode: "",
+    status: "Active",
+  });
 
   // Add PDC Modal state
   type AddPdcRow = {
@@ -1207,6 +1239,259 @@ export function PdcManagement() {
     }
   }
 
+  // ── Open Bank Transfer Modal ──────────────────────────────────────────────
+  function openBankTransferModal(pdc: any) {
+    const original = Number(pdc.amount || 0);
+    const paid = Number(pdc.paid_amount || 0);
+    const remaining = Math.max(0, original - paid);
+
+    setBankTransferPdc(pdc);
+    setBankTransferStep(1);
+    setBankTransferAmount(String(remaining > 0 ? remaining : original));
+    setBankTransferDate(new Date().toISOString().split("T")[0]);
+    setBankTransferRef("");
+    setBankTransferRemittingBank(pdc.bank_name && pdc.bank_name !== "—" ? pdc.bank_name : "");
+    setBankTransferNotes("");
+
+    // Choose default active bank account
+    const active = bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS;
+    const def = active.find((a: CompanyBankAccount) => a.isDefault) || active[0];
+    setBankTransferBankAccountId(def ? def.id : "7");
+
+    setBankTransferModalOpen(true);
+  }
+
+  // ── Bank Account Management (Add / Update) ───────────────────────────────
+  function openEditBankDetails(bankId?: string) {
+    const targetId = bankId || bankTransferBankAccountId;
+    const target = (bankAccounts || []).find(b => b.id === targetId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === targetId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
+    setBankForm({
+      id: target.id,
+      bankName: target.bankName,
+      accountTitle: target.accountTitle,
+      accountNumber: target.accountNumber,
+      iban: target.iban,
+      glCode: target.glCode,
+      glName: target.glName,
+      currency: target.currency || "QAR",
+      branch: target.branch || "",
+      swiftCode: target.swiftCode || "",
+      status: target.status || "Active",
+    });
+    setBankEditMode("edit");
+    setManageBankModalOpen(true);
+  }
+
+  function openAddNewBank() {
+    const newIdx = (bankAccounts?.length || 5) + 1;
+    setBankForm({
+      id: `bank-custom-${Date.now()}`,
+      bankName: "",
+      accountTitle: "",
+      accountNumber: "",
+      iban: "",
+      glCode: `1200000${newIdx}`,
+      glName: "",
+      currency: "QAR",
+      branch: "",
+      swiftCode: "",
+      status: "Active",
+    });
+    setBankEditMode("add");
+    setManageBankModalOpen(true);
+  }
+
+  async function handleSaveBankDetails() {
+    if (!bankForm.bankName.trim()) {
+      toast.error("Please enter the Bank Name.");
+      return;
+    }
+    if (!bankForm.accountNumber.trim()) {
+      toast.error("Please enter the Account Number.");
+      return;
+    }
+    if (!bankForm.glCode.trim()) {
+      toast.error("Please provide a General Ledger Account Code.");
+      return;
+    }
+
+    const payload: CompanyBankAccount = {
+      ...bankForm,
+      accountTitle: bankForm.accountTitle.trim() || `${bankForm.bankName} Operating Account`,
+      glName: bankForm.glName.trim() || bankForm.accountTitle.trim() || bankForm.bankName,
+      iban: bankForm.iban.trim() || bankForm.accountNumber.trim(),
+    };
+
+    try {
+      const updatedList = await saveCompanyBankAccount(payload);
+      setBankAccounts(updatedList.filter(a => a.status !== "Inactive" && a.status !== "inactive"));
+      setBankTransferBankAccountId(payload.id);
+      setSelectedBankAccountId(payload.id);
+      setManageBankModalOpen(false);
+      toast.success(
+        bankEditMode === "add"
+          ? `Bank Account ${payload.bankName} added and linked to GL Code ${payload.glCode}.`
+          : `Bank details for ${payload.bankName} updated successfully in GL mappings.`
+      );
+    } catch (e: any) {
+      toast.error(e.message || "Failed to save bank details.");
+    }
+  }
+
+  // ── Execute Confirmed Bank Transfer Settlement ───────────────────────────
+  async function executeConfirmedBankTransfer() {
+    if (!bankTransferPdc) return;
+    const pdc = bankTransferPdc;
+    const chqNo = pdc.cheque_number || pdc.id;
+    const originalAmt = Number(pdc.amount) || 0;
+    const alreadyPaid = Number(pdc.paid_amount) || 0;
+    const confirmedAmt = parseFloat(bankTransferAmount) || Math.max(0, originalAmt - alreadyPaid);
+    const newPaidTotal = alreadyPaid + confirmedAmt;
+    const isFullyPaid = newPaidTotal >= originalAmt - 0.01;
+    const nextStatus = isFullyPaid ? "Replaced" : "Partial Cash";
+    const receiptDate = bankTransferDate || new Date().toISOString().split("T")[0];
+    const remainingAfter = Math.max(0, originalAmt - newPaidTotal);
+
+    // Selected Receiving Bank
+    const chosenBank = (bankAccounts || []).find(b => b.id === bankTransferBankAccountId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === bankTransferBankAccountId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
+
+    setBankTransferModalOpen(false);
+    setActionLoading(true);
+
+    try {
+      // 1. Persist to DB using bankTransferInPlaceOfPdc
+      await bankTransferInPlaceOfPdc(
+        pdc.id,
+        String(chqNo),
+        confirmedAmt,
+        bankTransferNotes,
+        receiptDate,
+        {
+          bankAccountId: chosenBank.id,
+          bankName: chosenBank.bankName,
+          accountTitle: chosenBank.accountTitle,
+          accountNumber: chosenBank.accountNumber,
+          iban: chosenBank.iban,
+          glCode: chosenBank.glCode,
+          glName: chosenBank.glName,
+          transferRef: bankTransferRef,
+          remittingBank: bankTransferRemittingBank,
+        }
+      );
+
+      // 2. Update local state strictly for target PDC
+      setPdcs(prev => prev.map(p =>
+        (String(p.id) === String(pdc.id))
+          ? { ...p, status: nextStatus, paid_amount: newPaidTotal, payment_method: "Bank Transfer" }
+          : p
+      ));
+
+      setSharedPdcs(prev => prev.map(p =>
+        (String(p.id) === String(pdc.id))
+          ? { ...p, status: isFullyPaid ? "replaced" : "partial_cash" as any, paid_amount: newPaidTotal }
+          : p
+      ));
+
+      // 3. Post double-entry vouchers to General Ledger (useFinanceStore)
+      // Leg 1: Receipt Voucher (Debit: Receiving Bank Account / Credit: Tenant Receivables)
+      addVoucher({
+        voucher_no: `VCH-TRF-${chqNo}`,
+        voucher_type: "Receipt Voucher",
+        date: receiptDate,
+        name: `Bank Transfer Received in Place of PDC – ${chqNo} (${pdc.tenant_name || "Tenant"} - ${pdc.unit_ref || "Unit"}) [Ref: ${bankTransferRef || 'Direct Wire'}]`,
+        debit: chosenBank.accountTitle,
+        debit_code: chosenBank.glCode,
+        credit: "Tenant Receivables",
+        credit_code: "12413",
+        amount: confirmedAmt,
+        method: "Bank Transfer",
+        property_name: pdc.property_name || "Property",
+        unit_ref: pdc.unit_ref || "Unit",
+        tenant_name: pdc.tenant_name || "Tenant",
+      });
+
+      // Leg 2: Journal Voucher (Debit: Customer PDC Liability / Credit: PDC In Hand)
+      addVoucher({
+        voucher_no: `VCH-TRF-CNL-${chqNo}`,
+        voucher_type: "Journal Voucher",
+        date: receiptDate,
+        name: `PDC Cancelled / Returned on Bank Transfer Settlement – ${chqNo} (${pdc.tenant_name || "Tenant"} - ${pdc.unit_ref || "Unit"})`,
+        debit: "Customer PDC Liability",
+        debit_code: "21400",
+        credit: "PDC In Hand",
+        credit_code: "12900",
+        amount: confirmedAmt,
+        method: "Bank Transfer Settlement",
+        property_name: pdc.property_name || "Property",
+        unit_ref: pdc.unit_ref || "Unit",
+        tenant_name: pdc.tenant_name || "Tenant",
+      });
+
+      // 4. Generate Official Bank Transfer Receipt
+      const existingHistory = receiptHistory[String(chqNo)] || [];
+      const installmentNum = existingHistory.length + 1;
+      const receiptNum = `TRF-${chqNo}-INS${installmentNum}`;
+
+      const receipt: TenantReceiptDetails = {
+        receiptNo: receiptNum,
+        acknowledgementNo: `ACK-TRF-${chqNo}-${installmentNum}`,
+        date: receiptDate,
+        tenantName: pdc.tenant_name && pdc.tenant_name !== "—" ? pdc.tenant_name : "Valued Tenant",
+        propertyName: pdc.property_name && pdc.property_name !== "—" ? pdc.property_name : "Property",
+        unitRef: pdc.unit_ref && pdc.unit_ref !== "—" ? pdc.unit_ref : "Unit",
+        leaseStartDate: pdc.lease_start || receiptDate,
+        leaseEndDate: pdc.lease_end || receiptDate,
+        monthlyRent: Number(pdc.amount) || 0,
+        totalContractRent: Number(pdc.amount) || 0,
+        depositAmount: 0,
+        depositMode: "Bank Transfer",
+        pdcCount: 1,
+        pdcs: [{
+          chequeNo: String(chqNo),
+          bank: chosenBank.bankName,
+          date: receiptDate,
+          amount: confirmedAmt,
+          period: isFullyPaid
+            ? `PDC Cheque #${chqNo} Settled via Bank Transfer (Ref: ${bankTransferRef || 'Direct Wire'})`
+            : `Bank Transfer Instalment #${installmentNum}: QAR ${confirmedAmt.toLocaleString()} (Paid: QAR ${newPaidTotal.toLocaleString()} / Remaining: QAR ${remainingAfter.toLocaleString()})`,
+          tenureStart: pdc.lease_start || receiptDate,
+          tenureEnd: pdc.lease_end || receiptDate,
+        }],
+        totalCollected: confirmedAmt,
+        cashierName: "Finance Department",
+        notes: `BANK TRANSFER IN LIEU OF CHEQUE: Received QAR ${confirmedAmt.toLocaleString()} via electronic bank transfer into ${chosenBank.accountTitle} (${chosenBank.bankName}) A/C: ${chosenBank.accountNumber}, IBAN: ${chosenBank.iban}.${bankTransferRemittingBank ? ` Drawn on ${bankTransferRemittingBank}.` : ''}${bankTransferRef ? ` Wire Ref / Transaction No: ${bankTransferRef}.` : ''} Cheque #${chqNo} cancelled.${bankTransferNotes ? ` Remarks: ${bankTransferNotes}` : ''}`,
+      };
+
+      setReceiptHistory(prev => {
+        const key = String(chqNo);
+        const existing = prev[key] || [];
+        const next = { ...prev, [key]: [...existing, receipt] };
+        saveReceiptHistory(next);
+        return next;
+      });
+
+      setReceiptHistoryPdc({ ...pdc, status: nextStatus, paid_amount: newPaidTotal });
+      setReceiptHistoryIndex(installmentNum - 1);
+      setReceiptData(receipt);
+      setReceiptHistoryOpen(true);
+
+      toast.success(
+        isFullyPaid
+          ? `Cheque #${chqNo} settled via Bank Transfer (QAR ${confirmedAmt.toLocaleString()}). Cheque cancelled and GL updated.`
+          : `Partial bank transfer of QAR ${confirmedAmt.toLocaleString()} recorded for Cheque #${chqNo}. Remaining: QAR ${remainingAfter.toLocaleString()}.`
+      );
+
+      await new Promise(r => setTimeout(r, 400));
+      refreshFinanceData();
+      await load(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to process bank transfer settlement.");
+    } finally {
+      setActionLoading(false);
+      setBankTransferPdc(null);
+    }
+  }
+
   // ── Helper to Auto-Generate Batch PDC Rows ────────────────────────────────
   function handleGeneratePdcSchedule() {
     const count = parseInt(genCount) || 12;
@@ -1817,19 +2102,35 @@ export function PdcManagement() {
                                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-purple-300 text-purple-700 hover:bg-purple-50" onClick={() => openCashModal(pdc)}>
                                         <Banknote className="h-3 w-3 mr-1" /> Cash
                                       </Button>
+                                      <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => openBankTransferModal(pdc)}>
+                                        <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
+                                      </Button>
+                                      <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-rose-300 text-rose-700 hover:bg-rose-50" onClick={() => openGlConfirm(pdc, "cancel")}>
+                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
+                                      </Button>
                                     </>
                                   )}
 
                                   {/* Partial Cash actions (allow paying remaining cash balance + view receipts) */}
                                   {pdc.status === "Partial Cash" && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-6 text-xs px-2 border-purple-400 bg-purple-50/50 text-purple-700 hover:bg-purple-100"
-                                      onClick={() => openCashModal(pdc)}
-                                    >
-                                      <Banknote className="h-3 w-3 mr-1" /> Pay Cash
-                                    </Button>
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 text-xs px-2 border-purple-400 bg-purple-50/50 text-purple-700 hover:bg-purple-100"
+                                        onClick={() => openCashModal(pdc)}
+                                      >
+                                        <Banknote className="h-3 w-3 mr-1" /> Pay Cash
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 text-xs px-2 border-blue-400 bg-blue-50/50 text-blue-700 hover:bg-blue-100"
+                                        onClick={() => openBankTransferModal(pdc)}
+                                      >
+                                        <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
+                                      </Button>
+                                    </>
                                   )}
 
                                   {/* Deposited actions */}
@@ -1852,6 +2153,12 @@ export function PdcManagement() {
                                       </Button>
                                       <Button size="sm" variant="outline" className="h-6 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 px-2" disabled={actionLoading} onClick={() => openCashModal(pdc)}>
                                         <Banknote className="h-3 w-3 mr-1" /> Cash
+                                      </Button>
+                                      <Button size="sm" variant="outline" className="h-6 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 px-2" disabled={actionLoading} onClick={() => openBankTransferModal(pdc)}>
+                                        <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
+                                      </Button>
+                                      <Button size="sm" variant="outline" className="h-6 text-xs border-rose-300 text-rose-700 hover:bg-rose-50 px-2" disabled={actionLoading} onClick={() => openGlConfirm(pdc, "cancel")}>
+                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
                                       </Button>
                                     </>
                                   )}
@@ -2712,6 +3019,531 @@ export function PdcManagement() {
         </DialogContent>
       </Dialog>
 
+      {/* ── BANK TRANSFER SETTLEMENT & CHEQUE CANCELLATION MODAL (2-STEP STEPPER) ────────── */}
+      <Dialog open={bankTransferModalOpen} onOpenChange={setBankTransferModalOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <ArrowRightLeft className="h-5 w-5 text-blue-600" />
+              Bank Transfer in Place of Cheque
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {bankTransferStep === 1
+                ? "Step 1 of 2: Enter bank transfer details, remitting bank, and destination account."
+                : "Step 2 of 2: Review General Ledger & Sub-Ledger double-entry posting impact."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Stepper Tabs Bar */}
+          <div className="flex items-center gap-2 border-b pb-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setBankTransferStep(1)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
+                bankTransferStep === 1
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">1</span>
+              Transfer &amp; Bank Details
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (bankTransferAmount && parseFloat(bankTransferAmount) > 0) setBankTransferStep(2);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md font-semibold transition-all ${
+                bankTransferStep === 2
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="h-4 w-4 rounded-full bg-background/20 text-[10px] flex items-center justify-center font-bold">2</span>
+              GL &amp; Accounting Impact
+            </button>
+          </div>
+
+          {bankTransferPdc && (
+            <div className="space-y-3.5 py-1 text-xs">
+              {/* STEP 1: Transfer details */}
+              {bankTransferStep === 1 && (
+                <div className="space-y-3">
+                  {/* Cheque Summary Card */}
+                  <div className="rounded-lg border bg-muted/40 p-3 space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Cheque Number:</span>
+                      <span className="font-mono font-bold text-primary">{bankTransferPdc.cheque_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Customer / Tenant:</span>
+                      <span className="font-semibold text-foreground">{bankTransferPdc.tenant_name || "Valued Tenant"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Property &amp; Unit:</span>
+                      <span>{bankTransferPdc.property_name || "—"} • {bankTransferPdc.unit_ref || "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-medium">Original Cheque Amount:</span>
+                      <span className="font-mono font-bold text-foreground">QR {Number(bankTransferPdc.amount || 0).toLocaleString()}</span>
+                    </div>
+                    {bankTransferPdc.paid_amount != null && bankTransferPdc.paid_amount > 0 && (
+                      <>
+                        <div className="flex justify-between text-blue-700 dark:text-blue-300">
+                          <span className="font-medium">Previously Paid:</span>
+                          <span className="font-mono font-bold">QR {Number(bankTransferPdc.paid_amount).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-700 dark:text-amber-300 font-semibold border-t pt-1">
+                          <span>Remaining Balance Due:</span>
+                          <span className="font-mono font-bold">QR {Math.max(0, Number(bankTransferPdc.amount || 0) - Number(bankTransferPdc.paid_amount)).toLocaleString()}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Transfer Amount & Settlement Date */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">
+                        Transfer Amount (QAR) <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        className="h-8 text-xs font-mono font-bold"
+                        placeholder="Enter transfer amount"
+                        value={bankTransferAmount}
+                        onChange={(e) => setBankTransferAmount(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Transfer / Value Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={bankTransferDate}
+                        onChange={(e) => setBankTransferDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Discrepancy indicator */}
+                  {(() => {
+                    const original = Number(bankTransferPdc.amount || 0);
+                    const alreadyPaid = Number(bankTransferPdc.paid_amount || 0);
+                    const remaining = Math.max(0, original - alreadyPaid);
+                    const actual = parseFloat(bankTransferAmount) || 0;
+
+                    if (actual === remaining && remaining > 0) {
+                      return (
+                        <div className="rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-[11px] text-emerald-800 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                          <span>This transfer of QR {actual.toLocaleString()} will <strong>fully settle</strong> the cheque (Cheque will be cancelled &amp; closed).</span>
+                        </div>
+                      );
+                    }
+                    if (actual < remaining) {
+                      const stillRemaining = remaining - actual;
+                      return (
+                        <div className="rounded-md border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-800 flex items-start gap-1.5">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                          <span>
+                            <strong>Partial Settlement:</strong> Transferring QR {actual.toLocaleString()}.
+                            Remaining balance of <strong>QR {stillRemaining.toLocaleString()}</strong> will stay open for subsequent settlements.
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {/* Destination Bank Account Selection with Add / Update Options */}
+                  <div className="space-y-1.5 rounded-lg border bg-blue-50/30 dark:bg-blue-950/20 p-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-semibold text-blue-900 dark:text-blue-300">
+                        Receiving Company Bank Account <span className="text-destructive">*</span>
+                      </Label>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 text-[10px] text-blue-600 hover:text-blue-700 hover:bg-blue-100/60 px-1.5"
+                          onClick={() => openEditBankDetails()}
+                          title="Edit selected bank details and GL mappings"
+                        >
+                          <Edit3 className="h-3 w-3 mr-0.5" /> Edit Bank
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100/60 px-1.5"
+                          onClick={openAddNewBank}
+                          title="Add a new company bank account to Chart of Accounts"
+                        >
+                          <Plus className="h-3 w-3 mr-0.5" /> + Add Bank
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Select
+                      value={bankTransferBankAccountId}
+                      onValueChange={(val) => setBankTransferBankAccountId(val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-background">
+                        <SelectValue placeholder="Select destination bank account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS).map((b) => (
+                          <SelectItem key={b.id} value={b.id} className="text-xs">
+                            <span className="font-semibold">{b.bankName}</span> — {b.accountTitle} (A/C: {b.accountNumber} • GL: {b.glCode})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Active Bank Account Details Chip */}
+                    {(() => {
+                      const sel = (bankAccounts || []).find(b => b.id === bankTransferBankAccountId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === bankTransferBankAccountId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
+                      if (!sel) return null;
+                      return (
+                        <div className="text-[10px] text-muted-foreground bg-background/80 rounded p-1.5 border border-blue-200/50 space-y-0.5">
+                          <div className="flex justify-between">
+                            <span>A/C: <strong className="font-mono text-foreground">{sel.accountNumber}</strong></span>
+                            <span>GL Code: <strong className="font-mono text-blue-700">{sel.glCode}</strong> ({sel.glName || sel.accountTitle})</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>IBAN: <strong className="font-mono text-foreground">{sel.iban}</strong></span>
+                            <span>Branch: <strong className="text-foreground">{sel.branch || "Main"}</strong></span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Wire Reference & Remitting Bank */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Wire / Transaction Ref (UTR / Trans No)</Label>
+                      <Input
+                        className="h-8 text-xs font-mono"
+                        placeholder="e.g. UTR-2026-98124"
+                        value={bankTransferRef}
+                        onChange={(e) => setBankTransferRef(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold">Tenant Remitting Bank</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="e.g. QNB, Commercial Bank, Doha Bank"
+                        value={bankTransferRemittingBank}
+                        onChange={(e) => setBankTransferRemittingBank(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Remarks / Reason */}
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Remarks / Transfer Notes</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="e.g. Tenant paid rent via online bank transfer, original cheque cancelled"
+                      value={bankTransferNotes}
+                      onChange={(e) => setBankTransferNotes(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Accounting & GL Impact */}
+              {bankTransferStep === 2 && (
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <AlertTriangle className="h-3.5 w-3.5 text-blue-600" />
+                      General Ledger &amp; Sub-Ledger (COA) Accounts Impacted
+                    </div>
+
+                    {/* Part 1: Direct Bank Receipt Group */}
+                    {(() => {
+                      const sel = (bankAccounts || []).find(b => b.id === bankTransferBankAccountId) || (DEFAULT_COMPANY_BANK_ACCOUNTS.find(b => b.id === bankTransferBankAccountId) || DEFAULT_COMPANY_BANK_ACCOUNTS[0]);
+                      const confirmedAmt = parseFloat(bankTransferAmount) || Number(bankTransferPdc.amount || 0);
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                            Part 1: Electronic Bank Receipt
+                          </div>
+                          {/* Debit Card: Receiving Bank Account */}
+                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                            <div className="mt-0.5">
+                              <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                  Debit
+                                </span>
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                  GL {sel.glCode}
+                                </span>
+                                <span className="text-xs font-semibold text-foreground">
+                                  {sel.accountTitle}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Funds received directly into {sel.bankName} (A/C: {sel.accountNumber})
+                              </p>
+                            </div>
+                            <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                              QAR {confirmedAmt.toLocaleString()}
+                            </div>
+                          </div>
+
+                          {/* Credit Card: Receivable - Unit Account */}
+                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                            <div className="mt-0.5">
+                              <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                  Credit
+                                </span>
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                  GL 12413
+                                </span>
+                                <span className="text-xs font-semibold text-foreground">
+                                  Receivable- Unit Account
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Tenant unit receivable offset &amp; cleared
+                              </p>
+                            </div>
+                            <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                              QAR {confirmedAmt.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Part 2: Cheque Cancellation Reversal Group */}
+                    {(() => {
+                      const confirmedAmt = parseFloat(bankTransferAmount) || Number(bankTransferPdc.amount || 0);
+
+                      return (
+                        <div className="space-y-2 pt-1 border-t border-blue-200/60">
+                          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                            Part 2: Original Cheque Cancellation &amp; Custody Reversal
+                          </div>
+
+                          {/* Debit Card: Customer PDC Liability Reversal */}
+                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                            <div className="mt-0.5">
+                              <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                                  Debit
+                                </span>
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                                  GL 21400
+                                </span>
+                                <span className="text-xs font-semibold text-foreground">
+                                  Customer(PDC)- Unit Account
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Customer PDC liability cancelled upon bank transfer settlement
+                              </p>
+                            </div>
+                            <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                              QAR {confirmedAmt.toLocaleString()}
+                            </div>
+                          </div>
+
+                          {/* Credit Card: PDC In Hand Reversal */}
+                          <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
+                            <div className="mt-0.5">
+                              <ArrowDownLeft className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                                  Credit
+                                </span>
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                                  GL 12900
+                                </span>
+                                <span className="text-xs font-semibold text-foreground">
+                                  PDC in hand
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Physical cheque removed from custody and marked cancelled
+                              </p>
+                            </div>
+                            <div className="text-xs font-mono font-bold tabular-nums text-foreground">
+                              QAR {confirmedAmt.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="text-[11px] text-muted-foreground border-t border-border/50 pt-2">
+                      Posting this transfer will automatically create General Ledger vouchers, update your Bank Account balances, and refresh Finance Reports (Trial Balance, Balance Sheet, Cash &amp; Bank Book).
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 border-t pt-2">
+            <Button variant="outline" onClick={() => setBankTransferModalOpen(false)} disabled={actionLoading}>
+              Cancel
+            </Button>
+            {bankTransferStep === 1 ? (
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => setBankTransferStep(2)}
+                disabled={!bankTransferAmount || parseFloat(bankTransferAmount) <= 0}
+              >
+                Review Accounting Impact →
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setBankTransferStep(1)} disabled={actionLoading}>
+                  ← Back to Details
+                </Button>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={executeConfirmedBankTransfer}
+                  disabled={actionLoading || !bankTransferAmount || parseFloat(bankTransferAmount) <= 0}
+                >
+                  {actionLoading ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Recording Transfer &amp; GL…</> : "Confirm Transfer & Post GL"}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MANAGE / ADD / UPDATE COMPANY BANK ACCOUNT MODAL ────────────────── */}
+      <Dialog open={manageBankModalOpen} onOpenChange={setManageBankModalOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Building className="h-5 w-5 text-primary" />
+              {bankEditMode === "add" ? "Add Company Bank Account" : "Update Bank Account & GL Mapping"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Manage bank account details, IBAN, Swift code, and General Ledger mapping for electronic receipts.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-1 text-xs">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Bank Name *</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. Commercial Bank of Qatar (CBQ)"
+                value={bankForm.bankName}
+                onChange={(e) => setBankForm({ ...bankForm, bankName: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Account Title / Purpose *</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. CBQ Main Operating Account"
+                value={bankForm.accountTitle}
+                onChange={(e) => setBankForm({ ...bankForm, accountTitle: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Account Number *</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. 4060692533001"
+                  value={bankForm.accountNumber}
+                  onChange={(e) => setBankForm({ ...bankForm, accountNumber: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">IBAN</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. QA40CBQK..."
+                  value={bankForm.iban}
+                  onChange={(e) => setBankForm({ ...bankForm, iban: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">GL Account Code *</Label>
+                <Input
+                  className="h-8 text-xs font-mono font-bold text-blue-700"
+                  placeholder="e.g. 12000001"
+                  value={bankForm.glCode}
+                  onChange={(e) => setBankForm({ ...bankForm, glCode: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Swift / BIC Code</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="e.g. CBQKQAQA"
+                  value={bankForm.swiftCode || ""}
+                  onChange={(e) => setBankForm({ ...bankForm, swiftCode: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Branch Name</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Grand Hamad Main Branch"
+                  value={bankForm.branch || ""}
+                  onChange={(e) => setBankForm({ ...bankForm, branch: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Currency</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="QAR"
+                  value={bankForm.currency || "QAR"}
+                  onChange={(e) => setBankForm({ ...bankForm, currency: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 border-t pt-2">
+            <Button variant="outline" onClick={() => setManageBankModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="bg-primary text-primary-foreground" onClick={handleSaveBankDetails}>
+              Save Bank Details
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── MULTI-RECEIPT GENERATION & VIEWER MODAL ───────────────────────── */}
       <Dialog open={receiptHistoryOpen} onOpenChange={setReceiptHistoryOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-6">
@@ -2792,17 +3624,30 @@ export function PdcManagement() {
                   <div className="text-xs font-semibold text-foreground mb-2 flex items-center justify-between">
                     <span>Generated Payment Receipts ({list.length})</span>
                     {remainingDue > 0.01 && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs border-purple-400 text-purple-700 hover:bg-purple-50 gap-1"
-                        onClick={() => {
-                          setReceiptHistoryOpen(false);
-                          openCashModal(receiptHistoryPdc);
-                        }}
-                      >
-                        <Plus className="h-3 w-3" /> Record Next Cash Instalment
-                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-purple-400 text-purple-700 hover:bg-purple-50 gap-1"
+                          onClick={() => {
+                            setReceiptHistoryOpen(false);
+                            openCashModal(receiptHistoryPdc);
+                          }}
+                        >
+                          <Plus className="h-3 w-3" /> Cash Instalment
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-blue-400 text-blue-700 hover:bg-blue-50 gap-1"
+                          onClick={() => {
+                            setReceiptHistoryOpen(false);
+                            openBankTransferModal(receiptHistoryPdc);
+                          }}
+                        >
+                          <ArrowRightLeft className="h-3 w-3" /> Bank Transfer
+                        </Button>
+                      </div>
                     )}
                   </div>
 
