@@ -481,7 +481,7 @@ export const customerAdapter: EntityImportAdapter = {
           }
         }
 
-        const displayName = data.display_name || data.full_name || (data.first_name ? `${data.first_name} ${data.last_name || ''}`.trim() : 'Customer');
+        const displayName = data.display_name || data.full_name || data.first_name || 'Customer';
         // Build base payload with robust fallback
         // ── Normalize customer_type before DB insert (constraint: Individual | Company only) ──
         const rawCustomerType = (data.customer_type || '').toLowerCase().trim();
@@ -502,10 +502,10 @@ export const customerAdapter: EntityImportAdapter = {
           customer_status: data.customer_status || 'Active',
           remarks: data.remarks || null,
 
-          // Individual fields
-          first_name: data.first_name || null,
-          middle_name: data.middle_name || null,
-          last_name: data.last_name || null,
+          // Individual fields: entire customer name stored as first_name
+          first_name: data.first_name || displayName,
+          middle_name: null,
+          last_name: null,
           nationality: data.nationality || null,
           qatar_id: data.qatar_id || null,
           // ── All date fields go through sanitizeDateForPostgres at validate time;

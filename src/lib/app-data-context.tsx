@@ -416,9 +416,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       // Helper: resolve the best available name from a raw DB row
       const resolveName = (c: any): string =>
-        (c.full_name || c.name || c.tenant_name || c.customer_name ||
+        (c.first_name || c.full_name || c.display_name || c.name || c.tenant_name || c.customer_name ||
           (c.first_name && c.last_name ? `${c.first_name} ${c.last_name}`.trim() : "") ||
-          c.first_name || c.last_name || "").trim();
+          c.last_name || "").trim();
 
       // Helper: guess company vs individual from display name
       const guessType = (name: string): "company" | "individual" => {
@@ -450,6 +450,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           id,
           customerId,
           name,
+          displayName: c.display_name || name,
+          firstName: c.first_name || name,
+          lastName: c.last_name || "",
           type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
           qatarId:  c.qatar_id || c.qatarId || "",
           passport: c.passport_number || c.passport || "",

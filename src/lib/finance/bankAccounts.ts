@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../supabase';
 
 export interface CompanyBankAccount {
   id: string;
@@ -10,6 +10,7 @@ export interface CompanyBankAccount {
   glName: string;
   currency: string;
   branch?: string;
+  swiftCode?: string;
   isDefault?: boolean;
   status?: string;
 }
@@ -20,11 +21,12 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     bankName: "Commercial Bank of Qatar (CBQ)",
     accountTitle: "Commercial Bank of Qatar (CBQ)",
     accountNumber: "4060692533001",
-    iban: "4060692533001",
+    iban: "QA40CBQK000000004060692533001",
     glCode: "12000001",
     glName: "Commercial Bank of Qatar (CBQ)",
     currency: "QAR",
     branch: "Grand Hamad Main Branch",
+    swiftCode: "CBQKQAQA",
     isDefault: true,
     status: "Active",
   },
@@ -33,11 +35,12 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     bankName: "Dukhan Bank",
     accountTitle: "Al Ameen Dukhan Bank",
     accountNumber: "100001761798",
-    iban: "100001761798",
+    iban: "QA88BARQ00000000100001761798",
     glCode: "12000002",
     glName: "Al Ameen Dukhan Bank",
     currency: "QAR",
     branch: "Main Branch",
+    swiftCode: "BARQQAQA",
     status: "Active",
   },
   {
@@ -50,6 +53,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "Bank Operating Account (QNB)",
     currency: "QAR",
     branch: "Grand Hamad Main Branch",
+    swiftCode: "QNBAQAQA",
     status: "Active",
   },
   {
@@ -62,6 +66,7 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "Doha Bank Operating Account",
     currency: "QAR",
     branch: "Corniche Branch",
+    swiftCode: "DHBKQAQA",
     status: "Active",
   },
   {
@@ -74,33 +79,96 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     glName: "QIB Islamic Rental Account",
     currency: "QAR",
     branch: "Salwa Road Branch",
+    swiftCode: "QISBQAQA",
     status: "Active",
   },
 ];
 
+const BANK_ACCOUNTS_STORAGE_KEY = "zyno-company-bank-accounts-v2";
+
 /**
- * Fetch company bank accounts from fin_bank_accounts or fallback to standard master list.
- * Only returns active accounts for transactions like PDC bank deposit.
+ * Retrieve custom/updated bank accounts from local storage.
+ */
+export function getStoredCompanyBankAccounts(): CompanyBankAccount[] {
+  if (typeof window === "undefined") return DEFAULT_COMPANY_BANK_ACCOUNTS;
+  try {
+    const raw = localStorage.getItem(BANK_ACCOUNTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return DEFAULT_COMPANY_BANK_ACCOUNTS;
+}
+
+/**
+ * Save or update a bank account in local storage and persist to Supabase where possible.
+ */
+export async function saveCompanyBankAccount(acc: CompanyBankAccount): Promise<CompanyBankAccount[]> {
+  const current = getStoredCompanyBankAccounts();
+  const existingIdx = current.findIndex(a => a.id === acc.id || (a.accountNumber && a.accountNumber === acc.accountNumber));
+  let updated: CompanyBankAccount[];
+
+  if (existingIdx >= 0) {
+    updated = [...current];
+    updated[existingIdx] = { ...updated[existingIdx], ...acc };
+  } else {
+    updated = [...current, acc];
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(BANK_ACCOUNTS_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore storage quota issues
+    }
+  }
+
+  // Attempt to sync to Supabase database if fin_bank_accounts table is accessible
+  try {
+    await (supabase as any)
+      .from('fin_bank_accounts')
+      .upsert({
+        account_number: acc.accountNumber,
+        account_title: acc.accountTitle,
+        currency: acc.currency || 'QAR',
+      }, { onConflict: 'account_number' });
+  } catch {
+    // Non-blocking fallback
+  }
+
+  return updated;
+}
+
+/**
+ * Fetch company bank accounts from fin_bank_accounts merged with stored/default accounts.
+ * Always returns active accounts for transactions like PDC bank deposit or bank transfer.
  */
 export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> {
+  const stored = getStoredCompanyBankAccounts();
+
   try {
     const { data, error } = await (supabase as any)
       .from('fin_bank_accounts')
       .select('*, fin_banks(name, code, swift_code)')
       .limit(50);
 
-    if (error || !data) {
-      return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
+    if (error || !data || data.length === 0) {
+      return stored.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
     }
 
     // Filter to strictly ACTIVE bank accounts only (exclude deactivated accounts)
     const activeData = data.filter((item: any) => item.status !== 'Inactive' && item.status !== 'inactive');
 
     if (activeData.length === 0) {
-      return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
+      return stored.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
     }
 
-    return activeData.map((item: any, idx: number) => {
+    const dbMapped: CompanyBankAccount[] = activeData.map((item: any, idx: number) => {
       const bName = item.fin_banks?.name || item.bank_name || 'Commercial Bank of Qatar (CBQ)';
       const rawTitle = (item.account_title || item.name || bName).replace(/\bAccont\b/gi, 'Account');
       const accNum = String(item.account_number || '');
@@ -121,11 +189,22 @@ export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> 
         glName,
         currency: item.currency || 'QAR',
         branch: item.branch,
+        swiftCode: item.fin_banks?.swift_code,
         isDefault: idx === 0 || isCbq,
         status: item.status || 'Active',
       };
     });
+
+    // Merge: Include any stored bank accounts that aren't already in DB accounts
+    const merged = [...dbMapped];
+    for (const s of stored) {
+      if (!merged.some(m => m.id === s.id || m.accountNumber === s.accountNumber)) {
+        merged.push(s);
+      }
+    }
+
+    return merged.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
   } catch {
-    return DEFAULT_COMPANY_BANK_ACCOUNTS.filter(a => a.status !== 'Inactive');
+    return stored.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
   }
 }

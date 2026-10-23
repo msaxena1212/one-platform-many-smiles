@@ -1518,9 +1518,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         // Source 1: customers table — full KYC profile rows
         for (const c of (customersRes.data || [])) {
           const name =
-            c.full_name || c.name || c.tenant_name || c.customer_name ||
+            c.first_name || c.full_name || c.display_name || c.name || c.tenant_name || c.customer_name ||
             (c.first_name && c.last_name ? `${c.first_name} ${c.last_name}`.trim() : "") ||
-            c.first_name || c.last_name || "";
+            c.last_name || "";
           if (!name || name.toLowerCase().includes("abc trading")) continue;
           const normKey = normalizeCustKey(name);
           const customerId = c.tax_identification_no ||
@@ -1530,6 +1530,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             id: c.id,
             customerId,
             name,
+            displayName: c.display_name || name,
+            firstName: c.first_name || name,
+            middleName: c.middle_name || "",
+            lastName: c.last_name || "",
             type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
             qatarId: c.qatar_id || c.qatarId || "",
             passport: c.passport_number || c.passport || "",
@@ -6357,44 +6361,21 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     </Select>
                   </Field>
 
-                  {/* INDIVIDUAL: First / Middle / Last Name */}
+                  {/* INDIVIDUAL: First Name (Full Name) */}
                   {customerForm.type === "individual" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <Field label="First Name *">
+                    <div className="grid grid-cols-1 gap-3">
+                      <Field label="First Name (Customer Name) *">
                         <Input
-                          placeholder="Ahmed"
+                          placeholder="e.g. Ahmed Al-Kuwari"
                           value={customerForm.firstName}
                           onChange={(e) => {
                             const fn = e.target.value;
                             setCustomerForm((form) => ({
                               ...form,
                               firstName: fn,
-                              name: `${fn} ${form.lastName || ""}`.trim(),
-                              displayName: `${fn} ${form.lastName || ""}`.trim(),
-                            }));
-                          }}
-                          className="bg-background font-semibold"
-                        />
-                      </Field>
-                      <Field label="Middle Name">
-                        <Input
-                          placeholder="Hassan"
-                          value={customerForm.middleName}
-                          onChange={(e) => setCustomerForm((form) => ({ ...form, middleName: e.target.value }))}
-                          className="bg-background"
-                        />
-                      </Field>
-                      <Field label="Last Name *">
-                        <Input
-                          placeholder="Al-Kuwari"
-                          value={customerForm.lastName}
-                          onChange={(e) => {
-                            const ln = e.target.value;
-                            setCustomerForm((form) => ({
-                              ...form,
-                              lastName: ln,
-                              name: `${form.firstName || ""} ${ln}`.trim(),
-                              displayName: `${form.firstName || ""} ${ln}`.trim(),
+                              lastName: "",
+                              name: fn.trim(),
+                              displayName: fn.trim(),
                             }));
                           }}
                           className="bg-background font-semibold"
@@ -6959,7 +6940,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               <div>
                 <DialogTitle className="text-base font-bold flex items-center gap-2">
                   {viewCustomerData?.type === "individual" 
-                    ? ([viewCustomerData.firstName, viewCustomerData.middleName, viewCustomerData.lastName].filter(Boolean).join(" ") || viewCustomerData.displayName || viewCustomerData.name || "Customer Details")
+                    ? (viewCustomerData.firstName || viewCustomerData.displayName || viewCustomerData.name || "Customer Details")
                     : (viewCustomerData?.companyLegalName || viewCustomerData?.displayName || viewCustomerData?.name || "Customer Details")}
                 </DialogTitle>
                 <DialogDescription className="text-xs">
@@ -7009,18 +6990,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                     <BadgeCheck className="h-3.5 w-3.5 text-primary" /> Individual Personal & Identity Records
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                  <div className="grid grid-cols-1 gap-3 text-xs pt-1">
                     <div className="p-2.5 rounded-lg bg-background border">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">First Name</span>
-                      <strong className="text-foreground">{viewCustomerData.firstName || viewCustomerData.name?.split(" ")[0] || "—"}</strong>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-background border">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Middle Name</span>
-                      <strong className="text-foreground">{viewCustomerData.middleName || "—"}</strong>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-background border">
-                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Last Name</span>
-                      <strong className="text-foreground">{viewCustomerData.lastName || viewCustomerData.name?.split(" ").slice(1).join(" ") || "—"}</strong>
+                      <span className="text-muted-foreground block text-[10px] uppercase font-semibold">First Name (Customer Name)</span>
+                      <strong className="text-foreground">{viewCustomerData.firstName || viewCustomerData.displayName || viewCustomerData.name || "—"}</strong>
                     </div>
                   </div>
 
@@ -7315,34 +7288,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </Select>
                 </Field>
 
-                {/* INDIVIDUAL: First, Middle, Last Name */}
+                {/* INDIVIDUAL: First Name (Customer Name) */}
                 {customerForm.type === "individual" ? (
-                  <>
-                    <Field label="First Name *">
+                  <div className="sm:col-span-2">
+                    <Field label="First Name (Customer Name) *">
                       <Input
-                        placeholder="e.g. Ahmed"
+                        placeholder="e.g. Ahmed Al-Kuwari"
                         value={customerForm.firstName}
                         onChange={(e) => {
                           const fn = e.target.value;
                           setCustomerForm((form) => ({
                             ...form,
                             firstName: fn,
-                            name: `${fn} ${form.lastName || ""}`.trim(),
-                            displayName: `${fn} ${form.lastName || ""}`.trim(),
+                            lastName: "",
+                            name: fn.trim(),
+                            displayName: fn.trim(),
                           }));
                         }}
                         className="bg-background font-semibold"
                       />
                     </Field>
-                    <Field label="Middle Name">
-                      <Input
-                        placeholder="e.g. Hassan"
-                        value={customerForm.middleName}
-                        onChange={(e) => setCustomerForm((form) => ({ ...form, middleName: e.target.value }))}
-                        className="bg-background"
-                      />
-                    </Field>
-                  </>
+                  </div>
                 ) : (
                   /* COMPANY: Company Legal Name + Trade Name */
                   <div className="sm:col-span-2">
@@ -7360,27 +7326,6 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </div>
                 )}
               </div>
-
-              {customerForm.type === "individual" && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <Field label="Last Name *">
-                    <Input
-                      placeholder="e.g. Al-Kuwari"
-                      value={customerForm.lastName}
-                      onChange={(e) => {
-                        const ln = e.target.value;
-                        setCustomerForm((form) => ({
-                          ...form,
-                          lastName: ln,
-                          name: `${form.firstName || ""} ${ln}`.trim(),
-                          displayName: `${form.firstName || ""} ${ln}`.trim(),
-                        }));
-                      }}
-                      className="bg-background font-semibold"
-                    />
-                  </Field>
-                </div>
-              )}
 
               {customerForm.type === "company" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -14118,9 +14063,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           remarks: customer?.remarks || "",
 
                           // Individual specific fields
-                          firstName: customer?.firstName || (customer?.type === "individual" ? (customer?.name?.split(" ")[0] || "") : ""),
+                          firstName: customer?.firstName || customer?.displayName || customer?.name || "",
                           middleName: customer?.middleName || "",
-                          lastName: customer?.lastName || (customer?.type === "individual" ? (customer?.name?.split(" ").slice(1).join(" ") || "") : ""),
+                          lastName: customer?.lastName || "",
                           nationality: (customer as any)?.nationality || "Qatari",
                           qatarId: customer?.qatarId || "",
                           qidExpiryDate: customer?.qidExpiryDate || "",

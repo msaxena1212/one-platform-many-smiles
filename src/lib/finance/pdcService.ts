@@ -744,6 +744,98 @@ export async function cashDepositInPlaceOfPdc(
 }
 
 /**
+ * Event 4b — Bank Transfer Settlement in Place of PDC
+ * 1. Direct Bank Receipt against AR: Dr [Bank Account GL] / Cr 12413[unit SL]
+ * 2. Returns the cancelled PDC from custody: Dr 21400[unit SL] / Cr 12900001
+ * 3. Updates register statuses and transaction metadata
+ */
+export async function bankTransferInPlaceOfPdc(
+  pdcId: string | number,
+  chequeNo?: string,
+  confirmedAmount?: number,
+  notes?: string,
+  settlementDate?: string,
+  bankDetails?: {
+    bankAccountId?: string;
+    bankName?: string;
+    accountTitle?: string;
+    accountNumber?: string;
+    iban?: string;
+    glCode?: string;
+    glName?: string;
+    transferRef?: string;
+    remittingBank?: string;
+  },
+) {
+  const dateStr = settlementDate || new Date().toISOString().split('T')[0];
+  const newStatus = 'replaced';
+
+  // 1. Resolve context
+  const ctx = await resolveGlContext(pdcId, chequeNo);
+  const finalAmt = (confirmedAmount !== undefined && confirmedAmount > 0) ? confirmedAmount : ctx.amount;
+
+  // 2. Perform financial postings
+  if (finalAmt > 0) {
+    const { credit: arAcct } = await resolveAccountingAccounts({
+      transactionType: 'RENT_RECEIPT',
+      paymentMethod: 'BANK',
+      propertyId: String(ctx.property_id),
+      unitId: ctx.unit_id ? String(ctx.unit_id) : undefined,
+      tenantId: ctx.tenant_id ? String(ctx.tenant_id) : undefined,
+      unitName: ctx.unitCode,
+    });
+
+    const bankGlCode = bankDetails?.glCode || '12000001';
+    const bankGlName = bankDetails?.accountTitle || bankDetails?.glName || 'Commercial Bank of Qatar (CBQ)';
+
+    // Step 1: Direct Bank Receipt (Debit: Selected Bank / Credit: Receivable Unit Account)
+    await postVoucher({
+      voucher_date: dateStr,
+      voucher_type: 'Receipt',
+      description: `Bank transfer received for Unit AR in place of PDC ${ctx.cheque_number} into ${bankGlName}${bankDetails?.transferRef ? ` [Ref: ${bankDetails.transferRef}]` : ''}${notes ? ` – ${notes}` : ''}`,
+      reference_no: bankDetails?.transferRef || `TRF-REC-${ctx.cheque_number}`,
+      tenant_id: ctx.tenant_id,
+      property_id: ctx.property_id,
+      unit_id: ctx.unit_id,
+      lines: [
+        { account_code: bankGlCode, account_name: bankGlName, debit: finalAmt, credit: 0, description: `Bank Transfer Received – ${bankGlName}` },
+        { account_code: arAcct.slCode, account_name: `${arAcct.glName} / ${arAcct.slName}`, debit: 0, credit: finalAmt, description: `Receivable - Unit Account – ${arAcct.slName}` },
+      ],
+    });
+
+    // Step 2: Cancel PDC Custody (Debit: Customer PDC Liability / Credit: PDC In Hand)
+    await postPdcReturn(
+      finalAmt,
+      ctx.tenant_id,
+      ctx.property_id,
+      ctx.unit_id,
+      ctx.cheque_number,
+      ctx.unitCode,
+      ctx.pdcType,
+    );
+  }
+
+  // 3. Update registers strictly for target PDC
+  if (!isNaN(Number(pdcId))) {
+    const { error } = await supabase
+      .from('fin_pdc_register')
+      .update({ status: 'Replaced', deposit_date: dateStr })
+      .eq('id', Number(pdcId));
+    if (error) console.warn('[bankTransferInPlaceOfPdc] fin_pdc_register update warning:', error.message);
+  }
+
+  const { error: idErr } = await supabase
+    .from('pdcs')
+    .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
+    .eq('id', String(pdcId));
+  if (idErr) console.warn('[bankTransferInPlaceOfPdc] pdcs id update warning:', idErr.message);
+
+  if (isNaN(Number(pdcId))) {
+    await syncFinPdcRegister(ctx, { status: 'Replaced', deposit_date: dateStr });
+  }
+}
+
+/**
  * Event 7 — Voluntary PDC Cancellation
  * Marks the cheque as Cancelled + posts GL reversal:
  *   Dr 21400[unit SL] PDC Received / Cr 12900001 PDC In Hand
