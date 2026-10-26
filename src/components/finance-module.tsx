@@ -41,7 +41,7 @@ import { PdcManagement } from "./finance/pdc-management";
 import { DepositsGuarantees } from "./finance/deposits-guarantees";
 import { ReceivablesLegal } from "./finance/receivables";
 import { PayrollSync } from "./finance/payroll-sync";
-import { formatDDMMMYYYY } from "@/lib/date-utils";
+import { formatDDMMMYYYY, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { postVoucher } from "@/lib/finance/posting-engine";
 import { useFinanceStore } from "@/lib/finance/finance-store";
 import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
@@ -2922,7 +2922,7 @@ function GrnCostMappingSubModule() {
 
 function PayableInvoiceSubModule() {
   const { addVoucher } = useFinanceStore();
-  const { properties } = useAppData();
+  const { leases, units } = useAppData();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
@@ -3284,9 +3284,9 @@ function PayableInvoiceSubModule() {
                   <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700 dark:text-purple-300">
                     🏢 Al Ameen Real Estate Head Office (Corporate Overhead / Staff Salary)
                   </SelectItem>
-                  {properties.map(p => (
-                    <SelectItem key={p.id} value={p.name}>
-                      {p.name}
+                  {Array.from(new Set([...leases.map(l => l.property), ...units.map(u => u.property)].filter(Boolean))).map((propName: string) => (
+                    <SelectItem key={propName} value={propName}>
+                      {propName}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -26,6 +26,7 @@ import {
   Banknote,
   Calendar,
   Building,
+  Building2,
   Home,
   User,
   ArrowUpDown,
@@ -450,9 +451,9 @@ export function PdcManagement() {
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [addPdcLoading, setAddPdcLoading] = useState(false);
   const [collectionType, setCollectionType] = useState<"PDC" | "Direct Bank Transfer" | "Other Amount">("PDC");
-  const [bankTransferAccount, setBankTransferAccount] = useState("100001011781"); // Default: Al Ameen (Oryx) Dukhan Bank
-  const [bankTransferRef, setBankTransferRef] = useState("");
-  const [bankTransferDate, setBankTransferDate] = useState(new Date().toISOString().split("T")[0]);
+  const [directBankTransferAccount, setDirectBankTransferAccount] = useState("100001011781"); // Default: Al Ameen (Oryx) Dukhan Bank
+  const [directBankTransferRef, setDirectBankTransferRef] = useState("");
+  const [directBankTransferDate, setDirectBankTransferDate] = useState(new Date().toISOString().split("T")[0]);
   const [otherCollectionAmount, setOtherCollectionAmount] = useState("");
   const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
   const [batchPdcFile, setBatchPdcFile] = useState<File | null>(null);
@@ -1569,17 +1570,17 @@ export function PdcManagement() {
         const unitId = (lease as any).unitId || "00000000-0000-0000-0000-000000000002";
 
         const isDirectTransfer = collectionType === "Direct Bank Transfer";
-        const targetBank = companyBankAccounts.find(b => b.account_number === bankTransferAccount) || companyBankAccounts[0] || {
-          account_name: "Al Ameen (Oryx) - Dukhan Bank",
-          gl_account_code: "12000006",
-          bank_name: "Dukhan Bank",
-          account_number: "100001011781",
+        const targetBank = bankAccounts.find(b => b.accountNumber === directBankTransferAccount) || bankAccounts[0] || {
+          accountTitle: "Al Ameen (Oryx) - Dukhan Bank",
+          glCode: "12000006",
+          bankName: "Dukhan Bank",
+          accountNumber: "100001011781",
         };
 
-        const debitAcc = isDirectTransfer ? targetBank.account_name : "Cash in Hand / Cashier Desk";
-        const debitCode = isDirectTransfer ? (targetBank.gl_account_code || "12000006") : "12100001";
+        const debitAcc = isDirectTransfer ? targetBank.accountTitle : "Cash in Hand / Cashier Desk";
+        const debitCode = isDirectTransfer ? (targetBank.glCode || "12000006") : "12100001";
         const refNo = isDirectTransfer 
-          ? (bankTransferRef.trim() || `WIRE-${Date.now().toString().slice(-6)}`) 
+          ? (directBankTransferRef.trim() || `WIRE-${Date.now().toString().slice(-6)}`) 
           : (otherCollectionDescription.trim() || `COL-${Date.now().toString().slice(-6)}`);
 
         await collectSecurityDeposit({
@@ -1588,8 +1589,8 @@ export function PdcManagement() {
           property_id: propertyId,
           unit_id: unitId,
           lease_id: lease.id,
-          mode: isDirectTransfer ? "Bank Transfer" : "Cash",
-          depositType: isDirectTransfer ? "RENT" : "SERVICE_FEE",
+          mode: isDirectTransfer ? "Bank" : "Cash",
+          depositType: "SERVICE_FEE",
           ref: refNo,
           unit_name: lease.unit,
         });
@@ -1598,7 +1599,7 @@ export function PdcManagement() {
         addVoucher({
           voucher_no: vchNo,
           voucher_type: "Receipt Voucher",
-          date: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
+          date: isDirectTransfer ? directBankTransferDate : new Date().toISOString().split("T")[0],
           name: isDirectTransfer ? `Direct Bank Transfer (Rent) - ${lease.tenantName}` : `${collectionType} - ${lease.tenantName}`,
           debit: debitAcc,
           debit_code: debitCode,
@@ -1614,28 +1615,34 @@ export function PdcManagement() {
         // Generate official payment receipt
         setReceiptData({
           receiptNo: `OR-${Date.now().toString().slice(-6)}`,
-          receiptDate: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
-          tenantName: lease.tenantName,
-          amount,
-          amountInWords: toWords(amount),
-          paymentMode: isDirectTransfer ? "Direct Bank Transfer" : "Cash",
-          receivedFor: isDirectTransfer ? `Rent Direct Bank Transfer (Ref: ${refNo})` : (otherCollectionDescription.trim() || "Tenant Collection"),
-          chequeNo: isDirectTransfer ? refNo : "N/A",
-          chequeDate: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
-          bankName: isDirectTransfer ? `${targetBank.bank_name} (A/C: ${targetBank.account_number})` : "Cash Desk",
-          property: lease.property,
-          unitNo: lease.unit,
-          collectorName: "Finance & Accounts Department",
-          voucherNo: vchNo,
+          date: isDirectTransfer ? directBankTransferDate : new Date().toISOString().split("T")[0],
+          tenantName: lease.tenantName || "Valued Tenant",
+          propertyName: lease.property || "Property",
+          unitRef: lease.unit || "Unit",
+          leaseStartDate: lease.startDate || new Date().toISOString().split("T")[0],
+          leaseEndDate: lease.endDate || new Date().toISOString().split("T")[0],
+          monthlyRent: Number(lease.monthlyRent) || amount,
+          totalContractRent: Number(lease.monthlyRent ? lease.monthlyRent * 12 : amount),
+          depositAmount: 0,
+          depositMode: isDirectTransfer ? "Bank Transfer" : "Cash",
+          totalCollected: amount,
+          pdcCount: 1,
+          pdcs: [{
+            chequeNo: isDirectTransfer ? refNo : `CASH-${Date.now().toString().slice(-4)}`,
+            bank: isDirectTransfer ? `${targetBank.bankName} (${targetBank.accountNumber})` : "Cash Desk",
+            date: isDirectTransfer ? directBankTransferDate : new Date().toISOString().split("T")[0],
+            amount,
+            period: isDirectTransfer ? `Direct Bank Transfer (Wire Ref: ${refNo})` : (otherCollectionDescription.trim() || "Tenant Collection"),
+          }],
         });
         setReceiptOpen(true);
 
         setAddPdcOpen(false);
         setOtherCollectionAmount("");
         setOtherCollectionDescription("");
-        setBankTransferRef("");
+        setDirectBankTransferRef("");
         toast.success(isDirectTransfer 
-          ? `Direct Bank Transfer of QAR ${amount.toLocaleString()} recorded into ${targetBank.account_name} (GL ${debitCode}) for ${lease.tenantName}.`
+          ? `Direct Bank Transfer of QAR ${amount.toLocaleString()} recorded into ${targetBank.accountTitle} (GL ${debitCode}) for ${lease.tenantName}.`
           : `${collectionType} of QAR ${amount.toLocaleString()} collected for ${lease.tenantName}.`
         );
       } catch (error: any) {
@@ -2492,14 +2499,14 @@ export function PdcManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold">Receiving Company Bank Account *</Label>
-                    <Select value={bankTransferAccount} onValueChange={setBankTransferAccount}>
+                    <Select value={directBankTransferAccount} onValueChange={setDirectBankTransferAccount}>
                       <SelectTrigger className="h-8 text-xs bg-background">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {companyBankAccounts.map((b) => (
-                          <SelectItem key={b.account_number} value={b.account_number}>
-                            {b.account_name} ({b.bank_name} · GL {b.gl_account_code})
+                        {bankAccounts.map((b) => (
+                          <SelectItem key={b.accountNumber} value={b.accountNumber}>
+                            {b.accountTitle} ({b.bankName} · GL {b.glCode})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2509,8 +2516,8 @@ export function PdcManagement() {
                     <Label className="text-[11px] font-semibold">Transfer Reference / Wire UTR # *</Label>
                     <Input
                       className="h-8 text-xs font-mono bg-background"
-                      value={bankTransferRef}
-                      onChange={e => setBankTransferRef(e.target.value)}
+                      value={directBankTransferRef}
+                      onChange={e => setDirectBankTransferRef(e.target.value)}
                       placeholder="e.g. TXN-998822 / CBQ-WIRE-01"
                     />
                   </div>
@@ -2521,8 +2528,8 @@ export function PdcManagement() {
                     <Input
                       type="date"
                       className="h-8 text-xs bg-background"
-                      value={bankTransferDate}
-                      onChange={e => setBankTransferDate(e.target.value)}
+                      value={directBankTransferDate}
+                      onChange={e => setDirectBankTransferDate(e.target.value)}
                     />
                   </div>
                   <div className="space-y-1">
@@ -2545,7 +2552,7 @@ export function PdcManagement() {
                       Double-Entry Impact (Immediate Ledger Posting):
                     </div>
                     <div className="flex justify-between text-cyan-700 dark:text-cyan-300">
-                      <span>Dr. {companyBankAccounts.find(b => b.account_number === bankTransferAccount)?.gl_account_code || "12000006"} - {companyBankAccounts.find(b => b.account_number === bankTransferAccount)?.account_name || "Al Ameen (Oryx) - Dukhan Bank"}</span>
+                      <span>Dr. {bankAccounts.find(b => b.accountNumber === directBankTransferAccount)?.glCode || "12000006"} - {bankAccounts.find(b => b.accountNumber === directBankTransferAccount)?.accountTitle || "Al Ameen (Oryx) - Dukhan Bank"}</span>
                       <span className="font-bold">QAR {parseFloat(otherCollectionAmount).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
