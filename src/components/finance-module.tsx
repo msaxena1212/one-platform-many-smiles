@@ -2922,6 +2922,7 @@ function GrnCostMappingSubModule() {
 
 function PayableInvoiceSubModule() {
   const { addVoucher } = useFinanceStore();
+  const { properties } = useAppData();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
@@ -2980,6 +2981,7 @@ function PayableInvoiceSubModule() {
         id: inv.id,
         invoice_no: inv.invoice_number,
         vendor: String(inv.vendor_id === "1" || inv.vendor_id === 1 ? "Qatar Maintenance Co." : inv.vendor_id === "2" || inv.vendor_id === 2 ? "Gulf Facility Services" : (inv.vendor_name || `Vendor #${inv.vendor_id}`)),
+        property: (inv as any).property || "Al Ameen Real Estate Head Office",
         date: inv.invoice_date,
         due_date: inv.due_date || inv.invoice_date,
         account: inv.expense_gl_account || "51004001 - Repair and Maintenance Cost",
@@ -3005,6 +3007,7 @@ function PayableInvoiceSubModule() {
           id: inv.id,
           invoice_no: inv.invoice_no,
           vendor: inv.vendor,
+          property: inv.property || "Al Ameen Real Estate Head Office",
           date: inv.date,
           due_date: inv.due_date,
           account: inv.account || "51004001 - Repair and Maintenance Cost",
@@ -3024,6 +3027,7 @@ function PayableInvoiceSubModule() {
   const [form, setForm] = useState({
     invoice_no: `APINV-${Math.floor(10000 + Math.random() * 90000)}`,
     vendor: "Qatar Maintenance & HVAC Co.",
+    property: "Al Ameen Real Estate Head Office",
     date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     account: "51004001 - Repair and Maintenance Cost",
@@ -3042,9 +3046,9 @@ function PayableInvoiceSubModule() {
       tax_amount: 0,
       total_amount: amt,
       status: "DRAFT",
-      remarks: `Direct AP Invoice booked to ${form.account}`
-    });
-    toast.success(`Payable Invoice ${form.invoice_no} created and synced with Finance & Procurement.`);
+      remarks: `Direct AP Invoice booked to ${form.account} • Property: ${form.property}`
+    } as any);
+    toast.success(`Payable Invoice ${form.invoice_no} booked for ${form.property}.`);
     setOpen(false);
     await loadInvoices();
   }
@@ -3122,8 +3126,8 @@ function PayableInvoiceSubModule() {
         credit_code: crCode,
         amount: payTarget.amount,
         method: isCash ? "Cash" : "Bank Transfer",
-        property_name: payTarget.raw?.property || "Main Portfolio",
-        unit_ref: payTarget.raw?.unit_ref || payTarget.po_number || "Facility Operations",
+        property_name: payTarget.property || payTarget.raw?.property || "Al Ameen Real Estate Head Office",
+        unit_ref: payTarget.raw?.unit_ref || payTarget.po_number || "Corporate Head Office",
         tenant_name: payTarget.vendor,
       });
 
@@ -3187,6 +3191,7 @@ function PayableInvoiceSubModule() {
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">Invoice #</TableHead>
               <TableHead className="font-bold">Vendor Name</TableHead>
+              <TableHead className="font-bold">Property / Cost Center</TableHead>
               <TableHead className="font-bold">PO / GRN Reference</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
               <TableHead className="font-bold">Expense GL Account</TableHead>
@@ -3197,17 +3202,26 @@ function PayableInvoiceSubModule() {
           </TableHeader>
           <TableBody>
             {allInvoices.length === 0 && (
-              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-xs">No Accounts Payable invoices found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-xs">No Accounts Payable invoices found.</TableCell></TableRow>
             )}
             {allInvoices.map((row) => (
               <TableRow key={row.invoice_no} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.invoice_no}</TableCell>
                 <TableCell className="font-semibold">{row.vendor}</TableCell>
+                <TableCell>
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    row.property?.includes("Head Office") 
+                      ? "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200" 
+                      : "bg-muted text-foreground"
+                  }`}>
+                    {row.property || "Al Ameen Real Estate Head Office"}
+                  </span>
+                </TableCell>
                 <TableCell className="font-mono text-cyan-600">
                   {row.po_number || row.grn_number ? `${row.po_number || ''} ${row.grn_number ? '· ' + row.grn_number : ''}` : "—"}
                 </TableCell>
-                <TableCell>{row.due_date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(row.due_date)}</TableCell>
                 <TableCell className="text-blue-600 font-mono text-xs">{row.account}</TableCell>
                 <TableCell className="text-right font-mono">
                   <div className="font-bold text-foreground">QAR {row.amount.toLocaleString()}</div>
@@ -3231,7 +3245,7 @@ function PayableInvoiceSubModule() {
                       <Eye className="h-3 w-3" /> View Proforma
                     </Button>
                     {row.status !== "Paid" ? (
-                      <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => openPayModal(row)}>
+                      <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs" onClick={() => openPayModal(row)}>
                         <CreditCard className="h-3 w-3" /> Settle / Pay
                       </Button>
                     ) : (
@@ -3259,6 +3273,24 @@ function PayableInvoiceSubModule() {
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
               <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+            </div>
+            <div>
+              <Label className="flex items-center gap-1 font-semibold">
+                <Building2 className="h-3.5 w-3.5 text-primary" /> Property / Corporate Cost Center
+              </Label>
+              <Select value={form.property} onValueChange={v => setForm({ ...form, property: v })}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select Property or Corporate Head Office" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700 dark:text-purple-300">
+                    🏢 Al Ameen Real Estate Head Office (Corporate Overhead / Staff Salary)
+                  </SelectItem>
+                  {properties.map(p => (
+                    <SelectItem key={p.id} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Bill Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>

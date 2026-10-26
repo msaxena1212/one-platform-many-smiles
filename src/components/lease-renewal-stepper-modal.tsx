@@ -110,6 +110,8 @@ export interface RenewalSubmitData {
   };
   // Step 3: PDCs & Uploads
   generatePdcs: boolean;
+  requiresFinanceApproval?: boolean;
+  financeApprovalReason?: string;
   pdcs: PdcChequeItem[];
   pdcBatchFile?: string;
   vaultLocation: string;
@@ -233,6 +235,9 @@ export function LeaseRenewalStepperModal({
 
   // Step 3: PDC Collection & Uploads
   const [generatePdcs, setGeneratePdcs] = useState<boolean>(true);
+  const [noPdcApprovalRequested, setNoPdcApprovalRequested] = useState<boolean>(false);
+  const [noPdcReason, setNoPdcReason] = useState<string>("Standing Order / Direct Bank Transfer Agreement");
+  const [noPdcApprovedBy, setNoPdcApprovedBy] = useState<string>("Finance Manager / Controller");
   const [pdcCount, setPdcCount] = useState<number>(12);
   const [pdcAmountPerCheque, setPdcAmountPerCheque] = useState<number>(0);
   const [pdcBank, setPdcBank] = useState<string>(COMMON_BANKS[0]);
@@ -300,6 +305,9 @@ export function LeaseRenewalStepperModal({
 
       // PDCs
       setGeneratePdcs(true);
+      setNoPdcApprovalRequested(false);
+      setNoPdcReason("Standing Order / Direct Bank Transfer Agreement");
+      setNoPdcApprovedBy("Finance Manager / Controller");
       const count = 12;
       setPdcCount(count);
       setPdcAmountPerCheque(proposed);
@@ -449,8 +457,12 @@ export function LeaseRenewalStepperModal({
     } else if (currentStep === 2) {
       setCurrentStep(3);
     } else if (currentStep === 3) {
-      if (generatePdcs && pdcCheques.length === 0) {
-        toast.error("Please ensure at least one PDC is registered in the schedule.");
+      if (generatePdcs && !noPdcApprovalRequested && pdcCheques.length === 0) {
+        toast.error("Please provide at least one PDC or enable 'Contract without PDCs (Finance Approval)'.");
+        return;
+      }
+      if (noPdcApprovalRequested && !noPdcReason.trim()) {
+        toast.error("Please provide a reason / justification for contract renewal without PDCs.");
         return;
       }
       setCurrentStep(4);
@@ -521,12 +533,14 @@ export function LeaseRenewalStepperModal({
           date: rentPaymentDate,
           receiptFile: rentReceiptFile,
         } : undefined,
-        generatePdcs: generatePdcs,
-        pdcs: pdcCheques,
-        pdcBatchFile: pdcBatchFile,
+        generatePdcs: !noPdcApprovalRequested && generatePdcs,
+        requiresFinanceApproval: noPdcApprovalRequested,
+        financeApprovalReason: noPdcApprovalRequested ? `[Finance Approval Required] No PDCs attached. Justification: ${noPdcReason}. Target Approver: ${noPdcApprovedBy}` : undefined,
+        pdcs: noPdcApprovalRequested ? [] : pdcCheques,
+        pdcBatchFile: noPdcApprovalRequested ? undefined : pdcBatchFile,
         vaultLocation: vaultLocation,
         custodyOfficer: custodyOfficer,
-        notes: renewalNotes,
+        notes: noPdcApprovalRequested ? `[CONTRACT WITHOUT PDCS - PENDING FINANCE APPROVAL: ${noPdcReason}]\n${renewalNotes}` : renewalNotes,
       };
 
       await onConfirmRenewal(payload);
@@ -1143,24 +1157,90 @@ export function LeaseRenewalStepperModal({
              ═══════════════════════════════════════════════════════ */}
           {currentStep === 3 && (
             <div className="space-y-5">
-              {/* PDC Schedule Summary Card */}
-              <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-muted/40 border">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Total Cheques</span>
-                  <span className="text-sm font-bold text-foreground">{pdcCheques.length} Cheques</span>
-                  <span className="text-[10px] text-muted-foreground block">{paymentFrequency} schedule</span>
+              {/* Toggle for Contracts without PDCs (Finance Approval Workflow) */}
+              <div className="rounded-xl border border-amber-300/80 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-amber-600" />
+                      <Label htmlFor="no-pdc-toggle" className="text-xs font-bold text-amber-900 dark:text-amber-200 cursor-pointer">
+                        Contract Without PDCs (Finance Approval Route)
+                      </Label>
+                    </div>
+                    <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                      Enable this if the tenant is renewing without post-dated cheques (e.g. standing order, bank transfer, corporate guarantee).
+                    </p>
+                  </div>
+                  <Switch
+                    id="no-pdc-toggle"
+                    checked={noPdcApprovalRequested}
+                    onCheckedChange={(checked) => {
+                      setNoPdcApprovalRequested(checked);
+                      if (checked) {
+                        toast.info("PDC restriction lifted. Renewal will route for Finance Approval.");
+                      }
+                    }}
+                  />
                 </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Amount Per Cheque</span>
-                  <span className="text-sm font-bold text-foreground">{formatMoney(pdcAmountPerCheque)}</span>
-                  <span className="text-[10px] text-muted-foreground block">Standard instalment</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Total Schedule Value</span>
-                  <span className="text-sm font-bold text-primary">{formatMoney(totalPdcScheduleValue)}</span>
-                  <span className="text-[10px] text-muted-foreground block">100% of lease rent</span>
-                </div>
+
+                {noPdcApprovalRequested && (
+                  <div className="pt-2 border-t border-amber-200 dark:border-amber-900/50 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                        Reason for Renewal Without PDCs <span className="text-destructive">*</span>
+                      </Label>
+                      <Select value={noPdcReason} onValueChange={setNoPdcReason}>
+                        <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Standing Order / Direct Bank Transfer Agreement">Standing Order / Direct Bank Transfer Agreement</SelectItem>
+                          <SelectItem value="Corporate / Embassy Guaranteed Lease">Corporate / Embassy Guaranteed Lease</SelectItem>
+                          <SelectItem value="Upfront Full Year Bank Transfer Received">Upfront Full Year Bank Transfer Received</SelectItem>
+                          <SelectItem value="Government Entity / Semi-Government Exemption">Government Entity / Semi-Government Exemption</SelectItem>
+                          <SelectItem value="Management Discretion / Special Payment Plan">Management Discretion / Special Payment Plan</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                        Finance Approval Authority
+                      </Label>
+                      <Select value={noPdcApprovedBy} onValueChange={setNoPdcApprovedBy}>
+                        <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Finance Manager / Controller">Finance Manager / Controller</SelectItem>
+                          <SelectItem value="Chief Financial Officer (CFO)">Chief Financial Officer (CFO)</SelectItem>
+                          <SelectItem value="General Manager (GM)">General Manager (GM)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-full rounded-md bg-amber-100/70 dark:bg-amber-900/30 p-2.5 text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                      <Info className="h-4 w-4 shrink-0 text-amber-600" />
+                      <span>The renewal contract will be created with status <strong>Pending Finance Approval</strong>. Once approved by Finance, the lease becomes Active without blocking the user.</span>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {!noPdcApprovalRequested && (
+                <>
+                  {/* PDC Schedule Summary Card */}
+                  <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-muted/40 border">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">Total Cheques</span>
+                      <span className="text-sm font-bold text-foreground">{pdcCheques.length} Cheques</span>
+                      <span className="text-[10px] text-muted-foreground block">{paymentFrequency} schedule</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">Amount Per Cheque</span>
+                      <span className="text-sm font-bold text-foreground">{formatMoney(pdcAmountPerCheque)}</span>
+                      <span className="text-[10px] text-muted-foreground block">Standard instalment</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground block">Total Schedule Value</span>
+                      <span className="text-sm font-bold text-primary">{formatMoney(totalPdcScheduleValue)}</span>
+                      <span className="text-[10px] text-muted-foreground block">100% of lease rent</span>
+                    </div>
+                  </div>
 
               {/* Schedule Generator Settings */}
               <div className="rounded-xl border p-4 space-y-3 bg-card">
@@ -1475,6 +1555,8 @@ export function LeaseRenewalStepperModal({
                   />
                 </div>
               </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1548,24 +1630,42 @@ export function LeaseRenewalStepperModal({
                       </div>
                     </div>
 
-                    {/* PDC Details */}
+                    {/* PDC Details or Finance Approval Details */}
                     <div className="p-3.5 rounded-xl border bg-card space-y-2">
                       <div className="flex items-center gap-2 text-emerald-600 font-bold border-b pb-1.5">
-                        <CreditCard className="h-4 w-4" /> Post-Dated Cheques (PDCs)
+                        {noPdcApprovalRequested ? (
+                          <>
+                            <ShieldCheck className="h-4 w-4 text-amber-600" />
+                            <span className="text-amber-800 dark:text-amber-300">Finance Approval Exemption</span>
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="h-4 w-4" /> Post-Dated Cheques (PDCs)
+                          </>
+                        )}
                       </div>
-                      <div className="space-y-1 text-muted-foreground">
-                        <p><strong className="text-foreground">Cheque Schedule:</strong> {pdcCheques.length} Cheques ({formatMoney(totalPdcScheduleValue)})</p>
-                        <p><strong className="text-foreground">Bank:</strong> {pdcBank}</p>
-                        <p><strong className="text-foreground">Series:</strong> {startingChequeNo} → Maturity: {firstChequeDate}</p>
-                        <p>
-                          <strong className="text-foreground">Scanned Attachments:</strong>{" "}
-                          {pdcBatchFile ? (
-                            <span className="text-emerald-600 font-semibold">✓ Bulk Bundle ({pdcBatchFile})</span>
-                          ) : (
-                            <span>{pdcCheques.filter((c) => c.file).length} of {pdcCheques.length} individual scans</span>
-                          )}
-                        </p>
-                      </div>
+                      {noPdcApprovalRequested ? (
+                        <div className="space-y-1 text-muted-foreground">
+                          <p><strong className="text-foreground">Contract Type:</strong> <span className="text-amber-700 dark:text-amber-300 font-semibold">Exempt from PDCs (Approval Required)</span></p>
+                          <p><strong className="text-foreground">Reason:</strong> {noPdcReason}</p>
+                          <p><strong className="text-foreground">Designated Approver:</strong> {noPdcApprovedBy}</p>
+                          <p><strong className="text-foreground">Workflow:</strong> Initial status set to <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Pending Finance Approval</Badge></p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 text-muted-foreground">
+                          <p><strong className="text-foreground">Cheque Schedule:</strong> {pdcCheques.length} Cheques ({formatMoney(totalPdcScheduleValue)})</p>
+                          <p><strong className="text-foreground">Bank:</strong> {pdcBank}</p>
+                          <p><strong className="text-foreground">Series:</strong> {startingChequeNo} → Maturity: {firstChequeDate}</p>
+                          <p>
+                            <strong className="text-foreground">Scanned Attachments:</strong>{" "}
+                            {pdcBatchFile ? (
+                              <span className="text-emerald-600 font-semibold">✓ Bulk Bundle ({pdcBatchFile})</span>
+                            ) : (
+                              <span>{pdcCheques.filter((c) => c.file).length} of {pdcCheques.length} individual scans</span>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1580,11 +1680,17 @@ export function LeaseRenewalStepperModal({
                           <strong>Security Deposit Voucher:</strong> Dr 12000001 (Bank Operating) {formatMoney(calculatedDepositAmount)} | Cr 21500001 (Security Deposit Liability) {formatMoney(calculatedDepositAmount)}
                         </li>
                       )}
+                      {noPdcApprovalRequested ? (
+                        <li className="text-amber-700 dark:text-amber-300">
+                          <strong>No PDCs to Register:</strong> Contract submitted for <strong>Finance Approval</strong> prior to general ledger PDC posting.
+                        </li>
+                      ) : (
+                        <li>
+                          <strong>PDC Portfolio Registration:</strong> Dr 12900001 (Rent PDC In Hand) {formatMoney(totalPdcScheduleValue)} | Safe Location: {vaultLocation}
+                        </li>
+                      )}
                       <li>
-                        <strong>PDC Portfolio Registration:</strong> Dr 12900001 (Rent PDC In Hand) {formatMoney(totalPdcScheduleValue)} | Safe Location: {vaultLocation}
-                      </li>
-                      <li>
-                        <strong>Contract Renewal Sequence:</strong> Status will advance to <code>documents_pending</code> with counter-signature package prepared.
+                        <strong>Contract Renewal Sequence:</strong> Status will advance to {noPdcApprovalRequested ? <code>pending_finance_approval</code> : <code>documents_pending</code>} with counter-signature package prepared.
                       </li>
                     </ul>
                   </div>
@@ -1680,9 +1786,15 @@ export function LeaseRenewalStepperModal({
                     <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1" /> Finalizing...
                   </>
                 ) : responseType === "confirm" ? (
-                  <>
-                    <FileCheck2 className="h-4 w-4 mr-1" /> Confirm Renewal &amp; Create New Lease
-                  </>
+                  noPdcApprovalRequested ? (
+                    <>
+                      <ShieldCheck className="h-4 w-4 mr-1 text-amber-300" /> Submit for Finance Approval
+                    </>
+                  ) : (
+                    <>
+                      <FileCheck2 className="h-4 w-4 mr-1" /> Confirm Renewal &amp; Create New Lease
+                    </>
+                  )
                 ) : (
                   <>
                     <AlertCircle className="h-4 w-4 mr-1" /> Confirm Non-Renewal &amp; Schedule Move-Out

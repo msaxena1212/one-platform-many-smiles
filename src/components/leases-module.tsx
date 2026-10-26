@@ -5,8 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X } from "lucide-react";
+import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { ESignatureModal } from "@/components/e-signature-modal";
 import { SnaggingHandoverModal } from "@/components/snagging-handover-modal";
 import * as XLSX from "xlsx";
@@ -25,7 +28,7 @@ function formatQatarDate(value?: string | null): string {
   const parts = raw.split('-');
   if (parts.length === 3) {
     const [yyyy, mm, dd] = parts;
-    return `${dd}/${mm}/${yyyy}`;
+    return `${dd}-${mm}-${yyyy}`;
   }
   return 'N/A';
 }
@@ -64,9 +67,64 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const [signModalOpen, setSignModalOpen] = useState(false);
   const [snagModalOpen, setSnagModalOpen] = useState(false);
   const [selectedLease, setSelectedLease] = useState<any | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    lease_number: '',
+    tenant_name: '',
+    property_name: '',
+    unit_name: '',
+    commencement_date: '',
+    expiry_date: '',
+    monthlyRent: '',
+    rental_amount: '',
+    lease_status: '',
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const ITEMS_PER_PAGE = 20;
+
+  function openEditModal(lease: any) {
+    setSelectedLease(lease);
+    const monthly = lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0);
+    setEditForm({
+      id: lease.id,
+      lease_number: lease.lease_number || lease.id,
+      tenant_name: getTenantName(lease),
+      property_name: getPropertyName(lease),
+      unit_name: getUnitName(lease),
+      commencement_date: toRawDate(lease.commencement_date),
+      expiry_date: toRawDate(lease.expiry_date),
+      monthlyRent: String(monthly),
+      rental_amount: String(lease.rental_amount || (monthly * 12)),
+      lease_status: lease.lease_status || 'DRAFT',
+    });
+    setEditModalOpen(true);
+  }
+
+  function handleSaveEditContract() {
+    if (!editForm.id) return;
+    const mRent = parseFloat(editForm.monthlyRent) || 0;
+    const annRent = parseFloat(editForm.rental_amount) || (mRent * 12);
+
+    setLeases(prev => prev.map(l => {
+      if (l.id === editForm.id) {
+        return {
+          ...l,
+          commencement_date: editForm.commencement_date,
+          expiry_date: editForm.expiry_date,
+          monthlyRent: mRent,
+          rental_amount: annRent,
+          lease_status: editForm.lease_status,
+          customers: { ...l.customers, full_name: editForm.tenant_name, name: editForm.tenant_name },
+        };
+      }
+      return l;
+    }));
+
+    toast.success(`Contract ${editForm.lease_number} updated successfully.`);
+    setEditModalOpen(false);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -483,6 +541,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Tenant Name</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Start Date</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">End Date</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Monthly Rent</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Annual Rent</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground uppercase text-xs tracking-wider">Status</th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground uppercase text-xs tracking-wider">Quick Actions</th>
@@ -491,14 +550,14 @@ export function LeasesModule({ role }: LeasesModuleProps) {
               <tbody className="divide-y divide-border">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-10 text-muted-foreground">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                       Loading leases…
                     </td>
                   </tr>
                 ) : filteredLeases.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-10 text-muted-foreground">
                       {isFiltered ? (
                         <div className="space-y-2">
                           <p className="text-sm font-medium">No leases match the current filters.</p>
@@ -508,7 +567,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                     </td>
                   </tr>
                 ) : (
-                  paginatedLeases.map((lease) => (
+                  paginatedLeases.map((lease) => {
+                    const monthlyRent = lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0);
+                    return (
                     <tr key={lease.id} className="hover:bg-muted/10 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{lease.lease_number || 'N/A'}</td>
                       <td className="px-4 py-3 font-medium">{getPropertyName(lease)}</td>
@@ -516,6 +577,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       <td className="px-4 py-3 text-muted-foreground">{getTenantName(lease)}</td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatQatarDate(lease.commencement_date)}</td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatQatarDate(lease.expiry_date)}</td>
+                      <td className="px-4 py-3 font-semibold text-primary whitespace-nowrap">QR {monthlyRent?.toLocaleString('en-QA') || '0'}</td>
                       <td className="px-4 py-3 font-medium whitespace-nowrap">QR {lease.rental_amount?.toLocaleString('en-QA') || '0'}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
@@ -529,6 +591,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/5"
+                            onClick={() => openEditModal(lease)}
+                            title="Edit contract details until data updation is finalized"
+                          >
+                            <FileEdit className="h-3 w-3" /> Edit
+                          </Button>
                           <Button
                             variant="outline" size="sm" className="h-7 text-xs gap-1"
                             onClick={() => { setSelectedLease(lease); setSignModalOpen(true); }}
@@ -544,7 +613,8 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -604,6 +674,114 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           />
         </>
       )}
+      {/* ── Edit Contract Modal (Active until data updation finalized) ──── */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileEdit className="h-5 w-5 text-primary" /> Edit Contract Details
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Modify contract terms, dates, rents, and status until final data updation is frozen.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Contract / Lease #</Label>
+                <Input value={editForm.lease_number} disabled className="h-8 font-mono bg-muted/50" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Tenant Name</Label>
+                <Input 
+                  value={editForm.tenant_name} 
+                  onChange={e => setEditForm({ ...editForm, tenant_name: e.target.value })}
+                  className="h-8"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Property</Label>
+                <Input value={editForm.property_name} disabled className="h-8 bg-muted/50" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Unit Number</Label>
+                <Input value={editForm.unit_name} disabled className="h-8 font-mono bg-muted/50" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Commencement Date</Label>
+                <Input 
+                  type="date" 
+                  value={editForm.commencement_date} 
+                  onChange={e => setEditForm({ ...editForm, commencement_date: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Expiry Date</Label>
+                <Input 
+                  type="date" 
+                  value={editForm.expiry_date} 
+                  onChange={e => setEditForm({ ...editForm, expiry_date: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Monthly Rent (QAR)</Label>
+                <Input 
+                  type="number" 
+                  value={editForm.monthlyRent} 
+                  onChange={e => {
+                    const m = e.target.value;
+                    const parsed = parseFloat(m) || 0;
+                    setEditForm({ ...editForm, monthlyRent: m, rental_amount: String(parsed * 12) });
+                  }}
+                  className="h-8 font-mono font-semibold"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Annual Rent (QAR)</Label>
+                <Input 
+                  type="number" 
+                  value={editForm.rental_amount} 
+                  onChange={e => setEditForm({ ...editForm, rental_amount: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Contract Status</Label>
+              <select
+                className="w-full h-8 text-xs border rounded-md px-2 bg-background"
+                value={editForm.lease_status}
+                onChange={e => setEditForm({ ...editForm, lease_status: e.target.value })}
+              >
+                <option value="DRAFT">DRAFT (Data Entry & Updation)</option>
+                <option value="ACTIVE">ACTIVE (Finalized & Enforced)</option>
+                <option value="EXPIRING">EXPIRING (Pending Renewal)</option>
+                <option value="EXPIRED">EXPIRED (Archived)</option>
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+            <Button size="sm" className="bg-primary text-primary-foreground gap-1.5" onClick={handleSaveEditContract}>
+              <CheckCircle2 className="h-4 w-4" /> Save &amp; Update Contract
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

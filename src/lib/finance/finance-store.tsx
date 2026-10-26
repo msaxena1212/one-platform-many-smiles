@@ -2344,6 +2344,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     { code: "12000003", name: "Bank Operating Account (QNB)", type: "Assets" },
     { code: "12000004", name: "Doha Bank Operating Account", type: "Assets" },
     { code: "12000005", name: "Qatar Islamic Bank (QIB)", type: "Assets" },
+    { code: "12000006", name: "Al Ameen (Oryx) - Dukhan Bank", type: "Assets" },
     { code: "12100001", name: "Cash In Hand", type: "Assets" },
     { code: "12100002", name: "Petty Cash", type: "Assets" },
     { code: "12413",    name: "Tenant Receivables (Control)", type: "Assets" },

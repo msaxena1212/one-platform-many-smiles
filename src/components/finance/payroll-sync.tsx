@@ -257,10 +257,13 @@ export function PayrollSync() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Staff Department / Division</Label>
+                <Label>Staff Department / Cost Center</Label>
                 <Select value={form.department} onValueChange={v => setForm({...form, department: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700">
+                      🏢 Al Ameen Real Estate Head Office (Corporate Employees)
+                    </SelectItem>
                     <SelectItem value="Maintenance & Operations">Maintenance & Site Technicians</SelectItem>
                     <SelectItem value="Leasing & Property Management">Leasing & Property Management</SelectItem>
                     <SelectItem value="Security & Concierge">Security & Concierge Services</SelectItem>

@@ -30,7 +30,6 @@ import {
   User,
   ArrowUpDown,
   ArrowRightLeft,
-  Edit3,
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -97,8 +96,10 @@ function getActionConfig(action: "deposit" | "clear" | "return" | "cancel", cheq
       newStatus: "Deposited",
       newSharedStatus: "deposited",
       impacts: [
-        { type: "Debit",  account: "Commercial Bank of Qatar (CBQ)", code: "12000001", description: "Cash received into bank" },
-        { type: "Credit", account: "Rent PDC In Hand",               code: "12900001", description: "PDC cleared from holding account" },
+        { type: "Debit",  account: "Commercial Bank of Qatar (CBQ)", code: "12000001", description: "Cash received into bank (Dr Bank)" },
+        { type: "Credit", account: "Rent PDC In Hand",               code: "12900001", description: "PDC deposited to bank (Cr PDC In Hand)" },
+        { type: "Debit",  account: "Customer(PDC) - Unit Account", code: "21400001", description: "Customer PDC Liability settled (Dr 21400)" },
+        { type: "Credit", account: "Receivable - Unit Account",    code: "12413001", description: "Tenant dues offset upon bank deposit (Cr 12413)" },
       ],
     };
   }
@@ -448,7 +449,10 @@ export function PdcManagement() {
 
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [addPdcLoading, setAddPdcLoading] = useState(false);
-  const [collectionType, setCollectionType] = useState<"PDC" | "Other Amount">("PDC");
+  const [collectionType, setCollectionType] = useState<"PDC" | "Direct Bank Transfer" | "Other Amount">("PDC");
+  const [bankTransferAccount, setBankTransferAccount] = useState("100001011781"); // Default: Al Ameen (Oryx) Dukhan Bank
+  const [bankTransferRef, setBankTransferRef] = useState("");
+  const [bankTransferDate, setBankTransferDate] = useState(new Date().toISOString().split("T")[0]);
   const [otherCollectionAmount, setOtherCollectionAmount] = useState("");
   const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
   const [batchPdcFile, setBatchPdcFile] = useState<File | null>(null);
@@ -905,6 +909,7 @@ export function PdcManagement() {
       const prop = pdc.property_name || "Property";
 
       if (action === "deposit") {
+        // Leg 1: Bank deposit (Dr Bank / Cr Rent PDC In Hand)
         addVoucher({
           voucher_no: depositSlipNo ? `VCH-DEP-${depositSlipNo}` : `VCH-DEP-${id}`,
           voucher_type: "Receipt Voucher",
@@ -916,6 +921,23 @@ export function PdcManagement() {
           credit_code: "12900001",
           amount: amt,
           method: "Cheque Deposit",
+          property_name: prop,
+          unit_ref: unit,
+          tenant_name: tenant,
+        });
+
+        // Leg 2: Offsetting Customer PDC Liability against Tenant Receivables upon Bank Deposit
+        addVoucher({
+          voucher_no: depositSlipNo ? `VCH-DEP-CLR-${depositSlipNo}` : `VCH-DEP-CLR-${id}`,
+          voucher_type: "Journal Voucher",
+          date: depositDate || todayStr,
+          name: `Customer PDC Liability & Tenant Receivables Settled on Bank Deposit – ${chqNo} (${tenant} - ${unit})`,
+          debit: "Customer PDC Liability",
+          debit_code: "21400001",
+          credit: "Tenant Receivables",
+          credit_code: "12413001",
+          amount: amt,
+          method: "Cheque Deposit Settlement",
           property_name: prop,
           unit_ref: unit,
           tenant_name: tenant,
@@ -1545,36 +1567,77 @@ export function PdcManagement() {
         const customerId = (lease as any).customerId || "00000000-0000-0000-0000-000000000003";
         const propertyId = (lease as any).propertyId || "00000000-0000-0000-0000-000000000001";
         const unitId = (lease as any).unitId || "00000000-0000-0000-0000-000000000002";
+
+        const isDirectTransfer = collectionType === "Direct Bank Transfer";
+        const targetBank = companyBankAccounts.find(b => b.account_number === bankTransferAccount) || companyBankAccounts[0] || {
+          account_name: "Al Ameen (Oryx) - Dukhan Bank",
+          gl_account_code: "12000006",
+          bank_name: "Dukhan Bank",
+          account_number: "100001011781",
+        };
+
+        const debitAcc = isDirectTransfer ? targetBank.account_name : "Cash in Hand / Cashier Desk";
+        const debitCode = isDirectTransfer ? (targetBank.gl_account_code || "12000006") : "12100001";
+        const refNo = isDirectTransfer 
+          ? (bankTransferRef.trim() || `WIRE-${Date.now().toString().slice(-6)}`) 
+          : (otherCollectionDescription.trim() || `COL-${Date.now().toString().slice(-6)}`);
+
         await collectSecurityDeposit({
           amount,
           tenant_id: customerId,
           property_id: propertyId,
           unit_id: unitId,
           lease_id: lease.id,
-          mode: "Cash",
-          depositType: "SERVICE_FEE",
-          ref: otherCollectionDescription.trim() || `${collectionType} collected by Cashier`,
+          mode: isDirectTransfer ? "Bank Transfer" : "Cash",
+          depositType: isDirectTransfer ? "RENT" : "SERVICE_FEE",
+          ref: refNo,
           unit_name: lease.unit,
         });
+
+        const vchNo = isDirectTransfer ? `RV-WIRE-${Date.now().toString().slice(-6)}` : `VCH-CASH-${Date.now().toString().slice(-6)}`;
         addVoucher({
-          voucher_no: `VCH-CASH-${Date.now()}`,
+          voucher_no: vchNo,
           voucher_type: "Receipt Voucher",
-          date: new Date().toISOString().split("T")[0],
-          name: `${collectionType} - ${lease.tenantName}`,
-          debit: "Cash / Bank Collection",
-          debit_code: "12100",
-          credit: "Tenant Receivable",
-          credit_code: "12413",
+          date: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
+          name: isDirectTransfer ? `Direct Bank Transfer (Rent) - ${lease.tenantName}` : `${collectionType} - ${lease.tenantName}`,
+          debit: debitAcc,
+          debit_code: debitCode,
+          credit: "Customer / Tenant Receivables",
+          credit_code: "12413001",
           amount,
-          method: "Cashier Collection",
+          method: isDirectTransfer ? "Bank Wire / Online Transfer" : "Cashier Collection",
           property_name: lease.property,
           unit_ref: lease.unit,
           tenant_name: lease.tenantName,
         });
+
+        // Generate official payment receipt
+        setReceiptData({
+          receiptNo: `OR-${Date.now().toString().slice(-6)}`,
+          receiptDate: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
+          tenantName: lease.tenantName,
+          amount,
+          amountInWords: toWords(amount),
+          paymentMode: isDirectTransfer ? "Direct Bank Transfer" : "Cash",
+          receivedFor: isDirectTransfer ? `Rent Direct Bank Transfer (Ref: ${refNo})` : (otherCollectionDescription.trim() || "Tenant Collection"),
+          chequeNo: isDirectTransfer ? refNo : "N/A",
+          chequeDate: isDirectTransfer ? bankTransferDate : new Date().toISOString().split("T")[0],
+          bankName: isDirectTransfer ? `${targetBank.bank_name} (A/C: ${targetBank.account_number})` : "Cash Desk",
+          property: lease.property,
+          unitNo: lease.unit,
+          collectorName: "Finance & Accounts Department",
+          voucherNo: vchNo,
+        });
+        setReceiptOpen(true);
+
         setAddPdcOpen(false);
         setOtherCollectionAmount("");
         setOtherCollectionDescription("");
-        toast.success(`${collectionType} collected for ${lease.tenantName} · ${lease.property} · ${lease.unit}.`);
+        setBankTransferRef("");
+        toast.success(isDirectTransfer 
+          ? `Direct Bank Transfer of QAR ${amount.toLocaleString()} recorded into ${targetBank.account_name} (GL ${debitCode}) for ${lease.tenantName}.`
+          : `${collectionType} of QAR ${amount.toLocaleString()} collected for ${lease.tenantName}.`
+        );
       } catch (error: any) {
         toast.error(error.message || "Collection failed.");
       } finally {
@@ -2314,7 +2377,8 @@ export function PdcManagement() {
                 <SelectTrigger className="mt-1 h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PDC">Post-Dated Cheques (PDC)</SelectItem>
-                  <SelectItem value="Other Amount">Other Amount / Service Fee</SelectItem>
+                  <SelectItem value="Direct Bank Transfer">Direct Bank Transfer (Rent / Advance - No PDC)</SelectItem>
+                  <SelectItem value="Other Amount">Other Amount / Service Fee (Cash Desk)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2419,7 +2483,81 @@ export function PdcManagement() {
               </div>
             </div>
 
-            {collectionType !== "PDC" && (
+            {collectionType === "Direct Bank Transfer" && (
+              <div className="rounded-lg border border-cyan-500/30 bg-cyan-50/40 dark:bg-cyan-950/20 p-3.5 space-y-3">
+                <div className="flex items-center gap-2 text-cyan-900 dark:text-cyan-200 font-semibold text-xs border-b border-cyan-200/50 pb-2">
+                  <Building2 className="h-4 w-4 text-cyan-600" />
+                  <span>Direct Bank Wire / Online Deposit Details</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Receiving Company Bank Account *</Label>
+                    <Select value={bankTransferAccount} onValueChange={setBankTransferAccount}>
+                      <SelectTrigger className="h-8 text-xs bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {companyBankAccounts.map((b) => (
+                          <SelectItem key={b.account_number} value={b.account_number}>
+                            {b.account_name} ({b.bank_name} · GL {b.gl_account_code})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Transfer Reference / Wire UTR # *</Label>
+                    <Input
+                      className="h-8 text-xs font-mono bg-background"
+                      value={bankTransferRef}
+                      onChange={e => setBankTransferRef(e.target.value)}
+                      placeholder="e.g. TXN-998822 / CBQ-WIRE-01"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Transfer Date *</Label>
+                    <Input
+                      type="date"
+                      className="h-8 text-xs bg-background"
+                      value={bankTransferDate}
+                      onChange={e => setBankTransferDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold">Amount Received (QAR) *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      className="h-8 text-xs font-mono font-bold bg-background"
+                      value={otherCollectionAmount}
+                      onChange={e => setOtherCollectionAmount(e.target.value)}
+                      placeholder="e.g. 6500"
+                    />
+                  </div>
+                </div>
+
+                {/* Double-entry Impact Preview */}
+                {parseFloat(otherCollectionAmount) > 0 && (
+                  <div className="rounded border border-cyan-500/20 bg-background/80 p-2.5 text-[11px] font-mono space-y-1">
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                      Double-Entry Impact (Immediate Ledger Posting):
+                    </div>
+                    <div className="flex justify-between text-cyan-700 dark:text-cyan-300">
+                      <span>Dr. {companyBankAccounts.find(b => b.account_number === bankTransferAccount)?.gl_account_code || "12000006"} - {companyBankAccounts.find(b => b.account_number === bankTransferAccount)?.account_name || "Al Ameen (Oryx) - Dukhan Bank"}</span>
+                      <span className="font-bold">QAR {parseFloat(otherCollectionAmount).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
+                      <span>Cr. 12413001 - Customer / Tenant Receivables</span>
+                      <span className="font-bold">QAR {parseFloat(otherCollectionAmount).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {collectionType === "Other Amount" && (
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1"><Label className="text-[11px] font-semibold">Amount (QAR) *</Label><Input type="number" min="0" className="h-8 text-xs" value={otherCollectionAmount} onChange={e => setOtherCollectionAmount(e.target.value)} /></div>
@@ -2500,18 +2638,6 @@ export function PdcManagement() {
                         </td>
                         <td className="py-1.5 px-2">
                           <Input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            className="h-7 text-[10px] w-36"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, file } : r));
-                            }}
-                          />
-                          {row.file && <span className="block max-w-36 truncate text-[9px] text-muted-foreground">{row.file.name}</span>}
-                        </td>
-                        <td className="py-1.5 px-2">
-                          <Input
                             className="h-7 text-xs"
                             placeholder="Bank Name"
                             value={row.bank}
@@ -2555,6 +2681,18 @@ export function PdcManagement() {
                               setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, amount: val } : r));
                             }}
                           />
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <Input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            className="h-7 text-[10px] w-36"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, file } : r));
+                            }}
+                          />
+                          {row.file && <span className="block max-w-36 truncate text-[9px] text-muted-foreground">{row.file.name}</span>}
                         </td>
                         <td className="py-1.5 px-1 text-center">
                           {addPdcRows.length > 1 && (
@@ -3174,7 +3312,7 @@ export function PdcManagement() {
                     return null;
                   })()}
 
-                  {/* Destination Bank Account Selection Cards */}
+                  {/* Destination Bank Account Selection Dropdown */}
                   {(() => {
                     const displayAccounts = (bankAccounts && bankAccounts.length > 0 ? bankAccounts : DEFAULT_COMPANY_BANK_ACCOUNTS)
                       .filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
@@ -3182,72 +3320,40 @@ export function PdcManagement() {
 
                     return (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs font-semibold text-foreground">
-                            Receiving Company Bank Account <span className="text-destructive">*</span>
-                          </Label>
-                          <div className="flex items-center gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-6 text-[11px] px-2 gap-1"
-                              onClick={() => openEditBankDetails()}
-                              title="Edit selected bank details and GL mappings"
-                            >
-                              <Edit3 className="h-3 w-3 text-blue-600" /> Edit Bank
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-6 text-[11px] px-2 gap-1 text-emerald-600 hover:text-emerald-700"
-                              onClick={openAddNewBank}
-                              title="Add a new company bank account to Chart of Accounts"
-                            >
-                              <Plus className="h-3 w-3" /> Add Bank
-                            </Button>
-                          </div>
-                        </div>
+                        <Label className="text-xs font-semibold text-foreground">
+                          Receiving Company Bank Account <span className="text-destructive">*</span>
+                        </Label>
 
-                        {/* Interactive Bank Account Selection Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {displayAccounts.map((b) => {
-                            const isSelected = b.id === (selectedBank?.id || bankTransferBankAccountId);
-                            return (
-                              <div
-                                key={b.id}
-                                onClick={() => setBankTransferBankAccountId(b.id)}
-                                className={`cursor-pointer rounded-xl border p-3 transition-all text-left relative select-none ${
-                                  isSelected
-                                    ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 ring-2 ring-blue-500/30 shadow-sm"
-                                    : "border-border/80 bg-card hover:bg-muted/40 hover:border-border"
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-1 mb-1">
-                                  <span className="text-xs font-bold text-foreground leading-tight line-clamp-1">{b.bankName}</span>
-                                  {isSelected ? (
-                                    <span className="h-4 w-4 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
-                                      <Check className="h-2.5 w-2.5 stroke-[3]" />
-                                    </span>
-                                  ) : (
-                                    <span className="h-4 w-4 rounded-full border border-muted-foreground/30 flex-shrink-0" />
-                                  )}
+                        <Select
+                          value={selectedBank?.id || bankTransferBankAccountId}
+                          onValueChange={(val) => setBankTransferBankAccountId(val)}
+                        >
+                          <SelectTrigger className="h-10 text-xs bg-background border-border shadow-xs hover:border-blue-400 focus:ring-2 focus:ring-blue-500/20 transition-all">
+                            <SelectValue placeholder="Select Destination Bank Account">
+                              {selectedBank ? `${selectedBank.bankName} – ${selectedBank.accountTitle} (A/C: ${selectedBank.accountNumber})` : undefined}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="max-h-60">
+                            {displayAccounts.map((b) => (
+                              <SelectItem key={b.id} value={b.id} className="text-xs py-2 cursor-pointer">
+                                <div className="flex items-center justify-between w-full gap-3">
+                                  <div className="flex flex-col text-left">
+                                    <span className="font-semibold text-foreground">{b.bankName} – {b.accountTitle}</span>
+                                    <span className="text-[11px] text-muted-foreground font-mono">A/C: {b.accountNumber}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 border border-blue-200 flex-shrink-0 ml-auto">
+                                    GL {b.glCode}
+                                  </span>
                                 </div>
-                                <div className="text-[11px] text-muted-foreground font-medium truncate mb-2">{b.accountTitle}</div>
-                                <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[10px] font-mono">
-                                  <span className="text-muted-foreground">A/C: <span className="text-foreground font-semibold">{b.accountNumber}</span></span>
-                                  <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-bold">GL {b.glCode}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
 
                         {/* Active Bank Account Details Chip */}
                         {selectedBank && (
-                          <div className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 border border-border/60 flex items-center justify-between">
-                            <span>IBAN: <strong className="font-mono text-foreground">{selectedBank.iban}</strong></span>
+                          <div className="text-[11px] text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 border border-border/60 flex items-center justify-between flex-wrap gap-2">
+                            <span>IBAN: <strong className="font-mono text-foreground">{selectedBank.iban || "—"}</strong></span>
                             <span>Branch: <strong className="text-foreground">{selectedBank.branch || "Main"}</strong></span>
                             <span>GL Name: <strong className="text-blue-700 dark:text-blue-300 font-semibold">{selectedBank.glName || selectedBank.accountTitle}</strong></span>
                           </div>

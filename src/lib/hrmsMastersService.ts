@@ -81,6 +81,7 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "BRN",
     defaultItems: [
+      { name: "Al Ameen Real Estate Head Office", code: "AMEEN-HQ", description: "Central Corporate Head Office & Employee Payroll / Overhead Expenses" },
       { name: "Doha Head Office (D-Ring Road)", code: "DOH-HQ", description: "Central Corporate & Leasing Management HQ" },
       { name: "Old Salata Site Operations Hub", code: "SLT-01", description: "Old Salata & Central Doha Properties" },
       { name: "Al Wakra Operations Center", code: "WKR-01", description: "Wakra Residential & Commercial Portfolio" },

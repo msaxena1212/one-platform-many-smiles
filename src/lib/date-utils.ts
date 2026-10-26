@@ -105,41 +105,43 @@ function extractLocalParts(dateInput: string | Date | null | undefined): { day: 
 }
 
 /**
- * Formats any date string or Date object into 'dd/mmm/yyyy' format (e.g. '10/Apr/2026').
+ * Formats any date string or Date object into 'dd-mm-yyyy' format (e.g. '10-04-2026').
  * If invalid or empty, returns '-'.
  */
 export function formatDDMMMYYYY(dateInput?: string | Date | null): string {
-  const parts = extractLocalParts(dateInput ?? null);
-  if (!parts) return '-';
-  const dayStr = String(parts.day).padStart(2, '0');
-  const monStr = MONTH_NAMES[parts.month0] || String(parts.month0 + 1).padStart(2, '0');
-  return `${dayStr}/${monStr}/${parts.year}`;
+  return formatDDMMYYYYHyphen(dateInput);
 }
 
 /**
- * Formats any date into strict 'dd/mm/yyyy' numeric format (e.g. '10/04/2026').
+ * Formats any date into strict 'dd-mm-yyyy' numeric format (e.g. '10-04-2026').
  */
 export function formatDateNumericDDMMYYYY(dateInput?: string | Date | null): string {
+  return formatDDMMYYYYHyphen(dateInput);
+}
+
+/**
+ * Alias for backward compatibility that outputs canonical 'dd-mm-yyyy' (e.g. 10-04-2026).
+ */
+export function formatDateDDMMYYYY(dateInput?: string | Date | null): string {
+  return formatDDMMYYYYHyphen(dateInput);
+}
+
+/**
+ * Formats any date into strict 'dd-mm-yyyy' numeric format (e.g. '10-04-2026').
+ */
+export function formatDDMMYYYYHyphen(dateInput?: string | Date | null): string {
   const parts = extractLocalParts(dateInput ?? null);
   if (!parts) return '-';
   const d = String(parts.day).padStart(2, '0');
   const m = String(parts.month0 + 1).padStart(2, '0');
-  return `${d}/${m}/${parts.year}`;
+  return `${d}-${m}-${parts.year}`;
 }
 
 /**
- * Alias for backward compatibility that outputs canonical 'dd/mmm/yyyy' (e.g. 10/Apr/2026).
- */
-export function formatDateDDMMYYYY(dateInput?: string | Date | null): string {
-  return formatDDMMMYYYY(dateInput);
-}
-
-/**
- * Uniform system date formatter that enforces DD/MM/YYYY across all machines (Qatar, India, US, etc.)
- * regardless of the client machine's OS locale settings.
+ * Uniform system date formatter that enforces DD-MM-YYYY across all modules.
  */
 export function formatDateUniform(dateInput?: string | Date | null): string {
-  return formatDateNumericDDMMYYYY(dateInput);
+  return formatDDMMYYYYHyphen(dateInput);
 }
 
 /**
