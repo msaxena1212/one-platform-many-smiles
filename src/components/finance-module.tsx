@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useSearch } from "@tanstack/react-router";
+import { useSearch, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,7 +144,7 @@ const FINANCE_NAV = [
     ],
   },
   {
-    group: "Reports",
+    group: "Finance Reports",
     icon: PieChart,
     color: "text-rose-500",
     bg: "bg-rose-500/10",
@@ -166,6 +166,7 @@ const FINANCE_NAV = [
 ];
 
 export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
+  const navigate = useNavigate();
   const searchParams = useSearch({ strict: false }) as Record<string, any>;
   const activeKey = searchParams.tab || "finance_dashboard";
 
@@ -208,7 +209,35 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
           </div>
         </div>
 
-
+        {/* Top-Level Sub-Navigation Tabs */}
+        {activeGroup && (
+          <div className="flex items-center gap-1.5 px-6 py-2 bg-muted/30 border-b border-border overflow-x-auto no-scrollbar shrink-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mr-1.5 shrink-0">
+              {activeGroup.group}:
+            </span>
+            <div className="flex items-center gap-1.5">
+              {activeGroup.items.map((item) => {
+                const isSelected = item.key === activeKey;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => navigate({ search: (prev: any) => ({ ...prev, tab: item.key }) as any })}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all shrink-0 cursor-pointer ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground shadow-xs font-semibold"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted bg-background/60 border border-border/50"
+                    }`}
+                  >
+                    <Icon className="h-3 w-3" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         <ScrollArea className="flex-1">
