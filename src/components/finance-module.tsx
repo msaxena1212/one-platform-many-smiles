@@ -56,6 +56,9 @@ import {
   type RevenueReasonCode
 } from "@/lib/finance/revenue-engine";
 import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
+import { BulkInvoiceDialog } from "@/components/finance/bulk-invoice-dialog";
+import { CustomerStatementSubModule } from "@/components/finance/customer-statement-submodule";
+import { InvoiceViewDialog } from "@/components/finance/invoice-view-dialog";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
@@ -107,7 +110,7 @@ const FINANCE_NAV = [
       { key: "payable_invoice", label: "Payable Invoice", icon: ArrowUpRight },
       { key: "journal_voucher", label: "Journal Voucher", icon: FileText },
       { key: "payment_voucher", label: "Payment Voucher", icon: CreditCard },
-      { key: "receivable_invoice", label: "Receivable Invoice", icon: ArrowDownLeft },
+      { key: "receivable_invoice", label: "Receivable Invoices & Bulk Billing", icon: ArrowDownLeft },
       { key: "receipt_voucher", label: "Receipt Voucher", icon: ReceiptIcon },
       { key: "debit_note", label: "Debit Note", icon: MinusCircle },
       { key: "credit_note", label: "Credit Note", icon: PlusCircle },
@@ -147,6 +150,7 @@ const FINANCE_NAV = [
     bg: "bg-rose-500/10",
     activeBg: "bg-rose-500",
     items: [
+      { key: "customer_statement", label: "Customer Statement of Account", icon: FileText },
       { key: "revenue_generation", label: "Revenue Generation", icon: TrendingUp },
       { key: "trial_balance_simple", label: "Trial Balance (Simple)", icon: Scale },
       { key: "trial_balance", label: "Trial Balance", icon: Scale },
@@ -258,6 +262,7 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "bank_reconciliation_statement_list": return <BankReconciliationStatementListSubModule />;
 
     // Reports
+    case "customer_statement": return <CustomerStatementSubModule />;
     case "revenue_generation": return <RevenueGenerationSubModule />;
     case "trial_balance_simple": return <TrialBalanceSimpleSubModule />;
     case "trial_balance": return <TrialBalanceFullSubModule />;
@@ -489,6 +494,9 @@ function VendorListSubModule() {
 function CustomerListSubModule() {
   const { customers: sharedCustomers, leases } = useAppData();
   const [dbCustomers, setDbCustomers] = useState<FinCustomer[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCustomerForSOA, setSelectedCustomerForSOA] = useState<{ id: string; name: string } | null>(null);
+  const [customerForInvoice, setCustomerForInvoice] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() { try { setDbCustomers(await FinCustomersApi.fetchAll()); } catch { } }
@@ -501,7 +509,8 @@ function CustomerListSubModule() {
       const lease = leases?.find(l => l.customerId === t.id);
       return {
         id: `ctx-ten-${idx}`,
-        code: `CUST-${String(t.id || idx).slice(-4).toUpperCase()}`,
+        rawId: t.id || t.customerId,
+        code: `CUST-${String(t.customerId || t.id || idx).slice(-4).toUpperCase()}`,
         name: t.name,
         type: t.type === 'company' ? 'Corporate Tenant' : 'Individual Tenant',
         phone: t.mobile || '—',
@@ -511,32 +520,119 @@ function CustomerListSubModule() {
     })
   ];
 
+  const filteredCustomers = allCustomers.filter(c => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(term) ||
+      c.code.toLowerCase().includes(term) ||
+      c.phone.toLowerCase().includes(term) ||
+      c.property.toLowerCase().includes(term)
+    );
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Customer & Tenant Accounts</h3>
+          <h3 className="text-base font-bold text-foreground">Customer &amp; Tenant Accounts</h3>
           <p className="text-xs text-muted-foreground">Customers linked with accounts receivable sub-ledgers and leasing contracts.</p>
         </div>
-        <Badge variant="outline">{allCustomers.length} Customers</Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs font-mono">{filteredCustomers.length} Customers</Badge>
+        </div>
+      </div>
+
+      {/* Search Input */}
+      <div className="flex items-center gap-2 max-w-sm">
+        <div className="relative w-full">
+          <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
+          <Input
+            className="h-8 pl-8 text-xs bg-background"
+            placeholder="Search customers by name, code, phone, property..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
-          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">Code</TableHead><TableHead className="font-bold">Customer Name</TableHead><TableHead className="font-bold">Account Type</TableHead><TableHead className="font-bold">Assigned Property</TableHead><TableHead className="font-bold">Contact Phone</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Code</TableHead>
+              <TableHead className="font-bold">Customer Name</TableHead>
+              <TableHead className="font-bold">Account Type</TableHead>
+              <TableHead className="font-bold">Assigned Property</TableHead>
+              <TableHead className="font-bold">Contact Phone</TableHead>
+              <TableHead className="text-center font-bold">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {allCustomers.map((row) => (
-              <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono font-bold text-primary">{row.code}</TableCell>
-                <TableCell className="font-semibold">{row.name}</TableCell>
-                <TableCell><Badge variant="outline" className="text-[10px]">{row.type}</Badge></TableCell>
-                <TableCell className="text-muted-foreground">{row.property}</TableCell>
-                <TableCell className="text-xs">{row.phone}</TableCell>
+            {filteredCustomers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">
+                  No customers found matching search.
+                </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredCustomers.map((row) => (
+                <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
+                  <TableCell className="font-mono font-bold text-primary">{row.code}</TableCell>
+                  <TableCell className="font-semibold">{row.name}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-[10px]">{row.type}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground">{row.property}</TableCell>
+                  <TableCell className="text-xs font-mono">{row.phone}</TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedCustomerForSOA({ id: (row as any).rawId || row.name, name: row.name })}
+                        className="h-7 text-[11px] gap-1 px-2 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                      >
+                        <FileText className="h-3 w-3 text-emerald-600" />
+                        Statement
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCustomerForInvoice((row as any).rawId || row.name)}
+                        className="h-7 text-[11px] gap-1 px-2 border-blue-500/30 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                      >
+                        <Plus className="h-3 w-3 text-blue-600" />
+                        Bill
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Statement of Account Modal for Selected Customer */}
+      {selectedCustomerForSOA && (
+        <Dialog open={Boolean(selectedCustomerForSOA)} onOpenChange={() => setSelectedCustomerForSOA(null)}>
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-4 rounded-xl">
+            <CustomerStatementSubModule
+              initialCustomerId={selectedCustomerForSOA.id}
+              isDialogMode={true}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Invoice Generator Modal for Selected Customer */}
+      {customerForInvoice && (
+        <BulkInvoiceDialog
+          open={Boolean(customerForInvoice)}
+          onOpenChange={() => setCustomerForInvoice(null)}
+          defaultMode="customer"
+          initialCustomerId={customerForInvoice}
+        />
+      )}
     </div>
   );
 }
@@ -4111,11 +4207,22 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
 }
 
 function ReceivableInvoiceSubModule() {
-  const { leases, units } = useAppData();
-  const { addReceivableInvoice, receivableInvoices: storeReceivables } = useFinanceStore();
+  const { leases, units, customers } = useAppData();
+  const { addReceivableInvoice, receivableInvoices: storeReceivables, markReceivableInvoicePaid } = useFinanceStore();
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<{ invoice_no: string; tenant: string; property: string; unit: string; date: string; due_date: string; stream: string; amount: number; status: string }[]>([]);
+  const [data, setData] = useState<ReceivableInvoice[]>([]);
   const [selectedLeaseId, setSelectedLeaseId] = useState<string>("");
+
+  // Dialog States
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkDialogMode, setBulkDialogMode] = useState<"property" | "customer">("property");
+  const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<ReceivableInvoice | null>(null);
+  const [statementCustomer, setStatementCustomer] = useState<{ id: string; name: string } | null>(null);
+
+  // Filters & Search
+  const [searchTerm, setSearchTerm] = useState("");
+  const [propertyFilter, setPropertyFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   // Unique properties list
   const propertiesList = useMemo(() => {
@@ -4172,8 +4279,16 @@ function ReceivableInvoiceSubModule() {
       return;
     }
 
-    const newInv = {
-      ...form,
+    const newInv: ReceivableInvoice = {
+      id: `ar-${Date.now()}`,
+      invoice_no: form.invoice_no,
+      tenant: form.tenant,
+      property: form.property,
+      unit: form.unit,
+      date: form.date,
+      due_date: form.due_date,
+      stream: form.stream,
+      account_code: form.stream.split(/\s+/)[0] || "41100",
       amount: amt,
       status: "Pending",
     };
@@ -4181,39 +4296,203 @@ function ReceivableInvoiceSubModule() {
     setData(prev => [newInv, ...prev]);
 
     // Authoritative FinanceStore sync
-    addReceivableInvoice({
-      invoice_no: form.invoice_no,
-      tenant: form.tenant,
-      property: form.property,
-      unit: form.unit,
-      date: form.date,
-      due_date: form.due_date,
-      account: form.stream.replace(/^\d+\s*[-–—]\s*/, ""),
-      account_code: form.stream.split(/\s+/)[0] || "41100",
-      amount: amt,
-      vat: 0,
-    });
+    addReceivableInvoice(newInv);
 
     toast.success(`AR Invoice ${form.invoice_no} created and posted to Tenant Receivables.`);
     setOpen(false);
   }
 
+  // Combined Invoices
+  const allInvoices = useMemo(() => {
+    const list = [...storeReceivables];
+    data.forEach(d => {
+      if (!list.some(item => item.invoice_no === d.invoice_no)) {
+        list.push(d);
+      }
+    });
+
+    if (list.length === 0 && leases.length > 0) {
+      leases.slice(0, 10).forEach((l, idx) => {
+        const amt = Number(l.monthlyRent) || 5500;
+        list.push({
+          id: `seed-ar-${idx + 1}`,
+          invoice_no: `INV-2026-AR-${1001 + idx}`,
+          tenant: l.tenantName || `Tenant ${l.unit}`,
+          property: l.property || "MANSOURA - BLDG06",
+          unit: l.unit || `Unit ${idx + 1}`,
+          date: new Date(Date.now() - (idx % 3) * 30 * 86400000).toISOString().split("T")[0],
+          due_date: new Date(Date.now() - (idx % 3) * 30 * 86400000 + 30 * 86400000).toISOString().split("T")[0],
+          stream: "41100 - Rental Revenue",
+          account_code: "41100",
+          amount: amt,
+          status: idx % 3 === 0 ? "Paid" : idx % 3 === 1 ? "Pending" : "Overdue",
+        });
+      });
+    }
+
+    return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
+  }, [storeReceivables, data, leases]);
+
+  // Filtered Invoices
+  const filteredInvoices = useMemo(() => {
+    return allInvoices.filter(inv => {
+      if (propertyFilter !== "ALL" && inv.property !== propertyFilter) return false;
+      if (statusFilter !== "ALL" && inv.status !== statusFilter) return false;
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase();
+        return (
+          inv.invoice_no.toLowerCase().includes(term) ||
+          inv.tenant.toLowerCase().includes(term) ||
+          inv.unit.toLowerCase().includes(term) ||
+          inv.property.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
+  }, [allInvoices, propertyFilter, statusFilter, searchTerm]);
+
+  const totalInvoiced = useMemo(() => filteredInvoices.reduce((s, i) => s + (Number(i.amount) || 0), 0), [filteredInvoices]);
+  const totalPending = useMemo(() => filteredInvoices.filter(i => i.status !== "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0), [filteredInvoices]);
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      {/* Header and Bulk Actions Toolbar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h3 className="text-sm font-semibold">Accounts Receivable (AR) Invoices</h3>
-          <p className="text-xs text-muted-foreground">Invoices generated for rental dues, utility recoveries, and service charges.</p>
+          <h3 className="text-base font-bold text-foreground">Accounts Receivable (AR) Invoices &amp; Bulk Billing</h3>
+          <p className="text-xs text-muted-foreground">
+            Generate and manage rental invoices, CAM, and service charges bulk property-wise or customer-wise.
+          </p>
         </div>
-        <Button size="sm" onClick={() => {
-          setSelectedLeaseId("");
-          setForm(f => ({ ...f, invoice_no: `INV-AR-${Math.floor(1000 + Math.random() * 9000)}` }));
-          setOpen(true);
-        }} className="gap-2">
-          <Plus className="h-4 w-4" /> Create AR Invoice
-        </Button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Bulk Invoices - Property-Wise */}
+          <Button
+            size="sm"
+            onClick={() => {
+              setBulkDialogMode("property");
+              setBulkDialogOpen(true);
+            }}
+            className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs"
+          >
+            <Building2 className="h-3.5 w-3.5" />
+            Bulk Invoice (Property-Wise)
+          </Button>
+
+          {/* Bulk Invoices - Customer-Wise */}
+          <Button
+            size="sm"
+            onClick={() => {
+              setBulkDialogMode("customer");
+              setBulkDialogOpen(true);
+            }}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs"
+          >
+            <Users className="h-3.5 w-3.5" />
+            Bulk Invoice (Customer-Wise)
+          </Button>
+
+          {/* Single Invoice */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedLeaseId("");
+              setForm(f => ({ ...f, invoice_no: `INV-AR-${Math.floor(1000 + Math.random() * 9000)}` }));
+              setOpen(true);
+            }}
+            className="gap-1.5 text-xs border-primary/20 hover:bg-primary/5"
+          >
+            <Plus className="h-3.5 w-3.5 text-primary" /> Create AR Invoice
+          </Button>
+        </div>
       </div>
 
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+        <Card className="border bg-card">
+          <CardContent className="p-3.5 space-y-1">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground">Total Invoices</span>
+            <p className="text-lg font-bold font-mono text-foreground">{filteredInvoices.length}</p>
+            <p className="text-[10px] text-muted-foreground">Active in ledger</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border bg-card">
+          <CardContent className="p-3.5 space-y-1">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground">Total Invoiced Amount</span>
+            <p className="text-lg font-bold font-mono text-foreground">
+              QAR {totalInvoiced.toLocaleString()}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Current filtered sum</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border bg-card">
+          <CardContent className="p-3.5 space-y-1">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground">Total Collected</span>
+            <p className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              QAR {(totalInvoiced - totalPending).toLocaleString()}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Settled invoices</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border bg-card">
+          <CardContent className="p-3.5 space-y-1">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground">Pending / Overdue</span>
+            <p className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400">
+              QAR {totalPending.toLocaleString()}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Awaiting payment</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and Filters Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-lg border bg-muted/20 text-xs">
+        <div className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-md">
+          <div className="relative w-full">
+            <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
+            <Input
+              className="h-8 pl-8 text-xs bg-background"
+              placeholder="Search by invoice #, tenant, unit, or property..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* Property Filter */}
+          <Select value={propertyFilter} onValueChange={setPropertyFilter}>
+            <SelectTrigger className="h-8 text-xs w-44 bg-background">
+              <SelectValue placeholder="All Properties" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Properties</SelectItem>
+              {propertiesList.map(p => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Status Filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-8 text-xs w-32 bg-background">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Statuses</SelectItem>
+              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="Paid">Paid</SelectItem>
+              <SelectItem value="Overdue">Overdue</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Invoices Table */}
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
           <TableHeader>
@@ -4222,35 +4501,95 @@ function ReceivableInvoiceSubModule() {
               <TableHead className="font-bold">Invoice #</TableHead>
               <TableHead className="font-bold">Tenant / Customer</TableHead>
               <TableHead className="font-bold">Property &amp; Unit</TableHead>
-              <TableHead className="font-bold">Revenue GL Account</TableHead>
-              <TableHead className="font-bold">Issue Date</TableHead>
+              <TableHead className="font-bold">Revenue GL Stream</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
-              <TableHead className="font-bold">Status</TableHead>
+              <TableHead className="text-center font-bold">Status</TableHead>
+              <TableHead className="text-center font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {[...data].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row) => (
-              <TableRow key={row.invoice_no} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
-                <TableCell className="font-mono font-bold text-primary">{row.invoice_no}</TableCell>
-                <TableCell className="font-semibold">{row.tenant}</TableCell>
-                <TableCell className="text-muted-foreground">{row.property} — {row.unit}</TableCell>
-                <TableCell className="font-mono text-xs text-blue-600">{row.stream}</TableCell>
-                <TableCell>{row.date}</TableCell>
-                <TableCell>{row.due_date}</TableCell>
-                <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
-                <TableCell>
-                  <Badge variant={row.status === "Paid" ? "default" : row.status === "Overdue" ? "destructive" : "outline"} className="text-[10px]">
-                    {row.status}
-                  </Badge>
+            {filteredInvoices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center py-8 text-xs text-muted-foreground">
+                  No invoices found matching criteria.
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredInvoices.map((row) => (
+                <TableRow key={row.invoice_no} className="hover:bg-muted/30 text-xs">
+                  <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                  <TableCell className="font-mono font-bold text-primary">
+                    <button
+                      onClick={() => setSelectedInvoiceForView(row)}
+                      className="hover:underline text-left text-primary"
+                      title="View / Print Invoice"
+                    >
+                      {row.invoice_no}
+                    </button>
+                  </TableCell>
+                  <TableCell className="font-semibold">{row.tenant}</TableCell>
+                  <TableCell className="text-muted-foreground">{row.property} — <strong className="font-mono text-foreground">{row.unit}</strong></TableCell>
+                  <TableCell className="font-mono text-xs text-blue-600 dark:text-blue-400">{row.stream}</TableCell>
+                  <TableCell className="font-mono">{row.due_date}</TableCell>
+                  <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant={row.status === "Paid" ? "default" : row.status === "Overdue" ? "destructive" : "outline"} className="text-[10px]">
+                      {row.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      {/* View & Print */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSelectedInvoiceForView(row)}
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                        title="View / Print Invoice"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                      </Button>
+
+                      {/* Customer Statement */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const cust = customers.find(c => c.name.toLowerCase() === row.tenant.toLowerCase());
+                          setStatementCustomer({
+                            id: cust ? String(cust.id || cust.customerId) : row.tenant,
+                            name: row.tenant,
+                          });
+                        }}
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600"
+                        title="View Customer Statement of Account"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                      </Button>
+
+                      {/* Mark Paid / Settle */}
+                      {row.status !== "Paid" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => markReceivableInvoicePaid(row.invoice_no)}
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600"
+                          title="Record Collection / Mark Paid"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
 
+      {/* Single Invoice Generation Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto">
           <DialogHeader>
@@ -4277,7 +4616,7 @@ function ReceivableInvoiceSubModule() {
                   <SelectContent>
                     {leases.map(l => (
                       <SelectItem key={l.id} value={l.id}>
-                        {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
+                        {l.tenantName} — {l.unit} ({l.property}) &bull; QR {l.monthlyRent?.toLocaleString()}/mo
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -4435,6 +4774,32 @@ function ReceivableInvoiceSubModule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Invoices Modal (Property-Wise and Customer-Wise) */}
+      <BulkInvoiceDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        defaultMode={bulkDialogMode}
+      />
+
+      {/* Printable Invoice Dialog */}
+      <InvoiceViewDialog
+        invoice={selectedInvoiceForView}
+        open={Boolean(selectedInvoiceForView)}
+        onOpenChange={open => { if (!open) setSelectedInvoiceForView(null); }}
+      />
+
+      {/* Customer Statement Dialog Modal */}
+      {statementCustomer && (
+        <Dialog open={Boolean(statementCustomer)} onOpenChange={() => setStatementCustomer(null)}>
+          <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-4 rounded-xl">
+            <CustomerStatementSubModule
+              initialCustomerId={statementCustomer.id}
+              isDialogMode={true}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

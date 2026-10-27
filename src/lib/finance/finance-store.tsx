@@ -95,6 +95,11 @@ export interface ReceivableInvoice {
   account_code: string;
   amount: number;
   status: "Pending" | "Paid" | "Overdue";
+  customerId?: string;
+  billingPeriod?: string;
+  leaseId?: string;
+  notes?: string;
+  paidAmount?: number;
 }
 
 export interface LegalReceivable {
@@ -206,6 +211,7 @@ export interface FinanceStoreContextType {
 
   receivableInvoices: ReceivableInvoice[];
   addReceivableInvoice: (inv: Omit<ReceivableInvoice, "id" | "status">) => void;
+  addBulkReceivableInvoices: (invoices: Omit<ReceivableInvoice, "id" | "status">[]) => void;
   markReceivableInvoicePaid: (invoiceNo: string) => void;
 
   legalReceivables: LegalReceivable[];
@@ -561,7 +567,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   drCode = "12900"; drName = "PDC In Hand (Guarantee)";
                   crCode = "21200"; crName = "Guarantee Cheque Liability";
                 } else if (desc.includes("pdc deposited to bank") || desc.includes("vch-dep-")) {
-                  const bInfo = resolvePdcBankGl(r.reference_no || desc);
+                  const bInfo = resolvePdcBankGl(desc);
                   drCode = bInfo.glCode; drName = bInfo.glName;
                   crCode = "12900001"; crName = "Rent PDC In Hand";
                 } else if (desc.includes("pdc cleared") || desc.includes("vch-clr-")) {
@@ -1590,7 +1596,10 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       id: `vch-${Date.now()}`,
       status: "Posted"
     };
-    setVouchers(prev => [newVch, ...prev]);
+    setVouchers(prev => {
+      if (prev.some(v => v.voucher_no === newVch.voucher_no)) return prev;
+      return [newVch, ...prev];
+    });
     toast.success(`${newVch.voucher_type} ${newVch.voucher_no} posted successfully!`);
 
     // Persist to Supabase fin_vouchers (best-effort, fire-and-forget).
@@ -1625,6 +1634,17 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     };
     setReceivableInvoices(prev => [newInv, ...prev]);
     toast.success(`AR Invoice ${newInv.invoice_no} generated and posted!`);
+  }
+
+  function addBulkReceivableInvoices(invoices: Omit<ReceivableInvoice, "id" | "status">[]) {
+    const timestamp = Date.now();
+    const newItems: ReceivableInvoice[] = invoices.map((inv, idx) => ({
+      ...inv,
+      id: `ar-bulk-${timestamp}-${idx}`,
+      status: "Pending" as const
+    }));
+    setReceivableInvoices(prev => [...newItems, ...prev]);
+    toast.success(`${newItems.length} AR Invoices generated and posted successfully!`);
   }
 
   function markReceivableInvoicePaid(invoiceNo: string) {
@@ -2736,6 +2756,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         addVoucher,
         receivableInvoices,
         addReceivableInvoice,
+        addBulkReceivableInvoices,
         markReceivableInvoicePaid,
         legalReceivables,
         addLegalEscalation,
