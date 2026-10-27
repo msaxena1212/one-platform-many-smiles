@@ -326,6 +326,16 @@ export function resolvePdcBankGl(bank?: string | number | null): { glCode: strin
   }
   const str = String(bank).toLowerCase().trim();
 
+  // Al Ameen (Oryx) - Dukhan Bank (100001011781 / 12000006)
+  if (
+    str.includes("oryx") ||
+    str.includes("100001011781") ||
+    str === "12000006" ||
+    str === "9"
+  ) {
+    return { glCode: "12000006", glName: "Al Ameen (Oryx) - Dukhan Bank" };
+  }
+
   // Dukhan Bank / Al Ameen Dukhan Bank
   if (
     str.includes("dukhan") ||
@@ -411,6 +421,27 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           "pms_cash_book_v2"
         ];
         legacyKeys.forEach(k => localStorage.removeItem(k));
+
+        // Deduplicate stored vouchers (e.g. redundant PV-SET vouchers for same tenant and unit)
+        const vKey = `${FINANCE_STORAGE_KEY}-vouchers`;
+        const raw = localStorage.getItem(vKey);
+        if (raw) {
+          const list: FinanceVoucher[] = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const seenPvSet = new Set<string>();
+            const deduped = list.filter(v => {
+              if (v.voucher_no && v.voucher_no.startsWith("PV-SET-")) {
+                const key = `${v.tenant_name || ""}_${v.unit_ref || ""}_${v.amount}`;
+                if (seenPvSet.has(key)) return false;
+                seenPvSet.add(key);
+              }
+              return true;
+            });
+            if (deduped.length !== list.length) {
+              localStorage.setItem(vKey, JSON.stringify(deduped));
+            }
+          }
+        }
       } catch {}
     }
   }, []);
@@ -437,7 +468,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
       if (!saved) return INITIAL_VOUCHERS;
       const list: FinanceVoucher[] = JSON.parse(saved);
-      return Array.isArray(list) ? list : INITIAL_VOUCHERS;
+      if (Array.isArray(list)) {
+        const seenPvSet = new Set<string>();
+        return list.filter(v => {
+          if (v.voucher_no && v.voucher_no.startsWith("PV-SET-")) {
+            const key = `${v.tenant_name || ""}_${v.unit_ref || ""}_${v.amount}`;
+            if (seenPvSet.has(key)) return false;
+            seenPvSet.add(key);
+          }
+          return true;
+        });
+      }
+      return INITIAL_VOUCHERS;
     } catch { return INITIAL_VOUCHERS; }
   });
   const [receivableInvoices, setReceivableInvoices] = useState<ReceivableInvoice[]>(() => {
@@ -519,7 +561,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   drCode = "12900"; drName = "PDC In Hand (Guarantee)";
                   crCode = "21200"; crName = "Guarantee Cheque Liability";
                 } else if (desc.includes("pdc deposited to bank") || desc.includes("vch-dep-")) {
-                  const bInfo = resolvePdcBankGl(desc);
+                  const bInfo = resolvePdcBankGl(r.reference_no || desc);
                   drCode = bInfo.glCode; drName = bInfo.glName;
                   crCode = "12900001"; crName = "Rent PDC In Hand";
                 } else if (desc.includes("pdc cleared") || desc.includes("vch-clr-")) {
@@ -1812,6 +1854,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       "12000003": "Bank Operating Account (QNB)",
       "12000004": "Doha Bank Operating Account",
       "12000005": "Qatar Islamic Bank (QIB)",
+      "12000006": "Al Ameen (Oryx) - Dukhan Bank",
       "12100": "Cash Accounts",
       "12100001": "Cash in Hand / Operating Cash",
       "12300001": "Advance to Vendors",

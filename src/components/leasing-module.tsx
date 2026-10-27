@@ -2268,6 +2268,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [editTermsOpen, setEditTermsOpen] = useState(false);
   const [selectedLeaseForTerms, setSelectedLeaseForTerms] = useState<string | null>(null);
   const [agreementTermsForm, setAgreementTermsForm] = useState({
+    monthlyRent: 0,
+    annualRent: 0,
+    securityDeposit: 0,
+    startDate: "",
+    endDate: "",
+    freePeriodDays: 0,
     paymentFrequency: "monthly" as Lease["paymentFrequency"],
     pdcCount: 12,
     gracePeriodDays: 5,
@@ -3404,6 +3410,46 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     };
     setCustomers((items) => [customer, ...items]);
 
+    // Persist to Supabase Database
+    try {
+      const dbPayload = {
+        full_name: finalDisplayName,
+        display_name: finalDisplayName,
+        first_name: customerForm.firstName || finalDisplayName,
+        middle_name: customerForm.middleName || null,
+        last_name: customerForm.lastName || null,
+        customer_type: customerForm.type === "company" ? "Company" : "Individual",
+        qatar_id: customerForm.qatarId || null,
+        passport_number: customerForm.passport || null,
+        commercial_registration: customerForm.crNumber || null,
+        nationality: (customerForm as any).nationality || "Qatari",
+        mobile_number: primaryMob || null,
+        primary_mobile: primaryMob || null,
+        email_address: primaryMail || null,
+        primary_email: primaryMail || null,
+        tax_identification_no: generatedCustomerId,
+        remarks: `CUSTOMER_ID:${generatedCustomerId}`,
+        customer_status: "Active",
+        approval_status: "Approved",
+        verification_status: "Verified",
+        gender: customerForm.gender || "Male",
+        company_legal_name: customerForm.companyLegalName || null,
+        trade_name: customerForm.tradeName || null,
+        trade_licence_no: customerForm.tradeLicenceNo || null,
+        computer_card_no: customerForm.computerCardNo || null,
+      };
+
+      supabase.from("customers").insert([dbPayload]).then(({ data, error }) => {
+        if (error) {
+          console.warn("[createCustomer] Supabase insert warning:", error.message);
+        } else {
+          console.log("[createCustomer] Supabase insert successful:", data);
+        }
+      });
+    } catch (err: any) {
+      console.warn("[createCustomer] Supabase persistence error:", err?.message || err);
+    }
+
     const createdDocs: TenantDocument[] = [];
     if (customer.type === "company") {
       const crUploaded = !!customerForm.crFile;
@@ -3577,25 +3623,67 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     setUploadDocOpen(false);
   }
 
-  function submitAgreementTerms() {
+  async function submitAgreementTerms() {
     if (!selectedLeaseForTerms) return;
+    const targetId = selectedLeaseForTerms;
+    const patch = {
+      ...agreementTermsForm,
+      monthlyRent: Number(agreementTermsForm.monthlyRent) || 0,
+      securityDeposit: Number(agreementTermsForm.securityDeposit) || 0,
+    };
+
     setLeases((items) =>
       items.map((item) =>
-        item.id === selectedLeaseForTerms
+        item.id === targetId
           ? {
             ...item,
-            ...agreementTermsForm,
+            ...patch,
           }
           : item
       )
     );
+
+    // Persist changes to Supabase Database
+    try {
+      const leaseDbUpdate: Record<string, any> = {
+        rental_amount: patch.monthlyRent * 12,
+        security_deposit: patch.securityDeposit,
+        commencement_date: patch.startDate || undefined,
+        expiry_date: patch.endDate || undefined,
+        payment_frequency: patch.paymentFrequency,
+        number_of_pdc: patch.pdcCount,
+        grace_period_days: patch.gracePeriodDays,
+        late_penalty_percentage: parseFloat(patch.penalties) || 5,
+        maintenance_responsibility: patch.maintenanceResponsibility,
+        utility_responsibility: patch.utilityResponsibility,
+        parking_details: patch.parkingDetails,
+        special_conditions: patch.specialConditions,
+        notice_period_days: patch.noticePeriodDays,
+      };
+
+      // Filter out undefined keys
+      Object.keys(leaseDbUpdate).forEach(k => leaseDbUpdate[k] === undefined && delete leaseDbUpdate[k]);
+
+      // If UUID, update database
+      if (targetId && !targetId.startsWith("l")) {
+        await supabase
+          .from("leases")
+          .update(leaseDbUpdate)
+          .eq("id", targetId);
+      }
+    } catch (err: any) {
+      console.warn("[submitAgreementTerms] Supabase update warning:", err?.message || err);
+    }
+
+    toast.success("Lease financials, period, and agreement terms updated successfully!");
+
     recordAudit({
       stage: "Agreement Terms",
       owner: "Leasing Department",
-      input: `Lease ${selectedLeaseForTerms}`,
-      approval: "Terms Updated",
+      input: `Lease ${selectedLeaseForTerms}: Rent ${patch.monthlyRent}, Period ${patch.startDate} to ${patch.endDate}`,
+      approval: "Terms & Financials Updated",
       status: "Updated",
-      output: "Agreement terms and schedule updated",
+      output: "Agreement financials, dates, and terms updated",
     });
     setEditTermsOpen(false);
   }
@@ -5222,9 +5310,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         date: settlementDate,
         name: `Security Deposit Refund – ${tenantName} (${unitRef})`,
         debit: "Security Deposit Liability",
-        debit_code: "21500",
-        credit: isBank ? "Bank Operating Account" : "Cash In Hand",
-        credit_code: isBank ? "12000" : "12100",
+        debit_code: "21500001",
+        credit: isBank ? "Bank Operating Account (CBQ)" : "Cash in Hand / Operating Cash",
+        credit_code: isBank ? "12000001" : "12100001",
         amount: refundable,
         method: isBank ? "Bank Transfer" : "Cash",
         property_name: propName,
@@ -8350,6 +8438,91 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             </div>
           </div>
           <div className="p-6 overflow-y-auto space-y-4 flex-1">
+            {/* ── Core Lease Financials & Period ── */}
+            <div className="rounded-xl border bg-primary/5 border-primary/20 p-4 space-y-3">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                <Banknote className="h-3.5 w-3.5 text-primary" /> Lease Financials & Period (Rent & Dates)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Field label="Monthly Rent (QAR) *">
+                  <Input
+                    type="number"
+                    value={agreementTermsForm.monthlyRent || ""}
+                    onChange={(e) => {
+                      const rent = parseFloat(e.target.value) || 0;
+                      setAgreementTermsForm((f) => ({
+                        ...f,
+                        monthlyRent: rent,
+                        annualRent: rent * 12,
+                      }));
+                    }}
+                    className="bg-background font-mono font-bold"
+                  />
+                </Field>
+                <Field label="Annual Contract Value (QAR)">
+                  <Input
+                    type="number"
+                    value={agreementTermsForm.annualRent || (agreementTermsForm.monthlyRent * 12) || ""}
+                    onChange={(e) => {
+                      const annual = parseFloat(e.target.value) || 0;
+                      setAgreementTermsForm((f) => ({
+                        ...f,
+                        annualRent: annual,
+                        monthlyRent: Math.round(annual / 12),
+                      }));
+                    }}
+                    className="bg-background font-mono"
+                  />
+                </Field>
+                <Field label="Security Deposit (QAR)">
+                  <Input
+                    type="number"
+                    value={agreementTermsForm.securityDeposit || ""}
+                    onChange={(e) => setAgreementTermsForm((f) => ({ ...f, securityDeposit: parseFloat(e.target.value) || 0 }))}
+                    className="bg-background font-mono"
+                  />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                <Field label="Lease Start Date *">
+                  <Input
+                    type="date"
+                    value={agreementTermsForm.startDate}
+                    onChange={(e) => setAgreementTermsForm((f) => ({ ...f, startDate: e.target.value }))}
+                    className="bg-background"
+                  />
+                </Field>
+                <Field label="Lease End Date *">
+                  <Input
+                    type="date"
+                    value={agreementTermsForm.endDate}
+                    onChange={(e) => setAgreementTermsForm((f) => ({ ...f, endDate: e.target.value }))}
+                    className="bg-background"
+                  />
+                </Field>
+                <Field label="Free Period (Days)">
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 30 (1 month free)"
+                    value={agreementTermsForm.freePeriodDays || ""}
+                    onChange={(e) => {
+                      const fp = parseInt(e.target.value, 10) || 0;
+                      setAgreementTermsForm((f) => ({
+                        ...f,
+                        freePeriodDays: fp,
+                        specialConditions: fp > 0
+                          ? (f.specialConditions ? `${f.specialConditions}; Rent-free period: ${fp} days` : `Rent-free concession: ${fp} days granted.`)
+                          : f.specialConditions,
+                      }));
+                    }}
+                    className="bg-background"
+                  />
+                </Field>
+              </div>
+            </div>
+
             <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <CreditCard className="h-3.5 w-3.5 text-primary" /> Payment Frequency & PDCs
@@ -14839,20 +15012,26 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             if (!lease?.id) return;
                             setSelectedLeaseForTerms(lease.id);
                             setAgreementTermsForm({
-                              paymentFrequency: lease.paymentFrequency,
-                              pdcCount: lease.pdcCount,
-                              gracePeriodDays: lease.gracePeriodDays,
-                              penalties: lease.penalties,
-                              maintenanceResponsibility: lease.maintenanceResponsibility,
-                              utilityResponsibility: lease.utilityResponsibility,
-                              parkingDetails: lease.parkingDetails,
-                              specialConditions: lease.specialConditions,
-                              noticePeriodDays: lease.noticePeriodDays,
+                              monthlyRent: Number(lease.monthlyRent) || 0,
+                              annualRent: (Number(lease.monthlyRent) || 0) * 12,
+                              securityDeposit: Number(lease.securityDeposit) || (Number(lease.monthlyRent) || 0),
+                              startDate: lease.startDate || "",
+                              endDate: lease.endDate || "",
+                              freePeriodDays: 0,
+                              paymentFrequency: lease.paymentFrequency || "monthly",
+                              pdcCount: lease.pdcCount || 12,
+                              gracePeriodDays: lease.gracePeriodDays || 5,
+                              penalties: lease.penalties || "5%",
+                              maintenanceResponsibility: lease.maintenanceResponsibility || "Property Manager for major repairs, tenant for misuse damages",
+                              utilityResponsibility: lease.utilityResponsibility || "Tenant",
+                              parkingDetails: lease.parkingDetails || "Dedicated Parking",
+                              specialConditions: lease.specialConditions || "Standard Tenancy",
+                              noticePeriodDays: lease.noticePeriodDays || 60,
                             });
                             setEditTermsOpen(true);
                           }}
                         >
-                          Edit Terms
+                          Edit Lease / Terms
                         </Button>
                       </div>,
                     ])}

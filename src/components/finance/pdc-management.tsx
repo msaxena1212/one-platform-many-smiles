@@ -2365,10 +2365,9 @@ export function PdcManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* ── REGISTER PDC MODAL (FULL PDC COLLECTION SCHEDULE FORMAT: #, Cheque No, Bank, Maturity Date, Period, Amount) ── */}
       <Dialog open={addPdcOpen} onOpenChange={setAddPdcOpen}>
-        <DialogContent className="sm:max-w-[840px] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[88vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
               <Plus className="h-5 w-5 text-primary" /> {collectionType === "PDC" ? "Register Post-Dated Cheques (PDC)" : `Collect ${collectionType}`}
             </DialogTitle>
@@ -2377,7 +2376,7 @@ export function PdcManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-1 text-xs">
+          <div className="flex-1 overflow-y-auto px-6 py-3.5 space-y-3.5 text-xs">
             <div className="rounded-lg border bg-muted/30 p-3">
               <Label className="text-[11px] font-semibold">Collection Type</Label>
               <Select value={collectionType} onValueChange={(value) => setCollectionType(value as typeof collectionType)}>
@@ -2390,105 +2389,116 @@ export function PdcManagement() {
               </Select>
             </div>
 
-            {/* Lease Selector */}
-            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+            {/* Lease Selector & Details */}
+            <div className="rounded-lg border bg-muted/30 p-3.5 space-y-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5 text-primary" /> Lease / Tenant Agreement <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={selectedLeaseId}
+                  onValueChange={(v) => {
+                    setSelectedLeaseId(v);
+                    const lease = leases.find(l => l.id === v);
+                    if (lease) {
+                      const rentStr = String(lease.monthlyRent || 6500);
+                      const leaseStart = lease.startDate || new Date().toISOString().split("T")[0];
+                      const leaseEnd = lease.endDate || leaseStart;
+                      const contractTenure = `${leaseStart} to ${leaseEnd}`;
+                      setGenPrefix(`PDC-${lease.unit?.replace(/\s+/g, '') || 'Flat'}-`);
+                      setGenStartDate(leaseStart);
+                      setAddPdcRows(prev => prev.map(r => ({
+                        ...r,
+                        amount: rentStr,
+                        chequeDate: r.chequeDate || leaseStart,
+                        period: contractTenure,
+                      })));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Select tenant lease agreement" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {leases.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 border-t pt-3">
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-semibold flex items-center gap-1.5">
-                    <User className="h-3.5 w-3.5 text-primary" /> Lease / Tenant Agreement <span className="text-destructive">*</span>
-                  </Label>
-                  <Select
-                    value={selectedLeaseId}
-                    onValueChange={(v) => {
-                      setSelectedLeaseId(v);
-                      const lease = leases.find(l => l.id === v);
-                      if (lease) {
-                        const rentStr = String(lease.monthlyRent || 6500);
-                        const leaseStart = lease.startDate || new Date().toISOString().split("T")[0];
-                        const leaseEnd = lease.endDate || leaseStart;
-                        const contractTenure = `${leaseStart} to ${leaseEnd}`;
-                        setGenPrefix(`PDC-${lease.unit?.replace(/\s+/g, '') || 'Flat'}-`);
-                        setGenStartDate(leaseStart);
-                        setAddPdcRows(prev => prev.map(r => ({
-                          ...r,
-                          amount: rentStr,
-                          chequeDate: r.chequeDate || leaseStart,
-                          period: contractTenure,
-                        })));
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs bg-background">
-                      <SelectValue placeholder="Select tenant lease agreement" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {leases.map((l) => (
-                        <SelectItem key={l.id} value={l.id}>
-                          {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-[11px] font-semibold">Lease Start Date</Label>
+                  <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.startDate || ""} readOnly />
                 </div>
-
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold">Lease Start Date</Label>
-                    <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.startDate || ""} readOnly />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold">Lease End Date</Label>
-                    <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.endDate || ""} readOnly />
-                  </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">Lease End Date</Label>
+                  <Input className="h-8 text-xs bg-background" type="date" value={leases.find(l => l.id === selectedLeaseId)?.endDate || ""} readOnly />
                 </div>
-
-                <div className="mt-3 space-y-1 border-t pt-3">
+                <div className="space-y-1">
                   <Label className="text-[11px] font-semibold">All PDCs File (Optional)</Label>
                   <Input className="h-8 text-xs bg-background" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls" onChange={event => setBatchPdcFile(event.target.files?.[0] || null)} />
-                  {batchPdcFile && <p className="text-[10px] text-muted-foreground">Attached: {batchPdcFile.name}</p>}
+                  {batchPdcFile && <p className="text-[10px] text-muted-foreground truncate">Attached: {batchPdcFile.name}</p>}
                 </div>
+              </div>
+            </div>
 
-                {/* Quick Auto-Schedule Generator */}
-                <div className="border rounded-md p-2 bg-background/80 space-y-1.5">
-                  <div className="flex justify-between items-center text-[10px] font-bold text-muted-foreground uppercase">
-                    <span>Quick Generator</span>
-                    <span className="font-normal lowercase">auto-fill schedule</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Quick Auto-Schedule Generator (Full Width Dedicated Card) */}
+            {collectionType === "PDC" && (
+              <div className="border rounded-lg p-3 bg-muted/20 space-y-2">
+                <div className="flex justify-between items-center text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+                  <span className="flex items-center gap-1.5 text-foreground font-semibold">
+                    ⚡ Quick Generator
+                  </span>
+                  <span className="font-normal lowercase text-[10px]">auto-fills cheque numbers & monthly maturity dates</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-center">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Cheque Count</Label>
                     <Input
-                      className="h-7 text-[11px] w-14 font-mono text-center"
+                      className="h-8 text-xs font-mono text-center bg-background"
                       placeholder="Qty"
                       title="Number of cheques"
                       value={genCount}
                       onChange={e => setGenCount(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Cheque Prefix</Label>
                     <Input
-                      className="h-7 text-[11px] w-28 font-mono"
+                      className="h-8 text-xs font-mono bg-background"
                       placeholder="Prefix e.g. PDC-"
                       title="Cheque Number Prefix"
                       value={genPrefix}
                       onChange={e => setGenPrefix(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">First Maturity Date</Label>
                     <Input
                       type="date"
-                      className="h-7 text-[11px] w-32"
+                      className="h-8 text-xs bg-background"
                       title="Start Maturity Date"
                       value={genStartDate}
                       onChange={e => setGenStartDate(e.target.value)}
                     />
+                  </div>
+                  <div className="pt-4">
                     <Button
                       type="button"
                       size="sm"
-                      variant="secondary"
-                      className="h-7 text-[11px] px-2 font-semibold bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30"
+                      className="h-8 w-full text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
                       onClick={handleGeneratePdcSchedule}
                     >
-                      ⚡ Auto-Generate
+                      ⚡ Auto-Generate Schedule
                     </Button>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {collectionType === "Direct Bank Transfer" && (
               <div className="rounded-lg border border-cyan-500/30 bg-cyan-50/40 dark:bg-cyan-950/20 p-3.5 space-y-3">
@@ -2614,27 +2624,27 @@ export function PdcManagement() {
                 </div>
               </div>
 
-              <div className="border rounded-lg overflow-hidden bg-background">
-                <table className="w-full text-xs">
+              <div className="border rounded-lg overflow-x-auto bg-background">
+                <table className="w-full min-w-[1020px] text-xs">
                   <thead className="bg-muted/60 text-muted-foreground font-semibold border-b">
                     <tr>
-                      <th className="py-2 px-2.5 text-center w-10">#</th>
-                      <th className="py-2 px-2.5 text-left w-36">Cheque No. <span className="text-destructive">*</span></th>
-                      <th className="py-2 px-2.5 text-left">Bank</th>
-                      <th className="py-2 px-2.5 text-left w-32">Maturity Date <span className="text-destructive">*</span></th>
-                      <th className="py-2 px-2.5 text-left">Period</th>
-                      <th className="py-2 px-2.5 text-right w-28">Amount (QAR) <span className="text-destructive">*</span></th>
-                      <th className="py-2 px-2.5 text-left w-36">PDC File (Optional)</th>
-                      <th className="py-2 px-1 text-center w-10"></th>
+                      <th className="py-2.5 px-2 text-center w-10">#</th>
+                      <th className="py-2.5 px-2 text-left w-36">Cheque No. <span className="text-destructive">*</span></th>
+                      <th className="py-2.5 px-2 text-left w-40">Bank</th>
+                      <th className="py-2.5 px-2 text-left w-48">Maturity Date <span className="text-destructive">*</span></th>
+                      <th className="py-2.5 px-2 text-left min-w-[220px]">Period (Tenure / Instalment)</th>
+                      <th className="py-2.5 px-2 text-right w-28">Amount (QAR) <span className="text-destructive">*</span></th>
+                      <th className="py-2.5 px-2 text-left w-44">PDC File (Optional)</th>
+                      <th className="py-2.5 px-1 text-center w-10"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {addPdcRows.map((row, idx) => (
                       <tr key={row.id || idx} className="hover:bg-muted/20">
-                        <td className="py-1.5 px-2 text-center font-mono text-muted-foreground font-bold">{idx + 1}</td>
-                        <td className="py-1.5 px-2">
+                        <td className="py-2 px-2 text-center font-mono text-muted-foreground font-bold">{idx + 1}</td>
+                        <td className="py-2 px-2">
                           <Input
-                            className="h-7 text-xs font-mono font-bold"
+                            className="h-8 text-xs font-mono font-bold w-full"
                             placeholder="e.g. QNB-001"
                             value={row.chequeNo}
                             onChange={(e) => {
@@ -2643,9 +2653,9 @@ export function PdcManagement() {
                             }}
                           />
                         </td>
-                        <td className="py-1.5 px-2">
+                        <td className="py-2 px-2">
                           <Input
-                            className="h-7 text-xs"
+                            className="h-8 text-xs w-full"
                             placeholder="Bank Name"
                             value={row.bank}
                             onChange={(e) => {
@@ -2654,21 +2664,46 @@ export function PdcManagement() {
                             }}
                           />
                         </td>
-                        <td className="py-1.5 px-2">
-                          <Input
-                            type="date"
-                            className="h-7 text-xs font-mono"
-                            value={row.chequeDate}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, chequeDate: val } : r));
-                            }}
-                          />
+                        <td className="py-2 px-2">
+                          <div className="relative flex items-center">
+                            <Input
+                              id={`maturity-date-input-${idx}`}
+                              type="date"
+                              className="h-8 text-xs font-mono w-full pr-8 bg-background cursor-pointer"
+                              value={row.chequeDate}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, chequeDate: val } : r));
+                              }}
+                            />
+                            <button
+                              type="button"
+                              title="Click to open calendar picker"
+                              aria-label="Open Calendar Picker"
+                              className="absolute right-2 text-primary hover:text-primary/80 transition-colors p-0.5 rounded cursor-pointer"
+                              onClick={() => {
+                                const el = document.getElementById(`maturity-date-input-${idx}`) as HTMLInputElement | null;
+                                if (el) {
+                                  try {
+                                    if (typeof el.showPicker === 'function') {
+                                      el.showPicker();
+                                    } else {
+                                      el.focus();
+                                    }
+                                  } catch {
+                                    el.focus();
+                                  }
+                                }
+                              }}
+                            >
+                              <Calendar className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </td>
-                        <td className="py-1.5 px-2">
+                        <td className="py-2 px-2">
                           <Input
-                            className="h-7 text-xs"
-                            placeholder="e.g. 2026-09-02 to 2026-10-01"
+                            className="h-8 text-xs w-full bg-background"
+                            placeholder="e.g. 2026-10-26 to 2027-10-25"
                             value={row.period}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -2676,11 +2711,11 @@ export function PdcManagement() {
                             }}
                           />
                         </td>
-                        <td className="py-1.5 px-2">
+                        <td className="py-2 px-2">
                           <Input
                             type="number"
                             step="0.01"
-                            className="h-7 text-xs font-mono font-bold text-right"
+                            className="h-8 text-xs font-mono font-bold text-right w-full"
                             placeholder="6500"
                             value={row.amount}
                             onChange={(e) => {
@@ -2689,28 +2724,28 @@ export function PdcManagement() {
                             }}
                           />
                         </td>
-                        <td className="py-1.5 px-2">
+                        <td className="py-2 px-2">
                           <Input
                             type="file"
                             accept=".pdf,.jpg,.jpeg,.png"
-                            className="h-7 text-[10px] w-36"
+                            className="h-8 text-[11px] w-full"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               setAddPdcRows(rows => rows.map((r, i) => i === idx ? { ...r, file } : r));
                             }}
                           />
-                          {row.file && <span className="block max-w-36 truncate text-[9px] text-muted-foreground">{row.file.name}</span>}
+                          {row.file && <span className="block truncate text-[9px] text-muted-foreground mt-0.5">{row.file.name}</span>}
                         </td>
-                        <td className="py-1.5 px-1 text-center">
+                        <td className="py-2 px-1 text-center">
                           {addPdcRows.length > 1 && (
                             <Button
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => setAddPdcRows(rows => rows.filter((_, i) => i !== idx))}
                             >
-                              <XCircle className="h-3.5 w-3.5" />
+                              <XCircle className="h-4 w-4" />
                             </Button>
                           )}
                         </td>
@@ -2733,7 +2768,7 @@ export function PdcManagement() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2 border-t pt-2">
+          <DialogFooter className="px-6 py-3 border-t shrink-0 bg-muted/20 gap-2">
             <Button variant="outline" onClick={() => setAddPdcOpen(false)} disabled={addPdcLoading}>
               Cancel
             </Button>

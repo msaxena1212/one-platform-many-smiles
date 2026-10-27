@@ -3533,34 +3533,142 @@ const COMMON_GL_ACCOUNTS = [
 ];
 
 function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment Voucher" | "Receipt Voucher" }) {
-  const { vouchers: sharedVouchers, setVouchers: setSharedVouchers } = useAppData();
+  const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases, units } = useAppData();
+  const { addVoucher: addFinanceStoreVoucher } = useFinanceStore();
   const [open, setOpen] = useState(false);
+
+  // Extract distinct properties
+  const propertiesList = useMemo(() => {
+    const set = new Set<string>();
+    leases.forEach(l => { if (l.property) set.add(l.property); });
+    units.forEach(u => { if (u.property) set.add(u.property); });
+    if (set.size === 0) {
+      set.add("Old Salata - Residence No:23");
+      set.add("MANSOURA - BLDG06");
+      set.add("Neeman's New Building");
+    }
+    return Array.from(set).sort();
+  }, [leases, units]);
 
   const [form, setForm] = useState({
     voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
     date: new Date().toISOString().split("T")[0],
     name: type === "Payment Voucher" ? "Payment to Contractor" : type === "Receipt Voucher" ? "Direct Rent Collection" : "General Adjustment",
+    property: "All / Corporate",
     debit: type === "Payment Voucher" ? "22100001 - Trade Payables - Vendors (Suppliers/Vendors)" : type === "Receipt Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : "51004001 - Repair and Maintenance Cost",
     credit: type === "Payment Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : type === "Receipt Voucher" ? "41100 - Rental Revenue" : "12100 - Cash In Hand (Office Vault)",
     amount: "5000",
     method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Cash" : "Batch",
   });
 
+  // Multi-line state for Journal Voucher
+  type JournalLine = {
+    id: string;
+    type: "DR" | "CR";
+    account: string;
+    amount: string;
+    description: string;
+  };
+
+  const [journalLines, setJournalLines] = useState<JournalLine[]>([
+    { id: "1", type: "DR", account: "51004001 - Repair and Maintenance Cost", amount: "5000", description: "Repair expenses" },
+    { id: "2", type: "CR", account: "12100 - Cash In Hand (Office Vault)", amount: "5000", description: "Cash disbursement" },
+  ]);
+
+  const totalDr = useMemo(() => {
+    return journalLines.filter(l => l.type === "DR").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  }, [journalLines]);
+
+  const totalCr = useMemo(() => {
+    return journalLines.filter(l => l.type === "CR").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  }, [journalLines]);
+
+  const isBalanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0;
+
   const filtered = (sharedVouchers || []).filter(v => {
-    if (type.includes("Journal")) return v.method === "Batch" || v.name.includes("Income") || v.name.includes("Doc") || v.name.includes("Journal");
+    if (type.includes("Journal")) return v.method === "Batch" || v.name.includes("Income") || v.name.includes("Doc") || v.name.includes("Journal") || (v as any).voucher_type === "Journal Voucher";
     if (type.includes("Payment")) return v.name.includes("Payment") || v.name.includes("Refund") || v.debit.includes("Payable");
     if (type.includes("Receipt")) return v.name.includes("Receipt") || v.method === "PDC" || v.method === "Cash" || v.credit.includes("Income");
     return true;
   });
 
   async function handleAdd() {
+    const accountCode = (label: string) => label.trim().split(/\s+/)[0];
+
+    if (type === "Journal Voucher") {
+      if (!isBalanced) {
+        toast.error(`Journal voucher is unbalanced! Total Debit (QAR ${totalDr.toLocaleString()}) must equal Total Credit (QAR ${totalCr.toLocaleString()}).`);
+        return;
+      }
+
+      try {
+        const postingLines = journalLines.map(l => ({
+          account_code: accountCode(l.account),
+          debit: l.type === "DR" ? parseFloat(l.amount) || 0 : 0,
+          credit: l.type === "CR" ? parseFloat(l.amount) || 0 : 0,
+          description: l.description || form.name,
+        }));
+
+        const result = await postVoucher({
+          voucher_date: form.date,
+          voucher_type: "Journal Voucher",
+          description: form.name,
+          reference_no: form.voucher_no,
+          source_type: "FINANCE_VOUCHER",
+          property_id: form.property !== "All / Corporate" ? form.property : undefined,
+          lines: postingLines,
+        });
+
+        // Add to shared vouchers
+        const drSummary = journalLines.filter(l => l.type === "DR").map(l => `${l.account} (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+        const crSummary = journalLines.filter(l => l.type === "CR").map(l => `${l.account} (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+
+        setSharedVouchers(prev => [{
+          id: result.voucher_id,
+          leaseId: "",
+          name: form.name,
+          receiptNo: result.receipt_number || form.voucher_no,
+          method: form.method,
+          period: form.date,
+          debit: drSummary,
+          credit: crSummary,
+          amount: totalDr,
+          status: "posted" as const,
+          property_name: form.property !== "All / Corporate" ? form.property : undefined,
+        }, ...prev]);
+
+        // Mirror to Central Finance Store so General Ledger reflects it immediately
+        const firstDr = journalLines.find(l => l.type === "DR");
+        const firstCr = journalLines.find(l => l.type === "CR");
+        addFinanceStoreVoucher({
+          voucher_no: form.voucher_no,
+          voucher_type: "Journal Voucher",
+          date: form.date,
+          name: `${form.name}${form.property !== "All / Corporate" ? ` — ${form.property}` : ""}`,
+          debit: firstDr?.account || "General Ledger",
+          debit_code: firstDr ? accountCode(firstDr.account) : "51004001",
+          credit: firstCr?.account || "General Ledger",
+          credit_code: firstCr ? accountCode(firstCr.account) : "12100001",
+          amount: totalDr,
+          method: "Journal Voucher",
+          property_name: form.property !== "All / Corporate" ? form.property : "Corporate / General",
+        });
+
+        toast.success(`Journal Voucher ${result.voucher_number || form.voucher_no} posted successfully!`);
+        setOpen(false);
+      } catch (error: any) {
+        console.error(error);
+        toast.error(error?.message || "Failed to post Journal Voucher.");
+      }
+      return;
+    }
+
+    // Default for Payment & Receipt Vouchers
     const amt = parseFloat(form.amount) || 0;
     if (amt <= 0) {
       toast.error("Amount must be greater than zero.");
       return;
     }
-
-    const accountCode = (label: string) => label.trim().split(/\s+/)[0];
 
     try {
       const result = await postVoucher({
@@ -3569,6 +3677,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         description: form.name,
         reference_no: form.voucher_no,
         source_type: "FINANCE_VOUCHER",
+        property_id: form.property !== "All / Corporate" ? form.property : undefined,
         lines: [
           { account_code: accountCode(form.debit), debit: amt, credit: 0, description: form.debit },
           { account_code: accountCode(form.credit), debit: 0, credit: amt, description: form.credit },
@@ -3586,7 +3695,22 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         credit: form.credit,
         amount: amt,
         status: "posted" as const,
+        property_name: form.property !== "All / Corporate" ? form.property : undefined,
       }, ...prev]);
+
+      addFinanceStoreVoucher({
+        voucher_no: form.voucher_no,
+        voucher_type: type,
+        date: form.date,
+        name: `${form.name}${form.property !== "All / Corporate" ? ` — ${form.property}` : ""}`,
+        debit: form.debit,
+        debit_code: accountCode(form.debit),
+        credit: form.credit,
+        credit_code: accountCode(form.credit),
+        amount: amt,
+        method: form.method,
+        property_name: form.property !== "All / Corporate" ? form.property : "Corporate / General",
+      });
 
       toast.success(`${type} ${result.voucher_number} posted. Receipt ${result.receipt_number} generated.`);
       setOpen(false);
@@ -3605,7 +3729,12 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline">{filtered.length} Vouchers</Badge>
-          <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Create {type}</Button>
+          <Button size="sm" onClick={() => {
+            setForm(f => ({ ...f, voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}` }));
+            setOpen(true);
+          }} className="gap-2">
+            <Plus className="h-4 w-4" /> Create {type}
+          </Button>
         </div>
       </div>
 
@@ -3616,6 +3745,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">Voucher #</TableHead>
               <TableHead className="font-bold">Name & Description</TableHead>
+              <TableHead className="font-bold">Property</TableHead>
               <TableHead className="font-bold">Method</TableHead>
               <TableHead className="font-bold">Debit Account (GL)</TableHead>
               <TableHead className="font-bold">Credit Account (GL)</TableHead>
@@ -3635,9 +3765,10 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 })()}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{v.receiptNo || v.id}</TableCell>
                 <TableCell className="font-medium">{v.name}</TableCell>
+                <TableCell className="text-muted-foreground font-medium">{(v as any).property_name || "Corporate"}</TableCell>
                 <TableCell><Badge variant="outline" className="text-[10px]">{v.method || "System"}</Badge></TableCell>
-                <TableCell className="font-mono text-blue-600 text-xs">{v.debit}</TableCell>
-                <TableCell className="font-mono text-emerald-600 text-xs">{v.credit}</TableCell>
+                <TableCell className="font-mono text-blue-600 text-xs max-w-[200px] truncate" title={v.debit}>{v.debit}</TableCell>
+                <TableCell className="font-mono text-emerald-600 text-xs max-w-[200px] truncate" title={v.credit}>{v.credit}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{Number(v.amount).toLocaleString()}</TableCell>
                 <TableCell>
                   <Badge
@@ -3671,75 +3802,307 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Create {type}</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Voucher #</Label><Input value={form.voucher_no} onChange={e => setForm({ ...form, voucher_no: e.target.value })} /></div>
-            </div>
-            <div><Label>Description / Narration</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
+        <DialogContent className={type === "Journal Voucher" ? "sm:max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto" : "max-w-md"}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <FileText className="h-5 w-5 text-primary" />
+              <span>Create {type}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {type === "Journal Voucher"
+                ? "Add multi-line debit and credit entries with individual line descriptions and property tagging."
+                : `Enter voucher details and post double-entry record.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1 text-xs">
+            {/* Top Row: Date, Voucher #, Property */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <Label>Debit GL Account</Label>
-                <Select value={form.debit} onValueChange={v => setForm({ ...form, debit: v })}>
-                  <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="text-[11px] font-semibold">Entry Date *</Label>
+                <Input type="date" className="h-8 text-xs bg-background" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
               </div>
               <div>
-                <Label>Credit GL Account</Label>
-                <Select value={form.credit} onValueChange={v => setForm({ ...form, credit: v })}>
-                  <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="text-[11px] font-semibold">Voucher # *</Label>
+                <Input className="h-8 text-xs font-mono font-bold bg-background" value={form.voucher_no} onChange={e => setForm({ ...form, voucher_no: e.target.value })} />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
               <div>
-                <Label>Payment Method</Label>
-                <Select value={form.method} onValueChange={v => setForm({ ...form, method: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Label className="text-[11px] font-semibold flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5 text-primary" /> Related Property
+                </Label>
+                <Select value={form.property} onValueChange={v => setForm({ ...form, property: v })}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Property" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="Cheque">Cheque</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="PDC">PDC</SelectItem>
+                    <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
+                    {propertiesList.map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* Live GL / COA Impact Preview */}
-            {parseFloat(form.amount) > 0 && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-semibold">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Ledgers / Accounts Updated by this {type}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="bg-background p-2 rounded border border-emerald-200">
-                    <span className="text-emerald-700 dark:text-emerald-400 font-bold block">Debit (DR):</span>
-                    <span>{form.debit}</span>
-                    <span className="block font-bold text-emerald-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
+            {/* Description */}
+            <div>
+              <Label className="text-[11px] font-semibold">Journal Description / Narration *</Label>
+              <Input
+                className="h-8 text-xs bg-background"
+                placeholder="e.g. End of month adjustment, reclassification, depreciation"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+
+            {/* ── MULTI-LINE JOURNAL ENTRY SECTION (IF TYPE === "Journal Voucher") ── */}
+            {type === "Journal Voucher" ? (
+              <div className="space-y-2.5 border rounded-lg p-3 bg-muted/20">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-xs uppercase tracking-wide text-foreground">
+                    Journal Lines (Multi Debit / Credit)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 border-blue-500/40 text-blue-600 hover:bg-blue-50"
+                      onClick={() => setJournalLines(lines => [
+                        ...lines,
+                        { id: String(Date.now()), type: "DR", account: COMMON_GL_ACCOUNTS[0].name, amount: "0", description: form.name }
+                      ])}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Debit (Dr) Line
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 border-emerald-500/40 text-emerald-600 hover:bg-emerald-50"
+                      onClick={() => setJournalLines(lines => [
+                        ...lines,
+                        { id: String(Date.now()), type: "CR", account: COMMON_GL_ACCOUNTS[1].name, amount: "0", description: form.name }
+                      ])}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Credit (Cr) Line
+                    </Button>
                   </div>
-                  <div className="bg-background p-2 rounded border border-rose-200">
-                    <span className="text-rose-600 dark:text-rose-400 font-bold block">Credit (CR):</span>
-                    <span>{form.credit}</span>
-                    <span className="block font-bold text-rose-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
-                  </div>
                 </div>
+
+                <div className="border rounded-lg overflow-x-auto bg-background">
+                  <table className="w-full min-w-[760px] text-xs">
+                    <thead className="bg-muted/60 text-muted-foreground font-semibold border-b">
+                      <tr>
+                        <th className="py-2.5 px-2.5 text-center w-20 whitespace-nowrap">Dr / Cr</th>
+                        <th className="py-2.5 px-2.5 text-left w-64 whitespace-nowrap">GL Account</th>
+                        <th className="py-2.5 px-2.5 text-left min-w-[220px] whitespace-nowrap">Line Description / Memo</th>
+                        <th className="py-2.5 px-2.5 text-right w-28 whitespace-nowrap">Debit (QAR)</th>
+                        <th className="py-2.5 px-2.5 text-right w-28 whitespace-nowrap">Credit (QAR)</th>
+                        <th className="py-2.5 px-1 text-center w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {journalLines.map((line, idx) => (
+                        <tr key={line.id} className="hover:bg-muted/20">
+                          <td className="py-2 px-2 text-center">
+                            <Select
+                              value={line.type}
+                              onValueChange={(val: "DR" | "CR") => {
+                                setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, type: val } : l));
+                              }}
+                            >
+                              <SelectTrigger className={`h-8 text-xs font-bold w-full ${line.type === "DR" ? "text-blue-600 border-blue-300 bg-blue-50/50" : "text-emerald-600 border-emerald-300 bg-emerald-50/50"}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="DR" className="text-blue-600 font-bold">DR</SelectItem>
+                                <SelectItem value="CR" className="text-emerald-600 font-bold">CR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="py-2 px-2">
+                            <Select
+                              value={line.account}
+                              onValueChange={(val) => {
+                                setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, account: val } : l));
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs font-mono w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {COMMON_GL_ACCOUNTS.map(a => (
+                                  <SelectItem key={a.code} value={a.name} className="text-xs font-mono">
+                                    {a.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="py-2 px-2">
+                            <Input
+                              className="h-8 text-xs w-full"
+                              placeholder="Line description / reason"
+                              value={line.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, description: val } : l));
+                              }}
+                            />
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            {line.type === "DR" ? (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="h-8 text-xs font-mono font-bold text-right text-blue-700 bg-blue-50/30 border-blue-200 w-full"
+                                value={line.amount}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, amount: val } : l));
+                                }}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground font-mono text-center block">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            {line.type === "CR" ? (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                className="h-8 text-xs font-mono font-bold text-right text-emerald-700 bg-emerald-50/30 border-emerald-200 w-full"
+                                value={line.amount}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, amount: val } : l));
+                                }}
+                              />
+                            ) : (
+                              <span className="text-muted-foreground font-mono text-center block">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-1 text-center">
+                            {journalLines.length > 2 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                onClick={() => setJournalLines(lines => lines.filter((_, i) => i !== idx))}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/40 font-bold border-t">
+                      <tr>
+                        <td colSpan={3} className="py-2.5 px-3 text-right uppercase text-[11px]">
+                          Totals &amp; Trial Balance:
+                        </td>
+                        <td className="py-2.5 px-2 text-right font-mono text-blue-700 text-xs">
+                          QR {totalDr.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-2.5 px-2 text-right font-mono text-emerald-700 text-xs">
+                          QR {totalCr.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="text-center py-2.5">
+                          {isBalanced ? (
+                            <span className="text-emerald-600 font-bold text-sm" title="Balanced">✓</span>
+                          ) : (
+                            <span className="text-destructive font-bold text-sm" title="Out of balance">✗</span>
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Balance validation alert */}
+                {!isBalanced && (
+                  <div className="rounded p-2 bg-destructive/10 border border-destructive/30 text-destructive text-[11px] flex justify-between items-center">
+                    <span>⚠️ Voucher out of balance! Difference: QR {Math.abs(totalDr - totalCr).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="font-semibold">Debits must equal Credits</span>
+                  </div>
+                )}
               </div>
+            ) : (
+              /* Single Debit & Credit for Payment / Receipt Voucher */
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-[11px] font-semibold">Debit GL Account</Label>
+                    <Select value={form.debit} onValueChange={v => setForm({ ...form, debit: v })}>
+                      <SelectTrigger className="h-8 text-xs font-mono bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px] font-semibold">Credit GL Account</Label>
+                    <Select value={form.credit} onValueChange={v => setForm({ ...form, credit: v })}>
+                      <SelectTrigger className="h-8 text-xs font-mono bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-[11px] font-semibold">Amount (QAR)</Label>
+                    <Input type="number" className="h-8 text-xs font-mono font-bold bg-background" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] font-semibold">Payment Method</Label>
+                    <Select value={form.method} onValueChange={v => setForm({ ...form, method: v })}>
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Cheque">Cheque</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="PDC">PDC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Live GL / COA Impact Preview */}
+                {parseFloat(form.amount) > 0 && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-semibold">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Ledgers / Accounts Updated by this {type}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                      <div className="bg-background p-2 rounded border border-emerald-200">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold block">Debit (DR):</span>
+                        <span>{form.debit}</span>
+                        <span className="block font-bold text-emerald-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
+                      </div>
+                      <div className="bg-background p-2 rounded border border-rose-200">
+                        <span className="text-rose-600 dark:text-rose-400 font-bold block">Credit (CR):</span>
+                        <span>{form.credit}</span>
+                        <span className="block font-bold text-rose-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Post {type}</Button>
+            <Button
+              className="bg-primary text-primary-foreground"
+              disabled={type === "Journal Voucher" && !isBalanced}
+              onClick={handleAdd}
+            >
+              Post {type}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3748,9 +4111,24 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
 }
 
 function ReceivableInvoiceSubModule() {
-  const { leases } = useAppData();
+  const { leases, units } = useAppData();
+  const { addReceivableInvoice, receivableInvoices: storeReceivables } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<{ invoice_no: string; tenant: string; property: string; unit: string; date: string; due_date: string; stream: string; amount: number; status: string }[]>([]);
+  const [selectedLeaseId, setSelectedLeaseId] = useState<string>("");
+
+  // Unique properties list
+  const propertiesList = useMemo(() => {
+    const set = new Set<string>();
+    leases.forEach(l => { if (l.property) set.add(l.property); });
+    units.forEach(u => { if (u.property) set.add(u.property); });
+    if (set.size === 0) {
+      set.add("Old Salata - Residence No:23");
+      set.add("MANSOURA - BLDG06");
+      set.add("Neeman's New Building");
+    }
+    return Array.from(set).sort();
+  }, [leases, units]);
 
   const [form, setForm] = useState({
     invoice_no: `INV-AR-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -3758,17 +4136,65 @@ function ReceivableInvoiceSubModule() {
     property: "Old Salata - Residence No:23",
     unit: "AAA - Flat16",
     date: new Date().toISOString().split("T")[0],
-    due_date: "2026-09-05",
+    due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     stream: "41100 - Rental Revenue",
     amount: "5600",
   });
 
+  // Filtered units based on selected property
+  const availableUnits = useMemo(() => {
+    return units.filter(u => !form.property || u.property === form.property);
+  }, [units, form.property]);
+
+  // Quick select a lease
+  function handleSelectLease(leaseId: string) {
+    setSelectedLeaseId(leaseId);
+    const l = leases.find(item => item.id === leaseId);
+    if (l) {
+      setForm(prev => ({
+        ...prev,
+        tenant: l.tenantName || prev.tenant,
+        property: l.property || prev.property,
+        unit: l.unit || prev.unit,
+        amount: String(l.monthlyRent || prev.amount),
+      }));
+    }
+  }
+
   function handleAdd() {
-    setData(prev => [
-      { ...form, amount: parseFloat(form.amount) || 0, status: "Pending" },
-      ...prev
-    ]);
-    toast.success(`AR Invoice ${form.invoice_no} staged in the local view only. Use the Receivable Invoice workflow to post it to the ledger.`);
+    const amt = parseFloat(form.amount) || 0;
+    if (amt <= 0) {
+      toast.error("Invoice amount must be greater than zero.");
+      return;
+    }
+    if (!form.tenant) {
+      toast.error("Please specify tenant name.");
+      return;
+    }
+
+    const newInv = {
+      ...form,
+      amount: amt,
+      status: "Pending",
+    };
+
+    setData(prev => [newInv, ...prev]);
+
+    // Authoritative FinanceStore sync
+    addReceivableInvoice({
+      invoice_no: form.invoice_no,
+      tenant: form.tenant,
+      property: form.property,
+      unit: form.unit,
+      date: form.date,
+      due_date: form.due_date,
+      account: form.stream.replace(/^\d+\s*[-–—]\s*/, ""),
+      account_code: form.stream.split(/\s+/)[0] || "41100",
+      amount: amt,
+      vat: 0,
+    });
+
+    toast.success(`AR Invoice ${form.invoice_no} created and posted to Tenant Receivables.`);
     setOpen(false);
   }
 
@@ -3779,7 +4205,13 @@ function ReceivableInvoiceSubModule() {
           <h3 className="text-sm font-semibold">Accounts Receivable (AR) Invoices</h3>
           <p className="text-xs text-muted-foreground">Invoices generated for rental dues, utility recoveries, and service charges.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Create AR Invoice</Button>
+        <Button size="sm" onClick={() => {
+          setSelectedLeaseId("");
+          setForm(f => ({ ...f, invoice_no: `INV-AR-${Math.floor(1000 + Math.random() * 9000)}` }));
+          setOpen(true);
+        }} className="gap-2">
+          <Plus className="h-4 w-4" /> Create AR Invoice
+        </Button>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
@@ -3789,7 +4221,7 @@ function ReceivableInvoiceSubModule() {
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">Invoice #</TableHead>
               <TableHead className="font-bold">Tenant / Customer</TableHead>
-              <TableHead className="font-bold">Property & Unit</TableHead>
+              <TableHead className="font-bold">Property &amp; Unit</TableHead>
               <TableHead className="font-bold">Revenue GL Account</TableHead>
               <TableHead className="font-bold">Issue Date</TableHead>
               <TableHead className="font-bold">Due Date</TableHead>
@@ -3820,36 +4252,155 @@ function ReceivableInvoiceSubModule() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Create Accounts Receivable Invoice</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
+        <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <span>Create Accounts Receivable Invoice</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Select or enter tenant, property, unit, and income account to bill tenant receivables.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-1 text-xs">
+            {/* Quick Lease Autofill Option */}
+            {leases.length > 0 && (
+              <div className="p-2.5 rounded-lg border bg-muted/40 space-y-1">
+                <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                  ⚡ Quick Auto-Fill from Active Lease
+                </Label>
+                <Select value={selectedLeaseId} onValueChange={handleSelectLease}>
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Choose active lease to auto-populate..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {leases.map(l => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Entry Date & Invoice # */}
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Entry Date *</Label>
+                <Input type="date" className="h-8 text-xs bg-background" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Invoice # *</Label>
+                <Input className="h-8 text-xs font-mono font-bold bg-background" value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} />
+              </div>
             </div>
+
+            {/* Tenant Name & Amount */}
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Tenant Name</Label><Input value={form.tenant} onChange={e => setForm({ ...form, tenant: e.target.value })} /></div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <Label className="text-[11px] font-semibold">Tenant Name *</Label>
+                  {selectedLeaseId && (
+                    <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                      Locked to Lease
+                    </span>
+                  )}
+                </div>
+                <Input
+                  className={`h-8 text-xs ${selectedLeaseId ? "bg-muted/70 text-foreground cursor-not-allowed font-medium" : "bg-background"}`}
+                  placeholder="Enter or select tenant"
+                  value={form.tenant}
+                  readOnly={Boolean(selectedLeaseId)}
+                  onChange={e => {
+                    if (!selectedLeaseId) {
+                      setForm({ ...form, tenant: e.target.value });
+                    }
+                  }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Amount (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-bold bg-background"
+                  value={form.amount}
+                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                />
+              </div>
             </div>
+
+            {/* Property & Unit Selectors */}
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Property</Label><Input value={form.property} onChange={e => setForm({ ...form, property: e.target.value })} /></div>
-              <div><Label>Unit</Label><Input value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5 text-primary" /> Property *
+                </Label>
+                <Select
+                  value={form.property}
+                  onValueChange={v => setForm({ ...form, property: v, unit: availableUnits.find(u => u.property === v)?.unit || form.unit })}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Select Property" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {propertiesList.map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Unit *</Label>
+                {availableUnits.length > 0 ? (
+                  <Select value={form.unit} onValueChange={v => setForm({ ...form, unit: v })}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Select Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUnits.map(u => (
+                        <SelectItem key={u.id || u.unit} value={u.unit}>
+                          {u.unit} {u.current_tenant ? `(${u.current_tenant})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className="h-8 text-xs bg-background"
+                    placeholder="Unit reference e.g. Flat16"
+                    value={form.unit}
+                    onChange={e => setForm({ ...form, unit: e.target.value })}
+                  />
+                )}
+              </div>
             </div>
+
+            {/* Issue Date & Due Date */}
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Issue Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Issue Date</Label>
+                <Input type="date" className="h-8 text-xs bg-background" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Due Date</Label>
+                <Input type="date" className="h-8 text-xs bg-background" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+              </div>
             </div>
-            <div>
-              <Label>Target Revenue GL Account</Label>
+
+            {/* Target Revenue Account */}
+            <div className="space-y-1">
+              <Label className="text-[11px] font-semibold">Target Revenue GL Account</Label>
               <Select value={form.stream} onValueChange={v => setForm({ ...form, stream: v })}>
-                <SelectTrigger className="text-xs font-mono"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs font-mono bg-background"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="41100 - Rental Revenue">41100 - Rental Revenue (Residential/Commercial)</SelectItem>
                   <SelectItem value="41200 - Parking Fee Revenue">41200 - Parking Space / Slot Fee</SelectItem>
-                  <SelectItem value="41300 - Utility Recovery Revenue">41300 - Utility & Electricity Recovery</SelectItem>
+                  <SelectItem value="41300 - Utility Recovery Revenue">41300 - Utility &amp; Electricity Recovery</SelectItem>
                   <SelectItem value="41400 - Common Area Maintenance (CAM)">41400 - Common Area Maintenance (CAM)</SelectItem>
-                  <SelectItem value="41500 - Management & Admin Fee">41500 - Management & Admin Fee</SelectItem>
-                  <SelectItem value="41600 - Late Fee & Penalties">41600 - Late Fee & Penalties</SelectItem>
+                  <SelectItem value="41500 - Management &amp; Admin Fee">41500 - Management &amp; Admin Fee</SelectItem>
+                  <SelectItem value="41600 - Late Fee &amp; Penalties">41600 - Late Fee &amp; Penalties</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3878,7 +4429,9 @@ function ReceivableInvoiceSubModule() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Generate Invoice</Button>
+            <Button className="bg-primary text-primary-foreground" onClick={handleAdd}>
+              Generate Invoice
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
