@@ -10,6 +10,12 @@ export default defineConfig({
       host: "0.0.0.0",
       port: 8080,
       allowedHosts: ["property-management.zynotechnologies.com"],
+      hmr: {
+        timeout: 120000,
+      },
+    },
+    ssr: {
+      external: ["pg", "pg-hstore"],
     },
   },
 });
