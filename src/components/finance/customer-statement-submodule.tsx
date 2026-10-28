@@ -17,6 +17,8 @@ import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-s
 import { InvoiceViewDialog } from "./invoice-view-dialog";
 import { BulkInvoiceDialog } from "./bulk-invoice-dialog";
 import { toast } from "sonner";
+import { getDocumentBranding } from "@/lib/document-branding";
+import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 
 export interface StatementLedgerRow {
   id: string;
@@ -46,6 +48,8 @@ export function CustomerStatementSubModule({
 }: CustomerStatementProps) {
   const { customers, leases, pdcs, units } = useAppData();
   const { receivableInvoices, vouchers } = useFinanceStore();
+  const branding = useMemo(() => getDocumentBranding(), []);
+  const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
 
   // Search & Selected Customer
   const [searchTerm, setSearchTerm] = useState("");
@@ -381,7 +385,7 @@ export function CustomerStatementSubModule({
     if (!currentCustomer) return;
 
     const rows = [
-      ["STATEMENT OF ACCOUNT - ZYNO PROPERTY MANAGEMENT"],
+      ["STATEMENT OF ACCOUNT - Al Ameen Real Estate"],
       [`Customer: ${currentCustomer.name} (${currentCustomer.customerId || currentCustomer.id})`],
       [`Period: ${fromDate} to ${toDate}`],
       [`Generated: ${new Date().toLocaleString()}`],
@@ -433,9 +437,32 @@ export function CustomerStatementSubModule({
     <div className="space-y-5">
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+          html, body {
+            overflow: visible !important;
+            height: auto !important;
+            background: #ffffff !important;
+          }
           body * { visibility: hidden; }
-          #printable-soa, #printable-soa * { visibility: visible; }
-          #printable-soa { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+          #printable-soa, #printable-soa * { 
+            visibility: visible; 
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          #printable-soa { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            padding: 0; 
+            margin: 0;
+            border: none !important;
+            box-shadow: none !important;
+            background: #ffffff !important;
+          }
           .no-print { display: none !important; }
         }
       `}} />
@@ -514,16 +541,29 @@ export function CustomerStatementSubModule({
 
       {/* ── Main Printable Container ── */}
       <div id="printable-soa" className="space-y-5 bg-card p-6 rounded-xl border shadow-sm">
+        {/* Official Header Banner as available on Receipts & Lease Contracts */}
+        <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs max-h-24 sm:max-h-28 mb-3 bg-white flex items-center justify-center">
+          <img
+            src={bannerUrl}
+            alt={branding.companyName || "Al Ameen Real Estate"}
+            className="w-full h-auto max-h-28 object-contain sm:object-cover"
+          />
+        </div>
+
         {/* Printable Official Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-5 gap-4">
           <div>
             <div className="flex items-center gap-2 font-bold text-xl text-primary tracking-tight">
               <Building2 className="h-6 w-6 text-primary" />
-              <span>ZYNO REAL ESTATE &amp; PROPERTY MANAGEMENT</span>
+              <span>{branding.companyName || "Al Ameen Real Estate"}</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Corporate Accounting &bull; Accounts Receivable Department</p>
-            <p className="text-xs text-muted-foreground">Grand Hamad Street, P.O. Box 24901, Doha - State of Qatar</p>
-            <p className="text-xs text-muted-foreground font-mono">CR No: 104829 &bull; Tax ID: 0000049281-QAT &bull; Tel: +974 4492 8800</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              <span className="font-semibold text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</span> &bull; Corporate Accounting &bull; Accounts Receivable Department
+            </p>
+            <p className="text-xs text-muted-foreground">{branding.address || "Grand Hamad Avenue, Building 42, Floor 7, P.O. Box 24901, Doha - State of Qatar"}</p>
+            <p className="text-xs text-muted-foreground font-mono">
+              CR No: {branding.crNumber || "CR-90821-QA"} &bull; Tax ID: {branding.taxNumber || "TAX-300912-QA"} &bull; Tel: {branding.phone || "+974 4492 8800"}
+            </p>
           </div>
 
           <div className="sm:text-right">
@@ -859,15 +899,15 @@ export function CustomerStatementSubModule({
             <span className="font-bold text-[10px] uppercase tracking-wider text-primary flex items-center gap-1">
               <ShieldCheck className="h-3.5 w-3.5" /> Remittance &amp; Bank Transfer Details
             </span>
-            <p className="text-muted-foreground">Bank: <strong className="text-foreground">Qatar National Bank (QNB)</strong></p>
-            <p className="text-muted-foreground">Account Name: <strong className="text-foreground">ZYNO REAL ESTATE W.L.L</strong></p>
-            <p className="text-muted-foreground font-mono">IBAN: <strong className="text-foreground">QA52 QNBA 0000 0000 1289 4012 34</strong></p>
-            <p className="text-muted-foreground font-mono">SWIFT: <strong className="text-foreground">QNBAQAQA</strong></p>
+            <p className="text-muted-foreground">Bank: <strong className="text-foreground">Commercial Bank of Qatar (CBQ) / Dukhan Bank</strong></p>
+            <p className="text-muted-foreground">Account Name: <strong className="text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</strong></p>
+            <p className="text-muted-foreground font-mono">IBAN: <strong className="text-foreground">QA52 CBQA 0000 0000 1289 4012 34</strong></p>
+            <p className="text-muted-foreground font-mono">SWIFT: <strong className="text-foreground">CBQAQAQA</strong></p>
           </div>
 
           <div className="flex flex-col justify-between sm:items-end border-t sm:border-t-0 pt-3 sm:pt-0">
             <div className="text-right">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">For ZYNO Property Management</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">For {branding.companyName || "Al Ameen Real Estate"}</p>
               <div className="h-12 flex items-center justify-end">
                 <div className="border border-dashed border-muted-foreground/40 rounded px-4 py-1.5 text-[10px] font-mono text-muted-foreground">
                   [ACCOUNTS &amp; FINANCE STAMP]

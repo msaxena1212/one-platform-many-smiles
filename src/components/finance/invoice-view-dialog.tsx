@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Printer, Download, Building2, Calendar, FileText, CheckCircle2, Clock, AlertTriangle, ShieldCheck } from "lucide-react";
 import type { ReceivableInvoice } from "@/lib/finance/finance-store";
+import { getDocumentBranding } from "@/lib/document-branding";
+import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 
 interface InvoiceViewDialogProps {
   invoice: ReceivableInvoice | null;
@@ -60,6 +62,9 @@ function numberToWords(amount: number): string {
 export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails }: InvoiceViewDialogProps) {
   if (!invoice) return null;
 
+  const branding = useMemo(() => getDocumentBranding(), []);
+  const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
+
   const isPaid = invoice.status === "Paid";
   const isOverdue = invoice.status === "Overdue";
 
@@ -95,9 +100,32 @@ export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails
       <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto p-0 border shadow-2xl rounded-xl">
         <style dangerouslySetInnerHTML={{ __html: `
           @media print {
+            @page {
+              size: A4 portrait;
+              margin: 10mm;
+            }
+            html, body {
+              overflow: visible !important;
+              height: auto !important;
+              background: #ffffff !important;
+            }
             body * { visibility: hidden; }
-            #printable-invoice, #printable-invoice * { visibility: visible; }
-            #printable-invoice { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+            #printable-invoice, #printable-invoice * { 
+              visibility: visible; 
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            #printable-invoice { 
+              position: absolute; 
+              left: 0; 
+              top: 0; 
+              width: 100%; 
+              padding: 0; 
+              margin: 0;
+              border: none !important;
+              box-shadow: none !important;
+              background: #ffffff !important;
+            }
           }
         `}} />
 
@@ -122,17 +150,32 @@ export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails
 
         {/* Printable Invoice Document */}
         <div id="printable-invoice" className="p-8 space-y-6 text-foreground bg-card">
+          {/* Official Letterhead Banner as on Receipts & Lease Contracts */}
+          <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs max-h-24 sm:max-h-28 mb-3 bg-white flex items-center justify-center">
+            <img
+              src={bannerUrl}
+              alt={branding.companyName || "Al Ameen Real Estate"}
+              className="w-full h-auto max-h-28 object-contain sm:object-cover"
+            />
+          </div>
+
           {/* Company & Document Header */}
           <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-6 gap-4">
             <div>
               <div className="flex items-center gap-2 text-primary font-bold text-xl tracking-tight">
                 <Building2 className="h-6 w-6 text-primary" />
-                <span>ZYNO PROPERTY MANAGEMENT</span>
+                <span>{branding.companyName || "Al Ameen Real Estate"}</span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Real Estate Operations &amp; Asset Management</p>
-              <p className="text-xs text-muted-foreground">P.O. Box 24901, Grand Hamad Avenue, Doha - State of Qatar</p>
-              <p className="text-xs text-muted-foreground font-mono">CR No: 104829 &bull; Tax Reg: 0000049281-QAT</p>
-              <p className="text-xs text-muted-foreground">Tel: +974 4492 8800 &bull; Email: finance@zyno.qa</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                <span className="font-semibold text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</span> &bull; Real Estate Operations &amp; Asset Management
+              </p>
+              <p className="text-xs text-muted-foreground">{branding.address || "Grand Hamad Avenue, Building 42, Floor 7, P.O. Box 24901, Doha - State of Qatar"}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                CR No: {branding.crNumber || "CR-90821-QA"} &bull; Tax Reg: {branding.taxNumber || "TAX-300912-QA"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Tel: {branding.phone || "+974 4492 8800"} &bull; Email: {branding.email || "finance@alameen.qa"}
+              </p>
             </div>
 
             <div className="sm:text-right">
@@ -241,16 +284,16 @@ export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails
               <span className="font-bold text-[10px] uppercase tracking-wider text-primary flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5" /> Official Bank Remittance Details
               </span>
-              <p className="text-muted-foreground">Bank Name: <strong className="text-foreground">Qatar National Bank (QNB)</strong></p>
-              <p className="text-muted-foreground">Account Name: <strong className="text-foreground">ZYNO REAL ESTATE W.L.L</strong></p>
-              <p className="text-muted-foreground font-mono">IBAN: <strong className="text-foreground">QA52 QNBA 0000 0000 1289 4012 34</strong></p>
-              <p className="text-muted-foreground font-mono">SWIFT Code: <strong className="text-foreground">QNBAQAQA</strong></p>
+              <p className="text-muted-foreground">Bank Name: <strong className="text-foreground">Commercial Bank of Qatar (CBQ) / Dukhan Bank</strong></p>
+              <p className="text-muted-foreground">Account Name: <strong className="text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</strong></p>
+              <p className="text-muted-foreground font-mono">IBAN: <strong className="text-foreground">QA52 CBQA 0000 0000 1289 4012 34</strong></p>
+              <p className="text-muted-foreground font-mono">SWIFT Code: <strong className="text-foreground">CBQAQAQA</strong></p>
               <p className="text-[10px] text-muted-foreground mt-1">Please quote invoice number <strong>{invoice.invoice_no}</strong> in payment remarks.</p>
             </div>
 
             <div className="flex flex-col justify-between sm:items-end border-t sm:border-t-0 pt-3 sm:pt-0">
               <div className="text-right">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">For ZYNO Property Management</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">For {branding.companyName || "Al Ameen Real Estate"}</p>
                 <div className="h-14 flex items-center justify-end">
                   <div className="border border-dashed border-muted-foreground/40 rounded px-4 py-2 text-[10px] font-mono text-muted-foreground">
                     [AUTHORIZED SIGNATURE &amp; STAMP]

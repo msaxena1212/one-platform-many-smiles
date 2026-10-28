@@ -843,7 +843,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             documentTitle="Residential Tenancy Agreement"
             documentRef={selectedLease.lease_number || selectedLease.id}
             tenantName={getTenantName(selectedLease)}
-            landlordName="ZYNO Real Estate Asset Management"
+            landlordName="Al Ameen Real Estate"
             onSigningComplete={() => {
               setLeases(prev => prev.map(l => l.id === selectedLease.id ? { ...l, lease_status: 'ACTIVE' } : l));
             }}

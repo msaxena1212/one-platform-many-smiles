@@ -179,10 +179,10 @@ export function ProformaInvoiceDialog({
               {/* Buyer Information */}
               <div className="space-y-1 pr-3 border-r">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Billed To (Buyer / Client)</span>
-                <p className="text-sm font-bold text-foreground">ZYNO Property Management Services LLC</p>
+                <p className="text-sm font-bold text-foreground">Al Ameen Real Estate W.L.L</p>
                 <p className="text-muted-foreground text-[11px]">Financial Operations &amp; Accounts Payable Division</p>
-                <p className="text-muted-foreground text-[11px]">Doha, State of Qatar &bull; CR: 109283-QA</p>
-                <p className="text-muted-foreground text-[11px]">Tax / VAT ID: QA-VAT-884029</p>
+                <p className="text-muted-foreground text-[11px]">Doha, State of Qatar &bull; CR: CR-90821-QA</p>
+                <p className="text-muted-foreground text-[11px]">Tax / VAT ID: TAX-300912-QA</p>
               </div>
 
               {/* Vendor / Supplier Information */}
@@ -358,7 +358,7 @@ export function ProformaInvoiceDialog({
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-white border shadow-sm shrink-0">
                   <QRCodeSVG 
-                    value={`ZYNOPMS|CR:109283-QA|TIN:QA-VAT-884029|INV:${invoice.invoice_number || invoice.invoice_no}|TOTAL:${totalAmount}|DATE:${invoice.invoice_date || invoice.date || new Date().toISOString().slice(0, 10)}`}
+                    value={`ALAMEEN|CR:CR-90821-QA|TIN:TAX-300912-QA|INV:${invoice.invoice_number || invoice.invoice_no}|TOTAL:${totalAmount}|DATE:${invoice.invoice_date || invoice.date || new Date().toISOString().slice(0, 10)}`}
                     size={68}
                     level="M"
                   />

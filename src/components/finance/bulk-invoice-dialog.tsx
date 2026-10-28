@@ -18,6 +18,8 @@ import {
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
+import { getDocumentBranding } from "@/lib/document-branding";
+import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 
 interface BulkInvoiceDialogProps {
   open: boolean;
@@ -125,6 +127,8 @@ export function BulkInvoiceDialog({
 }: BulkInvoiceDialogProps) {
   const { leases, units, customers } = useAppData();
   const { addReceivableInvoice, addBulkReceivableInvoices } = useFinanceStore();
+  const branding = useMemo(() => getDocumentBranding(), []);
+  const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
 
   const [activeTab, setActiveTab] = useState<"property" | "customer">(defaultMode);
 
@@ -465,6 +469,9 @@ export function BulkInvoiceDialog({
   // Export Batch CSV
   const handleExportBatchCSV = () => {
     const rows = [
+      [`BULK INVOICE BATCH REGISTER - ${branding.companyName || "Al Ameen Real Estate"}`],
+      [`Billing Entity: ${branding.legalEntityName || "Al Ameen Real Estate W.L.L"} | Cycle: ${billingPeriod} | Generated: ${new Date().toISOString().split("T")[0]}`],
+      [],
       ["Invoice Number", "Issue Date", "Due Date", "Period", "Customer / Tenant", "Property", "Unit", "Stream", "GL Account", "Amount (QAR)", "Status"],
       ...selectedItems.map(item => [
         item.invoiceNo,
@@ -506,11 +513,14 @@ export function BulkInvoiceDialog({
                   <span>Bulk Invoice Generation Engine</span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Generate periodic accounts receivable invoices in bulk by Property portfolio or by Customer accounts.
+                  Generate periodic accounts receivable invoices in bulk for <strong className="text-foreground">{branding.companyName || "Al Ameen Real Estate"}</strong>.
                 </DialogDescription>
               </div>
 
               <div className="flex items-center gap-2">
+                <Badge variant="outline" className="font-semibold text-xs px-2.5 py-1 bg-background/80 text-primary border-primary/30">
+                  <Building2 className="h-3 w-3 mr-1" /> {branding.companyName || "Al Ameen Real Estate"}
+                </Badge>
                 <Badge variant="outline" className="font-mono text-xs px-2.5 py-1 bg-background/80">
                   Cycle: {billingPeriod}
                 </Badge>
@@ -885,6 +895,10 @@ export function BulkInvoiceDialog({
 
               <div className="p-3 rounded-lg border bg-muted/30 text-xs font-mono grid grid-cols-2 gap-2 text-left my-4">
                 <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase">Biller / Landlord:</span>
+                  <span className="font-bold text-foreground">{branding.companyName || "Al Ameen Real Estate"}</span>
+                </div>
+                <div>
                   <span className="text-muted-foreground block text-[10px] uppercase">Batch Period:</span>
                   <span className="font-bold text-foreground">{billingPeriod}</span>
                 </div>
@@ -899,6 +913,105 @@ export function BulkInvoiceDialog({
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase">Total Billed:</span>
                   <span className="font-bold text-primary font-mono text-sm">QAR {batchResult.totalAmount.toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Printable Bulk Invoice Batch Register for Print / PDF */}
+              <style dangerouslySetInnerHTML={{ __html: `
+                @media print {
+                  @page {
+                    size: A4 landscape;
+                    margin: 8mm;
+                  }
+                  html, body {
+                    overflow: visible !important;
+                    height: auto !important;
+                    background: #ffffff !important;
+                  }
+                  body * { visibility: hidden; }
+                  #printable-bulk-invoices, #printable-bulk-invoices * { 
+                    visibility: visible; 
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                  }
+                  #printable-bulk-invoices { 
+                    display: block !important;
+                    position: absolute; 
+                    left: 0; 
+                    top: 0; 
+                    width: 100%; 
+                    padding: 0; 
+                    margin: 0;
+                    background: #ffffff !important;
+                  }
+                }
+              `}} />
+              <div id="printable-bulk-invoices" className="hidden text-left text-foreground bg-white p-6 space-y-4">
+                <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs max-h-24 mb-3 bg-white flex items-center justify-center">
+                  <img
+                    src={bannerUrl}
+                    alt={branding.companyName || "Al Ameen Real Estate"}
+                    className="w-full h-auto max-h-24 object-contain"
+                  />
+                </div>
+                <div className="flex justify-between items-start border-b pb-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-primary">{branding.companyName || "Al Ameen Real Estate"}</h2>
+                    <p className="text-xs text-muted-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"} &bull; Accounts Receivable Department</p>
+                    <p className="text-[11px] text-muted-foreground">CR: {branding.crNumber || "CR-90821-QA"} &bull; Tel: {branding.phone || "+974 4492 8800"}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-black text-xs uppercase px-2.5 py-1 bg-primary/10 text-primary rounded">
+                      BULK INVOICE BATCH
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-1">Period: {billingPeriod}</p>
+                    <p className="text-xs text-muted-foreground">Date: {issueDate}</p>
+                  </div>
+                </div>
+
+                <table className="w-full text-xs border">
+                  <thead>
+                    <tr className="bg-muted text-muted-foreground border-b text-[11px]">
+                      <th className="p-2 text-left">Invoice No</th>
+                      <th className="p-2 text-left">Tenant / Customer</th>
+                      <th className="p-2 text-left">Property &amp; Unit</th>
+                      <th className="p-2 text-left">Revenue Stream</th>
+                      <th className="p-2 text-right">Amount (QAR)</th>
+                      <th className="p-2 text-left">Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchResult.invoices.map((inv, idx) => (
+                      <tr key={idx} className="border-b">
+                        <td className="p-2 font-mono font-bold text-primary">{inv.invoice_no}</td>
+                        <td className="p-2 font-medium">{inv.tenant}</td>
+                        <td className="p-2 text-muted-foreground">{inv.property} - {inv.unit}</td>
+                        <td className="p-2 text-muted-foreground">{inv.stream}</td>
+                        <td className="p-2 text-right font-mono font-bold">{inv.amount?.toLocaleString()}</td>
+                        <td className="p-2 font-mono text-muted-foreground">{inv.due_date}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-muted/40 font-bold border-t">
+                      <td colSpan={4} className="p-2 text-right">Total Invoiced:</td>
+                      <td className="p-2 text-right font-mono text-primary text-sm">
+                        QAR {batchResult.totalAmount.toLocaleString()}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="flex justify-between items-end pt-4 text-xs border-t">
+                  <div>
+                    <p className="font-semibold text-muted-foreground">Prepared By: Finance Cashier / Billing Officer</p>
+                    <p className="text-[10px] text-muted-foreground">Generated via {branding.companyName || "Al Ameen Real Estate"} PMS Billing Engine</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground">For {branding.companyName || "Al Ameen Real Estate"}</p>
+                    <div className="h-10 border border-dashed rounded px-4 py-1 text-[10px] font-mono text-muted-foreground flex items-center justify-center mt-1">
+                      [AUTHORIZED FINANCE STAMP]
+                    </div>
+                  </div>
                 </div>
               </div>
 
