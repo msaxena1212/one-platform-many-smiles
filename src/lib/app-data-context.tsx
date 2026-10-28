@@ -614,7 +614,32 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      const mappedLeases: PmsLease[] = [...existingLeases, ...unitContracts];
+      let mappedLeases: PmsLease[] = [...existingLeases, ...unitContracts];
+      try {
+        if (typeof window !== "undefined") {
+          const storedOverrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+          mappedLeases = mappedLeases.map((l) => {
+            const uKey = l.unit ? l.unit.toUpperCase().trim() : "";
+            const o = storedOverrides[l.id] || (uKey ? storedOverrides[uKey] : null);
+            if (!o) return l;
+            return {
+              ...l,
+              startDate: o.commencement_date || l.startDate,
+              endDate: o.expiry_date || l.endDate,
+              monthlyRent: o.monthlyRent ?? l.monthlyRent,
+              securityDeposit: o.monthlyRent ?? l.securityDeposit,
+              tenantName: o.tenant_name || l.tenantName,
+              status: (o.lease_status ? o.lease_status.toLowerCase() : l.status) as LeaseStatus,
+              hasRentFree: o.has_rent_free ?? (l as any).hasRentFree,
+              rentFreeDays: o.rent_free_days ?? (l as any).rentFreeDays,
+              rentFreePosition: o.rent_free_position ?? (l as any).rentFreePosition,
+              pdcCount: o.pdc_count ?? l.pdcCount,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn("Could not load local lease overrides:", err);
+      }
 
       // Step A: Primary dataset is pdcs table (authoritative for property, unit, tenant, date, amount)
       // Index fin_pdc_register by original_pdc_id and by cheque_number

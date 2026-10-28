@@ -79,6 +79,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     monthlyRent: '',
     rental_amount: '',
     lease_status: '',
+    has_rent_free: false,
+    rent_free_days: 30,
+    rent_free_position: 'FIRST_MONTH',
+    pdc_count: 12,
   });
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -86,29 +90,111 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
   function openEditModal(lease: any) {
     setSelectedLease(lease);
-    const monthly = lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0);
+    const storedOverrides = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+      } catch {
+        return {};
+      }
+    })();
+    const uName = getUnitName(lease)?.toUpperCase()?.trim();
+    const o = storedOverrides[lease.id] || (lease.lease_number ? storedOverrides[lease.lease_number] : null) || (uName ? storedOverrides[uName] : null);
+
+    const monthly = o?.monthlyRent ?? (lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0));
+    const annual = o?.rental_amount ?? (lease.rental_amount || (monthly * 12));
+
     setEditForm({
       id: lease.id,
       lease_number: lease.lease_number || lease.id,
-      tenant_name: getTenantName(lease),
+      tenant_name: o?.tenant_name || getTenantName(lease),
       property_name: getPropertyName(lease),
       unit_name: getUnitName(lease),
-      commencement_date: toRawDate(lease.commencement_date),
-      expiry_date: toRawDate(lease.expiry_date),
+      commencement_date: o?.commencement_date || toRawDate(lease.commencement_date),
+      expiry_date: o?.expiry_date || toRawDate(lease.expiry_date),
       monthlyRent: String(monthly),
-      rental_amount: String(lease.rental_amount || (monthly * 12)),
-      lease_status: lease.lease_status || 'DRAFT',
+      rental_amount: String(annual),
+      lease_status: o?.lease_status || lease.lease_status || 'DRAFT',
+      has_rent_free: o?.has_rent_free ?? Boolean(lease.has_rent_free || lease.rent_free_period_days),
+      rent_free_days: o?.rent_free_days || lease.rent_free_period_days || 30,
+      rent_free_position: o?.rent_free_position || lease.rent_free_position || 'FIRST_MONTH',
+      pdc_count: o?.pdc_count || lease.pdc_count || lease.number_of_pdc || 12,
     });
     setEditModalOpen(true);
   }
 
-  function handleSaveEditContract() {
+  async function handleSaveEditContract() {
     if (!editForm.id) return;
     const mRent = parseFloat(editForm.monthlyRent) || 0;
     const annRent = parseFloat(editForm.rental_amount) || (mRent * 12);
+    const pdcCount = parseInt(String(editForm.pdc_count), 10) || 12;
 
+    const updatedData = {
+      commencement_date: editForm.commencement_date,
+      expiry_date: editForm.expiry_date,
+      monthlyRent: mRent,
+      rental_amount: annRent,
+      lease_status: editForm.lease_status,
+      tenant_name: editForm.tenant_name,
+      has_rent_free: editForm.has_rent_free,
+      rent_free_days: editForm.has_rent_free ? (parseInt(String(editForm.rent_free_days), 10) || 30) : 0,
+      rent_free_position: editForm.rent_free_position,
+      pdc_count: pdcCount,
+      updated_at: new Date().toISOString(),
+    };
+
+    // 1. Persistent localStorage overrides (survives page refresh & context reloads)
+    try {
+      const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+      stored[editForm.id] = updatedData;
+      if (editForm.lease_number) {
+        stored[editForm.lease_number] = updatedData;
+      }
+      if (editForm.unit_name && editForm.unit_name !== '—') {
+        stored[editForm.unit_name.toUpperCase().trim()] = updatedData;
+      }
+      localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(stored));
+    } catch (e) {
+      console.warn("Could not save to localStorage:", e);
+    }
+
+    // 2. Persist to Supabase leases table
+    try {
+      await supabase
+        .from('leases')
+        .update({
+          commencement_date: editForm.commencement_date,
+          expiry_date: editForm.expiry_date,
+          rental_amount: annRent,
+          lease_status: editForm.lease_status.toLowerCase(),
+          number_of_pdc: pdcCount,
+        })
+        .or(`id.eq.${editForm.id},lease_number.eq.${editForm.lease_number}`);
+    } catch (e) {
+      console.warn("Supabase lease update note:", e);
+    }
+
+    // 3. Persist to Supabase units table if unit exists
+    if (editForm.unit_name && editForm.unit_name !== '—') {
+      try {
+        await supabase
+          .from('units')
+          .update({
+            contract_start_date: editForm.commencement_date,
+            contract_end_date: editForm.expiry_date,
+            current_rent: mRent,
+            current_tenant: editForm.tenant_name,
+          })
+          .or(`unit_number.eq.${editForm.unit_name},unit_ref.eq.${editForm.unit_name},unit_code.eq.${editForm.unit_name}`);
+      } catch (e) {
+        console.warn("Supabase unit update note:", e);
+      }
+    }
+
+    // 4. Update React state immediately
     setLeases(prev => prev.map(l => {
-      if (l.id === editForm.id) {
+      const uName = getUnitName(l)?.toUpperCase()?.trim();
+      const isMatch = l.id === editForm.id || l.lease_number === editForm.lease_number || (editForm.unit_name && uName === editForm.unit_name.toUpperCase().trim());
+      if (isMatch) {
         return {
           ...l,
           commencement_date: editForm.commencement_date,
@@ -116,13 +202,18 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           monthlyRent: mRent,
           rental_amount: annRent,
           lease_status: editForm.lease_status,
+          has_rent_free: editForm.has_rent_free,
+          rent_free_days: editForm.has_rent_free ? (parseInt(String(editForm.rent_free_days), 10) || 30) : 0,
+          rent_free_position: editForm.rent_free_position,
+          pdc_count: pdcCount,
+          tenant_name: editForm.tenant_name,
           customers: { ...l.customers, full_name: editForm.tenant_name, name: editForm.tenant_name },
         };
       }
       return l;
     }));
 
-    toast.success(`Contract ${editForm.lease_number} updated successfully.`);
+    toast.success(`Contract ${editForm.lease_number} saved permanently.`);
     setEditModalOpen(false);
   }
 
@@ -164,6 +255,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           expiry_date: cl.endDate,
           rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
           lease_status: statusVal,
+          has_rent_free: (cl as any).hasRentFree,
+          rent_free_days: (cl as any).rentFreeDays,
+          rent_free_position: (cl as any).rentFreePosition,
+          pdc_count: (cl as any).pdcCount,
         };
       });
 
@@ -173,7 +268,37 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           allLeases.push(mc);
         }
       }
-      setLeases(allLeases);
+
+      // Apply persistent localStorage overrides so refreshed page never reverts
+      const storedOverrides = (() => {
+        try {
+          return JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+        } catch {
+          return {};
+        }
+      })();
+
+      const finalLeases = allLeases.map((leaseItem) => {
+        const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
+        const o = storedOverrides[leaseItem.id] || (leaseItem.lease_number ? storedOverrides[leaseItem.lease_number] : null) || (u ? storedOverrides[u] : null);
+        if (!o) return leaseItem;
+        return {
+          ...leaseItem,
+          commencement_date: o.commencement_date || leaseItem.commencement_date,
+          expiry_date: o.expiry_date || leaseItem.expiry_date,
+          monthlyRent: o.monthlyRent ?? leaseItem.monthlyRent,
+          rental_amount: o.rental_amount ?? leaseItem.rental_amount,
+          lease_status: o.lease_status || leaseItem.lease_status,
+          tenant_name: o.tenant_name || leaseItem.tenant_name,
+          has_rent_free: o.has_rent_free ?? leaseItem.has_rent_free,
+          rent_free_days: o.rent_free_days ?? leaseItem.rent_free_days,
+          rent_free_position: o.rent_free_position || leaseItem.rent_free_position,
+          pdc_count: o.pdc_count ?? leaseItem.pdc_count,
+          customers: o.tenant_name ? { ...leaseItem.customers, full_name: o.tenant_name, name: o.tenant_name } : leaseItem.customers,
+        };
+      });
+
+      setLeases(finalLeases);
     } catch (e) {
       console.error(e);
     } finally {
@@ -771,6 +896,67 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                 <option value="EXPIRING">EXPIRING (Pending Renewal)</option>
                 <option value="EXPIRED">EXPIRED (Archived)</option>
               </select>
+            </div>
+
+            {/* Rent-Free Concession Period */}
+            <div className="p-3 rounded-lg border border-primary/20 bg-primary/5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-[11px] font-semibold text-primary flex items-center gap-1.5">
+                    Rent-Free Period Concession (e.g. 13-Month Contract)
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Extend tenancy beyond 12 months with 1 or more free concession months
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editForm.has_rent_free}
+                  onChange={e => setEditForm({ ...editForm, has_rent_free: e.target.checked })}
+                  className="h-4 w-4 rounded border-primary text-primary focus:ring-primary cursor-pointer"
+                />
+              </div>
+
+              {editForm.has_rent_free && (
+                <div className="grid grid-cols-3 gap-2.5 pt-1.5 border-t border-primary/10">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Free Days</Label>
+                    <Input
+                      type="number"
+                      value={editForm.rent_free_days}
+                      onChange={e => setEditForm({ ...editForm, rent_free_days: parseInt(e.target.value, 10) || 0 })}
+                      className="h-7 text-xs font-mono"
+                      min={1}
+                      max={90}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">Free Month Timing</Label>
+                    <select
+                      className="w-full h-7 text-xs border rounded-md px-1.5 bg-background font-medium"
+                      value={editForm.rent_free_position}
+                      onChange={e => setEditForm({ ...editForm, rent_free_position: e.target.value })}
+                    >
+                      <option value="FIRST_MONTH">Month 1 Free (Initial)</option>
+                      <option value="LAST_MONTH">Month 13 Free (Completion)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-semibold text-muted-foreground">PDC Count</Label>
+                    <Input
+                      type="number"
+                      value={editForm.pdc_count}
+                      onChange={e => setEditForm({ ...editForm, pdc_count: parseInt(e.target.value, 10) || 12 })}
+                      className="h-7 text-xs font-mono"
+                      min={1}
+                      max={24}
+                    />
+                  </div>
+                  <div className="col-span-3 text-[10px] text-primary/80 bg-background/80 p-1.5 rounded border border-primary/10">
+                    ℹ️ <strong>13-Month Term Schedule:</strong> 12 Cheques collected covering 12 paid months. {editForm.rent_free_position === 'FIRST_MONTH' ? 'Month 1 is logged as "Rent Free Concession" (Cheques start Month 2).' : 'Month 13 is logged as "Rent Free Concession" (Cheques cover Months 1-12).'}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
