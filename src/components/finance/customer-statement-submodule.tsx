@@ -19,6 +19,7 @@ import { BulkInvoiceDialog } from "./bulk-invoice-dialog";
 import { toast } from "sonner";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
+import { printBilingualCustomerStatement } from "@/lib/customer-statement-pdf";
 
 export interface StatementLedgerRow {
   id: string;
@@ -378,7 +379,38 @@ export function CustomerStatementSubModule({
   };
 
   const handlePrintStatement = () => {
-    window.print();
+    if (!currentCustomer) return;
+    printBilingualCustomerStatement({
+      customer: {
+        id: currentCustomer.id,
+        customerId: currentCustomer.customerId,
+        name: currentCustomer.name,
+        type: currentCustomer.type,
+        qatarId: currentCustomer.qatarId,
+        crNumber: currentCustomer.crNumber,
+        mobile: currentCustomer.mobile,
+        phone: currentCustomer.phone,
+        email: currentCustomer.email,
+      },
+      statementDate: new Date().toISOString().split("T")[0],
+      fromDate,
+      toDate,
+      leases: customerLeases.map(l => ({
+        property: l.property,
+        unit: l.unit,
+        contractNumber: l.contractNumber || l.id.slice(-4),
+        monthlyRent: Number(l.monthlyRent) || 0,
+      })),
+      summary,
+      ledgerRows,
+      upcomingPdcs: upcomingPdcs.map(p => ({
+        chequeNumber: p.chequeNumber,
+        bank: p.bank,
+        dueDate: p.dueDate,
+        amount: Number(p.amount) || 0,
+      })),
+      branding,
+    });
   };
 
   const handleExportCSV = () => {
@@ -453,17 +485,18 @@ export function CustomerStatementSubModule({
             print-color-adjust: exact !important;
           }
           #printable-soa { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%; 
-            padding: 0; 
-            margin: 0;
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            width: 100% !important; 
+            padding: 0 !important; 
+            margin: 0 !important;
             border: none !important;
             box-shadow: none !important;
             background: #ffffff !important;
           }
           .no-print { display: none !important; }
+          tr { page-break-inside: avoid !important; }
         }
       `}} />
 
@@ -541,83 +574,128 @@ export function CustomerStatementSubModule({
 
       {/* ── Main Printable Container ── */}
       <div id="printable-soa" className="space-y-5 bg-card p-6 rounded-xl border shadow-sm">
-        {/* Official Header Banner as available on Receipts & Lease Contracts */}
-        <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs max-h-24 sm:max-h-28 mb-3 bg-white flex items-center justify-center">
+        {/* Official Header Banner as available on Receipts & Lease Contracts (Uncropped, Full Width) */}
+        <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs mb-4 bg-white">
           <img
             src={bannerUrl}
             alt={branding.companyName || "Al Ameen Real Estate"}
-            className="w-full h-auto max-h-28 object-contain sm:object-cover"
+            className="w-full h-auto object-contain block"
           />
         </div>
 
-        {/* Printable Official Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start border-b pb-5 gap-4">
-          <div>
+        {/* Two-Column Bilingual Official Header */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-5">
+          {/* English Column (LTR) */}
+          <div className="space-y-0.5 text-left">
             <div className="flex items-center gap-2 font-bold text-xl text-primary tracking-tight">
-              <Building2 className="h-6 w-6 text-primary" />
+              <Building2 className="h-5 w-5 text-primary shrink-0" />
               <span>{branding.companyName || "Al Ameen Real Estate"}</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              <span className="font-semibold text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</span> &bull; Corporate Accounting &bull; Accounts Receivable Department
+            <p className="text-xs text-muted-foreground font-semibold">
+              {branding.legalEntityName || "Al Ameen Real Estate W.L.L"}
             </p>
+            <p className="text-xs text-muted-foreground">Corporate Accounting &bull; Accounts Receivable Department</p>
             <p className="text-xs text-muted-foreground">{branding.address || "Grand Hamad Avenue, Building 42, Floor 7, P.O. Box 24901, Doha - State of Qatar"}</p>
             <p className="text-xs text-muted-foreground font-mono">
               CR No: {branding.crNumber || "CR-90821-QA"} &bull; Tax ID: {branding.taxNumber || "TAX-300912-QA"} &bull; Tel: {branding.phone || "+974 4492 8800"}
             </p>
           </div>
 
-          <div className="sm:text-right">
-            <span className="inline-block px-3 py-1 bg-primary/10 text-primary font-black text-xs uppercase tracking-widest rounded mb-1">
-              STATEMENT OF ACCOUNT
-            </span>
-            <p className="text-xs text-muted-foreground">
-              Statement Date: <strong className="text-foreground font-mono">{new Date().toISOString().split("T")[0]}</strong>
+          {/* Arabic Column (RTL) */}
+          <div className="space-y-0.5 text-right md:border-l md:pl-4" dir="rtl">
+            <div className="font-bold text-xl text-primary tracking-tight">
+              شركة الأمين للعقارات
+            </div>
+            <p className="text-xs text-muted-foreground font-semibold">
+              شركة الأمين للعقارات ذ.م.م
             </p>
-            <p className="text-xs text-muted-foreground">
-              Period Covered: <strong className="text-foreground font-mono">{fromDate}</strong> to <strong className="text-foreground font-mono">{toDate}</strong>
+            <p className="text-xs text-muted-foreground">إدارة الحسابات العامة والتحصيل المالي</p>
+            <p className="text-xs text-muted-foreground">شارع حمد الكبير، مبنى 42، الطابق 7، الدوحة - دولة قطر</p>
+            <p className="text-xs text-muted-foreground font-mono">
+              سجل تجاري: {branding.crNumber || "CR-90821-QA"} &bull; الرقم الضريبي: {branding.taxNumber || "TAX-300912-QA"} &bull; هاتف: {branding.phone || "+974 4492 8800"}
             </p>
           </div>
         </div>
 
-        {/* Customer Dossier Card */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg bg-muted/30 border text-xs">
-          <div className="space-y-1">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Customer Information</span>
+        {/* Centered Document Title Badge */}
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-black text-sm uppercase tracking-wider text-primary">
+              STATEMENT OF ACCOUNT
+            </span>
+            <span className="text-muted-foreground">&bull;</span>
+            <span className="font-black text-base tracking-wider text-primary font-serif" dir="rtl">
+              كـــشــــف حـــســــاب الــعــمــيـــل
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Statement Date / تاريخ الإصدار: <strong className="text-foreground font-mono">{new Date().toISOString().split("T")[0]}</strong>
+            <span className="mx-2">&bull;</span>
+            Period Covered / الفترة المغطاة: <strong className="text-foreground font-mono">{fromDate}</strong> to <strong className="text-foreground font-mono">{toDate}</strong>
+          </p>
+        </div>
+
+        {/* Customer Dossier Card - 2 Columns (English & Arabic) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg bg-muted/30 border text-xs">
+          {/* English Column */}
+          <div className="space-y-1 text-left">
+            <div className="flex items-center justify-between border-b pb-1 mb-1">
+              <span className="text-[10px] uppercase font-bold text-primary tracking-wider">Customer Particulars (EN)</span>
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                {currentCustomer.type === "company" ? "Corporate" : "Individual"}
+              </Badge>
+            </div>
             <p className="text-base font-bold text-foreground">{currentCustomer.name}</p>
             <p className="text-muted-foreground font-mono">
               Customer Code: <strong className="text-foreground font-semibold">{currentCustomer.customerId || currentCustomer.id}</strong>
             </p>
-            <p className="text-muted-foreground">
-              Account Type: <Badge variant="outline" className="text-[10px] ml-1">{currentCustomer.type === "company" ? "Corporate Tenant" : "Individual Tenant"}</Badge>
-            </p>
-          </div>
-
-          <div className="space-y-1 border-t md:border-t-0 md:border-l pt-3 md:pt-0 md:pl-4">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Identification &amp; Contact</span>
             <p className="text-muted-foreground font-mono">
               QID / CR No: <strong className="text-foreground font-semibold">{currentCustomer.qatarId || currentCustomer.crNumber || "—"}</strong>
             </p>
             <p className="text-muted-foreground">
-              Mobile Phone: <strong className="text-foreground">{currentCustomer.mobile || currentCustomer.phone || "—"}</strong>
-            </p>
-            <p className="text-muted-foreground">
-              Email Address: <strong className="text-foreground">{currentCustomer.email || "—"}</strong>
+              Contact: <span className="font-semibold text-foreground">{currentCustomer.mobile || currentCustomer.phone || "—"}</span> &bull; {currentCustomer.email || "—"}
             </p>
           </div>
 
-          <div className="space-y-1 border-t md:border-t-0 md:border-l pt-3 md:pt-0 md:pl-4">
-            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block">Assigned Leased Units</span>
+          {/* Arabic Column */}
+          <div className="space-y-1 text-right md:border-l md:pl-4" dir="rtl">
+            <div className="flex items-center justify-between border-b pb-1 mb-1">
+              <span className="text-[10px] uppercase font-bold text-primary tracking-wider">بيانات العميل والمستأجر (AR)</span>
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                {currentCustomer.type === "company" ? "شركة تجارية" : "مستأجر فردي"}
+              </Badge>
+            </div>
+            <p className="text-base font-bold text-foreground">{currentCustomer.name}</p>
+            <p className="text-muted-foreground font-mono">
+              رمز العميل: <strong className="text-foreground font-semibold">{currentCustomer.customerId || currentCustomer.id}</strong>
+            </p>
+            <p className="text-muted-foreground font-mono">
+              البطاقة الشخصية / السجل: <strong className="text-foreground font-semibold">{currentCustomer.qatarId || currentCustomer.crNumber || "—"}</strong>
+            </p>
+            <p className="text-muted-foreground">
+              الاتصال: <span className="font-semibold text-foreground">{currentCustomer.mobile || currentCustomer.phone || "—"}</span> &bull; {currentCustomer.email || "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Assigned Leased Units Strip */}
+        <div className="p-3 rounded-lg border bg-muted/20 text-xs">
+          <div className="flex justify-between items-center border-b pb-1 mb-2">
+            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Assigned Leased Units &amp; Properties</span>
+            <span className="text-[10px] font-bold text-muted-foreground" dir="rtl">الوحدات والعقارات المؤجرة</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
             {customerLeases.length > 0 ? (
               customerLeases.map(l => (
-                <div key={l.id} className="text-muted-foreground">
+                <div key={l.id} className="bg-background border rounded px-2.5 py-1 text-xs">
                   <span className="font-semibold text-foreground">{l.property}</span> &bull; Unit: <strong className="font-mono text-primary">{l.unit}</strong>
-                  <div className="text-[10px] text-muted-foreground">
-                    Contract #{l.contractNumber || l.id.slice(-4)} &bull; Rent: QAR {Number(l.monthlyRent).toLocaleString()}/mo
-                  </div>
+                  <span className="text-[10px] text-muted-foreground ml-1.5">
+                    (Contract #{l.contractNumber || l.id.slice(-4)} &bull; Rent: QAR {Number(l.monthlyRent).toLocaleString()}/mo)
+                  </span>
                 </div>
               ))
             ) : (
-              <p className="text-muted-foreground italic">No active contracts linked directly.</p>
+              <p className="text-muted-foreground italic text-xs">No active contracts linked directly.</p>
             )}
           </div>
         </div>
@@ -893,27 +971,43 @@ export function CustomerStatementSubModule({
           </div>
         )}
 
-        {/* Remittance & Signatures Box */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-lg border bg-muted/20 text-xs">
-          <div className="space-y-1">
+        {/* Remittance & Signatures Box (2 Columns: EN & AR) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg border bg-muted/20 text-xs">
+          {/* Left: English Remittance */}
+          <div className="space-y-1 text-left">
             <span className="font-bold text-[10px] uppercase tracking-wider text-primary flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" /> Remittance &amp; Bank Transfer Details
+              <ShieldCheck className="h-3.5 w-3.5" /> Remittance &amp; Bank Transfer Details (EN)
             </span>
             <p className="text-muted-foreground">Bank: <strong className="text-foreground">Commercial Bank of Qatar (CBQ) / Dukhan Bank</strong></p>
             <p className="text-muted-foreground">Account Name: <strong className="text-foreground">{branding.legalEntityName || "Al Ameen Real Estate W.L.L"}</strong></p>
             <p className="text-muted-foreground font-mono">IBAN: <strong className="text-foreground">QA52 CBQA 0000 0000 1289 4012 34</strong></p>
             <p className="text-muted-foreground font-mono">SWIFT: <strong className="text-foreground">CBQAQAQA</strong></p>
-          </div>
-
-          <div className="flex flex-col justify-between sm:items-end border-t sm:border-t-0 pt-3 sm:pt-0">
-            <div className="text-right">
+            <div className="pt-2">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">For {branding.companyName || "Al Ameen Real Estate"}</p>
-              <div className="h-12 flex items-center justify-end">
-                <div className="border border-dashed border-muted-foreground/40 rounded px-4 py-1.5 text-[10px] font-mono text-muted-foreground">
-                  [ACCOUNTS &amp; FINANCE STAMP]
+              <div className="h-10 flex items-center">
+                <div className="border border-dashed border-muted-foreground/40 rounded px-3 py-1 text-[9px] font-mono text-muted-foreground">
+                  [FINANCIAL CONTROLLER STAMP]
                 </div>
               </div>
-              <p className="text-[10px] text-muted-foreground">Authorized Finance Controller</p>
+            </div>
+          </div>
+
+          {/* Right: Arabic Remittance */}
+          <div className="space-y-1 text-right md:border-l md:pl-4" dir="rtl">
+            <span className="font-bold text-[10px] uppercase tracking-wider text-primary flex items-center justify-end gap-1">
+              <ShieldCheck className="h-3.5 w-3.5" /> تعليمات التحويل البنكي والاعتماد (AR)
+            </span>
+            <p className="text-muted-foreground">البنك: <strong className="text-foreground">البنك التجاري (CBQ) / بنك دخان</strong></p>
+            <p className="text-muted-foreground">اسم الحساب: <strong className="text-foreground">شركة الأمين للعقارات ذ.م.م</strong></p>
+            <p className="text-muted-foreground font-mono">الآيبان: <strong className="text-foreground">QA52 CBQA 0000 0000 1289 4012 34</strong></p>
+            <p className="text-muted-foreground font-mono">السويفت كود: <strong className="text-foreground">CBQAQAQA</strong></p>
+            <div className="pt-2">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">عن شركة الأمين للعقارات</p>
+              <div className="h-10 flex items-center justify-start">
+                <div className="border border-dashed border-muted-foreground/40 rounded px-3 py-1 text-[9px] font-mono text-muted-foreground">
+                  [خـتـم الإدارة الـمـالـيـة والـتـدقـيـق]
+                </div>
+              </div>
             </div>
           </div>
         </div>
