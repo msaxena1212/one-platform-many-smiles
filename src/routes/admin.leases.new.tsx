@@ -27,11 +27,19 @@ function NewLeaseForm() {
     endDate: "",
     rentalAmount: "",
     securityDeposit: "",
+    hasRentFree: false,
+    rentFreeDays: 30,
+    rentFreePosition: "FIRST_MONTH",
+    pdcCount: 12,
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target as HTMLInputElement;
+    if (type === "checkbox") {
+      setFormData((prev) => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,8 +61,12 @@ function NewLeaseForm() {
 
       if (customerError) throw customerError;
 
+      const annRent = Number(formData.rentalAmount) || 0;
+      const mRent = Math.round(annRent / 12);
+      const termMonths = formData.hasRentFree ? 13 : 12;
+
       // 2. Create the lease attached to the customer
-      const { error: leaseError } = await supabase
+      const { data: leaseData, error: leaseError } = await supabase
         .from('leases')
         .insert({
           customer_id: customerData.id,
@@ -63,16 +75,44 @@ function NewLeaseForm() {
           lease_number: formData.leaseNumber,
           commencement_date: formData.startDate,
           expiry_date: formData.endDate,
-          lease_period_months: 12, // simplified
-          rental_amount: Number(formData.rentalAmount),
-          security_deposit: Number(formData.securityDeposit),
+          lease_period_months: termMonths,
+          rental_amount: annRent,
+          security_deposit: Number(formData.securityDeposit) || mRent,
           lease_status: 'DRAFT',
           payment_frequency: 'Monthly',
-        });
+          number_of_pdc: Number(formData.pdcCount) || 12,
+        })
+        .select()
+        .single();
 
       if (leaseError) throw leaseError;
 
-      toast.success("Lease draft created successfully!");
+      // 3. Persist overrides to browser storage for instant reload hydration
+      try {
+        const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+        const overridePayload = {
+          commencement_date: formData.startDate,
+          expiry_date: formData.endDate,
+          monthlyRent: mRent,
+          rental_amount: annRent,
+          lease_status: 'DRAFT',
+          tenant_name: formData.customerName,
+          has_rent_free: formData.hasRentFree,
+          rent_free_days: formData.hasRentFree ? Number(formData.rentFreeDays) : 0,
+          rent_free_position: formData.rentFreePosition,
+          pdc_count: Number(formData.pdcCount) || 12,
+          updated_at: new Date().toISOString(),
+        };
+        stored[formData.leaseNumber] = overridePayload;
+        if (leaseData?.id) {
+          stored[leaseData.id] = overridePayload;
+        }
+        localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(stored));
+      } catch (e) {
+        console.warn("Could not save to localStorage:", e);
+      }
+
+      toast.success(formData.hasRentFree ? "13-Month Concession Lease Draft created successfully!" : "Lease draft created successfully!");
       navigate({ to: "/admin/leases", search: { tab: "agreement" } });
     } catch (err: any) {
       console.error(err);
@@ -133,9 +173,72 @@ function NewLeaseForm() {
                   <Input id="rentalAmount" name="rentalAmount" type="number" required value={formData.rentalAmount} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="securityDeposit">Security Deposit (SAR)</Label>
+                  <Label htmlFor="securityDeposit">Security Deposit (QAR)</Label>
                   <Input id="securityDeposit" name="securityDeposit" type="number" value={formData.securityDeposit} onChange={handleChange} />
                 </div>
+              </div>
+
+              {/* 13-Month Rent-Free Concession Section */}
+              <div className="p-4 rounded-lg border border-primary/20 bg-primary/5 space-y-3 mt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-semibold text-primary">
+                      Rent-Free Concession Period (13-Month Contract)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Extend standard 12-month tenure with 1 free concession month (13 months total)
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    name="hasRentFree"
+                    checked={formData.hasRentFree}
+                    onChange={handleChange}
+                    className="h-4 w-4 rounded border-primary text-primary focus:ring-primary cursor-pointer"
+                  />
+                </div>
+
+                {formData.hasRentFree && (
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-primary/10">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">Free Concession Days</Label>
+                      <Input
+                        name="rentFreeDays"
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={formData.rentFreeDays}
+                        onChange={handleChange}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">Free Month Timing</Label>
+                      <select
+                        name="rentFreePosition"
+                        value={formData.rentFreePosition}
+                        onChange={handleChange}
+                        className="w-full h-9 text-xs border rounded-md px-2 bg-background font-medium"
+                      >
+                        <option value="FIRST_MONTH">Month 1 Free (Initial Move-in)</option>
+                        <option value="LAST_MONTH">Month 13 Free (Completion Incentive)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">Number of PDCs</Label>
+                      <Input
+                        name="pdcCount"
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={formData.pdcCount}
+                        onChange={handleChange}
+                      />
+                    </div>
+                    <div className="col-span-3 text-xs text-primary/90 bg-background/80 p-2 rounded border border-primary/10">
+                      ℹ️ <strong>13-Month Term Schedule:</strong> 12 Cheques collected covering 12 paid months. {formData.rentFreePosition === 'FIRST_MONTH' ? 'Month 1 is logged as a Rent-Free Concession (Cheque #1 starts Month 2).' : 'Month 13 is logged as a Rent-Free Concession (Cheques #1-#12 cover Months 1-12).'}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

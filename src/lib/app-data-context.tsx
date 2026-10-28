@@ -587,6 +587,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             const tenantName = canonicalName(excelOverride?.tenant || (u.current_tenant && u.current_tenant.trim() ? u.current_tenant.trim() : `Tenant (${unitIdentifier})`));
             const custId = `cust-${u.id.slice(0, 8)}`;
 
+            const hasRf = Boolean(excelOverride?.hasRentFree || excelOverride?.freePeriodMonths || excelOverride?.tenureMonths === 13);
+            const rfDays = excelOverride?.rentFreeDays || (excelOverride?.freePeriodMonths ? excelOverride.freePeriodMonths * 30 : (hasRf ? 30 : 0));
+            const rfPos = excelOverride?.freePeriodPosition || "FIRST_MONTH";
+            const pdcCnt = Number(excelOverride?.numberOfPDCs || excelOverride?.pdcCount || 12);
+
             unitContracts.push({
               id: contractNo,
               customerId: custId,
@@ -598,18 +603,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               endDate: endDate,
               monthlyRent: monthlyRent,
               securityDeposit: secDeposit,
-              pdcCount: 12,
+              pdcCount: pdcCnt,
               paymentFrequency: ((u.rent_frequency || "monthly").toLowerCase() as LeasePaymentFrequency),
               gracePeriodDays: 7,
               penalties: "5%",
               maintenanceResponsibility: u.maintenance_responsibility || "Landlord",
               utilityResponsibility: "Tenant",
               parkingDetails: u.parking_slot_no ? `Slot ${u.parking_slot_no}` : "Dedicated parking",
-              specialConditions: "Standard Tenancy Agreement",
+              specialConditions: hasRf ? `13-Month Term with ${rfDays}-Day Rent-Free Concession (${rfPos === 'LAST_MONTH' ? 'Month 13' : 'Month 1'})` : "Standard Tenancy Agreement",
               noticePeriodDays: 60,
               status: "active",
               collectionCompleted: true,
-            });
+              hasRentFree: hasRf,
+              rentFreeDays: rfDays,
+              rentFreePosition: rfPos,
+            } as any);
           }
         }
       });

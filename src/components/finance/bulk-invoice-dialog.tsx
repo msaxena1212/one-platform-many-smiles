@@ -42,6 +42,68 @@ interface BatchItem {
   accountCode: string;
   invoiceNo: string;
   status: "ready" | "generated";
+  isRentFree?: boolean;
+  concessionNote?: string;
+}
+
+function getConcessionBillingStatus(
+  l: any,
+  issueDateStr: string
+): { isFree: boolean; note?: string; overrideAmt?: number } {
+  let override: any = null;
+  try {
+    if (typeof window !== "undefined") {
+      const stored = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+      const uKey = (l?.unit || "").toString().toUpperCase().trim();
+      override = stored[l?.id] || (l?.contractNumber ? stored[l?.contractNumber] : null) || (uKey ? stored[uKey] : null);
+    }
+  } catch (e) {}
+
+  const hasRentFree = Boolean(
+    override?.has_rent_free ??
+    l?.hasRentFree ??
+    l?.has_rent_free ??
+    l?.rent_free_period_days ??
+    l?.rentFreeDays
+  );
+
+  if (!hasRentFree) return { isFree: false };
+
+  const rfPosition = override?.rent_free_position ?? l?.rentFreePosition ?? l?.rent_free_position ?? "FIRST_MONTH";
+  const startStr = override?.commencement_date || l?.startDate || l?.commencement_date;
+  const endStr = override?.expiry_date || l?.endDate || l?.expiry_date;
+
+  if (!startStr) {
+    return { isFree: true, note: "Rent-Free Concession (QR 0.00)", overrideAmt: 0 };
+  }
+
+  const sDate = new Date(startStr);
+  const bDate = new Date(issueDateStr || new Date().toISOString());
+
+  // Month 1 Concession check: same year and month as lease start
+  if (rfPosition === "FIRST_MONTH") {
+    const isFirstMonth = sDate.getFullYear() === bDate.getFullYear() && sDate.getMonth() === bDate.getMonth();
+    if (isFirstMonth) {
+      return {
+        isFree: true,
+        note: "Rent-Free Concession: Month 1 of 13 (Move-in Incentive)",
+        overrideAmt: 0,
+      };
+    }
+  } else if (rfPosition === "LAST_MONTH" && endStr) {
+    // Month 13 Concession check: same year and month as lease expiry
+    const eDate = new Date(endStr);
+    const isLastMonth = eDate.getFullYear() === bDate.getFullYear() && eDate.getMonth() === bDate.getMonth();
+    if (isLastMonth) {
+      return {
+        isFree: true,
+        note: "Rent-Free Concession: Month 13 of 13 (Completion Concession)",
+        overrideAmt: 0,
+      };
+    }
+  }
+
+  return { isFree: false };
 }
 
 const REVENUE_STREAMS = [
@@ -146,7 +208,10 @@ export function BulkInvoiceDialog({
     propLeases.forEach((l, idx) => {
       usedUnits.add(l.unit);
       const baseRent = Number(l.monthlyRent) || 0;
-      const amt = propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent);
+      const concession = getConcessionBillingStatus(l, issueDate);
+      const isConcession = concession.isFree && propertyPricingMode === "lease";
+      const amt = isConcession ? 0 : (propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent));
+      const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : propertyStream;
       const unitClean = l.unit.replace(/[^\w]/g, "").slice(-4);
       const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
       const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 101}`;
@@ -161,10 +226,12 @@ export function BulkInvoiceDialog({
         leaseNumber: l.contractNumber || `LS-${l.id.slice(-4)}`,
         baseRent,
         amount: amt,
-        stream: propertyStream,
-        accountCode: propertyStream.split(/\s+/)[0] || "41100",
+        stream: stream,
+        accountCode: stream.split(/\s+/)[0] || "41100",
         invoiceNo: invNo,
         status: "ready",
+        isRentFree: isConcession,
+        concessionNote: concession.note,
       });
     });
 
@@ -234,7 +301,10 @@ export function BulkInvoiceDialog({
       if (custLeases.length > 0) {
         custLeases.forEach((l, idx) => {
           const baseRent = Number(l.monthlyRent) || 0;
-          const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
+          const concession = getConcessionBillingStatus(l, issueDate);
+          const isConcession = concession.isFree && customerPricingMode === "lease";
+          const amt = isConcession ? 0 : (customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent));
+          const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : customerStream;
           const custCode = (cust?.customerId || cust?.id || idx).toString().slice(-4).toUpperCase();
           const invNo = `INV-CUST-${custCode}-${idx + 101}`;
 
@@ -248,10 +318,12 @@ export function BulkInvoiceDialog({
             leaseNumber: l.contractNumber || `LS-${l.id.slice(-4)}`,
             baseRent,
             amount: amt,
-            stream: customerStream,
-            accountCode: customerStream.split(/\s+/)[0] || "41100",
+            stream: stream,
+            accountCode: stream.split(/\s+/)[0] || "41100",
             invoiceNo: invNo,
             status: "ready",
+            isRentFree: isConcession,
+            concessionNote: concession.note,
           });
         });
       } else {
@@ -352,7 +424,7 @@ export function BulkInvoiceDialog({
       unit: item.unit,
       date: issueDate,
       due_date: dueDate,
-      stream: item.stream,
+      stream: item.isRentFree ? `Monthly Rental - Concession Period (${item.concessionNote || 'Rent-Free Concession'})` : item.stream,
       account_code: item.accountCode,
       amount: item.amount,
       customerId: item.customerId,
@@ -369,7 +441,7 @@ export function BulkInvoiceDialog({
     const createdList: ReceivableInvoice[] = newInvoices.map((inv, idx) => ({
       ...inv,
       id: `ar-bulk-${Date.now()}-${idx}`,
-      status: "Pending" as const,
+      status: (inv.amount === 0 ? "Paid" : "Pending") as any,
     }));
 
     setBatchResult({
@@ -722,8 +794,19 @@ export function BulkInvoiceDialog({
                             checked={item.selected}
                             onCheckedChange={() => activeTab === "property" ? toggleSelectPropertyItem(item.id) : toggleSelectCustomerItem(item.id)}
                           />
+                        <TableCell className="font-mono font-bold text-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <span>{item.unit}</span>
+                            {item.isRentFree && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 whitespace-nowrap"
+                                title={item.concessionNote || "Rent-Free Concession Period"}
+                              >
+                                🎁 Free (QAR 0)
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell className="font-mono font-bold text-foreground">{item.unit}</TableCell>
                         <TableCell className="font-semibold text-foreground max-w-[180px] truncate" title={item.tenant}>
                           {item.tenant}
                         </TableCell>

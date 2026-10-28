@@ -109,6 +109,11 @@ export interface LeaseContractData {
   petPolicyAr?: string;
   specialConditionsEn?: string;
   specialConditionsAr?: string;
+
+  // Rent-Free Concession & 13-Month Term Support
+  hasRentFree?: boolean;
+  rentFreeDays?: number;
+  rentFreePosition?: string;
   
   // Signatures
   landlordSignatureDate?: string;
@@ -348,19 +353,41 @@ function toArabicTenantName(raw: string): string {
  * Builds full dynamic contract data matching the specific tenant and property
  */
 export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseContractData {
-  const rent = Number(raw.monthlyRent || raw.rent || raw.rental_amount || raw.current_rent || raw.price || 5500);
-  const deposit = Number(raw.securityDeposit || raw.security_deposit || raw.security_deposit_amount || rent);
+  // 0. Check localStorage overrides if available in browser
+  let localOverride: any = null;
+  try {
+    if (typeof window !== 'undefined') {
+      const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+      const uKey = (raw.unit || raw.unit_ref || raw.propertyUnitNumber || raw.unit_code || raw.unit_name || '').toString().toUpperCase().trim();
+      localOverride = stored[raw.id] || (raw.lease_number ? stored[raw.lease_number] : null) || (raw.contractNumber ? stored[raw.contractNumber] : null) || (uKey ? stored[uKey] : null);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const hasRentFree = Boolean(
+    localOverride?.has_rent_free ??
+    raw.has_rent_free ??
+    raw.hasRentFree ??
+    raw.rent_free_period_days ??
+    raw.rentFreeDays
+  );
+  const rentFreeDays = localOverride?.rent_free_days ?? raw.rent_free_days ?? raw.rentFreeDays ?? (hasRentFree ? 30 : 0);
+  const rentFreePosition = localOverride?.rent_free_position ?? raw.rent_free_position ?? raw.rentFreePosition ?? 'FIRST_MONTH';
+
+  const rent = Number(localOverride?.monthlyRent || raw.monthlyRent || raw.rent || raw.rental_amount || raw.current_rent || raw.price || 5500);
+  const deposit = Number(localOverride?.monthlyRent || raw.securityDeposit || raw.security_deposit || raw.security_deposit_amount || rent);
   const utilDeposit = Number(raw.electricityWaterDeposit || 2000);
-  const pdcTotal = Number(raw.pdcCount || 12);
+  const pdcTotal = Number(localOverride?.pdc_count || raw.pdc_count || raw.pdcCount || 12);
   const postDatedCount = Math.max(0, pdcTotal - 1);
 
-  const sDate = raw.startDate || raw.leaseStartDate || raw.commencement_date || raw.contract_start_date || "2026-09-01";
-  const eDate = raw.endDate || raw.leaseEndDate || raw.expiry_date || raw.contract_end_date || "2027-08-31";
+  const sDate = localOverride?.commencement_date || raw.startDate || raw.leaseStartDate || raw.commencement_date || raw.contract_start_date || "2026-09-01";
+  const eDate = localOverride?.expiry_date || raw.endDate || raw.leaseEndDate || raw.expiry_date || raw.contract_end_date || "2027-08-31";
 
   const rawUnit = raw.unit || raw.unit_ref || raw.propertyUnitNumber || raw.unit_code || raw.unit_name || "04";
   const unitNum = String(rawUnit).replace(/^(Flat|Unit|Shop|Office|Villa)\s*/i, "").trim() || "04";
   const propName = raw.property || raw.propertyAddressEn || raw.property_name || raw.properties?.title || "Al Wakara-90";
-  const tenantName = raw.tenantName || raw.tenantNameEn || raw.tenant_name || raw.full_name || "Mr. SAJJAD ALI MOHAMMED";
+  const tenantName = localOverride?.tenant_name || raw.tenantName || raw.tenantNameEn || raw.tenant_name || raw.full_name || "Mr. SAJJAD ALI MOHAMMED";
   const qid = raw.tenantQid || raw.qid || raw.qatar_id || raw.customer_qid || generateDeterministicQid(tenantName);
   const mobile = raw.tenantMobile || raw.phone || raw.mobile || raw.mobile_number || "66965239";
 
@@ -382,6 +409,8 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
   const zoneAr = raw.zoneAr || (zone.includes("Wakara") ? "الوكرة 90" : zone.includes("Salata") ? "السلطة القديمة 18" : zone);
   const street = raw.streetNumber || raw.street_building_name || raw.street_no || "993";
   const building = raw.buildingNumber || raw.building_no || raw.property_code || "01";
+
+  const termMonths = hasRentFree ? 13 : (raw.leaseMonthsCount || 12);
 
   return {
     contractNumber: standardContractNum,
@@ -436,13 +465,13 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
     electricityWaterDepositWordsEn: raw.electricityWaterDepositWordsEn || numberToEnglishWords(utilDeposit),
     electricityWaterDepositWordsAr: raw.electricityWaterDepositWordsAr || numberToArabicWords(utilDeposit),
 
-    leaseDurationWordsEn: raw.leaseDurationWordsEn || "one year",
-    leaseDurationWordsAr: raw.leaseDurationWordsAr || "سنة واحد",
+    leaseDurationWordsEn: hasRentFree ? "13 months (12 paid + 1 rent-free concession month)" : (raw.leaseDurationWordsEn || "one year"),
+    leaseDurationWordsAr: hasRentFree ? "13 شهراً (12 شهراً مدفوعاً + شهر إعفاء من الإيجار)" : (raw.leaseDurationWordsAr || "سنة واحد"),
     leaseStartDate: formatEnglishDate(sDate),
     leaseStartDateAr: formatArabicDate(sDate),
     leaseEndDate: formatEnglishDate(eDate),
     leaseEndDateAr: formatArabicDate(eDate),
-    leaseMonthsCount: raw.leaseMonthsCount || 12,
+    leaseMonthsCount: termMonths,
 
     renewalNoticePeriodDays: raw.renewalNoticePeriodDays || 30,
     renewalNoticePeriodDaysAr: raw.renewalNoticePeriodDaysAr || "30",
@@ -462,6 +491,10 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
     earlyVacationCompensationAr: raw.earlyVacationCompensationAr || "شهر واحد",
     petPolicyEn: raw.petPolicyEn || "Pets are not allowed inside the premises.",
     petPolicyAr: raw.petPolicyAr || "الحيوانات الأليفة غير مسموح بها داخل المبنى.",
+
+    hasRentFree,
+    rentFreeDays,
+    rentFreePosition,
 
     landlordSignatureDate: raw.landlordSignatureDate || formatEnglishDate(sDate),
     landlordSignatureDateAr: raw.landlordSignatureDateAr || formatArabicDate(sDate),
@@ -845,10 +878,10 @@ export function generateBilingualLeaseContractHtml(inputData: Partial<LeaseContr
           <!-- Clause 2 -->
           <tr>
             <td class="col-en">
-              <span class="clause-num">2)</span> The rent shall be <strong>${d.currency} ${d.monthlyRent}/- (${d.monthlyRentWordsEn})</strong> per month payable, every month in advance (i.e. one current dated Cheque and remaining <strong>${d.postDatedChequeCount}</strong> postdated cheques).
+              <span class="clause-num">2)</span> The rent shall be <strong>${d.currency} ${d.monthlyRent}/- (${d.monthlyRentWordsEn})</strong> per month payable, every month in advance (i.e. one current dated Cheque and remaining <strong>${d.postDatedChequeCount}</strong> postdated cheques).${d.hasRentFree ? `<br/><span style="color: #0f172a; font-weight: 600;">[13-Month Term with 1-Month Rent-Free Concession: 12 cheques collected covering 12 paid months. ${d.rentFreePosition === 'LAST_MONTH' ? 'Month 13 is granted as a Rent-Free Concession.' : 'Month 1 is granted as a Rent-Free Concession.'}]</span>` : ''}
             </td>
             <td class="col-ar">
-              <span class="clause-num">2)</span> يكون مبلغ الإيجار <strong>${d.monthlyRent} ${d.currencyAr} (${d.monthlyRentWordsAr})</strong> شهريا ويسدد مقدما لكل شهر (وذلك شيك واحد تاريخ مؤرخة و<strong>${d.postDatedChequeCountAr}</strong> شيكات بتاريخ مؤجلة للدفع).
+              <span class="clause-num">2)</span> يكون مبلغ الإيجار <strong>${d.monthlyRent} ${d.currencyAr} (${d.monthlyRentWordsAr})</strong> شهريا ويسدد مقدما لكل شهر (وذلك شيك واحد تاريخ مؤرخة و<strong>${d.postDatedChequeCountAr}</strong> شيكات بتاريخ مؤجلة للدفع).${d.hasRentFree ? `<br/><span style="color: #0f172a; font-weight: 600;">[عقد لمدة 13 شهراً مع إعفاء شهر واحد: يتم تحصيل 12 شيكاً تغطي الأشهر المدفوعة. ${d.rentFreePosition === 'LAST_MONTH' ? 'الشهر 13 يعتبر شهر إعفاء مجاني.' : 'الشهر الأول يعتبر شهر إعفاء مجاني.'}]</span>` : ''}
             </td>
           </tr>
 
@@ -1063,14 +1096,14 @@ export function generateBilingualLeaseContractHtml(inputData: Partial<LeaseContr
           <tr>
             <td class="col-en">
               <span class="clause-num">19)</span> Tenant shall maintain, at all times, good neighborhood practices and relations, and shall respect the local traditions of the private residences and public buildings & places surrounding the leased Property.<br/>
-              <span class="clause-num">20)</span> If the TENANT intends to vacate the leased property prior to the expiry of the contractual lease term, the TENANT shall give <strong>${d.earlyVacationNoticePeriodEn}</strong> notice and pay the full rental for that month plus the equivalent of <strong>${d.earlyVacationCompensationEn}</strong> additional rent as compensation. If the Tenant leaves the country “for good” then there is no compensation charged on him, provided he should submit us the copy of the cancelled Residence Permit or termination letter from the company.<br/>
-              <span class="clause-num">21)</span> All other charges, including municipal Fines & Penalties should be paid by the Tenant if they violate Public Hygiene Law No. 18.<br/>
+              <span class="clause-num">20)</span> If the TENANT intends to vacate the leased property prior to the expiry of the contractual lease term, the TENANT shall give <strong>${d.earlyVacationNoticePeriodEn}</strong> notice and pay the full rental for that month plus the equivalent of <strong>${d.earlyVacationCompensationEn}</strong> additional rent as compensation. If the Tenant leaves the country “for good” then there is no compensation charged on him, provided he should submit us the copy of the cancelled Residence Permit or termination letter from the company.${d.hasRentFree ? `<br/><div style="margin-top: 4px; padding: 4px 6px; background-color: #f8fafc; border-left: 2px solid #0f172a;"><strong>Concession Clawback Clause:</strong> The 1-month rent-free concession granted in ${d.rentFreePosition === 'LAST_MONTH' ? 'Month 13 (Completion Incentive)' : 'Month 1 (Move-in Incentive)'} is strictly contingent upon the Tenant fulfilling the full ${d.leaseMonthsCount || 13}-month contractual term. In the event of early termination or default by the Tenant, the rent-free concession shall be deemed revoked, and the full undiscounted rental for the concession month (${d.currency} ${d.monthlyRent}/-) shall immediately become due, payable, and deductible from the security deposit or collected via legal claim.</div>` : ''}<br/>
+              <span class="clause-num">21)</span> All other charges, including municipal Fines & Penalties should be paid by the Tenant if they violate Public Hygiene Law No. 18.${d.hasRentFree ? ` <strong>Kahramaa & Utilities:</strong> Water, electricity, district cooling, and municipal charges are NOT free and remain 100% payable by the Tenant from Day 1 throughout any rent-free period.` : ''}<br/>
               <span class="clause-num">22)</span> ${d.petPolicyEn}
             </td>
             <td class="col-ar">
               <span class="clause-num">19)</span> يتعهدالمستأجر باحترام حق الجار ، ويحترم التقاليد المحلية للمساكن الخاصة والمباني العامة والأماكن المحيطة بالعين المؤجرة.<br/>
-              <span class="clause-num">20)</span> إذا كان المستأجر ينوي إخلاء العقار المؤجر قبل انتهاء مدة الإيجار التعاقدي ، فيجب على المستأجر تقديم إشعار مدته <strong>${d.earlyVacationNoticePeriodAr}</strong> ودفع الإيجار الكامل لذلك الشهر بالإضافة إلى ما يعادل إيجار <strong>${d.earlyVacationCompensationAr}</strong> إضافي كتعويض. إذا غادر المستأجر البلد "نهائياً" ، فلن يتم تحصيل أي تعويض عليه ، بشرط أن يقدم لنا نسخة من تصريح الإقامة الملغى أو خطاب الإنهاء من الشركة.<br/>
-              <span class="clause-num">21)</span> يجب على المستأجر دفع جميع الرسوم الأخرى، بما في ذلك الغرامات والعقوبات البلدية، إذا كان هناك انتهاك لقانون النظافة العامة رقم 18.<br/>
+              <span class="clause-num">20)</span> إذا كان المستأجر ينوي إخلاء العقار المؤجر قبل انتهاء مدة الإيجار التعاقدي ، فيجب على المستأجر تقديم إشعار مدته <strong>${d.earlyVacationNoticePeriodAr}</strong> ودفع الإيجار الكامل لذلك الشهر بالإضافة إلى ما يعادل إيجار <strong>${d.earlyVacationCompensationAr}</strong> إضافي كتعويض. إذا غادر المستأجر البلد "نهائياً" ، فلن يتم تحصيل أي تعويض عليه ، بشرط أن يقدم لنا نسخة من تصريح الإقامة الملغى أو خطاب الإنهاء من الشركة.${d.hasRentFree ? `<br/><div style="margin-top: 4px; padding: 4px 6px; background-color: #f8fafc; border-right: 2px solid #0f172a; direction: rtl;"><strong>بند استرداد الإعفاء (الشرط الفاسخ للامتياز):</strong> إن إعفاء شهر الإيجار الممنوح في ${d.rentFreePosition === 'LAST_MONTH' ? 'الشهر 13 (مكافأة إتمام العقد)' : 'الشهر الأول (حافز الانتقال)'} مشروط بوفاء المستأجر بكامل مدة العقد (${d.leaseMonthsCount || 13} شهراً). في حال الإنهاء المبكر أو الإخلاء قبل انتهاء المدة، يعتبر الإعفاء لاغياً ويستحق إيجار شهر الإعفاء (${d.monthlyRent} ${d.currencyAr}) فوراً ويخصم من التأمين أو يُحصّل قانونياً.</div>` : ''}<br/>
+              <span class="clause-num">21)</span> يجب على المستأجر دفع جميع الرسوم الأخرى، بما في ذلك الغرامات والعقوبات البلدية، إذا كان هناك انتهاك لقانون النظافة العامة رقم 18.${d.hasRentFree ? ` <strong>فواتير كهرماء والخدمات:</strong> رسوم الكهرباء والماء والتبريد والبلدية ليست مجانية ويلتزم المستأجر بسدادها من اليوم الأول وطوال فترة الإعفاء.` : ''}<br/>
               <span class="clause-num">22)</span> ${d.petPolicyAr}
             </td>
           </tr>
