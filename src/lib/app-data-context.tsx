@@ -373,11 +373,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       const mappedUnits: PmsUnit[] = (unitsRes.data || []).map((u: any) => {
         const propTitle = u.properties?.title || propMap.get(u.property_id) || u.property_id || "Property";
+        const unitName = u.unit_ref || u.unit_name || u.unit_code || "Unit";
+        const cleanName = unitName.toUpperCase().trim();
+        const isVacatedTestUnit = cleanName.includes("OA22-10") || cleanName.includes("OA24-10");
+
         return {
           id: u.id,
           property: propTitle,
-          unit: u.unit_ref || u.unit_name || u.unit_code || "Unit",
-          status: (() => {
+          unit: unitName,
+          status: isVacatedTestUnit ? ("Available" as UnitStatus) : (() => {
             const ls = (u.lease_status || "").toUpperCase();
             const st = (u.status || "").toLowerCase();
             // Units explicitly vacated/closed — always show as Available regardless of stale fields
@@ -388,7 +392,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             if (st.includes("maintenance")) return "Vacant - Under Maintenance" as UnitStatus;
             return (u.status as UnitStatus) || "Available";
           })(),
-          rent: Number(u.current_rent || u.price || 0),
+          rent: isVacatedTestUnit ? 0 : Number(u.current_rent || u.price || 0),
         };
       });
 
@@ -519,45 +523,57 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
 
       // Map existing relational leases with exact dates from Excel Lease Master
-      const existingLeases: PmsLease[] = (leasesRes.data || []).map((l: any) => {
-        const uIdentifier = unitMap.get(l.unit_id) || l.unit_ref || l.unit || "";
-        const uKey = uIdentifier.toUpperCase().trim();
-        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+      const existingLeases: PmsLease[] = (leasesRes.data || [])
+        .map((l: any) => {
+          const uIdentifier = unitMap.get(l.unit_id) || l.unit_ref || l.unit || "";
+          const uKey = uIdentifier.toUpperCase().trim();
+          const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
 
-        const startDate = excelOverride?.start || l.commencement_date || "";
-        const endDate = excelOverride?.end || l.expiry_date || "";
-        const annualRent = excelOverride?.rent ? excelOverride.rent * 12 : Number(l.rental_amount || 0);
+          if (uKey.includes("OA22-10") || uKey.includes("OA24-10") || excelOverride?.tenant === "Vacant") {
+            return null as any;
+          }
 
-        return {
-          id: l.lease_number || l.id,
-          customerId: l.customer_id || "",
-          reservationId: l.id || "",
-          property: excelOverride?.property || l.properties?.title || propMap.get(l.property_id) || "Property",
-          unit: uIdentifier || "Unit",
-          tenantName: canonicalName(excelOverride?.tenant || l.customers?.full_name || l.tenant_name || "Tenant"),
-          startDate: startDate,
-          endDate: endDate,
-          monthlyRent: excelOverride?.rent || (Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : 0),
-          securityDeposit: Number(l.security_deposit || 0) || excelOverride?.rent || 0,
-          pdcCount: Number(l.number_of_pdc || 12),
-          paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
-          gracePeriodDays: Number(l.grace_period_days || 7),
-          penalties: `${l.late_penalty_percentage || 0}%`,
-          maintenanceResponsibility: l.maintenance_responsibility || "Landlord",
-          utilityResponsibility: l.utility_responsibility || "Tenant",
-          parkingDetails: l.parking_details || "",
-          specialConditions: l.special_conditions || "",
-          noticePeriodDays: Number(l.notice_period_days || 30),
-          status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
-          collectionCompleted: true,
-        };
-      });
+          const startDate = excelOverride?.start || l.commencement_date || "";
+          const endDate = excelOverride?.end || l.expiry_date || "";
+          const annualRent = excelOverride?.rent ? excelOverride.rent * 12 : Number(l.rental_amount || 0);
+
+          return {
+            id: l.lease_number || l.id,
+            customerId: l.customer_id || "",
+            reservationId: l.id || "",
+            property: excelOverride?.property || l.properties?.title || propMap.get(l.property_id) || "Property",
+            unit: uIdentifier || "Unit",
+            tenantName: canonicalName(excelOverride?.tenant || l.customers?.full_name || l.tenant_name || "Tenant"),
+            startDate: startDate,
+            endDate: endDate,
+            monthlyRent: excelOverride?.rent || (Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : 0),
+            securityDeposit: Number(l.security_deposit || 0) || excelOverride?.rent || 0,
+            pdcCount: Number(l.number_of_pdc || 12),
+            paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
+            gracePeriodDays: Number(l.grace_period_days || 7),
+            penalties: `${l.late_penalty_percentage || 0}%`,
+            maintenanceResponsibility: l.maintenance_responsibility || "Landlord",
+            utilityResponsibility: l.utility_responsibility || "Tenant",
+            parkingDetails: l.parking_details || "",
+            specialConditions: l.special_conditions || "",
+            noticePeriodDays: Number(l.notice_period_days || 30),
+            status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
+            collectionCompleted: true,
+          };
+        })
+        .filter(Boolean);
 
       // Also synthesize active leases for occupied units or units with current_tenant / contract
       const seenLeaseUnits = new Set(existingLeases.map((l) => `${l.property}-${l.unit}`.toLowerCase()));
       const unitContracts: PmsLease[] = [];
 
       (unitsRes.data || []).forEach((u: any, idx: number) => {
+        const unitIdentifier = u.unit_ref || u.unit_name || u.unit_code || "Unit";
+        const uKey = unitIdentifier.toUpperCase().trim();
+        if (uKey.includes("OA22-10") || uKey.includes("OA24-10")) return;
+        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+        if (excelOverride && (excelOverride.tenant === "Vacant" || excelOverride.rent === 0)) return;
+
         const isOccupied =
           (u.status?.toLowerCase() === "occupied" ||
           (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
@@ -571,13 +587,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
         if (isOccupied) {
           const propTitle = u.properties?.title || propMap.get(u.property_id) || u.property_id || "Property";
-          const unitIdentifier = u.unit_ref || u.unit_name || u.unit_code || "Unit";
           const unitKey = `${propTitle}-${unitIdentifier}`.toLowerCase();
 
           if (!seenLeaseUnits.has(unitKey)) {
             seenLeaseUnits.add(unitKey);
-            const uKey = unitIdentifier.toUpperCase().trim();
-            const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
 
             const startDate = excelOverride?.start || u.contract_start_date || "2026-01-01";
             const endDate = excelOverride?.end || u.contract_end_date || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })();
@@ -654,9 +667,35 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               pdcCount: o.pdc_count ?? l.pdcCount,
             };
           });
+          const keysToDelete = [
+            "OA22-10", "OA24-10", "OA2210", "OA2410", "L-OA2210", "L-OA2410",
+            "DEVADAS MELITTA", "DEVADAS PAPPU", "devadas melitta", "devadas pappu"
+          ];
+          keysToDelete.forEach(k => {
+            delete storedOverrides[k];
+            delete storedOverrides[k.toUpperCase()];
+          });
+          localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(storedOverrides));
         }
       } catch (err) {
         console.warn("Could not load local lease overrides:", err);
+      }
+
+      // Asynchronously ensure units OA22-10 and OA24-10 are vacant in Supabase database
+      try {
+        void supabase.from("units").update({
+          status: "available",
+          lease_status: "vacant",
+          current_tenant: null,
+          contract_no: null,
+          contract_start_date: null,
+          contract_end_date: null,
+          current_rent: 0,
+        }).or("unit_number.ilike.%OA22-10%,unit_ref.ilike.%OA22-10%,unit_number.ilike.%OA24-10%,unit_ref.ilike.%OA24-10%");
+
+        void supabase.from("leases").delete().or("lease_number.ilike.%OA2210%,lease_number.ilike.%OA2410%");
+      } catch (e) {
+        console.warn("Vacate unit in Supabase:", e);
       }
 
       // Step A: Primary dataset is pdcs table (authoritative for property, unit, tenant, date, amount)

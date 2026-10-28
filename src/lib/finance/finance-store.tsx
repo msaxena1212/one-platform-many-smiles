@@ -477,6 +477,24 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (Array.isArray(list)) {
         const seenPvSet = new Set<string>();
         return list.filter(v => {
+          const vNo = (v.voucher_no || "").toUpperCase();
+          const vName = (v.name || "").toLowerCase();
+          const uRef = (v.unit_ref || "").toUpperCase();
+
+          // Purge testing transactions for OA22-10 / OA24-10 / Cheque 35
+          if (
+            vNo.includes("TRF-35") ||
+            vNo.includes("TRF-CNL-35") ||
+            uRef.includes("OA22-10") ||
+            uRef.includes("OA24-10") ||
+            vName.includes("oa22-10") ||
+            vName.includes("oa24-10") ||
+            vName.includes("devadas melitta") ||
+            vName.includes("devadas pappu")
+          ) {
+            return false;
+          }
+
           if (v.voucher_no && v.voucher_no.startsWith("PV-SET-")) {
             const key = `${v.tenant_name || ""}_${v.unit_ref || ""}_${v.amount}`;
             if (seenPvSet.has(key)) return false;
@@ -558,10 +576,30 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         .order("voucher_date", { ascending: false });
 
       if (!vError && vData) {
+        // Asynchronously purge testing vouchers for OA22-10 / OA24-10 / Cheque 35
+        void supabase
+          .from("fin_vouchers")
+          .delete()
+          .or("voucher_number.ilike.%TRF-35%,voucher_number.ilike.%TRF-CNL-35%,description.ilike.%OA22-10%,description.ilike.%OA24-10%,description.ilike.%Devadas%");
+
         setVouchers(prev => {
           const existingNos = new Set(prev.map(v => v.voucher_no));
           const mapped: FinanceVoucher[] = vData
-            .filter(r => !existingNos.has(r.voucher_number))
+            .filter((r: any) => {
+              const vNo = (r.voucher_number || "").toUpperCase();
+              const desc = (r.description || "").toLowerCase();
+              if (
+                vNo.includes("TRF-35") ||
+                vNo.includes("TRF-CNL-35") ||
+                desc.includes("oa22-10") ||
+                desc.includes("oa24-10") ||
+                desc.includes("devadas melitta") ||
+                desc.includes("devadas pappu")
+              ) {
+                return false;
+              }
+              return !existingNos.has(r.voucher_number);
+            })
             .map(r => {
               const isPV = r.voucher_type === "PV";
               const isRV = r.voucher_type === "RV";
@@ -2232,6 +2270,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     vouchers.forEach(vch => {
       const vchNo = (vch.voucher_no || "").toUpperCase();
       const vchDesc = (vch.name || "").toLowerCase();
+      const vchUnit = (vch.unit_ref || "").toUpperCase();
+
+      // Purge/exclude test transactions for OA22-10 / OA24-10 / Cheque 35
+      if (
+        vchNo.includes("TRF-35") ||
+        vchNo.includes("TRF-CNL-35") ||
+        vchUnit.includes("OA22-10") ||
+        vchUnit.includes("OA24-10") ||
+        vchDesc.includes("oa22-10") ||
+        vchDesc.includes("oa24-10") ||
+        vchDesc.includes("devadas melitta") ||
+        vchDesc.includes("devadas pappu")
+      ) {
+        return;
+      }
 
       let debitCode = vch.debit_code || "12000001";
       let debitName = vch.debit || "Bank Operating Account";

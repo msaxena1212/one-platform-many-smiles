@@ -2307,10 +2307,10 @@
     "property": "Al Ameen Residence 24",
     "propertyCode": "OA24",
     "unit": "OA24-10",
-    "tenant": "Mr. Devadas Pappu",
-    "start": "2026-04-07",
-    "end": "2027-04-06",
-    "rent": 4900
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
   },
   "OA24-11": {
     "property": "Al Ameen Residence 24",
@@ -3198,6 +3198,15 @@
     "start": "2025-08-01",
     "end": "2026-07-31",
     "rent": 3500
+  },
+  "OA22-10": {
+    "property": "Al Ameen Residence 22",
+    "propertyCode": "OA22",
+    "unit": "OA22-10",
+    "tenant": "Vacant",
+    "start": null,
+    "end": null,
+    "rent": 0
   },
   "OA23-01": {
     "property": "Al Ameen Residence 23",

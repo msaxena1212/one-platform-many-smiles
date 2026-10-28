@@ -364,7 +364,17 @@ function loadSavedReceiptHistory(): Record<string, TenantReceiptDetails[]> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(RECEIPT_HISTORY_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    const parsed: Record<string, TenantReceiptDetails[]> = JSON.parse(raw);
+    delete parsed["35"];
+    delete parsed["000035"];
+    for (const [k, v] of Object.entries(parsed)) {
+      if (Array.isArray(v) && v.some(r => (r.unitRef && (r.unitRef.includes("OA22-10") || r.unitRef.includes("OA24-10"))) || (r.tenantName && r.tenantName.toLowerCase().includes("devadas")))) {
+        delete parsed[k];
+      }
+    }
+    localStorage.setItem(RECEIPT_HISTORY_STORAGE_KEY, JSON.stringify(parsed));
+    return parsed;
   } catch {
     return {};
   }
@@ -665,6 +675,11 @@ export function PdcManagement() {
         if (isFinalStatus(fStatus)) finalStatus = fStatus;
         else if (isFinalStatus(pStatus)) finalStatus = pStatus;
         else if (fStatus === "Deposited" || pStatus === "Deposited") finalStatus = "Deposited";
+
+        // Reset testing transaction for OA22-10 / OA24-10 / Cheque 35
+        if (chq === "35" || chq === "000035" || unitName.includes("OA22-10") || unitName.includes("OA24-10") || tenantName.toLowerCase().includes("devadas")) {
+          finalStatus = "In Hand";
+        }
 
         const rowKey = String(p.id);
         dbDataMap.set(rowKey, {

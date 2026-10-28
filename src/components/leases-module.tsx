@@ -319,7 +319,16 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         }
       })();
 
-      const finalLeases = allLeases.map((leaseItem) => {
+      const finalLeases = allLeases
+        .filter((leaseItem) => {
+          const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
+          const t = getTenantName(leaseItem)?.toLowerCase()?.trim();
+          if (u.includes("OA22-10") || u.includes("OA24-10") || t.includes("devadas melitta") || t.includes("devadas pappu")) {
+            return false;
+          }
+          return true;
+        })
+        .map((leaseItem) => {
         const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
         const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
         const lNum = leaseItem.lease_number || '';
