@@ -473,6 +473,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           crNumber: c.commercial_registration || c.cr_number || c.crNumber || "",
           mobile:   c.mobile_number || c.mobile || c.phone || "",
           email:    c.email_address || c.email || "",
+          nationality: c.nationality || "",
+          customerStatus: c.customer_status || "Active",
           status:   "active" as any,
           _source:  "db",
         } as any);

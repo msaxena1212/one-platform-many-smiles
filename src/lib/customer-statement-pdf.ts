@@ -124,7 +124,7 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
   // Multi-Page Chunking Algorithm
   const pages: StatementPageChunk[] = [];
   
-  if (ledgerRows.length <= 6) {
+  if (ledgerRows.length <= 4 && upcomingPdcs.length <= 2) {
     // Fits on a single comprehensive sheet
     pages.push({
       pageNumber: 1,
@@ -138,8 +138,8 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
       showFooterBlocks: true,
     });
   } else {
-    // Page 1 takes the top dossier and first 7 rows
-    const PAGE_1_ROWS = 7;
+    // Page 1 takes the top dossier and first 4 rows to comfortably fit on Sheet 1 without spilling
+    const PAGE_1_ROWS = 4;
     const p1Rows = ledgerRows.slice(0, PAGE_1_ROWS);
     const p1Closing = p1Rows[p1Rows.length - 1]?.runningBalance ?? summary.openingBalance;
 
@@ -160,8 +160,8 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
 
     while (currentIdx < ledgerRows.length) {
       const remainingCount = ledgerRows.length - currentIdx;
-      // If remaining rows fit comfortably on final page with PDCs and footer (<= 14 rows)
-      if (remainingCount <= 14) {
+      // If remaining rows fit comfortably on final page with PDCs and footer (<= 12 rows)
+      if (remainingCount <= 12) {
         const slice = ledgerRows.slice(currentIdx);
         const prevClosing = pages[pages.length - 1].closingBalance;
         const pageClosing = slice[slice.length - 1]?.runningBalance ?? prevClosing;
@@ -213,7 +213,7 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
   <style>
     @page {
       size: A4 portrait;
-      margin: 8mm 10mm 10mm 10mm;
+      margin: 6mm 8mm 6mm 8mm;
     }
     * {
       box-sizing: border-box;
@@ -282,14 +282,13 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
       max-width: 210mm;
       margin: 15px auto;
       background: #ffffff;
-      padding: 10mm 12mm 10mm 12mm;
+      padding: 6mm 10mm;
       border-radius: 6px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       box-sizing: border-box;
-      min-height: 297mm;
     }
     .page-content-wrapper {
       flex: 1;
@@ -714,13 +713,15 @@ export function generateBilingualStatementHtml(payload: BilingualStatementPayloa
       }
       .page-sheet {
         margin: 0 !important;
-        padding: 6mm 8mm 8mm 8mm !important;
+        padding: 0 !important;
         box-shadow: none !important;
         border: none !important;
         border-radius: 0 !important;
         max-width: 100% !important;
         width: 100% !important;
-        min-height: 290mm !important;
+        height: auto !important;
+        min-height: 0 !important;
+        display: block !important;
         page-break-after: always !important;
         break-after: page !important;
         page-break-inside: avoid !important;

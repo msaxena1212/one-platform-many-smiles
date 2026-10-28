@@ -543,6 +543,8 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
       'Kuwaiti',
       'Bahraini',
       'Omani',
+      'Azerbaijani',
+      'Azerbaijan',
       'British',
       'American',
       'Canadian',
@@ -575,6 +577,46 @@ export const MASTER_DEFINITIONS: MasterGroupDefinition[] = [
       'Chinese',
       'Japanese',
       'South Korean',
+      'Afghan',
+      'Armenian',
+      'Austrian',
+      'Belgian',
+      'Brazilian',
+      'Bulgarian',
+      'Colombian',
+      'Czech',
+      'Danish',
+      'Dutch',
+      'Ethiopian',
+      'Finnish',
+      'Georgian',
+      'Greek',
+      'Hungarian',
+      'Indonesian',
+      'Iranian',
+      'Iraqi',
+      'Irish',
+      'Kazakh',
+      'Kyrgyz',
+      'Libyan',
+      'Malaysian',
+      'Mexican',
+      'New Zealander',
+      'Norwegian',
+      'Polish',
+      'Portuguese',
+      'Romanian',
+      'Serbian',
+      'Singaporean',
+      'Swedish',
+      'Swiss',
+      'Tajik',
+      'Thai',
+      'Turkmen',
+      'Ukrainian',
+      'Uzbek',
+      'Venezuelan',
+      'Vietnamese',
       'Other',
     ],
   },
@@ -708,6 +750,16 @@ export class DynamicMastersService {
     const stored = this.getStoredData();
     const customList = stored[masterKey];
     if (customList && Array.isArray(customList) && customList.length > 0) {
+      if (masterKey === 'nationality') {
+        const def = MASTER_DEFINITIONS.find(d => d.key === 'nationality');
+        if (def) {
+          const existing = new Set(customList.map(item => item.name.toLowerCase()));
+          const missing = def.initialValues
+            .filter(v => !existing.has(v.toLowerCase()))
+            .map((name, idx) => ({ id: `nationality-init-${idx}`, name }));
+          if (missing.length > 0) return [...customList, ...missing];
+        }
+      }
       return customList;
     }
 

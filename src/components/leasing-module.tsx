@@ -1540,6 +1540,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             crNumber: c.commercial_registration || c.cr_number || c.crNumber || "",
             mobile: c.mobile_number || c.mobile || c.phone || "",
             email: c.email_address || c.email || "",
+            nationality: c.nationality || "",
+            customerStatus: c.customer_status || "Active",
             status: "active" as any, _source: "db",
           });
           if (normKey) seenNames.add(normKey);
@@ -2917,7 +2919,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     firstName: "",
     middleName: "",
     lastName: "",
-    nationality: "Qatari",
+    nationality: "",
     qatarId: "",
     qidExpiryDate: "",
     passport: "",
@@ -3409,6 +3411,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       status: "active",
     };
     setCustomers((items) => [customer, ...items]);
+    setDirectCustomers((items) => [customer, ...items]);
 
     // Persist to Supabase Database
     try {
@@ -3422,7 +3425,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         qatar_id: customerForm.qatarId || null,
         passport_number: customerForm.passport || null,
         commercial_registration: customerForm.crNumber || null,
-        nationality: (customerForm as any).nationality || "Qatari",
+        nationality: (customerForm as any).nationality || null,
         mobile_number: primaryMob || null,
         primary_mobile: primaryMob || null,
         email_address: primaryMail || null,
@@ -7088,7 +7091,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
                     <div className="p-2.5 rounded-lg bg-background border">
                       <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Nationality</span>
-                      <span>{viewCustomerData.nationality || "Qatari"}</span>
+                      <span>{viewCustomerData.nationality || "—"}</span>
                     </div>
                     <div className="p-2.5 rounded-lg bg-background border">
                       <span className="text-muted-foreground block text-[10px] uppercase font-semibold">Gender</span>
@@ -7931,17 +7934,64 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 const primaryMob = customerForm.primaryMobile || customerForm.mobile || "";
                 const primaryMail = customerForm.primaryEmail || customerForm.email || "";
 
+                const updatedCustomerFields = {
+                  ...customerForm,
+                  name: finalDisplayName,
+                  displayName: finalDisplayName,
+                  mobile: primaryMob,
+                  primaryMobile: primaryMob,
+                  email: primaryMail,
+                  primaryEmail: primaryMail,
+                  currentAddress: customerForm.currentAddress || customerForm.localAddress,
+                  nationality: (customerForm as any).nationality || "",
+                  customerStatus: customerForm.customerStatus || "Active",
+                };
+
                 setCustomers(prev => prev.map(c => c.id === editCustomerData.id ? {
                   ...c,
-                  ...customerForm,
-                  name: finalDisplayName || c.name,
-                  displayName: finalDisplayName || (c as any).displayName,
-                  mobile: primaryMob || (c as any).mobile,
-                  primaryMobile: primaryMob || (c as any).primaryMobile,
-                  email: primaryMail || (c as any).email,
-                  primaryEmail: primaryMail || (c as any).primaryEmail,
-                  currentAddress: customerForm.currentAddress || customerForm.localAddress || (c as any).currentAddress,
+                  ...updatedCustomerFields,
                 } : c));
+
+                setDirectCustomers(prev => prev.map(c => c.id === editCustomerData.id ? {
+                  ...c,
+                  ...updatedCustomerFields,
+                } : c));
+
+                // Persist changes directly to Supabase Database
+                try {
+                  const dbUpdatePayload: any = {
+                    full_name: finalDisplayName,
+                    display_name: finalDisplayName,
+                    first_name: customerForm.firstName || finalDisplayName,
+                    middle_name: customerForm.middleName || null,
+                    last_name: customerForm.lastName || null,
+                    customer_type: customerForm.type === "company" ? "Company" : "Individual",
+                    qatar_id: customerForm.qatarId || null,
+                    passport_number: customerForm.passport || null,
+                    commercial_registration: customerForm.crNumber || null,
+                    nationality: (customerForm as any).nationality || null,
+                    mobile_number: primaryMob || null,
+                    primary_mobile: primaryMob || null,
+                    email_address: primaryMail || null,
+                    primary_email: primaryMail || null,
+                    customer_status: customerForm.customerStatus || "Active",
+                    approval_status: customerForm.approvalStatus || "Approved",
+                    gender: customerForm.gender || "Male",
+                    company_legal_name: customerForm.companyLegalName || null,
+                    trade_name: customerForm.tradeName || null,
+                    trade_licence_no: customerForm.tradeLicenceNo || null,
+                    computer_card_no: customerForm.computerCardNo || null,
+                  };
+                  supabase.from("customers").update(dbUpdatePayload).eq("id", editCustomerData.id).then(({ error }) => {
+                    if (error) {
+                      console.warn("[editCustomer] Supabase update warning:", error.message);
+                    } else {
+                      console.log("[editCustomer] Supabase update successful for id:", editCustomerData.id);
+                    }
+                  });
+                } catch (err: any) {
+                  console.warn("[editCustomer] Supabase update exception:", err?.message || err);
+                }
 
                 // Synchronize updated documents with the Documents module
                 setDocuments(prevDocs => {
@@ -14175,7 +14225,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </div>
               ) : (
                 <DataTable
-                  columns={["Customer ID", "Name", "Type", "Primary ID", "Contact", "Status", "Actions"]}
+                  columns={["Customer ID", "Name", "Type", "Nationality", "Primary ID", "Contact", "Status", "Actions"]}
                   rows={filteredCustomers.map((customer) => [
                     <span key="cust-id" className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
                       {customer?.customerId || customer?.tax_identification_no || "-"}
@@ -14192,6 +14242,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     <span key="type" className="capitalize text-xs font-medium px-2 py-0.5 rounded-full inline-block bg-muted">
                       {customer?.type || "individual"}
                     </span>,
+                    <span key="nat" className="text-xs font-medium text-foreground">
+                      {customer?.nationality || "—"}
+                    </span>,
                     customer?.qatarId || customer?.passport || customer?.crNumber || "-",
                     `${customer?.mobile || "-"} / ${customer?.email || "-"}`,
                     <Select
@@ -14199,6 +14252,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       value={customer?.customerStatus || "Active"}
                       onValueChange={(val) => {
                         setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
+                        setDirectCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
+                        supabase.from("customers").update({ customer_status: val }).eq("id", customer.id).then(() => {});
                       }}
                     >
                       <SelectTrigger className={`h-7 text-xs w-32 font-semibold border ${
@@ -14239,7 +14294,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           firstName: customer?.firstName || customer?.displayName || customer?.name || "",
                           middleName: customer?.middleName || "",
                           lastName: customer?.lastName || "",
-                          nationality: (customer as any)?.nationality || "Qatari",
+                          nationality: (customer as any)?.nationality || "",
                           qatarId: customer?.qatarId || "",
                           qidExpiryDate: customer?.qidExpiryDate || "",
                           passport: customer?.passport || "",
