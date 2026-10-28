@@ -794,6 +794,7 @@ export function BulkInvoiceDialog({
                             checked={item.selected}
                             onCheckedChange={() => activeTab === "property" ? toggleSelectPropertyItem(item.id) : toggleSelectCustomerItem(item.id)}
                           />
+                        </TableCell>
                         <TableCell className="font-mono font-bold text-foreground">
                           <div className="flex items-center gap-1.5">
                             <span>{item.unit}</span>
