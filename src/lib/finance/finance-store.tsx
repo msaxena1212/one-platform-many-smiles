@@ -483,6 +483,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             seenPvSet.add(key);
           }
           return true;
+        }).map(v => {
+          const vNo = (v.voucher_no || "").toUpperCase();
+          const vName = (v.name || "").toLowerCase();
+          if (vNo.startsWith("VCH-TRF-CNL-") || vName.includes("pdc cancelled") || vName.includes("returned on bank transfer")) {
+            return {
+              ...v,
+              debit: "Customer PDC Liability",
+              debit_code: "21400",
+              credit: "PDC In Hand",
+              credit_code: "12900",
+            };
+          }
+          if (vNo.startsWith("VCH-TRF-") || vName.includes("bank transfer received in place of pdc")) {
+            return {
+              ...v,
+              debit: v.debit && !v.debit.includes("Revenue") ? v.debit : "Bank Operating Account",
+              debit_code: v.debit_code && v.debit_code !== "41100" ? v.debit_code : "12000001",
+              credit: "Tenant Receivables",
+              credit_code: "12413",
+            };
+          }
+          return v;
         });
       }
       return INITIAL_VOUCHERS;
@@ -579,6 +601,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 } else if (desc.includes("bank deposit of replaced pdc cash till") || desc.includes("vch-csh-dep-")) {
                   drCode = "12000001"; drName = "Bank Operating Account";
                   crCode = "12100001"; drName = "Cash In Hand";
+                } else if (desc.includes("bank transfer received in place of pdc") || (desc.includes("vch-trf-") && !desc.includes("cnl")) || (r.voucher_number && r.voucher_number.toLowerCase().startsWith("vch-trf-") && !r.voucher_number.toLowerCase().includes("cnl"))) {
+                  const bInfo = resolvePdcBankGl(desc);
+                  drCode = bInfo.glCode || "12000001"; drName = bInfo.glName || "Bank Operating Account";
+                  crCode = "12413"; crName = "Tenant Receivables";
+                } else if (desc.includes("pdc cancelled / returned on bank transfer settlement") || desc.includes("vch-trf-cnl-") || (r.voucher_number && r.voucher_number.toLowerCase().startsWith("vch-trf-cnl-"))) {
+                  drCode = "21400"; drName = "Customer PDC Liability";
+                  crCode = "12900"; crName = "PDC In Hand";
                 } else if (desc.includes("cash collected in place of pdc") || desc.includes("vch-csh-pdc-")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "41100"; crName = "Rental Revenue";
@@ -606,11 +635,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               let vchUnit = "";
               let vchProp = "";
               if (r.description) {
-                const match = r.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
-                if (match) {
-                  vchTenant = match[1].trim();
-                  vchUnit = match[2].trim();
+                const trfMatch = r.description.match(/(?:Bank Transfer Received in Place of PDC|PDC Cancelled \/ Returned on Bank Transfer Settlement)\s*[-–]\s*\w+\s*\((.*?)\s*[-–]\s*(.*?)\)/i);
+                if (trfMatch) {
+                  vchTenant = trfMatch[1].trim();
+                  vchUnit = trfMatch[2].trim();
                   if (vchUnit.includes("-")) vchProp = vchUnit.split("-")[0].trim();
+                } else {
+                  const match = r.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+                  if (match) {
+                    vchTenant = match[1].trim();
+                    vchUnit = match[2].trim();
+                    if (vchUnit.includes("-")) vchProp = vchUnit.split("-")[0].trim();
+                  }
                 }
               }
 
@@ -2194,9 +2230,32 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // 4. Vouchers (Journal, Payment, Receipt)
     vouchers.forEach(vch => {
-      const isDrExp = vch.debit_code.startsWith("5");
-      const isDrAsset = vch.debit_code.startsWith("1");
-      const isDrLiab = vch.debit_code.startsWith("2");
+      const vchNo = (vch.voucher_no || "").toUpperCase();
+      const vchDesc = (vch.name || "").toLowerCase();
+
+      let debitCode = vch.debit_code || "12000001";
+      let debitName = vch.debit || "Bank Operating Account";
+      let creditCode = vch.credit_code || "12413";
+      let creditName = vch.credit || "Tenant Receivables";
+
+      // CRITICAL GUARD: PDC cancellation or bank transfer replacement must NEVER hit Rental Revenue (41100).
+      // Leg 1 (VCH-TRF): Receiving Bank Account (DR) / Tenant Receivables (CR 12413)
+      // Leg 2 (VCH-TRF-CNL): Customer PDC Liability (DR 21400) / PDC In Hand (CR 12900)
+      if (vchNo.startsWith("VCH-TRF-CNL-") || vchDesc.includes("pdc cancelled") || vchDesc.includes("returned on bank transfer")) {
+        debitCode = "21400";
+        debitName = "Customer PDC Liability";
+        creditCode = "12900";
+        creditName = "PDC In Hand";
+      } else if (vchNo.startsWith("VCH-TRF-") || vchDesc.includes("bank transfer received in place of pdc") || vchDesc.includes("bank transfer settlement")) {
+        if (!debitCode || debitCode === "41100") debitCode = "12000001";
+        if (!debitName || debitName.includes("Revenue")) debitName = "Bank Operating Account";
+        creditCode = "12413";
+        creditName = "Tenant Receivables";
+      }
+
+      const isDrExp = debitCode.startsWith("5");
+      const isDrAsset = debitCode.startsWith("1");
+      const isDrLiab = debitCode.startsWith("2");
 
       let propName = (vch as any).property_name || (vch as any).property;
       let unitName = (vch as any).unit_ref || (vch as any).unit;
@@ -2209,19 +2268,32 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const hasTenant = tenantName && tenantName !== "Corporate / Admin" && tenantName !== "Tenant" && tenantName !== "Unassigned";
 
       if (!hasTenant && vch.name) {
-        const slashMatch = vch.name.match(/[—–\-]\s*([^(|—–\-/]+?)\s*\/\s*([^(|—–\-/]+)/);
-        if (slashMatch && slashMatch[1]?.trim() && slashMatch[1].trim() !== "Tenant") {
-          tenantName = slashMatch[1].trim();
-          if (!hasUnit) unitName = slashMatch[2].trim();
+        const trfPdcMatch = vch.name.match(/(?:Bank Transfer|PDC Cancelled).*?[-–]\s*\w+\s*\((.*?)\s*[-–]\s*(.*?)\)/i);
+        if (trfPdcMatch) {
+          tenantName = trfPdcMatch[1].trim();
+          if (!hasUnit) unitName = trfPdcMatch[2].trim();
+          if (!hasProp && unitName.includes("-")) propName = unitName.split("-")[0].trim();
         } else {
-          const parenMatch = vch.name.match(/[—–\-]\s*([^(|—–\-]+?)\s*\(([^)]+)\)/);
-          if (parenMatch && parenMatch[1]?.trim() && parenMatch[1].trim() !== "Tenant") {
-            tenantName = parenMatch[1].trim();
-            if (!hasUnit) unitName = parenMatch[2].trim();
+          const slashMatch = vch.name.match(/[—–\-]\s*([^(|—–\-/]+?)\s*\/\s*([^(|—–\-/]+)/);
+          if (slashMatch && slashMatch[1]?.trim() && slashMatch[1].trim() !== "Tenant") {
+            tenantName = slashMatch[1].trim();
+            if (!hasUnit) unitName = slashMatch[2].trim();
           } else {
-            const dashMatch = vch.name.match(/[—–\-]\s*([^|—–\-[\]]+)/);
-            if (dashMatch && dashMatch[1]?.trim() && dashMatch[1].trim() !== "Tenant") {
-              tenantName = dashMatch[1].trim();
+            const parenMatch = vch.name.match(/[—–\-]\s*([^(|—–\-]+?)\s*\(([^)]+)\)/);
+            if (parenMatch && parenMatch[1]?.trim() && parenMatch[1].trim() !== "Tenant") {
+              if (/^\d+$/.test(parenMatch[1].trim()) && parenMatch[2].includes("-")) {
+                const parts = parenMatch[2].split("-");
+                tenantName = parts[0].trim();
+                if (!hasUnit) unitName = parts.slice(1).join("-").trim();
+              } else {
+                tenantName = parenMatch[1].trim();
+                if (!hasUnit) unitName = parenMatch[2].trim();
+              }
+            } else {
+              const dashMatch = vch.name.match(/[—–\-]\s*([^|—–\-[\]]+)/);
+              if (dashMatch && dashMatch[1]?.trim() && dashMatch[1].trim() !== "Tenant") {
+                tenantName = dashMatch[1].trim();
+              }
             }
           }
         }
@@ -2249,8 +2321,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       list.push({
         id: `tx-vch-dr-${vch.id}`,
         date: vch.date,
-        account_code: vch.debit_code || "12000001",
-        account_name: getCoaName(vch.debit, vch.debit_code, "Bank Operating Account"),
+        account_code: debitCode,
+        account_name: getCoaName(debitName, debitCode, "Bank Operating Account"),
         account_type: isDrExp ? "Expenses" : isDrAsset ? "Assets" : isDrLiab ? "Liabilities" : "Assets",
         reference: vch.voucher_no,
         debit: vch.amount,
@@ -2262,15 +2334,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         tenant_name: finalTenant,
       });
 
-      const isCrRev = vch.credit_code.startsWith("4");
-      const isCrAsset = vch.credit_code.startsWith("1");
-      const isCrLiab = vch.credit_code.startsWith("2");
+      const isCrRev = creditCode.startsWith("4");
+      const isCrAsset = creditCode.startsWith("1");
+      const isCrLiab = creditCode.startsWith("2");
 
       list.push({
         id: `tx-vch-cr-${vch.id}`,
         date: vch.date,
-        account_code: vch.credit_code || "41100",
-        account_name: getCoaName(vch.credit, vch.credit_code, "Rental Revenue"),
+        account_code: creditCode,
+        account_name: getCoaName(creditName, creditCode, "Tenant Receivables"),
         account_type: isCrRev ? "Revenue" : isCrAsset ? "Assets" : isCrLiab ? "Liabilities" : "Capital",
         reference: vch.voucher_no,
         debit: 0,

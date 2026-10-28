@@ -628,7 +628,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           const storedOverrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
           mappedLeases = mappedLeases.map((l) => {
             const uKey = l.unit ? l.unit.toUpperCase().trim() : "";
-            const o = storedOverrides[l.id] || (uKey ? storedOverrides[uKey] : null);
+            const cleanU = uKey ? uKey.replace(/[^a-zA-Z0-9]/g, '') : "";
+            const lId = l.id || "";
+            const cleanLId = lId ? lId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : "";
+            const tName = l.tenantName ? l.tenantName.toLowerCase().trim() : "";
+
+            const o = storedOverrides[l.id] ||
+              (cleanLId ? storedOverrides[cleanLId] : null) ||
+              (uKey ? storedOverrides[uKey] : null) ||
+              (cleanU ? storedOverrides[cleanU] : null) ||
+              (cleanU ? storedOverrides[`L-${cleanU}`] : null) ||
+              (tName ? storedOverrides[tName] : null);
             if (!o) return l;
             return {
               ...l,

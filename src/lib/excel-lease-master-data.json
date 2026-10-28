@@ -2749,14 +2749,14 @@
     "propertyCode": "MS80",
     "unit": "MS80-09",
     "tenant": "Mr. Fuad Zaneen Ovinakath",
-    "start": "2026-07-01",
-    "end": "2027-07-31",
+    "start": "2026-08-01",
+    "end": "2027-06-30",
     "rent": 4100,
-    "tenureMonths": 13,
-    "numberOfPDCs": 12,
-    "freePeriodMonths": 1,
+    "tenureMonths": 11,
+    "numberOfPDCs": 11,
+    "freePeriodMonths": 0,
     "freePeriodPosition": "FIRST_MONTH",
-    "hasRentFree": true
+    "hasRentFree": false
   },
   "MS80-10": {
     "property": "Al Ameen Residence 80",

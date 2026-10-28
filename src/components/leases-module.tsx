@@ -97,8 +97,25 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         return {};
       }
     })();
-    const uName = getUnitName(lease)?.toUpperCase()?.trim();
-    const o = storedOverrides[lease.id] || (lease.lease_number ? storedOverrides[lease.lease_number] : null) || (uName ? storedOverrides[uName] : null);
+    // Helper to resolve override with multiple key variations
+    function lookupOverride(leaseItem: any, overridesMap: Record<string, any>) {
+      if (!overridesMap) return null;
+      const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
+      const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
+      const lNum = leaseItem.lease_number || '';
+      const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+      const tName = getTenantName(leaseItem)?.toLowerCase()?.trim();
+
+      return overridesMap[leaseItem.id] ||
+        (lNum ? overridesMap[lNum] : null) ||
+        (cleanLNum ? overridesMap[cleanLNum] : null) ||
+        (u ? overridesMap[u] : null) ||
+        (cleanU ? overridesMap[cleanU] : null) ||
+        (cleanU ? overridesMap[`L-${cleanU}`] : null) ||
+        (tName ? overridesMap[tName] : null);
+    }
+
+    const o = lookupOverride(lease, storedOverrides);
 
     const monthly = o?.monthlyRent ?? (lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0));
     const annual = o?.rental_amount ?? (lease.rental_amount || (monthly * 12));
@@ -145,30 +162,54 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     // 1. Persistent localStorage overrides (survives page refresh & context reloads)
     try {
       const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
-      stored[editForm.id] = updatedData;
-      if (editForm.lease_number) {
-        stored[editForm.lease_number] = updatedData;
-      }
-      if (editForm.unit_name && editForm.unit_name !== '—') {
-        stored[editForm.unit_name.toUpperCase().trim()] = updatedData;
-      }
+      const cleanUnit = editForm.unit_name ? editForm.unit_name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+      const cleanLease = editForm.lease_number ? editForm.lease_number.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+      const keysToSave = [
+        editForm.id,
+        editForm.lease_number,
+        cleanLease,
+        editForm.unit_name,
+        editForm.unit_name ? editForm.unit_name.toUpperCase().trim() : '',
+        cleanUnit,
+        cleanUnit ? `L-${cleanUnit}` : '',
+        cleanUnit ? `LES-${cleanUnit}` : '',
+        editForm.tenant_name ? editForm.tenant_name.toLowerCase().trim() : '',
+      ].filter(Boolean);
+
+      keysToSave.forEach(k => {
+        stored[k] = updatedData;
+      });
       localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(stored));
     } catch (e) {
       console.warn("Could not save to localStorage:", e);
     }
 
-    // 2. Persist to Supabase leases table
+    // 2. Persist to Supabase leases table safely (check UUID to prevent PostgreSQL 22P02 invalid input syntax error)
     try {
-      await supabase
-        .from('leases')
-        .update({
-          commencement_date: editForm.commencement_date,
-          expiry_date: editForm.expiry_date,
-          rental_amount: annRent,
-          lease_status: editForm.lease_status.toLowerCase(),
-          number_of_pdc: pdcCount,
-        })
-        .or(`id.eq.${editForm.id},lease_number.eq.${editForm.lease_number}`);
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editForm.id);
+      if (isUUID) {
+        await supabase
+          .from('leases')
+          .update({
+            commencement_date: editForm.commencement_date,
+            expiry_date: editForm.expiry_date,
+            rental_amount: annRent,
+            lease_status: editForm.lease_status.toLowerCase(),
+            number_of_pdc: pdcCount,
+          })
+          .eq('id', editForm.id);
+      } else if (editForm.lease_number) {
+        await supabase
+          .from('leases')
+          .update({
+            commencement_date: editForm.commencement_date,
+            expiry_date: editForm.expiry_date,
+            rental_amount: annRent,
+            lease_status: editForm.lease_status.toLowerCase(),
+            number_of_pdc: pdcCount,
+          })
+          .eq('lease_number', editForm.lease_number);
+      }
     } catch (e) {
       console.warn("Supabase lease update note:", e);
     }
@@ -280,7 +321,18 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
       const finalLeases = allLeases.map((leaseItem) => {
         const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
-        const o = storedOverrides[leaseItem.id] || (leaseItem.lease_number ? storedOverrides[leaseItem.lease_number] : null) || (u ? storedOverrides[u] : null);
+        const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
+        const lNum = leaseItem.lease_number || '';
+        const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+        const tName = getTenantName(leaseItem)?.toLowerCase()?.trim();
+
+        const o = storedOverrides[leaseItem.id] ||
+          (lNum ? storedOverrides[lNum] : null) ||
+          (cleanLNum ? storedOverrides[cleanLNum] : null) ||
+          (u ? storedOverrides[u] : null) ||
+          (cleanU ? storedOverrides[cleanU] : null) ||
+          (cleanU ? storedOverrides[`L-${cleanU}`] : null) ||
+          (tName ? storedOverrides[tName] : null);
         if (!o) return leaseItem;
         return {
           ...leaseItem,
