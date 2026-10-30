@@ -12,7 +12,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2,
   Calendar, Layers, ShieldCheck, Tag, DollarSign, Upload, Percent, RefreshCw, FileText, Check, PlusCircle, TrendingUp, TrendingDown,

@@ -59,6 +59,7 @@ import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
 import { BulkInvoiceDialog } from "@/components/finance/bulk-invoice-dialog";
 import { CustomerStatementSubModule } from "@/components/finance/customer-statement-submodule";
 import { InvoiceViewDialog } from "@/components/finance/invoice-view-dialog";
+import { PropertyWiseProfitAndLossSubModule } from "@/components/finance/property-wise-pnl";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";

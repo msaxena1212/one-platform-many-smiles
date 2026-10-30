@@ -347,3 +347,209 @@ export function generatePortfolioRevenueBatch(params: {
     records: allRecords,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Contract-period (accrual) monthly proration — used by the Property-wise P&L.
+// Revenue is recognised on the days of the contract falling in each accounting
+// month, irrespective of cheque clearance or cash collection.
+// ---------------------------------------------------------------------------
+
+export interface MonthRevenueProration {
+  monthKey: string; // e.g. "2026-10"
+  monthName: string; // e.g. "October 2026"
+  periodStart: string; // "2026-10-15"
+  periodEnd: string; // "2026-10-31"
+  totalDaysInMonth: number; // e.g. 31
+  applicableDays: number; // e.g. 17
+  isFullMonth: boolean;
+  dailyRate: number;
+  monthlyRent: number;
+  recognizedRevenue: number;
+  reasonCode: RevenueReasonCode;
+  explanation: string;
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+/**
+ * Calculates the exact contract-period accrual revenue for a single lease within a specific accounting month.
+ *
+ * Implements authoritative accrual rules:
+ * - Full month (e.g. 1 Oct to 31 Oct): 100% of monthly rent recognized in October.
+ * - Prorated mid-month (e.g. 15 Oct to 14 Nov):
+ *     15–31 October (17 days) recognized in October = 17 / 31 × monthlyRent.
+ *     1–14 November (14 days) recognized in November = 14 / 30 × monthlyRent.
+ *
+ * Irrespective of whether payment has been collected or cheques cleared.
+ */
+export function calculateContractPeriodMonthlyRevenue(params: {
+  startDate: string;
+  endDate: string;
+  monthlyRent: number;
+  targetMonth: string; // "YYYY-MM"
+  prorationMethod?: ProrationMethod;
+  effectiveRevenueEndDate?: string;
+  actualVacateDate?: string;
+  earlyVacate?: boolean;
+}): MonthRevenueProration | null {
+  const {
+    startDate,
+    endDate,
+    monthlyRent,
+    targetMonth,
+    prorationMethod = 'CALENDAR_DAYS',
+    effectiveRevenueEndDate,
+    actualVacateDate,
+    earlyVacate,
+  } = params;
+
+  if (!startDate || !endDate || monthlyRent <= 0 || !targetMonth) return null;
+
+  const [yearStr, monthStr] = targetMonth.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthIndex = parseInt(monthStr, 10) - 1;
+  if (isNaN(year) || isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) return null;
+
+  const monthStart = new Date(Date.UTC(year, monthIndex, 1));
+  const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0)); // Last day of month
+  const totalDaysInMonth = monthEnd.getUTCDate();
+
+  const leaseStart = new Date(startDate);
+  const leaseEnd = new Date(endDate);
+
+  // Determine effective termination if early vacated
+  const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? actualVacateDate : undefined);
+  const effectiveTermDate = approvedVacate ? new Date(approvedVacate) : leaseEnd;
+
+  // Bounded start and end within the target calendar month
+  const periodStart = leaseStart > monthStart ? leaseStart : monthStart;
+  const periodEnd = effectiveTermDate < monthEnd ? effectiveTermDate : monthEnd;
+
+  // Check if lease overlaps with this accounting month
+  if (periodStart > effectiveTermDate || periodStart > monthEnd || periodEnd < monthStart) {
+    return null;
+  }
+
+  const periodStartStr = periodStart.toISOString().split('T')[0];
+  const periodEndStr = periodEnd.toISOString().split('T')[0];
+  const applicableDays = getInclusiveDays(periodStartStr, periodEndStr);
+
+  if (applicableDays <= 0) return null;
+
+  // Daily rate determination
+  const dailyRate = prorationMethod === '30_DAY_MONTH'
+    ? monthlyRent / 30
+    : monthlyRent / totalDaysInMonth;
+
+  const isFullMonth = applicableDays === totalDaysInMonth;
+  const isEarlyTerminated = effectiveTermDate < monthEnd && approvedVacate !== undefined;
+
+  let reasonCode: RevenueReasonCode = 'FULL_PERIOD';
+  let explanation = '';
+
+  let recognizedRevenue = 0;
+  if (isFullMonth) {
+    recognizedRevenue = monthlyRent;
+    reasonCode = 'FULL_PERIOD';
+    explanation = `Full month (${periodStartStr} to ${periodEndStr}): QR ${monthlyRent.toLocaleString()} recognized on contract period (${totalDaysInMonth}/${totalDaysInMonth} days).`;
+  } else {
+    recognizedRevenue = Math.round(applicableDays * dailyRate * 100) / 100;
+    if (isEarlyTerminated) {
+      reasonCode = 'EARLY_TERMINATION';
+      explanation = `Early termination on ${periodEndStr}: ${applicableDays} of ${totalDaysInMonth} days × QR ${dailyRate.toFixed(2)}/day = QR ${recognizedRevenue.toLocaleString()} recognized on contract period.`;
+    } else if (periodStart > monthStart && periodEnd < monthEnd) {
+      reasonCode = 'NEW_TENANCY_PRORATION';
+      explanation = `Short-term tenancy (${periodStartStr} to ${periodEndStr}): ${applicableDays} of ${totalDaysInMonth} days × QR ${dailyRate.toFixed(2)}/day = QR ${recognizedRevenue.toLocaleString()} recognized on contract period.`;
+    } else if (periodStart > monthStart) {
+      reasonCode = 'NEW_TENANCY_PRORATION';
+      explanation = `Prorated new tenancy (${periodStartStr} to ${periodEndStr}): ${applicableDays} of ${totalDaysInMonth} days × QR ${dailyRate.toFixed(2)}/day = QR ${recognizedRevenue.toLocaleString()} recognized on contract period.`;
+    } else {
+      reasonCode = 'LEASE_EXPIRY';
+      explanation = `Prorated lease expiry (${periodStartStr} to ${periodEndStr}): ${applicableDays} of ${totalDaysInMonth} days × QR ${dailyRate.toFixed(2)}/day = QR ${recognizedRevenue.toLocaleString()} recognized on contract period.`;
+    }
+  }
+
+  const monthName = `${MONTH_NAMES[monthIndex]} ${year}`;
+
+  return {
+    monthKey: targetMonth,
+    monthName,
+    periodStart: periodStartStr,
+    periodEnd: periodEndStr,
+    totalDaysInMonth,
+    applicableDays,
+    isFullMonth,
+    dailyRate,
+    monthlyRent,
+    recognizedRevenue,
+    reasonCode,
+    explanation,
+  };
+}
+
+/**
+ * Groups and aggregates contract-period recognized revenue by property for a given accounting month.
+ */
+export function calculatePropertyPortfolioRevenue(params: {
+  leases: Array<{
+    id: string;
+    tenantName: string;
+    property: string;
+    unit: string;
+    startDate: string;
+    endDate: string;
+    monthlyRent: number;
+    status?: string;
+  }>;
+  targetMonth: string; // "YYYY-MM"
+  prorationMethod?: ProrationMethod;
+}): Record<string, {
+  property: string;
+  totalLeases: number;
+  totalContractualRent: number;
+  totalRecognizedRevenue: number;
+  records: MonthRevenueProration[];
+}> {
+  const { leases, targetMonth, prorationMethod = 'CALENDAR_DAYS' } = params;
+  const result: Record<string, any> = {};
+
+  leases.forEach((lease) => {
+    if (lease.status === 'draft' || lease.status === 'cancelled') return;
+    const propName = lease.property || 'Unassigned Property';
+
+    if (!result[propName]) {
+      result[propName] = {
+        property: propName,
+        totalLeases: 0,
+        totalContractualRent: 0,
+        totalRecognizedRevenue: 0,
+        records: [],
+      };
+    }
+
+    const proration = calculateContractPeriodMonthlyRevenue({
+      startDate: lease.startDate,
+      endDate: lease.endDate,
+      monthlyRent: lease.monthlyRent,
+      targetMonth,
+      prorationMethod,
+    });
+
+    if (proration) {
+      result[propName].totalLeases += 1;
+      result[propName].totalContractualRent += Number(lease.monthlyRent) || 0;
+      result[propName].totalRecognizedRevenue += proration.recognizedRevenue;
+      result[propName].records.push({
+        ...proration,
+        leaseId: lease.id,
+        tenantName: lease.tenantName,
+        unit: lease.unit,
+      });
+    }
+  });
+
+  return result;
+}
