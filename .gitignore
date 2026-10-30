@@ -93,3 +93,15 @@ Thumbs.db
 # ============================================================
 
 .supabase/
+
+# ============================================================
+# Credentials / local-only artifacts (never commit)
+# ============================================================
+
+*_CREDENTIALS.csv
+temp_repo/
+supabase_export/
+PMS/
+mobile-app/
+scratch_*
+~$*

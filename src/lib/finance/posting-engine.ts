@@ -1673,6 +1673,8 @@ export async function postPdcDepositToBank(
   propertyId: string | number,
   unitId: string | number,
   chequeNumber: string,
+  bankAccountCode: string = '12000',
+  bankAccountName: string = 'Bank Operating Account',
 ): Promise<PostingResult> {
 
   return postVoucher({
@@ -1701,7 +1703,7 @@ export async function postPdcDepositToBank(
     lines: [
       {
         account_code:
-          '12000',
+          bankAccountCode,
 
         debit:
           amount,
@@ -1710,7 +1712,7 @@ export async function postPdcDepositToBank(
           0,
 
         description:
-          'Bank Account',
+          bankAccountName,
       },
 
       {
@@ -1800,6 +1802,8 @@ export async function postPdcReturn(
   unitId: string | number,
   chequeNumber: string,
   unitCode?: string,
+  bankAccountCode: string = '12000',
+  bankAccountName: string = 'Bank Account',
 ): Promise<PostingResult> {
 
   return postVoucher({
@@ -1856,7 +1860,7 @@ export async function postPdcReturn(
 
       {
         account_code:
-          '12000',
+          bankAccountCode,
 
         debit:
           0,
@@ -1865,7 +1869,7 @@ export async function postPdcReturn(
           amount,
 
         description:
-          'Bank Account',
+          bankAccountName,
       },
 
       {

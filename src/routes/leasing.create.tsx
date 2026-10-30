@@ -9,31 +9,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
+import { supabase } from "@/lib/supabase";
 import {
   AlertCircle,
   BadgeCheck,
   Banknote,
   Bell,
   CalendarClock,
+  Check,
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
   DoorOpen,
   FileCheck2,
   FileSignature,
+  Info,
   Key,
   KeyRound,
   Loader2,
   Lock,
   LogOut,
+  Plus,
   Receipt,
   RefreshCw,
   ShieldCheck,
+  TrendingUp,
   UserPlus,
   Wallet,
   XCircle,
@@ -53,6 +59,8 @@ import {
 } from "@/lib/reference-data";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 import { generateReceiptBlob } from "@/components/receipt-template";
+import { toast } from "sonner";
+import { LeaseRenewalStepperModal, type RenewalSubmitData } from "@/components/lease-renewal-stepper-modal";
 
 export const Route = createFileRoute("/leasing/create")({
   component: LeasingPage,
@@ -168,6 +176,11 @@ type Lease = {
   sharedWithTenant?: boolean;
   collectionCompleted: boolean;
   renewalOf?: string;
+  contractNumber?: string;
+  depositReceiptFile?: string;
+  depositMethod?: string;
+  depositReceiptNo?: string;
+  pdcBatchFile?: string;
 };
 
 type Pdc = {
@@ -178,7 +191,12 @@ type Pdc = {
   date: string;
   amount: number;
   payerName?: string;
+  tenantName?: string;
+  unit?: string;
+  property?: string;
   period?: string;
+  tenureStart?: string;
+  tenureEnd?: string;
   status: PdcStatus;
   file?: string;
 };
@@ -235,7 +253,7 @@ type RenewalCase = {
   id: string;
   leaseId: string;
   noticeDate: string;
-  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed";
+  status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined";
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
@@ -459,6 +477,17 @@ function addDays(date: Date, days: number) {
   return next.toISOString().split("T")[0];
 }
 
+function addMonths(dateStr: string, months: number) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const day = d.getDate();
+  d.setMonth(d.getMonth() + months);
+  if (d.getDate() !== day) {
+    d.setDate(0);
+  }
+  return d.toISOString().split("T")[0];
+}
+
 function isExpired(date: string) {
   return new Date(date) < today;
 }
@@ -675,7 +704,48 @@ function LeasingPage() {
   // ── Renewals Dialog ──────────────────────────────────────────────
   const [renewalResponseOpen, setRenewalResponseOpen] = useState(false);
   const [selectedRenewal, setSelectedRenewal] = useState<RenewalCase | null>(null);
-  const [renewalResponseForm, setRenewalResponseForm] = useState({ response: "confirm" as "confirm" | "non_renewal", confirmedRent: "", notes: "", updateStatus: "awaiting_response" as RenewalCase["status"] });
+  const [renewalResponseForm, setRenewalResponseForm] = useState({
+    response: "confirm" as "confirm" | "non_renewal",
+    confirmedRent: "",
+    notes: "",
+    updateStatus: "awaiting_response" as RenewalCase["status"],
+    // ── Provision: Create New Lease ──
+    createNewLease: true,
+    termDuration: "12" as "6" | "12" | "24" | "custom",
+    startDate: "",
+    endDate: "",
+    contractNumber: "",
+    paymentFrequency: "monthly" as Lease["paymentFrequency"],
+    gracePeriodDays: "5",
+    noticePeriodDays: "60",
+    // ── Provision: Create New PDCs ──
+    generatePdcs: true,
+    pdcCount: "12",
+    pdcBank: "Qatar National Bank (QNB)",
+    pdcStartChequeNo: "",
+    pdcFirstDate: "",
+    pdcAmountPerCheque: "",
+    pdcStatus: "received" as PdcStatus,
+    // ── Provision: Pay Increased Rent (Optional) ──
+    payIncreasedRent: false,
+    increasedRentAmount: "",
+    increasedRentType: "difference" as "difference" | "first_month" | "custom",
+    rentPaymentMethod: "Bank Transfer",
+    rentReceiptNo: "",
+    rentPayerBank: "Qatar National Bank (QNB)",
+    rentPaymentDate: today.toISOString().split("T")[0],
+    rentNotes: "",
+    // ── Provision: Pay / Top-up Security Deposit (Optional) ──
+    paySecurityDeposit: false,
+    securityDepositAmount: "",
+    securityDepositType: "differential" as "differential" | "full" | "custom",
+    securityMethod: "Bank Transfer",
+    securityReceiptNo: "",
+    securityChequeNo: "",
+    securityChequeDate: today.toISOString().split("T")[0],
+    securityBank: "Qatar National Bank (QNB)",
+    securityNotes: "",
+  });
 
   // ── Checkout Dialogs ─────────────────────────────────────────────
   const [startCheckoutOpen, setStartCheckoutOpen] = useState(false);
@@ -1449,9 +1519,319 @@ function LeasingPage() {
     }
   }
 
+  function handleConfirmRenewalStepper(data: RenewalSubmitData) {
+    const oldLease = leases.find((item) => item.id === data.priorLeaseId);
+    if (!oldLease) return;
+
+    const agreedRent = data.agreedMonthlyRent;
+    const newStartDate = data.startDate;
+    const newEndDate = data.endDate;
+    const renewedId = `l-ren-${Date.now()}`;
+    const contractNo = data.contractNumber;
+    const newSecurityDeposit = data.securityDeposit.newTotalDeposit;
+    const depositTopUp = data.securityDeposit.topUpAmount;
+
+    // Guaranteed New Lease Creation on Renewal
+    const renewed: Lease = {
+      ...oldLease,
+      id: renewedId,
+      contractNumber: contractNo,
+      renewalOf: oldLease.id,
+      startDate: newStartDate,
+      endDate: newEndDate,
+      monthlyRent: agreedRent,
+      securityDeposit: newSecurityDeposit,
+      pdcCount: data.pdcs.length,
+      paymentFrequency: data.paymentFrequency as any,
+      gracePeriodDays: data.gracePeriodDays,
+      noticePeriodDays: data.noticePeriodDays,
+      status: "documents_pending" as LeaseStatus,
+      tenantSignedAt: undefined,
+      landlordSignedAt: undefined,
+      signedDocument: undefined,
+      receivedBy: data.custodyOfficer || "Finance Cashier",
+      landlordPackageSubmittedAt: undefined,
+      sharedWithTenant: false,
+      collectionCompleted: true,
+      depositReceiptFile: data.securityDeposit.receiptFile || undefined,
+      depositMethod: data.securityDeposit.method,
+      depositReceiptNo: data.securityDeposit.receiptNo,
+      pdcBatchFile: data.pdcBatchFile || undefined,
+    };
+
+    setLeases((items) => [
+      renewed,
+      ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item)),
+    ]);
+
+    // Register all renewed PDCs with file attachment
+    const renewalPdcs: Pdc[] = data.pdcs.map((p, idx) => ({
+      id: `p-ren-${Date.now()}-${idx + 1}`,
+      leaseId: renewed.id,
+      chequeNo: p.chequeNo,
+      bank: p.bank || "Qatar National Bank (QNB)",
+      date: p.date,
+      amount: p.amount,
+      payerName: oldLease.tenantName,
+      tenantName: oldLease.tenantName,
+      unit: oldLease.unit,
+      property: oldLease.property,
+      period: p.period || `Renewal Cheque ${idx + 1} of ${data.pdcs.length}`,
+      tenureStart: p.tenureStart || newStartDate,
+      tenureEnd: p.tenureEnd || newEndDate,
+      file: p.file || data.pdcBatchFile || undefined,
+      status: "received" as PdcStatus,
+    }));
+    setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== renewed.id)]);
+
+    // Persist renewal PDCs to persistent browser storage so they are immediately available in PDC Management
+    try {
+      const existingRaw = localStorage.getItem("pms_renewal_pdcs");
+      const existingList: any[] = existingRaw ? JSON.parse(existingRaw) : [];
+      const updatedList = [
+        ...renewalPdcs.map(rp => ({
+          ...rp,
+          cheque_number: rp.chequeNo,
+          cheque_date: rp.date,
+          tenant_name: rp.tenantName,
+          unit_ref: rp.unit,
+          property_name: rp.property,
+          bank_name: rp.bank,
+        })),
+        ...existingList.filter(item => item.leaseId !== renewed.id && !renewalPdcs.some(rp => rp.chequeNo === item.chequeNo && rp.unit === item.unit)),
+      ];
+      localStorage.setItem("pms_renewal_pdcs", JSON.stringify(updatedList));
+    } catch (e) {
+      console.warn("Error storing renewal PDCs to localStorage:", e);
+    }
+
+    // Persist renewal PDCs directly to Supabase pdcs and fin_pdc_register
+    try {
+      const dbPdcs = renewalPdcs.map(p => ({
+        cheque_number: p.chequeNo,
+        amount: p.amount,
+        bank: p.bank,
+        status: "In Hand",
+        status_pdc: "in hand",
+        unit_name: oldLease.unit,
+        property_name: oldLease.property,
+        property_code: (oldLease as any).propertyCode || oldLease.property?.split(" - ")[0] || "Al Ameen",
+        tenant_name: oldLease.tenantName,
+        maturity_date: p.date,
+        deposit_date: p.date,
+        rent_from_date: p.tenureStart,
+        rent_to_date: p.tenureEnd,
+        lease_id: renewed.id,
+      }));
+      void supabase.from("pdcs").insert(dbPdcs).then(({ error }) => {
+        if (error) console.warn("[renewLease] pdcs insert note:", error.message);
+        else console.log("[renewLease] PDCs inserted into pdcs table successfully");
+      });
+
+      const dbFinPdcs = renewalPdcs.map(p => ({
+        cheque_number: p.chequeNo,
+        cheque_date: p.date,
+        amount: p.amount,
+        bank_name: p.bank,
+        status: "In Hand",
+        unit_name: oldLease.unit,
+        property_name: oldLease.property,
+        tenant_name: oldLease.tenantName,
+      }));
+      void supabase.from("fin_pdc_register").insert(dbFinPdcs).then(({ error }) => {
+        if (error) console.warn("[renewLease] fin_pdc_register insert note:", error.message);
+      });
+    } catch (e) {
+      console.warn("Error persisting renewal PDCs to Supabase:", e);
+    }
+
+    window.dispatchEvent(new CustomEvent("pdcs_updated"));
+    window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+
+    // Process Security Deposit Top-Up
+    const newVouchers: Voucher[] = [];
+    if (depositTopUp > 0) {
+      const sdMethod = data.securityDeposit.method || "Bank Transfer";
+      const sdRef = data.securityDeposit.receiptNo || `SD-REN-${Date.now().toString().slice(-6)}`;
+      const isCash = sdMethod === "Cash";
+      const isPdc = sdMethod === "Cheque" || sdMethod === "PDC" || sdMethod === "Guarantee Cheque";
+      const sdVoucher: Voucher = {
+        id: `v-ren-sd-${Date.now()}`,
+        leaseId: renewed.id,
+        name: `Receipt Voucher - Security Deposit Top-Up (${sdMethod})`,
+        receiptNo: sdRef,
+        method: sdMethod,
+        period: "Renewed Lease Security Deposit",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Security Deposit Liability (21500001)",
+        amount: depositTopUp,
+        status: "posted",
+      };
+      newVouchers.push(sdVoucher);
+
+      if (isPdc && data.securityDeposit.chequeNo) {
+        setPdcs((items) => [
+          {
+            id: `p-sd-ren-${Date.now()}`,
+            leaseId: renewed.id,
+            chequeNo: data.securityDeposit.chequeNo!,
+            bank: data.securityDeposit.bank || "Qatar National Bank (QNB)",
+            date: data.securityDeposit.chequeDate || newStartDate,
+            amount: depositTopUp,
+            payerName: oldLease.tenantName,
+            period: "Security Deposit Top-Up Cheque",
+            file: data.securityDeposit.receiptFile || undefined,
+            status: "received" as PdcStatus,
+          },
+          ...items,
+        ]);
+      }
+    }
+
+    // Process Increased Rent Payment if provided
+    if (data.payIncreasedRent && data.increasedRent && data.increasedRent.amount > 0) {
+      const rentAmt = data.increasedRent.amount;
+      const rentMethod = data.increasedRent.method || "Bank Transfer";
+      const rentRef = data.increasedRent.receiptNo || `REC-RENT-${Date.now().toString().slice(-6)}`;
+      const isCash = rentMethod === "Cash";
+      const isPdc = rentMethod === "Cheque" || rentMethod === "PDC";
+      const rentVoucher: Voucher = {
+        id: `v-ren-rent-${Date.now()}`,
+        leaseId: renewed.id,
+        name: `Receipt Voucher - Rent Increase / Advance (${rentMethod})`,
+        receiptNo: rentRef,
+        method: rentMethod,
+        period: "Renewed Lease Rent Differential",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Rental Revenue (41100001)",
+        amount: rentAmt,
+        status: "posted",
+      };
+      newVouchers.push(rentVoucher);
+    }
+
+    if (newVouchers.length > 0) {
+      setVouchers((items) => [...newVouchers, ...items]);
+    }
+
+    // Update renewal case status
+    setRenewals((items) =>
+      items.map((item) => (item.id === data.renewalId ? { ...item, status: "renewal_confirmed", proposedRent: agreedRent } : item))
+    );
+
+    // Audit trail
+    recordAudit({
+      stage: "Lease Renewal Process",
+      owner: "Leasing Department",
+      input: `${oldLease.tenantName} (${oldLease.unit}), New Lease Created: ${contractNo}, Period: ${newStartDate} to ${newEndDate}, Agreed Rent: QR ${agreedRent.toLocaleString()}`,
+      approval: "Renewal Confirmation with Stepper Workflow",
+      status: "renewal_confirmed",
+      output: `New Lease ${contractNo} created with ${data.pdcs.length} PDCs registered. Deposit held: ${formatMoney(newSecurityDeposit)}. Notes: ${data.notes || "None"}`,
+    });
+
+    toast.success(`New Lease ${contractNo} created successfully for ${oldLease.tenantName}!`);
+  }
+
+  function handleConfirmNonRenewalStepper(data: {
+    renewalId: string;
+    leaseId: string;
+    noticeDate: string;
+    vacateDate: string;
+    inspectionDate: string;
+    reason: string;
+    notes: string;
+  }) {
+    const oldLease = leases.find((item) => item.id === data.leaseId);
+    setRenewals((items) =>
+      items.map((item) => (item.id === data.renewalId ? { ...item, status: "renewal_declined" } : item))
+    );
+    recordAudit({
+      stage: "Lease Renewal Process",
+      owner: "Leasing Department",
+      input: `${oldLease?.tenantName || "Tenant"} (${oldLease?.unit || "Unit"}), Tenant opted for non-renewal. Reason: ${data.reason}. Vacate Date: ${data.vacateDate}`,
+      approval: "Tenant Non-Renewal Notice",
+      status: "declined",
+      output: `Move-out inspection scheduled for ${data.inspectionDate}. Notes: ${data.notes || "None"}`,
+    });
+    toast.info(`Non-renewal recorded for ${oldLease?.tenantName || "Tenant"}. Move-out scheduled.`);
+  }
+
+  function openRenewalModal(renewal: RenewalCase) {
+    const lease = leases.find((l) => l.id === renewal.leaseId);
+    const oldRent = lease?.monthlyRent || 0;
+    const proposedRent = renewal.proposedRent || oldRent;
+    const oldSecurity = lease?.securityDeposit || oldRent;
+    const rentDiff = Math.max(0, proposedRent - oldRent);
+    const securityDiff = Math.max(0, proposedRent - oldSecurity);
+
+    const newStart = lease?.endDate ? addDays(new Date(lease.endDate), 1) : today.toISOString().split("T")[0];
+    const newEnd = lease?.endDate ? addDays(new Date(lease.endDate), 366) : addDays(new Date(), 365);
+    const renewalSeq = (leases.filter((l) => l.unit === lease?.unit).length) + 1;
+    const contractNo = `${lease?.contractNumber ? lease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (lease?.unit || "").replace(/\s+/g, ""))}-R${renewalSeq}`;
+
+    setSelectedRenewal(renewal);
+    setRenewalResponseForm({
+      response: "confirm",
+      confirmedRent: String(proposedRent),
+      notes: "",
+      updateStatus: "awaiting_response",
+      // New Lease Provision
+      createNewLease: true,
+      termDuration: "12",
+      startDate: newStart,
+      endDate: newEnd,
+      contractNumber: contractNo,
+      paymentFrequency: lease?.paymentFrequency || "monthly",
+      gracePeriodDays: String(lease?.gracePeriodDays || 5),
+      noticePeriodDays: String(lease?.noticePeriodDays || 60),
+      // New PDCs Provision
+      generatePdcs: true,
+      pdcCount: "12",
+      pdcBank: "Qatar National Bank (QNB)",
+      pdcStartChequeNo: `PDC-${(lease?.unit || "Unit").replace(/\W/g, "")}-R${renewalSeq}-001`,
+      pdcFirstDate: newStart,
+      pdcAmountPerCheque: String(proposedRent),
+      pdcStatus: "received",
+      // Increased Rent Provision (Optional)
+      payIncreasedRent: false,
+      increasedRentAmount: String(rentDiff > 0 ? rentDiff : proposedRent),
+      increasedRentType: rentDiff > 0 ? "difference" : "first_month",
+      rentPaymentMethod: "Bank Transfer",
+      rentReceiptNo: `REC-RENT-${Date.now().toString().slice(-6)}`,
+      rentPayerBank: "Qatar National Bank (QNB)",
+      rentPaymentDate: today.toISOString().split("T")[0],
+      rentNotes: `Rent payment for renewed lease ${contractNo}`,
+      // Security Deposit Provision (Optional)
+      paySecurityDeposit: false,
+      securityDepositAmount: String(securityDiff > 0 ? securityDiff : 0),
+      securityDepositType: securityDiff > 0 ? "differential" : "full",
+      securityMethod: "Bank Transfer",
+      securityReceiptNo: `REC-SD-${Date.now().toString().slice(-6)}`,
+      securityChequeNo: "",
+      securityChequeDate: today.toISOString().split("T")[0],
+      securityBank: "Qatar National Bank (QNB)",
+      securityNotes: `Additional security deposit for renewed lease ${contractNo}`,
+    });
+    setRenewalResponseOpen(true);
+  }
+
   function renewLease(renewal: RenewalCase) {
     const oldLease = leases.find((item) => item.id === renewal.leaseId);
     if (!oldLease) return;
+
+    if (renewalResponseForm.response === "non_renewal") {
+      setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_declined" } : item)));
+      recordAudit({
+        stage: "Lease Renewal Process",
+        owner: "Leasing Department",
+        input: `${oldLease.tenantName} (${oldLease.unit}), Tenant opted for non-renewal. Notes: ${renewalResponseForm.notes || "None"}`,
+        approval: "Tenant Non-Renewal Notice",
+        status: "declined",
+        output: "Lease marked for non-renewal. Move-out inspection and settlement scheduling initiated.",
+      });
+      return;
+    }
+
     // Check for tenant documents that may have expired during the previous lease term
     const expiredDocs = documents
       .filter((d) => d.customerId === oldLease.customerId && d.mandatory && d.expiryDate && new Date(d.expiryDate) < today)
@@ -1462,31 +1842,226 @@ function LeasingPage() {
       );
       if (!proceed) return;
     }
-    const renewed: Lease = {
-      ...oldLease,
-      id: `l${leases.length + 1}`,
-      renewalOf: oldLease.id,
-      startDate: addDays(new Date(oldLease.endDate), 1),
-      endDate: addDays(new Date(oldLease.endDate), 366),
-      monthlyRent: renewal.proposedRent,
-      status: "documents_pending" as LeaseStatus,
-      tenantSignedAt: undefined,
-      landlordSignedAt: undefined,
-      signedDocument: undefined,
-      receivedBy: undefined,
-      landlordPackageSubmittedAt: undefined,
-      sharedWithTenant: false,
-      collectionCompleted: false,
-    };
-    setLeases((items) => [renewed, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
-    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed" } : item)));
+
+    const agreedRent = renewalResponseForm.confirmedRent && Number(renewalResponseForm.confirmedRent) > 0
+      ? Number(renewalResponseForm.confirmedRent)
+      : (renewal.proposedRent || oldLease.monthlyRent);
+
+    const newStartDate = renewalResponseForm.startDate || addDays(new Date(oldLease.endDate), 1);
+    const newEndDate = renewalResponseForm.endDate || addDays(new Date(oldLease.endDate), 366);
+    const renewedId = `l-ren-${Date.now()}`;
+    const renewalSeq = (leases.filter((l) => l.unit === oldLease.unit).length) + 1;
+    const contractNo = renewalResponseForm.contractNumber || `${oldLease.contractNumber ? oldLease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (oldLease.unit || "").replace(/\s+/g, ""))}-R${renewalSeq}`;
+
+    // Additional security deposit calculation
+    const depositTopUp = renewalResponseForm.paySecurityDeposit && Number(renewalResponseForm.securityDepositAmount) > 0
+      ? Number(renewalResponseForm.securityDepositAmount)
+      : 0;
+    const newSecurityDeposit = (oldLease.securityDeposit || agreedRent) + depositTopUp;
+
+    const pdcCount = renewalResponseForm.generatePdcs
+      ? Number(renewalResponseForm.pdcCount) || 12
+      : 0;
+
+    let renewed: Lease | null = null;
+    if (renewalResponseForm.createNewLease) {
+      renewed = {
+        ...oldLease,
+        id: renewedId,
+        contractNumber: contractNo,
+        renewalOf: oldLease.id,
+        startDate: newStartDate,
+        endDate: newEndDate,
+        monthlyRent: agreedRent,
+        securityDeposit: newSecurityDeposit,
+        pdcCount: pdcCount,
+        paymentFrequency: renewalResponseForm.paymentFrequency || oldLease.paymentFrequency || "monthly",
+        gracePeriodDays: Number(renewalResponseForm.gracePeriodDays) || oldLease.gracePeriodDays || 5,
+        noticePeriodDays: Number(renewalResponseForm.noticePeriodDays) || oldLease.noticePeriodDays || 60,
+        status: "documents_pending" as LeaseStatus,
+        tenantSignedAt: undefined,
+        landlordSignedAt: undefined,
+        signedDocument: undefined,
+        receivedBy: undefined,
+        landlordPackageSubmittedAt: undefined,
+        sharedWithTenant: false,
+        collectionCompleted: false,
+      };
+      setLeases((items) => [renewed!, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
+    } else {
+      // Just mark existing lease as renewed without creating a new lease record
+      setLeases((items) => items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus, monthlyRent: agreedRent } : item)));
+    }
+
+    // Generate PDCs if provision is enabled
+    const renewalPdcs: Pdc[] = [];
+    if (renewalResponseForm.generatePdcs && pdcCount > 0) {
+      const baseRentPerCheque = renewalResponseForm.pdcAmountPerCheque && Number(renewalResponseForm.pdcAmountPerCheque) > 0
+        ? Number(renewalResponseForm.pdcAmountPerCheque)
+        : agreedRent;
+      const bankName = renewalResponseForm.pdcBank || "Qatar National Bank (QNB)";
+      const firstDateStr = renewalResponseForm.pdcFirstDate || newStartDate;
+      const startChequeNumMatch = renewalResponseForm.pdcStartChequeNo.match(/\d+$/);
+      const baseChequeNum = startChequeNumMatch ? parseInt(startChequeNumMatch[0], 10) : 1;
+      const prefix = startChequeNumMatch ? renewalResponseForm.pdcStartChequeNo.slice(0, startChequeNumMatch.index) : `PDC-${(oldLease.unit || "Unit").replace(/\W/g, "")}-R${renewalSeq}-`;
+
+      // Determine month increment step based on frequency or count
+      const monthsStep = pdcCount === 4 ? 3 : pdcCount === 2 ? 6 : pdcCount === 1 ? 12 : 1;
+
+      for (let index = 0; index < pdcCount; index++) {
+        const bd = new Date(firstDateStr);
+        const day = bd.getDate();
+        const rawMonth = bd.getMonth() + (index * monthsStep);
+        const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
+        const mo = ((rawMonth % 12) + 12) % 12;
+        const lastDay = new Date(yr, mo + 1, 0).getDate();
+        const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+
+        const tsDate = new Date(firstDateStr);
+        tsDate.setMonth(tsDate.getMonth() + (index * monthsStep));
+        const teDate = new Date(firstDateStr);
+        teDate.setMonth(teDate.getMonth() + ((index + 1) * monthsStep));
+        teDate.setDate(teDate.getDate() - 1);
+
+        const chequeNumber = startChequeNumMatch
+          ? `${prefix}${String(baseChequeNum + index).padStart(startChequeNumMatch[0].length, "0")}`
+          : `${prefix}${String(index + 1).padStart(3, "0")}`;
+
+        renewalPdcs.push({
+          id: `p-ren-${Date.now()}-${index + 1}`,
+          leaseId: renewed ? renewed.id : oldLease.id,
+          chequeNo: chequeNumber,
+          bank: bankName,
+          date: maturityStr,
+          amount: baseRentPerCheque,
+          status: (renewalResponseForm.pdcStatus || "received") as PdcStatus,
+        });
+      }
+      setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== (renewed ? renewed.id : oldLease.id))]);
+    }
+
+    // Process Increased Rent Payment (Optional)
+    const newVouchers: Voucher[] = [];
+    if (renewalResponseForm.payIncreasedRent && Number(renewalResponseForm.increasedRentAmount) > 0) {
+      const rentAmt = Number(renewalResponseForm.increasedRentAmount);
+      const rentMethod = renewalResponseForm.rentPaymentMethod || "Bank Transfer";
+      const rentRef = renewalResponseForm.rentReceiptNo || `REC-RENT-${Date.now().toString().slice(-6)}`;
+      const isCash = rentMethod === "Cash";
+      const isPdc = rentMethod === "Cheque" || rentMethod === "PDC";
+      const rentVoucher: Voucher = {
+        id: `v-ren-rent-${Date.now()}`,
+        leaseId: renewed ? renewed.id : oldLease.id,
+        name: `Receipt Voucher - Rent Increase / Advance (${rentMethod})`,
+        receiptNo: rentRef,
+        method: rentMethod,
+        period: "Renewed Lease Rent Differential",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Rental Revenue (41100001)",
+        amount: rentAmt,
+        status: "posted",
+      };
+      newVouchers.push(rentVoucher);
+
+      // Post GL to Supabase fin_vouchers
+      const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
+      const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+      const postingDate = renewalResponseForm.rentPaymentDate || today.toISOString().split("T")[0];
+      void supabase.from("fin_vouchers").insert({
+        voucher_number: `VCH-RENT-${rentRef}`,
+        voucher_date: postingDate,
+        voucher_type: "RV",
+        description: `Rent Increase / Advance Received — ${oldLease.tenantName} (${oldLease.unit}) [${rentRef}]`,
+        total_amount: rentAmt,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id").single().then(({ data: vData, error: vErr }) => {
+        if (!vErr && vData?.id) {
+          void supabase.from("fin_voucher_lines").insert([
+            { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: rentAmt, credit: 0, description: `Rent Differential — ${oldLease.tenantName}` },
+            { voucher_id: vData.id, account_code: "41100001", account_name: "Rental Revenue", debit: 0, credit: rentAmt, description: `Rent Differential — ${oldLease.tenantName}` },
+          ]);
+        }
+      }, err => console.warn("[renewLease] Rent GL posting note:", err));
+    }
+
+    // Process Security Deposit Top-Up / Payment (Optional)
+    if (renewalResponseForm.paySecurityDeposit && depositTopUp > 0) {
+      const sdMethod = renewalResponseForm.securityMethod || "Bank Transfer";
+      const sdRef = renewalResponseForm.securityReceiptNo || `SD-REN-${Date.now().toString().slice(-6)}`;
+      const isCash = sdMethod === "Cash";
+      const isPdc = sdMethod === "Cheque" || sdMethod === "PDC" || sdMethod === "Guarantee Cheque";
+      const sdVoucher: Voucher = {
+        id: `v-ren-sd-${Date.now()}`,
+        leaseId: renewed ? renewed.id : oldLease.id,
+        name: `Receipt Voucher - Security Deposit Top-Up (${sdMethod})`,
+        receiptNo: sdRef,
+        method: sdMethod,
+        period: "Renewed Lease Security Deposit",
+        debit: isCash ? "Cash In Hand" : isPdc ? "PDC In Hand" : "Bank Account (QNB)",
+        credit: "Security Deposit Liability (21500001)",
+        amount: depositTopUp,
+        status: "posted",
+      };
+      newVouchers.push(sdVoucher);
+
+      // If paid by cheque/PDC, register deposit PDC
+      if (isPdc && renewalResponseForm.securityChequeNo) {
+        setPdcs((items) => [
+          {
+            id: `p-sd-ren-${Date.now()}`,
+            leaseId: renewed ? renewed.id : oldLease.id,
+            chequeNo: renewalResponseForm.securityChequeNo,
+            bank: renewalResponseForm.securityBank || "Qatar National Bank (QNB)",
+            date: renewalResponseForm.securityChequeDate || newStartDate,
+            amount: depositTopUp,
+            status: "received" as PdcStatus,
+          },
+          ...items,
+        ]);
+      }
+
+      // Post GL to Supabase fin_vouchers
+      const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
+      const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
+      const postingDate = renewalResponseForm.securityChequeDate || today.toISOString().split("T")[0];
+      void supabase.from("fin_vouchers").insert({
+        voucher_number: `VCH-SD-${sdRef}`,
+        voucher_date: postingDate,
+        voucher_type: "RV",
+        description: `Security Deposit Top-Up — ${oldLease.tenantName} (${oldLease.unit}) [${sdRef}]`,
+        total_amount: depositTopUp,
+        status: "posted",
+        posted_at: new Date().toISOString(),
+      }).select("id").single().then(({ data: vData, error: vErr }) => {
+        if (!vErr && vData?.id) {
+          void supabase.from("fin_voucher_lines").insert([
+            { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: depositTopUp, credit: 0, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
+            { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
+          ]);
+        }
+      }, err => console.warn("[renewLease] SD GL posting note:", err));
+    }
+
+    if (newVouchers.length > 0) {
+      setVouchers((items) => [...newVouchers, ...items]);
+      window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+    }
+
+    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed", proposedRent: agreedRent } : item)));
+
+    const provisionsSummary: string[] = [];
+    if (renewalResponseForm.createNewLease) provisionsSummary.push(`New Agreement: ${contractNo}`);
+    if (renewalResponseForm.generatePdcs && pdcCount > 0) provisionsSummary.push(`${pdcCount} PDCs scheduled`);
+    if (renewalResponseForm.payIncreasedRent && Number(renewalResponseForm.increasedRentAmount) > 0) provisionsSummary.push(`Rent Payment: ${formatMoney(Number(renewalResponseForm.increasedRentAmount))}`);
+    if (renewalResponseForm.paySecurityDeposit && depositTopUp > 0) provisionsSummary.push(`Deposit Top-Up: ${formatMoney(depositTopUp)}`);
+
     recordAudit({
       stage: "Lease Renewal Process",
       owner: "Leasing Department",
-      input: `${oldLease.tenantName}, renewed period ${renewal.proposedPeriod}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
+      input: `${oldLease.tenantName} (${oldLease.unit}), renewed period ${newStartDate} to ${newEndDate}, Agreed Rent: QR ${agreedRent.toLocaleString()}${expiredDocs.length > 0 ? " | Expired docs flagged: " + expiredDocs.join(", ") : ""}`,
       approval: "Renewal confirmation",
       status: "renewal_confirmed",
-      output: "Renewed lease linked to previous lease history; document review recommended for expired credentials",
+      output: `Renewal completed. Provisions executed: ${provisionsSummary.join(", ") || "Decision recorded"}. Notes: ${renewalResponseForm.notes || "None"}`,
     });
   }
 
@@ -1520,6 +2095,48 @@ function LeasingPage() {
       status: "closed",
       output: `Refund processed, lease closed, unit updated to ${settlement.unitDisposition || "Available"}, full history retained`,
     });
+
+    // -- Persist checkout to Supabase so occupancy survives page refresh
+    if (lease) {
+      const dbUnitStatus = (settlement.unitDisposition || "Available").toLowerCase().includes("maintenance")
+        ? "Vacant - Under Maintenance"
+        : "Available";
+      const matchedUnit = units.find((u) => u.unit === lease.unit);
+      if (matchedUnit?.id) {
+        supabase
+          .from("units")
+          .update({
+            status: dbUnitStatus,
+            lease_status: "VACANT",
+            current_tenant: null,
+            contract_no: null,
+            contract_start_date: null,
+            contract_end_date: null,
+            current_rent: null,
+            updated_at: new Date().toISOString(),
+          } as any)
+          .eq("id", matchedUnit.id)
+          .then(({ error }: { error: any }) => {
+            if (error) { console.error("[Checkout] Failed to vacate unit:", error.message); }
+            else { window.dispatchEvent(new Event("pms_data_updated")); }
+          });
+      }
+      const leaseDbId =
+        lease.reservationId && !String(lease.reservationId).startsWith("res-")
+          ? lease.reservationId
+          : !String(lease.id).startsWith("L-") && !String(lease.id).startsWith("res-")
+          ? lease.id
+          : null;
+      if (leaseDbId) {
+        supabase
+          .from("leases")
+          .update({ lease_status: "CLOSED", updated_at: new Date().toISOString() } as any)
+          .eq("id", leaseDbId)
+          .then(({ error }: { error: any }) => {
+            if (error) console.error("[Checkout] Failed to close lease:", error.message);
+          });
+      }
+    }
   }
 
   function completeCheckIn(lease: Lease) {
@@ -2759,38 +3376,16 @@ function LeasingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── RENEWAL RESPONSE DIALOG ───────────────────────────── */}
-      <Dialog open={renewalResponseOpen} onOpenChange={setRenewalResponseOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Tenant Renewal Response</DialogTitle>
-            <DialogDescription>Record tenant's decision regarding lease renewal.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <Field label="Tenant Response">
-              <Select value={renewalResponseForm.response} onValueChange={v => setRenewalResponseForm(f => ({ ...f, response: v as any }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="confirm">Confirmed Renewal</SelectItem>
-                  <SelectItem value="non_renewal">Non-Renewal / Vacating</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            {renewalResponseForm.response === "confirm" && (
-              <Field label="Confirmed Monthly Rent (QR)">
-                <Input type="number" value={renewalResponseForm.confirmedRent} onChange={e => setRenewalResponseForm(f => ({ ...f, confirmedRent: e.target.value }))} placeholder={`Proposed: QR ${selectedRenewal?.proposedRent}`} />
-              </Field>
-            )}
-            <Field label="Notes">
-              <Textarea rows={2} value={renewalResponseForm.notes} onChange={e => setRenewalResponseForm(f => ({ ...f, notes: e.target.value }))} placeholder="Negotiation notes, special terms..." />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenewalResponseOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (selectedRenewal) renewLease(selectedRenewal); setRenewalResponseOpen(false); }}><RefreshCw className="mr-2 h-4 w-4" /> Confirm Response</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── RENEWAL RESPONSE STEPPER MODAL ───────────────────────── */}
+      <LeaseRenewalStepperModal
+        open={renewalResponseOpen}
+        onOpenChange={setRenewalResponseOpen}
+        renewal={selectedRenewal}
+        oldLease={leases.find((l) => l.id === selectedRenewal?.leaseId)}
+        existingLeasesCount={leases.filter((l) => l.unit === leases.find((old) => old.id === selectedRenewal?.leaseId)?.unit).length}
+        onConfirmRenewal={handleConfirmRenewalStepper}
+        onConfirmNonRenewal={handleConfirmNonRenewalStepper}
+      />
 
       {/* ── START CHECKOUT DIALOG ─────────────────────────────── */}
       <Dialog open={startCheckoutOpen} onOpenChange={setStartCheckoutOpen}>
@@ -3565,7 +4160,7 @@ function LeasingPage() {
                     <StatusBadge key="status" value={renewal.status} />,
                     <div key="actions" className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setRenewals((items) => items.map((item) => item.id === renewal.id ? { ...item, status: "under_discussion" } : item))}>Discuss</Button>
-                      <Button size="sm" variant="outline" onClick={() => { setSelectedRenewal(renewal); setRenewalResponseForm({ response: "confirm", confirmedRent: String(renewal.proposedRent), notes: "", updateStatus: "renewal_confirmed" as RenewalCase["status"] }); setRenewalResponseOpen(true); }}>Renew</Button>
+                      <Button size="sm" variant="outline" onClick={() => openRenewalModal(renewal)}>Renew</Button>
                       {lease && <Button size="sm" variant="outline" onClick={() => { setCheckoutWorkflowLease(lease); setStartCheckoutForm({ noticeDate: today.toISOString().split("T")[0], moveOutDate: lease.endDate, inspectionDate: addDays(new Date(lease.endDate), -3), notes: "", outstandingCharges: "Pending finance confirmation", utilityClearanceRequirements: "Final utility clearance required before checkout closure", keyReturnRequirements: "Return all keys, access cards, parking remotes and property items", missingItems: "", cleaningCharges: "0", restorationCharges: "0" }); setStartCheckoutOpen(true); }}>Non-Renew</Button>}
                     </div>,
                   ];

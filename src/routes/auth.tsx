@@ -27,10 +27,17 @@ function AuthPage() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    let trimmedIdentifier = email.trim();
+    if (/^\d{13}$/.test(trimmedIdentifier)) {
+      trimmedIdentifier = `${trimmedIdentifier}@tenant.zyno.com`;
+    } else if (!trimmedIdentifier.includes("@") && /^\d+$/.test(trimmedIdentifier) && trimmedIdentifier.length <= 13) {
+      trimmedIdentifier = `${trimmedIdentifier.padStart(13, "0")}@tenant.zyno.com`;
+    }
+
     try {
       clearDemoSession();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: trimmedIdentifier,
         password: password.trim(),
       });
 
@@ -170,13 +177,13 @@ function AuthPage() {
                 <TabsContent value="login" className="space-y-4">
                   <form onSubmit={handleSignIn} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
+                      <Label htmlFor="email">Work Email or 13-Digit Customer ID</Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                         <Input 
                           id="email" 
-                          type="email" 
-                          placeholder="name@example.com" 
+                          type="text" 
+                          placeholder="name@example.com or 13-digit Customer ID" 
                           className="pl-9"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
