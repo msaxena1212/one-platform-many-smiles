@@ -1,5 +1,14 @@
 import { supabase, type Lease } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue,
+  sanitizeDateForPostgres
+} from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
 export const LEASE_COLUMNS: ColumnDefinition[] = [
@@ -40,7 +49,7 @@ export const leaseAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Lease Number / Ref'] ?? row['Lease Number'] ?? row['lease_number'] ?? row['Contract No.'] ?? row['contract_no'] ?? '';
+    const raw = getCellValue(row, 'Lease Number / Ref', 'Lease Number', 'lease_number', 'Contract No.', 'Contract No', 'contract_no', 'Lease No') ?? '';
     return String(raw).trim();
   },
 
@@ -127,7 +136,7 @@ export const leaseAdapter: EntityImportAdapter = {
     for (const col of LEASE_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({
@@ -144,6 +153,19 @@ export const leaseAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitized = sanitizeDateForPostgres(cellValue);
+          if (sanitized) {
+            normalized[col.key] = sanitized;
+          } else {
+            errors.push({
+              row: context.rowNumber,
+              field: col.label,
+              code: 'VAL_003',
+              message: `Invalid date format for "${col.label}". Expected YYYY-MM-DD, DD/MM/YYYY or standard Excel date.`,
+              severity: 'ERROR',
+            });
+          }
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {

@@ -1,5 +1,10 @@
+import { lazy } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { FinanceModule } from "@/components/finance-module";
+import { ModuleSuspense } from "@/components/module-suspense";
+
+const FinanceModule = lazy(() =>
+  import("@/components/finance-module").then((m) => ({ default: m.FinanceModule }))
+);
 
 export const Route = createFileRoute("/prop-mgr/finance")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -10,5 +15,9 @@ export const Route = createFileRoute("/prop-mgr/finance")({
 });
 
 function HostFinance() {
-  return <FinanceModule role="prop-mgr" />;
+  return (
+    <ModuleSuspense>
+      <FinanceModule role="prop-mgr" />
+    </ModuleSuspense>
+  );
 }

@@ -1,32 +1,53 @@
 import { supabase, type Asset } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue,
+  sanitizeDateForPostgres
+} from '../types';
 
 export const ASSET_COLUMNS: ColumnDefinition[] = [
-  { key: 'asset_code', label: 'Asset ID / Code', type: 'string', required: true, unique: true, immutable: true, sampleValue: 'AST-HVAC-001', description: 'Unique asset identifier' },
-  { key: 'asset_name', label: 'Asset Name', type: 'string', required: true, sampleValue: 'Split AC 2.0 Ton O General' },
-  { key: 'category', label: 'Asset Category', type: 'enum', required: false, allowedValues: ['HVAC', 'Electrical', 'Plumbing', 'Furniture', 'Appliances', 'IT & Security', 'Vehicles'], sampleValue: 'HVAC' },
-  { key: 'subcategory', label: 'Asset Subcategory', type: 'string', required: false, sampleValue: 'Split Unit' },
-  { key: 'brand', label: 'Brand', type: 'string', required: false, sampleValue: 'O General' },
-  { key: 'model', label: 'Model', type: 'string', required: false, sampleValue: 'ASGA24FETA' },
+  { key: 'asset_code', label: 'Asset ID', type: 'string', required: true, unique: true, immutable: true, sampleValue: 'AST-001', description: 'Unique asset identifier' },
+  { key: 'asset_name', label: 'Asset Name', type: 'string', required: true, sampleValue: 'Sofa Set' },
+  { key: 'category', label: 'Asset Category', type: 'enum', required: false, allowedValues: ['Furniture & Fixtures', 'Appliances', 'HVAC', 'Electrical', 'Plumbing', 'IT & Security', 'Vehicles', 'CCTV Systems'], sampleValue: 'Furniture & Fixtures' },
+  { key: 'subcategory', label: 'Asset Subcategory', type: 'string', required: false, sampleValue: 'Sofa - 3+2+1' },
+  { key: 'brand', label: 'Brand', type: 'string', required: false, sampleValue: 'Hisense' },
+  { key: 'model', label: 'Model', type: 'string', required: false, sampleValue: 'Hisense UHD TV 50"' },
   { key: 'serial_number', label: 'Serial / IMEI No.', type: 'string', required: false, sampleValue: 'SN-9988221' },
-  { key: 'ownership_type', label: 'Ownership Type', type: 'enum', required: false, allowedValues: ['Owned', 'Leased', 'Customer Provided', 'Landlord Provided'], sampleValue: 'Owned' },
-  { key: 'purchase_date', label: 'Purchase Date', type: 'date', required: false, sampleValue: '2023-05-10' },
-  { key: 'supplier', label: 'Supplier', type: 'string', required: false, sampleValue: 'Al Taadhod Trading' },
-  { key: 'purchase_cost', label: 'Purchase Cost (QAR)', type: 'number', required: false, sampleValue: 3400 },
-  { key: 'warranty_expiry_date', label: 'Warranty Expiry Date', type: 'date', required: false, sampleValue: '2025-05-10' },
-  { key: 'assigned_property_code', label: 'Assigned Property Code', type: 'string', required: false, sampleValue: 'AAA', description: 'Must match an active Property Code' },
-  { key: 'assigned_unit_code', label: 'Assigned Unit Code', type: 'string', required: false, sampleValue: 'Flat12', description: 'Unit code under assigned property' },
-  { key: 'assigned_employee_id', label: 'Assigned Employee Code', type: 'string', required: false, sampleValue: 'EMP-001', description: 'Employee ID' },
-  { key: 'assignment_date', label: 'Assignment Date', type: 'date', required: false, sampleValue: '2023-06-01' },
-  { key: 'asset_condition', label: 'Asset Condition', type: 'enum', required: false, allowedValues: ['Brand New', 'Good', 'Fair', 'Needs Repair', 'Scrap / Disposed'], sampleValue: 'Good' },
-  { key: 'asset_status', label: 'Asset Status', type: 'enum', required: false, allowedValues: ['Available', 'In Use', 'Under Maintenance', 'Damaged', 'Disposed'], sampleValue: 'In Use' },
-  { key: 'life_of_asset', label: 'Life Of Asset (Years)', type: 'number', required: false, sampleValue: 5 },
+  { key: 'ownership_type', label: 'Ownership Type', type: 'enum', required: false, allowedValues: ['Company Owned', 'Owned', 'Leased', 'Customer Provided', 'Landlord Provided'], sampleValue: 'Company Owned' },
+  { key: 'purchase_date', label: 'Purchase Date', type: 'date', required: false, sampleValue: '2025-01-04' },
+  { key: 'supplier', label: 'Supplier', type: 'string', required: false, sampleValue: 'Mohammed Noor Trdg & Cons. & Services W.L.L.' },
+  { key: 'purchase_cost', label: 'Purchase Cost (QAR)', type: 'number', required: false, sampleValue: 1200 },
+  { key: 'warranty_expiry_date', label: 'Warranty Expiry Date', type: 'date', required: false, sampleValue: '2027-01-04' },
+  { key: 'warranty_status', label: 'Warranty Status', type: 'string', required: false, sampleValue: 'Active' },
+  { key: 'department', label: 'Department', type: 'string', required: false, sampleValue: 'Operations' },
+  { key: 'assigned_property_code', label: 'Assigned Property Code', type: 'string', required: false, sampleValue: 'Bin Omran 1', description: 'Must match an active Property Code' },
+  { key: 'assigned_unit_code', label: 'Assigned Unit Code', type: 'string', required: false, sampleValue: 'BinOmran1-Flat09', description: 'Unit code under assigned property' },
+  { key: 'assigned_employee_id', label: 'Assigned Employee ID', type: 'string', required: false, sampleValue: 'EMP-001', description: 'Employee ID' },
+  { key: 'assigned_employee_name', label: 'Assigned Employee Name', type: 'string', required: false, sampleValue: 'Jithin Abdul Latheef' },
+  { key: 'assignment_date', label: 'Assignment Date', type: 'date', required: false, sampleValue: '2025-01-10' },
+  { key: 'asset_condition', label: 'Asset Condition', type: 'enum', required: false, allowedValues: ['Fair', 'Good', 'Brand New', 'Needs Repair', 'Scrap / Disposed'], sampleValue: 'Fair' },
+  { key: 'asset_status', label: 'Asset Status', type: 'enum', required: false, allowedValues: ['Available', 'In Use', 'Under Maintenance', 'Damaged', 'Disposed'], sampleValue: 'Available' },
+  { key: 'life_of_asset', label: 'Life Of Asset', type: 'number', required: false, sampleValue: 5 },
   { key: 'depreciation_method', label: 'Depreciation Method', type: 'enum', required: false, allowedValues: ['Straight Line (SLM)', 'Written Down Value (WDV)', 'None'], sampleValue: 'Straight Line (SLM)' },
   { key: 'depreciation_rate', label: 'Depreciation Rate (%)', type: 'number', required: false, sampleValue: 20 },
-  { key: 'opening_cost', label: 'Opening Cost', type: 'number', required: false, sampleValue: 3400 },
-  { key: 'last_service_date', label: 'Last Service Date', type: 'date', required: false, sampleValue: '2024-01-10' },
-  { key: 'next_service_date', label: 'Next Service Date', type: 'date', required: false, sampleValue: '2024-07-10' },
-  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Master bedroom air conditioning' },
+  { key: 'opening_cost', label: 'Opening Cost', type: 'number', required: false, sampleValue: 1200 },
+  { key: 'last_service_date', label: 'Last Service Date', type: 'date', required: false, sampleValue: '2025-06-01' },
+  { key: 'addition_during_year', label: 'Addition during the year', type: 'number', required: false, sampleValue: 0 },
+  { key: 'total_asset_value', label: 'Total Asset Value', type: 'number', required: false, sampleValue: 1200 },
+  { key: 'disposal_value', label: 'Disposal Value', type: 'number', required: false, sampleValue: 0 },
+  { key: 'opening_accumulated_depreciation', label: 'Opening Accumulated Depreciation', type: 'number', required: false, sampleValue: 0 },
+  { key: 'current_year_depreciation', label: 'Current Year Depreciation', type: 'number', required: false, sampleValue: 240 },
+  { key: 'closing_accumulated_depreciation', label: 'Closing Accumulated Depreciation', type: 'number', required: false, sampleValue: 240 },
+  { key: 'net_book_value', label: 'Net Book Value', type: 'number', required: false, sampleValue: 960 },
+  { key: 'next_service_date', label: 'Next Service Date', type: 'date', required: false, sampleValue: '2025-12-01' },
+  { key: 'return_date', label: 'Return Date', type: 'date', required: false, sampleValue: '2026-01-01' },
+  { key: 'disposal_date', label: 'Disposal Date', type: 'date', required: false, sampleValue: '2030-01-01' },
+  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Installed at Various Bldgs' },
 ];
 
 export const assetAdapter: EntityImportAdapter = {
@@ -47,7 +68,7 @@ export const assetAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Asset ID / Code'] ?? row['Asset ID'] ?? row['Asset Code'] ?? row['asset_code'] ?? row['asset_id'] ?? '';
+    const raw = getCellValue(row, 'Asset ID / Code', 'Asset ID', 'Asset Code', 'asset_code', 'asset_id') ?? '';
     return String(raw).trim();
   },
 
@@ -135,7 +156,7 @@ export const assetAdapter: EntityImportAdapter = {
     for (const col of ASSET_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'CREATE' && col.required && (cellValue === undefined || cellValue === null || String(cellValue).trim() === '')) {
         errors.push({
@@ -152,6 +173,9 @@ export const assetAdapter: EntityImportAdapter = {
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          // Convert Excel serial numbers, ISO strings, JS Dates → YYYY-MM-DD
+          normalized[col.key] = sanitizeDateForPostgres(cellValue);
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
@@ -185,21 +209,21 @@ export const assetAdapter: EntityImportAdapter = {
         if (propData) {
           normalized.assigned_property_id = propData.id;
         } else {
-          errors.push({
+          warnings.push({
             row: context.rowNumber,
             field: 'Assigned Property Code',
             code: 'REF_001',
-            message: `Assigned Property Code "${assignedPropCode}" does not exist.`,
-            severity: 'ERROR',
+            message: `Assigned Property Code "${assignedPropCode}" not found — asset will be imported without property assignment.`,
+            severity: 'WARNING',
           });
         }
       } catch {
-        errors.push({
+        warnings.push({
           row: context.rowNumber,
           field: 'Assigned Property Code',
           code: 'REF_001',
-          message: `Assigned Property Code "${assignedPropCode}" does not exist.`,
-          severity: 'ERROR',
+          message: `Assigned Property Code "${assignedPropCode}" not found — asset will be imported without property assignment.`,
+          severity: 'WARNING',
         });
       }
     }
@@ -294,7 +318,7 @@ export const assetAdapter: EntityImportAdapter = {
       const assetCode = record.recordKey;
 
       if (operation === 'CREATE') {
-        const payload: Partial<Asset> = {
+        const payload: Record<string, any> = {
           asset_code: assetCode,
           asset_name: data.asset_name,
           category: data.category,
@@ -302,11 +326,13 @@ export const assetAdapter: EntityImportAdapter = {
           brand: data.brand,
           model: data.model,
           serial_number: data.serial_number,
-          ownership_type: data.ownership_type || 'Owned',
+          ownership_type: data.ownership_type || 'Company Owned',
           purchase_date: data.purchase_date,
           supplier: data.supplier,
           purchase_cost: data.purchase_cost || 0,
           warranty_expiry_date: data.warranty_expiry_date,
+          warranty_status: data.warranty_status,
+          department: data.department,
           assigned_property_id: data.assigned_property_id,
           assigned_property_code: data.assigned_property_code,
           assigned_unit_code: data.assigned_unit_code,
@@ -320,7 +346,16 @@ export const assetAdapter: EntityImportAdapter = {
           depreciation_rate: data.depreciation_rate,
           opening_cost: data.opening_cost,
           last_service_date: data.last_service_date,
+          addition_during_year: data.addition_during_year,
+          total_asset_value: data.total_asset_value,
+          disposal_value: data.disposal_value,
+          opening_accumulated_depreciation: data.opening_accumulated_depreciation,
+          current_year_depreciation: data.current_year_depreciation,
+          closing_accumulated_depreciation: data.closing_accumulated_depreciation,
+          net_book_value: data.net_book_value,
           next_service_date: data.next_service_date,
+          return_date: data.return_date,
+          disposal_date: data.disposal_date,
           remarks: data.remarks,
         };
 

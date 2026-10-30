@@ -1,35 +1,52 @@
-import { supabase, type Unit } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { supabase, createUnit, updateUnit, type Unit } from '../../supabase';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue,
+  sanitizeDateForPostgres
+} from '../types';
 import { referenceDropdowns } from '../../reference-data';
 
 export const UNIT_COLUMNS: ColumnDefinition[] = [
-  { key: 'unit_code', label: 'Unit Code / No.', type: 'string', required: true, sampleValue: 'Flat12', description: 'Unit identifier unique under Property' },
+  { key: 'unit_code', label: 'Unit Code / No.', type: 'string', required: true, sampleValue: 'GF1', description: 'Unit identifier unique under Property' },
   { key: 'property_code', label: 'Property Code', type: 'string', required: true, sampleValue: 'AAA', description: 'Must match an existing Property Code' },
-  { key: 'unit_name', label: 'Unit Name', type: 'string', required: false, sampleValue: 'AAA - Flat12' },
-  { key: 'unit_cost_center_code', label: 'Unit Cost Center Code', type: 'string', required: false, sampleValue: 'CC-AAA-FL12' },
-  { key: 'parent_cost_center_code', label: 'Parent Cost Center Code', type: 'string', required: false, sampleValue: 'CC-DOH-01' },
+  { key: 'unit_cost_center_code', label: 'Unit Cost Center Code', type: 'string', required: false, sampleValue: 'AAA-GF1' },
+  { key: 'parent_cost_center_code', label: 'Parent Cost Center Code', type: 'string', required: false, sampleValue: '0' },
+  { key: 'unit_type', label: 'Unit Type', type: 'string', required: false, sampleValue: 'Apartment' },
   { key: 'unit_usage', label: 'Unit Usage', type: 'enum', required: false, allowedValues: ['Residential', 'Commercial', 'Staff Accommodation', 'Storage', 'Retail'], sampleValue: 'Residential' },
-  { key: 'block_tower', label: 'Block / Tower', type: 'string', required: false, sampleValue: 'Tower A' },
-  { key: 'floor', label: 'Floor', type: 'string', required: false, sampleValue: 'Floor 2' },
+  { key: 'block_tower', label: 'Block / Tower', type: 'string', required: false, sampleValue: '1' },
+  { key: 'floor', label: 'Floor', type: 'string', required: false, sampleValue: 'Ground' },
   { key: 'bedrooms', label: 'Bedrooms (1-7)', type: 'number', required: false, sampleValue: 2 },
   { key: 'bathrooms', label: 'Bathrooms (1-7)', type: 'number', required: false, sampleValue: 2 },
-  { key: 'total_area_sqm', label: 'Total Area Sqm', type: 'number', required: false, sampleValue: 120 },
+  { key: 'area_sqm', label: 'Area Sqm', type: 'number', required: false, sampleValue: 110 },
   { key: 'balcony_sqm', label: 'Balcony Sqm', type: 'number', required: false, sampleValue: 10 },
+  { key: 'total_area_sqm', label: 'Total Area Sqm', type: 'number', required: false, sampleValue: 120 },
   { key: 'view_type', label: 'View Type', type: 'enum', required: false, allowedValues: ['City View', 'Sea View', 'Garden View', 'Street View', 'Open View'], sampleValue: 'City View' },
-  { key: 'furnishing', label: 'Furnishing', type: 'enum', required: false, allowedValues: ['Unfurnished', 'Semi-Furnished', 'Fully Furnished'], sampleValue: 'Semi-Furnished' },
-  { key: 'parking_slot_no', label: 'Parking Slot No.', type: 'string', required: false, sampleValue: 'P-104' },
-  { key: 'electricity_meter_no', label: 'Electricity Meter No.', type: 'string', required: false, sampleValue: 'ELEC-99881' },
-  { key: 'water_meter_no', label: 'Water Meter No.', type: 'string', required: false, sampleValue: 'WTR-77661' },
-  { key: 'cooling_meter_no', label: 'Cooling / Chiller Meter No.', type: 'string', required: false, sampleValue: 'CHL-1122' },
-  { key: 'status', label: 'Unit Status', type: 'enum', required: false, allowedValues: referenceDropdowns.unitStatuses.map(u => u.value), sampleValue: 'Available' },
-  { key: 'lease_status', label: 'Lease Status', type: 'enum', required: false, allowedValues: ['DRAFT', 'ACTIVE', 'VACANT', 'EXPIRED'], sampleValue: 'VACANT' },
-  { key: 'current_rent', label: 'Default Rent / Base Rate', type: 'number', required: false, sampleValue: 5500 },
-  { key: 'rent_frequency', label: 'Rent Frequency', type: 'enum', required: false, allowedValues: referenceDropdowns.rentFrequencies.map(f => f.value), sampleValue: 'Monthly' },
-  { key: 'security_deposit_amount', label: 'Security Deposit Amount', type: 'number', required: false, sampleValue: 5500 },
-  { key: 'service_charge', label: 'Service Charge', type: 'number', required: false, sampleValue: 200 },
-  { key: 'maintenance_responsibility', label: 'Maintenance Responsibility', type: 'enum', required: false, allowedValues: ['Landlord', 'Tenant', 'Shared'], sampleValue: 'Landlord' },
-  { key: 'handover_date', label: 'Handover Date', type: 'date', required: false, sampleValue: '2023-01-01' },
-  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Standard 2BHK unit' },
+  { key: 'furnishing', label: 'Furnishing', type: 'enum', required: false, allowedValues: ['Unfurnished', 'Semi-Furnished', 'Fully Furnished', 'Semi Furnished'], sampleValue: 'Fully Furnished' },
+  { key: 'parking_slot_no', label: 'Parking Slot No.', type: 'string', required: false, sampleValue: 'P-101' },
+  { key: 'electricity_meter_no', label: 'Electricity Meter No.', type: 'string', required: false, sampleValue: '182164' },
+  { key: 'water_meter_no', label: 'Water Meter No.', type: 'string', required: false, sampleValue: '149086' },
+  { key: 'cooling_meter_no', label: 'Cooling / Chiller Meter No.', type: 'string', required: false, sampleValue: 'CHL-001' },
+  { key: 'status', label: 'Unit Status', type: 'enum', required: false, allowedValues: referenceDropdowns.unitStatuses.map(u => u.value).concat(['Occupied', 'Available', 'Under Maintenance', 'Reserved']), sampleValue: 'Occupied' },
+  { key: 'lease_status', label: 'Lease Status', type: 'enum', required: false, allowedValues: ['Leased', 'Vacant', 'DRAFT', 'ACTIVE', 'EXPIRED'], sampleValue: 'Leased' },
+  { key: 'base_rate', label: 'Default Rent Amount/ Base Rate', type: 'number', required: false, sampleValue: 5500 },
+  { key: 'rent_frequency', label: 'Rent Frequency', type: 'enum', required: false, allowedValues: referenceDropdowns.rentFrequencies.map(f => f.value).concat(['Monthly', 'Quarterly', 'Semi-Annually', 'Annually', 'monthly', 'quarterly']), sampleValue: 'Monthly' },
+  { key: 'current_tenant', label: 'Current Tenant', type: 'string', required: false, sampleValue: 'M/S. Al Ameen Real Estate' },
+  { key: 'contract_no', label: 'Contract No.', type: 'string', required: false, sampleValue: 'CNT-2026-001' },
+  { key: 'contract_start_date', label: 'Contract Start Date', type: 'date', required: false, sampleValue: '2026-01-01' },
+  { key: 'contract_end_date', label: 'Contract End Date', type: 'date', required: false, sampleValue: '2026-12-31' },
+  { key: 'current_rent', label: 'Current Rent', type: 'number', required: false, sampleValue: 5500 },
+  { key: 'security_deposit_type', label: 'Security Deposit', type: 'string', required: false, sampleValue: 'Cash' },
+  { key: 'security_deposit_amount', label: 'Sequirity Deposit Amount', type: 'number', required: false, sampleValue: 5500 },
+  { key: 'service_charge', label: 'Service Charge', type: 'number', required: false, sampleValue: 0 },
+  { key: 'maintenance_responsibility', label: 'Maintenance Responsibility', type: 'string', required: false, sampleValue: 'Property Manager' },
+  { key: 'handover_date', label: 'Handover Date', type: 'date', required: false, sampleValue: '2024-04-10' },
+  { key: 'documents_received', label: 'Documents Received', type: 'boolean', required: false, sampleValue: 'Yes' },
+  { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Standard residential apartment' },
 ];
 
 export const unitAdapter: EntityImportAdapter = {
@@ -50,8 +67,8 @@ export const unitAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const unitCode = String(row['Unit Code / No.'] ?? row['Unit Code'] ?? row['unit_code'] ?? row['Unit code'] ?? '').trim();
-    const propCode = String(row['Property Code'] ?? row['property_code'] ?? '').trim();
+    const unitCode = String(getCellValue(row, 'Unit Code / No.', 'Unit Code', 'unit_code', 'Unit code', 'Unit No') ?? '').trim();
+    const propCode = String(getCellValue(row, 'Property Code', 'property_code', 'Property code') ?? '').trim();
     if (!unitCode && !propCode) return '';
     return propCode ? `${propCode}::${unitCode}` : unitCode;
   },
@@ -92,8 +109,8 @@ export const unitAdapter: EntityImportAdapter = {
     const dependencies: DependencyCheckItem[] = [];
     const normalized: Record<string, any> = {};
 
-    const rawUnitCode = String(row['Unit Code / No.'] ?? row['Unit Code'] ?? row['unit_code'] ?? '').trim();
-    const rawPropCode = String(row['Property Code'] ?? row['property_code'] ?? '').trim();
+    const rawUnitCode = String(getCellValue(row, 'Unit Code / No.', 'Unit Code', 'unit_code', 'Unit code', 'Unit No') ?? '').trim();
+    const rawPropCode = String(getCellValue(row, 'Property Code', 'property_code', 'Property code') ?? '').trim();
 
     if (!rawUnitCode) {
       errors.push({
@@ -121,7 +138,7 @@ export const unitAdapter: EntityImportAdapter = {
       try {
         const { data: propData } = await supabase
           .from('properties')
-          .select('id, property_code, title')
+          .select('id, property_code, title, no_of_units')
           .ilike('property_code', rawPropCode)
           .limit(1)
           .single();
@@ -177,6 +194,50 @@ export const unitAdapter: EntityImportAdapter = {
           resolution: 'Choose a different Unit Code or use UPDATE operation.',
         });
       }
+
+      // ── Unit capacity check for bulk import ────────────────────────────────
+      if (matchedProperty && matchedProperty.no_of_units != null) {
+        const propertyId: string = matchedProperty.id;
+        const unitLimit: number = matchedProperty.no_of_units;
+
+        // Fetch current unit count once per property (cached in context.cache)
+        const cacheKey = `unit_count_${propertyId}`;
+        if (!(context as any).cache) (context as any).cache = {};
+        if ((context as any).cache[cacheKey] === undefined) {
+          try {
+            const { count } = await supabase
+              .from('units')
+              .select('id', { count: 'exact', head: true })
+              .eq('property_id', propertyId);
+            (context as any).cache[cacheKey] = count ?? 0;
+          } catch {
+            (context as any).cache[cacheKey] = 0;
+          }
+        }
+
+        // Track how many new units this batch is adding per property
+        const batchCountKey = `batch_unit_count_${propertyId}`;
+        if ((context as any).cache[batchCountKey] === undefined) {
+          (context as any).cache[batchCountKey] = 0;
+        }
+        (context as any).cache[batchCountKey] += 1;
+
+        const existingCount: number = (context as any).cache[cacheKey];
+        const batchCount: number = (context as any).cache[batchCountKey];
+        const projectedTotal = existingCount + batchCount;
+
+        if (projectedTotal > unitLimit) {
+          errors.push({
+            row: context.rowNumber,
+            field: 'Property Code',
+            code: 'CAP_001',
+            message: `Unit capacity exceeded for Property "${rawPropCode}". Limit: ${unitLimit}, already registered: ${existingCount}, this batch adds: ${batchCount} (projected total: ${projectedTotal}).`,
+            severity: 'ERROR',
+            resolution: `Remove ${projectedTotal - unitLimit} row(s) from the import file for this property, or increase the property's "No. of Units" limit.`,
+          });
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────
     } else {
       if (!existingRecord) {
         errors.push({
@@ -193,13 +254,16 @@ export const unitAdapter: EntityImportAdapter = {
     for (const col of UNIT_COLUMNS) {
       if (operation === 'DELETE') continue;
 
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (cellValue !== undefined && cellValue !== null && String(cellValue).trim() !== '') {
         const strVal = String(cellValue).trim();
 
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitizedDate = sanitizeDateForPostgres(cellValue);
+          normalized[col.key] = sanitizedDate;
         } else if (col.type === 'number') {
           const num = Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
@@ -214,8 +278,9 @@ export const unitAdapter: EntityImportAdapter = {
             normalized[col.key] = num;
           }
         } else if (col.type === 'enum' && col.allowedValues) {
-          const matched = col.allowedValues.find(v => v.toLowerCase() === strVal.toLowerCase());
-          if (!matched) {
+          const allowedArr = Array.isArray(col.allowedValues) ? col.allowedValues : [];
+          const matched = allowedArr.find((v: string) => v.toLowerCase() === strVal.toLowerCase());
+          if (!matched && allowedArr.length > 0) {
             warnings.push({
               row: context.rowNumber,
               field: col.label,
@@ -225,7 +290,7 @@ export const unitAdapter: EntityImportAdapter = {
             });
             normalized[col.key] = strVal;
           } else {
-            normalized[col.key] = matched;
+            normalized[col.key] = matched || strVal;
           }
         } else {
           normalized[col.key] = strVal;
@@ -326,14 +391,16 @@ export const unitAdapter: EntityImportAdapter = {
           property_id: data.property_id,
           unit_code: unitCode,
           unit_ref: unitCode,
-          unit_name: data.unit_name || `${data.property_code || ''} - ${unitCode}`,
+          unit_name: `${data.property_code || ''} - ${unitCode}`.replace(/^ - /, ''),
           unit_cost_center_code: data.unit_cost_center_code,
           parent_cost_center_code: data.parent_cost_center_code,
+          room_type: data.unit_type || 'Apartment',
           unit_usage: data.unit_usage || 'Residential',
           block_tower: data.block_tower,
           floor: data.floor,
           bedrooms: data.bedrooms ?? 1,
           bathrooms: data.bathrooms ?? 1,
+          area: data.area_sqm ? String(data.area_sqm) : undefined,
           total_area_sqm: data.total_area_sqm,
           balcony_sqm: data.balcony_sqm,
           view_type: data.view_type,
@@ -343,18 +410,24 @@ export const unitAdapter: EntityImportAdapter = {
           water_meter_no: data.water_meter_no,
           cooling_meter_no: data.cooling_meter_no,
           status: data.status || 'Available',
-          lease_status: data.lease_status || 'VACANT',
-          current_rent: data.current_rent,
+          lease_status: data.lease_status || 'Vacant',
+          price: data.base_rate ?? data.current_rent ?? 0,
           rent_frequency: data.rent_frequency || 'Monthly',
+          current_tenant: data.current_tenant,
+          contract_no: data.contract_no,
+          contract_start_date: sanitizeDateForPostgres(data.contract_start_date) || undefined,
+          contract_end_date: sanitizeDateForPostgres(data.contract_end_date) || undefined,
+          current_rent: data.current_rent,
+          security_deposit_type: data.security_deposit_type,
           security_deposit_amount: data.security_deposit_amount,
           service_charge: data.service_charge,
-          maintenance_responsibility: data.maintenance_responsibility || 'Landlord',
-          handover_date: data.handover_date,
+          maintenance_responsibility: data.maintenance_responsibility || 'Property Manager',
+          handover_date: sanitizeDateForPostgres(data.handover_date) || undefined,
+          documents_received: typeof data.documents_received === 'boolean' ? data.documents_received : String(data.documents_received).toLowerCase() === 'yes' || String(data.documents_received).toLowerCase() === 'true',
           remarks: data.remarks,
         };
 
-        const { data: created, error } = await supabase.from('units').insert(payload).select().single();
-        if (error) throw error;
+        const created = await createUnit(payload);
 
         return {
           success: true,
@@ -367,16 +440,13 @@ export const unitAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Target unit record ID not found');
 
-        const updatePayload: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-        };
+        const updatePayload: Record<string, any> = {};
 
         for (const change of record.changes) {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('units').update(updatePayload).eq('id', existing.id);
-        if (error) throw error;
+        await updateUnit(existing.id, updatePayload);
 
         return {
           success: true,
@@ -388,8 +458,7 @@ export const unitAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Target unit record ID not found');
 
-        const { error } = await supabase.from('units').update({ status: 'Archived', updated_at: new Date().toISOString() }).eq('id', existing.id);
-        if (error) throw error;
+        await updateUnit(existing.id, { status: 'Archived' });
 
         return {
           success: true,

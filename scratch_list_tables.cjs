@@ -1,7 +1,7 @@
 const { Client } = require('pg');
 
 async function listTables() {
-  const client = new Client({ connectionString: "postgresql://postgres.rnebpqnzignwjeukgztz:ZZaM4YMKu80iCTa2@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres" });
+  const client = new Client({ connectionString: "postgresql://postgres.rnebpqnzignwjeukgztz:A6TeHnuvQfFqMHMZ@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres" });
   await client.connect();
 
   const res = await client.query(`
@@ -12,7 +12,7 @@ async function listTables() {
   `);
 
   console.log('Tables in public schema:');
-  console.log(res.rows.map(r => r.table_name));
+  console.log(JSON.stringify(res.rows.map(r => r.table_name), null, 2));
   
   await client.end();
 }

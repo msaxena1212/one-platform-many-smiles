@@ -301,9 +301,6 @@ type Pdc = {
   amount: number;
   status: PdcStatus;
   payerName?: string;
-  tenantName?: string;
-  unit?: string;
-  property?: string;
   period?: string;
   file?: string;
   tenureStart?: string;
@@ -4661,89 +4658,22 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item)),
     ]);
 
-    // Register all Post-Dated Cheques in the system with full unit, property, and tenant metadata
+    // Register all Post-Dated Cheques in the system
     const renewalPdcs: Pdc[] = data.pdcs.map((p, idx) => ({
       id: `p-ren-${Date.now()}-${idx + 1}`,
       leaseId: renewed.id,
       chequeNo: p.chequeNo,
-      bank: p.bank || "Qatar National Bank (QNB)",
+      bank: p.bank,
       date: p.date,
       amount: p.amount,
       payerName: oldLease.tenantName,
-      tenantName: oldLease.tenantName,
-      unit: oldLease.unit,
-      property: oldLease.property,
       period: p.period || `Renewal Cheque ${idx + 1} of ${data.pdcs.length}`,
-      tenureStart: p.tenureStart || newStartDate,
-      tenureEnd: p.tenureEnd || newEndDate,
+      tenureStart: p.tenureStart,
+      tenureEnd: p.tenureEnd,
       file: p.file || data.pdcBatchFile || undefined,
       status: "received" as PdcStatus,
     }));
     setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== renewed.id)]);
-
-    // Persist renewal PDCs to persistent browser storage so they are immediately available in PDC Management
-    try {
-      const existingRaw = localStorage.getItem("pms_renewal_pdcs");
-      const existingList: any[] = existingRaw ? JSON.parse(existingRaw) : [];
-      const updatedList = [
-        ...renewalPdcs.map(rp => ({
-          ...rp,
-          cheque_number: rp.chequeNo,
-          cheque_date: rp.date,
-          tenant_name: rp.tenantName,
-          unit_ref: rp.unit,
-          property_name: rp.property,
-          bank_name: rp.bank,
-        })),
-        ...existingList.filter(item => item.leaseId !== renewed.id && !renewalPdcs.some(rp => rp.chequeNo === item.chequeNo && rp.unit === item.unit)),
-      ];
-      localStorage.setItem("pms_renewal_pdcs", JSON.stringify(updatedList));
-    } catch (e) {
-      console.warn("Error storing renewal PDCs to localStorage:", e);
-    }
-
-    // Persist renewal PDCs directly to Supabase pdcs and fin_pdc_register
-    try {
-      const dbPdcs = renewalPdcs.map(p => ({
-        cheque_number: p.chequeNo,
-        amount: p.amount,
-        bank: p.bank,
-        status: "In Hand",
-        status_pdc: "in hand",
-        unit_name: oldLease.unit,
-        property_name: oldLease.property,
-        property_code: (oldLease as any).propertyCode || oldLease.property?.split(" - ")[0] || "Al Ameen",
-        tenant_name: oldLease.tenantName,
-        maturity_date: p.date,
-        deposit_date: p.date,
-        rent_from_date: p.tenureStart,
-        rent_to_date: p.tenureEnd,
-        lease_id: renewed.id,
-      }));
-      void supabase.from("pdcs").insert(dbPdcs).then(({ error }) => {
-        if (error) console.warn("[renewLease] pdcs insert note:", error.message);
-        else console.log("[renewLease] PDCs inserted into pdcs table successfully");
-      });
-
-      const dbFinPdcs = renewalPdcs.map(p => ({
-        cheque_number: p.chequeNo,
-        cheque_date: p.date,
-        amount: p.amount,
-        bank_name: p.bank,
-        status: "In Hand",
-        unit_name: oldLease.unit,
-        property_name: oldLease.property,
-        tenant_name: oldLease.tenantName,
-      }));
-      void supabase.from("fin_pdc_register").insert(dbFinPdcs).then(({ error }) => {
-        if (error) console.warn("[renewLease] fin_pdc_register insert note:", error.message);
-      });
-    } catch (e) {
-      console.warn("Error persisting renewal PDCs to Supabase:", e);
-    }
-
-    window.dispatchEvent(new CustomEvent("pdcs_updated"));
-    window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
 
     // Process Security Deposit Top-Up / Payment Voucher
     const newVouchers: Voucher[] = [];

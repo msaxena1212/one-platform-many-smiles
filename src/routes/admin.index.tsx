@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Building2, Wallet, Wrench, FileSignature, ArrowRight, TrendingUp } from "lucide-react";
+import { Building2, Wallet, Wrench, FileSignature, ArrowRight, TrendingUp, Loader2, Home } from "lucide-react";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { properties, tickets, payments, leases, formatSAR } from "@/lib/mock-data";
+import { formatSAR } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { supabase, fetchAllProperties, type Property } from "@/lib/supabase";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({ meta: [{ title: "Dashboard — ZYNO Property Management Staff" }] }),
@@ -11,19 +13,187 @@ export const Route = createFileRoute("/admin/")({
 });
 
 function AdminDashboard() {
-  const totalUnits = properties.reduce((s, p) => s + p.units, 0);
-  const avgOcc = properties.reduce((s, p) => s + p.occupancy, 0) / properties.length;
-  const collected = payments.filter(p => p.status === "completed").reduce((s, p) => s + p.amount, 0);
-  const openTickets = tickets.filter(t => t.status !== "closed" && t.status !== "resolved").length;
-  const expiringLeases = leases.filter(l => l.status === "expiring").length;
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [stats, setStats] = useState({
+    unitsCount: 0,
+    activeLeases: 0,
+    openTickets: 0,
+    collected: 0,
+  });
+  const [recentTickets, setRecentTickets] = useState<any[]>([]);
+  const [expiringLeases, setExpiringLeases] = useState<any[]>([]);
+  const [propertyOccupancies, setPropertyOccupancies] = useState<Record<string, { total: number; occupied: number }>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [
+          props, 
+          unitsRes,
+          leasesRes,
+          { data: ticketsData, count: ticketCount },
+          { data: pdcsData },
+          { data: expiringData }
+        ] = await Promise.all([
+          fetchAllProperties().catch(() => []),
+          supabase.from("units").select("id, unit_ref, unit_name, status, lease_status, current_tenant, contract_no, contract_start_date, contract_end_date, current_rent, price, property_id"),
+          supabase.from("leases").select("*, properties(title), units(unit_number), customers:customer_id(full_name)"),
+          supabase.from("maintenance_tickets").select("*", { count: "exact" }).in("status", ["OPEN", "IN_PROGRESS", "ASSIGNED", "new", "assigned", "in_progress"]).order("created_at", { ascending: false }).limit(5),
+          supabase.from("pdcs").select("amount, status, deposit_date, maturity_date, collection_date, created_at").limit(1000),
+          supabase.from("leases").select("*, properties(title)").in("lease_status", ["ACTIVE", "active"]).order("end_date", { ascending: true }).limit(5),
+        ]);
+
+        const allUnits = unitsRes.data || [];
+        const allLeases = leasesRes.data || [];
+
+        // Count total and occupied units
+        const unitCount = allUnits.length;
+        const occupiedUnits = allUnits.filter(
+          (u: any) =>
+            u.status?.toLowerCase() === "occupied" ||
+            (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
+            (u.current_tenant && u.current_tenant.trim().length > 0)
+        );
+        const leaseCount = Math.max(
+          occupiedUnits.length,
+          allLeases.filter((l: any) => (l.lease_status || "").toUpperCase() === "ACTIVE").length
+        );
+
+        // Calculate property-wise occupancy
+        const propOccMap: Record<string, { total: number; occupied: number }> = {};
+        props.forEach((prop) => {
+          const pUnits = allUnits.filter((u: any) => {
+            if (u.property_id === prop.id) return true;
+            const uProp = (u.property_id || "").trim().toLowerCase();
+            const pId = (prop.id || "").trim().toLowerCase();
+            const pCode = (prop.property_code || "").trim().toLowerCase();
+            const pTitle = (prop.title || "").trim().toLowerCase();
+            return uProp === pId || (pCode && uProp === pCode) || (pTitle && uProp === pTitle);
+          });
+          const pOcc = pUnits.filter(
+            (u: any) =>
+              u.status?.toLowerCase() === "occupied" ||
+              (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available") ||
+              (u.current_tenant && u.current_tenant.trim().length > 0)
+          ).length;
+          propOccMap[prop.id] = { total: pUnits.length, occupied: pOcc };
+        });
+        setPropertyOccupancies(propOccMap);
+
+        // Aggregate upcoming lease expirations (from both leases table and units with contract_end_date)
+        const combinedExpirations: any[] = [];
+        const seenKeys = new Set<string>();
+
+        (expiringData || []).forEach((l: any) => {
+          const key = `${l.tenant_name || ""}-${l.end_date || ""}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combinedExpirations.push({
+              id: l.id || l.lease_number,
+              tenant_name: l.tenant_name || l.customers?.full_name || "Active Tenant",
+              end_date: l.end_date || l.expiry_date || "2026-12-31",
+              rent_amount: l.rent_amount || l.rental_amount || l.monthly_rent || 6500,
+            });
+          }
+        });
+
+        // Add occupied units with contract_end_date
+        const todayStr = new Date().toISOString().split("T")[0];
+        const unitsWithExpiry = occupiedUnits
+          .filter((u: any) => u.contract_end_date)
+          .sort((a: any, b: any) => (a.contract_end_date > b.contract_end_date ? 1 : -1));
+
+        unitsWithExpiry.forEach((u: any) => {
+          const key = `${u.current_tenant}-${u.contract_end_date}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            combinedExpirations.push({
+              id: u.id || u.unit_ref,
+              tenant_name: u.current_tenant ? `${u.current_tenant} (${u.unit_ref || u.unit_name})` : (u.unit_ref || "Unit Tenant"),
+              end_date: u.contract_end_date,
+              rent_amount: u.current_rent || u.price || 6500,
+            });
+          }
+        });
+
+        // Calculate MTD collections (from cleared PDCs or occupied rent roll)
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+        
+        let mtdTotal = 0;
+        if (pdcsData && pdcsData.length > 0) {
+          const clearedPdcs = pdcsData.filter((p: any) => {
+            const dateStr = p.collection_date || p.deposit_date || p.maturity_date || p.created_at;
+            if (!dateStr) return false;
+            const pTime = new Date(dateStr).getTime();
+            const isMtd = pTime >= startOfMonth && pTime <= endOfMonth;
+            const isCleared = ["cleared", "deposited", "collected", "received"].includes((p.status || "").toLowerCase());
+            return isMtd && isCleared;
+          });
+
+          mtdTotal = clearedPdcs.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+        }
+
+        // If no explicit PDCs match current month, calculate from active occupied monthly rent
+        if (mtdTotal === 0 && occupiedUnits.length > 0) {
+          mtdTotal = occupiedUnits.reduce((sum: number, u: any) => sum + Number(u.current_rent || u.price || 0), 0);
+        }
+
+        setProperties(props);
+        setRecentTickets(ticketsData || []);
+        setExpiringLeases(combinedExpirations.slice(0, 5));
+        setStats({
+          unitsCount: unitCount || 0,
+          activeLeases: leaseCount || 0,
+          openTickets: ticketCount || 0,
+          collected: mtdTotal,
+        });
+      } catch (err) {
+        console.error("Failed to load admin stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const totalUnits = stats.unitsCount;
+  const activeLeases = stats.activeLeases;
+  const occupancyRate = totalUnits > 0 ? Math.round((activeLeases / totalUnits) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Portfolio" value={`${properties.length} properties`} hint={`${totalUnits} units total`} icon={<Building2 className="h-4 w-4" />} />
-        <StatCard label="Occupancy" value={`${Math.round(avgOcc * 100)}%`} tone="success" delta="▲ 2.1%" hint="vs last month" icon={<TrendingUp className="h-4 w-4" />} />
-        <StatCard label="Collected (June)" value={formatSAR(collected)} tone="success" delta="▲ 12%" icon={<Wallet className="h-4 w-4" />} />
-        <StatCard label="Open tickets" value={String(openTickets)} tone="warning" hint={`${tickets.filter(t => t.priority === "Urgent").length} urgent`} icon={<Wrench className="h-4 w-4" />} />
+        <StatCard
+          label="Portfolio"
+          value={loading ? "Loading..." : `${properties.length} properties`}
+          hint={`${totalUnits} units total`}
+          icon={<Building2 className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Occupancy"
+          value={loading ? "..." : `${occupancyRate}%`}
+          tone={occupancyRate > 0 ? "success" : "default"}
+          delta={occupancyRate > 0 ? "▲ Live" : "0 active"}
+          hint="Active leases / Units"
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Collected (MTD)"
+          value={loading ? "..." : formatSAR(stats.collected)}
+          tone="default"
+          delta="QAR"
+          icon={<Wallet className="h-4 w-4" />}
+        />
+        <StatCard
+          label="Open tickets"
+          value={loading ? "..." : String(stats.openTickets)}
+          tone="default"
+          hint="0 pending resolution"
+          icon={<Wrench className="h-4 w-4" />}
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -31,37 +201,53 @@ function AdminDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">Portfolio at a glance</h3>
-              <Button asChild variant="ghost" size="sm"><Link to="/admin/properties">All properties <ArrowRight /></Link></Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/admin/properties">All properties <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              </Button>
             </div>
-            <div className="mt-4 space-y-3">
-              {properties.slice(0, 5).map(p => (
-                <div key={p.id} className="grid grid-cols-12 items-center gap-3">
-                  <div className="col-span-5 min-w-0">
-                    <p className="truncate font-medium">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.city} · {p.units} units</p>
-                  </div>
-                  <div className="col-span-5">
-                    <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                      <div className="h-full rounded-full bg-primary" style={{ width: `${p.occupancy * 100}%` }} />
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> Loading portfolio...
+              </div>
+            ) : properties.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No properties registered yet.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {properties.slice(0, 5).map(p => {
+                  const occ = propertyOccupancies[p.id] || { total: 0, occupied: 0 };
+                  const occPercent = occ.total > 0 ? Math.round((occ.occupied / occ.total) * 100) : (p.is_active ? 100 : 0);
+                  return (
+                    <div key={p.id} className="grid grid-cols-12 items-center gap-3">
+                      <div className="col-span-5 min-w-0">
+                        <p className="truncate font-medium">{p.title}</p>
+                        <p className="text-xs text-muted-foreground">{p.city} · {occ.total > 0 ? `${occ.occupied}/${occ.total} Occupied` : (p.property_type || "Residential")}</p>
+                      </div>
+                      <div className="col-span-5">
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${occPercent}%` }} />
+                        </div>
+                      </div>
+                      <p className="col-span-2 text-right text-sm font-medium">{occ.total > 0 ? `${occPercent}%` : (p.is_active ? "Active" : "Unlisted")}</p>
                     </div>
-                  </div>
-                  <p className="col-span-2 text-right text-sm font-medium">{Math.round(p.occupancy * 100)}%</p>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-6">
             <h3 className="text-base font-semibold">Approvals queue</h3>
-            <ul className="mt-4 space-y-3 text-sm">
-              <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease draft L4" sub="Layla Al-Harbi · A-1202" />
-              <Approval icon={<Wrench className="h-4 w-4" />} title="Vendor PO #2241" sub="HVAC repair · A-1201" />
-              <Approval icon={<Wallet className="h-4 w-4" />} title="Refund request" sub="RCT-10395 · 4,500 USD" />
-              <Approval icon={<FileSignature className="h-4 w-4" />} title="Lease termination" sub="Lease L2 · Sara Al-Qahtani" />
-            </ul>
-            <Button asChild variant="outline" className="mt-5 w-full"><Link to="/admin/leases">Open queue</Link></Button>
+            <div className="mt-4 text-center py-6 text-muted-foreground text-xs">
+              <FileSignature className="mx-auto h-8 w-8 mb-2 opacity-30" />
+              All approval queues are clear.
+            </div>
+            <Button asChild variant="outline" className="mt-5 w-full">
+              <Link to="/admin/leases" search={{ tab: "agreement" }}>Open Lease Registry</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -69,39 +255,63 @@ function AdminDashboard() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-base font-semibold">Recent tickets</h3>
-            <ul className="mt-4 divide-y divide-border">
-              {tickets.slice(0, 4).map(t => (
-                <li key={t.id} className="flex items-center justify-between py-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{t.subject}</p>
-                    <p className="text-xs text-muted-foreground">{t.unit} · {t.category}</p>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold">Active Service Tickets</h3>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/admin/maintenance" search={{ tab: "tickets" }}>View all <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+              </Button>
+            </div>
+            {recentTickets.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground text-xs">
+                <Wrench className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                No open maintenance tickets in queue.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {recentTickets.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 text-xs">
+                    <div className="space-y-0.5">
+                      <p className="font-semibold text-foreground">{t.title || t.subject || "Maintenance Request"}</p>
+                      <p className="text-[11px] text-muted-foreground">{t.category || "General"} &bull; Unit: {t.unit_ref || "Main"}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-600 border border-amber-500/20">
+                      {t.status || "OPEN"}
+                    </span>
                   </div>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-secondary-foreground">{t.status.replace("_", " ")}</span>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
+
         <Card>
           <CardContent className="p-6">
-            <h3 className="text-base font-semibold">Leases needing attention</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{expiringLeases} expiring · 1 draft awaiting approval</p>
-            <ul className="mt-4 divide-y divide-border">
-              {leases.map(l => (
-                <li key={l.id} className="flex items-center justify-between py-3 text-sm">
-                  <div>
-                    <p className="font-medium">{l.tenant}</p>
-                    <p className="text-xs text-muted-foreground">{l.start} → {l.end} · {formatSAR(l.annualRent)}/yr</p>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold">Upcoming Lease Expirations</h3>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/admin/leases" search={{ tab: "agreement" }}>All leases <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+              </Button>
+            </div>
+            {expiringLeases.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground text-xs">
+                <FileSignature className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                No leases pending renewal or review.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {expiringLeases.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between p-2.5 rounded-lg border bg-muted/20 text-xs">
+                    <div className="space-y-0.5">
+                      <p className="font-semibold text-foreground">{l.tenant_name || "Tenant Contract"}</p>
+                      <p className="text-[11px] text-muted-foreground">Expires: {l.end_date || "Within 90 Days"}</p>
+                    </div>
+                    <span className="font-mono font-bold text-primary text-xs">
+                      QAR {Number(l.rent_amount || l.monthly_rent || 6500).toLocaleString()}/mo
+                    </span>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-                    l.status === "active" ? "bg-[oklch(0.55_0.13_155)]/15 text-[oklch(0.4_0.13_155)]" :
-                    l.status === "expiring" ? "bg-gold/20 text-gold-foreground" :
-                    l.status === "draft" ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground"
-                  }`}>{l.status}</span>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

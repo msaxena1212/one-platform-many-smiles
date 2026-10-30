@@ -1,67 +1,80 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image, pdf } from '@react-pdf/renderer';
+import { getDocumentBranding, type DocumentBranding } from '@/lib/document-branding';
 
 const styles = StyleSheet.create({
-  page: { padding: 35, fontSize: 9, fontFamily: 'Helvetica', color: '#111' },
+  page: { padding: 30, fontSize: 8.5, fontFamily: 'Helvetica', color: '#111' },
   center: { textAlign: 'center' },
   bold: { fontFamily: 'Helvetica-Bold' },
-  pageLabel: { textAlign: 'center', fontSize: 8, color: '#555', marginBottom: 4 },
+  pageLabel: { textAlign: 'right', fontSize: 7, color: '#777', marginBottom: 3 },
 
-  /* ── Header ── */
-  headerTitle: { textAlign: 'center', fontSize: 13, fontFamily: 'Helvetica-Bold', textDecoration: 'underline', marginBottom: 10 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  poBox: { fontSize: 9 },
-  ackRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 8 },
-  ackLabel: { fontSize: 8, fontFamily: 'Helvetica-Bold', marginRight: 4 },
-  ackNo: { fontSize: 8, color: '#333' },
+  /* ── Banner & Header ── */
+  bannerContainer: { width: '100%', marginBottom: 10, alignItems: 'center' },
+  bannerImage: { width: '100%', height: 75, objectFit: 'cover', borderRadius: 2 },
+  
+  orgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#0f766e', paddingBottom: 6, marginBottom: 8 },
+  orgName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: '#0f766e' },
+  orgSubtitle: { fontSize: 7.5, color: '#555', marginTop: 1 },
+  orgRight: { alignItems: 'flex-end' },
+  orgContact: { fontSize: 7, color: '#666' },
+
+  headerTitleContainer: { alignItems: 'center', marginVertical: 6 },
+  headerTitle: { textAlign: 'center', fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#111', textDecoration: 'underline', letterSpacing: 0.5 },
+  headerSubtitle: { textAlign: 'center', fontSize: 7.5, color: '#555', marginTop: 2 },
+
+  metaBar: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#f8fafc', padding: 5, borderRadius: 3, borderWidth: 0.5, borderColor: '#e2e8f0', marginBottom: 8 },
+  metaItem: { flexDirection: 'row' },
+  metaLabel: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#475569', marginRight: 4 },
+  metaValue: { fontSize: 7.5, color: '#0f172a' },
 
   /* ── Info block ── */
-  infoGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, borderTopWidth: 0.5, borderTopColor: '#ccc', paddingTop: 6 },
-  infoLeft: { flex: 1.4 },
-  infoRight: { flex: 1 },
-  infoRow: { flexDirection: 'row', marginBottom: 3 },
-  infoLabel: { width: 80, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  infoValue: { flex: 1, fontSize: 8 },
-  infoRightLabel: { width: 72, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  infoRightValue: { flex: 1, fontSize: 8 },
+  infoGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, borderWidth: 0.5, borderColor: '#cbd5e1', borderRadius: 3, padding: 6, backgroundColor: '#ffffff' },
+  infoLeft: { flex: 1.3, paddingRight: 8 },
+  infoRight: { flex: 1, paddingLeft: 8, borderLeftWidth: 0.5, borderLeftColor: '#e2e8f0' },
+  infoRow: { flexDirection: 'row', marginBottom: 3.5, alignItems: 'flex-start' },
+  infoLabel: { width: 85, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155' },
+  infoValue: { flex: 1, fontSize: 7.5, color: '#0f172a' },
+  infoRightLabel: { width: 85, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155' },
+  infoRightValue: { flex: 1, fontSize: 7.5, color: '#0f172a' },
 
-  /* ── Table ── */
-  tableHeader: { flexDirection: 'row', backgroundColor: '#4a4a4a', color: '#fff', paddingVertical: 4, borderWidth: 0.5, borderColor: '#333' },
-  tableRow: { flexDirection: 'row', borderLeftWidth: 0.5, borderRightWidth: 0.5, borderBottomWidth: 0.5, borderColor: '#aaa', minHeight: 20, alignItems: 'center' },
-  tableRowAlt: { backgroundColor: '#f5f5f5' },
+  /* ── Table (PDC / Itemized Collection Only - No General Ledgers) ── */
+  tableHeader: { flexDirection: 'row', backgroundColor: '#0f766e', paddingVertical: 4.5, borderWidth: 0.5, borderColor: '#0f766e', borderTopLeftRadius: 2, borderTopRightRadius: 2 },
+  tableRow: { flexDirection: 'row', borderLeftWidth: 0.5, borderRightWidth: 0.5, borderBottomWidth: 0.5, borderColor: '#cbd5e1', minHeight: 18, alignItems: 'center' },
+  tableRowAlt: { backgroundColor: '#f8fafc' },
 
-  cellSNo:    { width: 22,  paddingHorizontal: 3, textAlign: 'center' },
-  cellDesc:   { width: 68,  paddingHorizontal: 3 },
-  cellCheque: { width: 56,  paddingHorizontal: 3 },
-  cellMat:    { width: 50,  paddingHorizontal: 3 },
-  cellType:   { width: 30,  paddingHorizontal: 3 },
-  cellStart:  { width: 46,  paddingHorizontal: 3 },
-  cellEnd:    { width: 46,  paddingHorizontal: 3 },
-  cellBank:   { width: 38,  paddingHorizontal: 3 },
+  cellSNo:    { width: 22,  paddingHorizontal: 2, textAlign: 'center' },
+  cellDesc:   { width: 95,  paddingHorizontal: 3 },
+  cellCheque: { width: 75,  paddingHorizontal: 3 },
+  cellMat:    { width: 62,  paddingHorizontal: 3 },
+  cellType:   { width: 42,  paddingHorizontal: 3, textAlign: 'center' },
+  cellPeriod: { width: 110, paddingHorizontal: 3 },
+  cellBank:   { width: 48,  paddingHorizontal: 3 },
   cellAmt:    { flex: 1,    paddingHorizontal: 4, textAlign: 'right' },
 
-  headerText: { color: '#fff', fontFamily: 'Helvetica-Bold', fontSize: 7.5 },
-  cellText:   { fontSize: 7.5 },
-  cellTextR:  { fontSize: 7.5, textAlign: 'right' },
+  headerText: { color: '#ffffff', fontFamily: 'Helvetica-Bold', fontSize: 7 },
+  cellText:   { fontSize: 7, color: '#1e293b' },
+  cellTextR:  { fontSize: 7, fontFamily: 'Helvetica-Bold', textAlign: 'right', color: '#0f172a' },
 
   /* ── Total row ── */
-  totalRow: { flexDirection: 'row', borderLeftWidth: 0.5, borderRightWidth: 0.5, borderBottomWidth: 0.5, borderColor: '#aaa', backgroundColor: '#e8e8e8', minHeight: 18, alignItems: 'center' },
-  totalLabel: { flex: 1, paddingHorizontal: 3, fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
-  totalAmt:   { width: 60, paddingHorizontal: 4, fontSize: 9, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  totalRow: { flexDirection: 'row', borderLeftWidth: 0.5, borderRightWidth: 0.5, borderBottomWidth: 0.5, borderColor: '#cbd5e1', backgroundColor: '#f1f5f9', minHeight: 19, alignItems: 'center' },
+  totalLabel: { flex: 1, paddingHorizontal: 4, fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right', color: '#334155' },
+  totalAmt:   { width: 75, paddingHorizontal: 4, fontSize: 8.5, fontFamily: 'Helvetica-Bold', textAlign: 'right', color: '#0f766e' },
 
-  /* ── Footer ── */
-  wordsRow: { flexDirection: 'row', marginTop: 8, marginBottom: 6 },
-  wordsLabel: { width: 90, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  wordsValue: { flex: 1, fontSize: 8 },
+  /* ── Footer / Summary ── */
+  wordsRow: { flexDirection: 'row', marginTop: 8, marginBottom: 5, padding: 5, backgroundColor: '#f8fafc', borderWidth: 0.5, borderColor: '#e2e8f0', borderRadius: 2 },
+  wordsLabel: { width: 95, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155' },
+  wordsValue: { flex: 1, fontSize: 7.5, color: '#0f766e', fontStyle: 'italic', fontFamily: 'Helvetica-Bold' },
 
-  remarksRow: { flexDirection: 'row', marginBottom: 4 },
-  remarksLabel: { width: 90, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  remarksBox: { flex: 1, borderWidth: 0.5, borderColor: '#aaa', minHeight: 28, padding: 2, fontSize: 7 },
+  remarksRow: { flexDirection: 'row', marginBottom: 5 },
+  remarksLabel: { width: 95, fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#334155' },
+  remarksBox: { flex: 1, borderWidth: 0.5, borderColor: '#cbd5e1', borderRadius: 2, minHeight: 22, padding: 3, fontSize: 7, color: '#334155' },
 
-  sigRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
-  sigBlock: { width: '30%', borderTopWidth: 0.5, borderTopColor: '#555', paddingTop: 3, fontSize: 8, textAlign: 'center', fontFamily: 'Helvetica-Bold' },
+  termsText: { fontSize: 6.5, color: '#64748b', fontStyle: 'italic', textAlign: 'center', marginTop: 6, marginBottom: 4 },
 
-  preparedBy: { marginTop: 10, fontSize: 8 },
+  sigRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18, paddingTop: 6 },
+  sigBlock: { width: '28%', borderTopWidth: 0.8, borderTopColor: '#94a3b8', paddingTop: 4, alignItems: 'center' },
+  sigTitle: { fontSize: 7.5, textAlign: 'center', fontFamily: 'Helvetica-Bold', color: '#334155' },
+  sigSub: { fontSize: 6.5, textAlign: 'center', color: '#64748b', marginTop: 1 },
 });
 
 export interface ReceiptLineItem {
@@ -91,7 +104,7 @@ export interface ReceiptData {
   collection_date: string;
   lease_start_date: string;
   lease_end_date: string;
-  /* Items */
+  /* Items (PDCs, Security Deposit, Direct Payments ONLY - No Accounting Ledger codes) */
   line_items: ReceiptLineItem[];
   /* Total */
   total_amount: number;
@@ -99,7 +112,7 @@ export interface ReceiptData {
   /* Remarks */
   remarks?: string;
   prepared_by?: string;
-  /* Legacy simple fields (for backward compat) */
+  /* Legacy simple fields */
   receipt_date?: string;
   payment_type?: string;
   payment_method?: string;
@@ -131,132 +144,157 @@ function buildAmountInWords(amount: number): string {
 }
 
 const ReceiptDocument = ({ data }: { data: ReceiptData }) => {
-  // Support both new itemised format and legacy simple format
-  const isItemised = data.line_items && data.line_items.length > 0;
+  const branding: DocumentBranding = getDocumentBranding();
+  const ackSub = branding.submodules?.acknowledgementReceipt;
+  const bannerUrl = ackSub?.bannerImageUrl || branding.headerImageUrl;
+  const showBanner = ackSub?.showBanner !== false && Boolean(bannerUrl);
+
   const total = data.total_amount || data.amount || 0;
   const wordsText = data.amount_in_words || buildAmountInWords(total);
 
-  if (!isItemised) {
-    // Legacy simple layout
-    return (
-      <Document>
-        <Page size="A4" style={styles.page}>
-          <Text style={styles.pageLabel}>Page 1 of 1</Text>
-          <Text style={styles.headerTitle}>RECEIPT ACKNOWLEDGEMENT</Text>
-          <View style={styles.infoGrid}>
-            <View style={styles.infoLeft}>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Tenant Name</Text><Text style={styles.infoValue}>{data.tenant_name}</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Property Name</Text><Text style={styles.infoValue}>{data.property_name || data.property_unit}</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Lease No</Text><Text style={styles.infoValue}>{data.lease_no || data.receipt_no}</Text></View>
-            </View>
-            <View style={styles.infoRight}>
-              <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Payment Method</Text><Text style={styles.infoRightValue}>{data.payment_method}</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Amount</Text><Text style={styles.infoRightValue}>QR {total.toLocaleString()}</Text></View>
-            </View>
-          </View>
-          <View style={{ marginTop: 20, padding: 10, backgroundColor: '#f5f5f5', flexDirection: 'row', justifyContent: 'flex-end' }}>
-            <Text style={{ fontSize: 10, marginRight: 10, fontFamily: 'Helvetica-Bold' }}>Total Amount Received:</Text>
-            <Text style={{ fontSize: 14, fontFamily: 'Helvetica-Bold' }}>QR {total.toLocaleString()}</Text>
-          </View>
-          <Text style={{ position: 'absolute', bottom: 30, left: 35, right: 35, textAlign: 'center', fontSize: 8, color: '#888' }}>
-            This is an electronically generated receipt and does not require a physical signature.
-          </Text>
-        </Page>
-      </Document>
-    );
-  }
+  // Filter out any internal accounting journal / ledger entries from display
+  const displayItems = (data.line_items || []).filter(item => {
+    const desc = (item.description || '').toLowerCase();
+    const isLedgerCode = desc.includes('gl ') || desc.includes('dr ') || desc.includes('cr ') || desc.includes('liability') || desc.includes('sub-ledger');
+    return !isLedgerCode;
+  });
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <Text style={styles.pageLabel}>Page 1 of 1</Text>
 
-        {/* ── Title ── */}
-        <Text style={styles.headerTitle}>RECEIPT ACKNOWLEDGEMENT</Text>
-
-        {/* ── PO Box / Phone / Ack No ── */}
-        <View style={styles.headerRow}>
-          <View>
-            {data.po_box && <Text style={styles.poBox}>PO Box No.: {data.po_box}</Text>}
-            {data.phone && <Text style={styles.poBox}>Phone No.: {data.phone}</Text>}
+        {/* ── Optional Branding Banner Image ── */}
+        {showBanner && bannerUrl && (
+          <View style={styles.bannerContainer}>
+            {/* @ts-ignore */}
+            <Image src={bannerUrl} style={styles.bannerImage} />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.ackLabel}>ACKNOWLEDGEMENT NO.</Text>
-            <Text style={styles.ackNo}>{data.acknowledgement_no || data.receipt_no}</Text>
+        )}
+
+        {/* ── Organization Header as per branding ── */}
+        <View style={styles.orgHeader}>
+          <View>
+            <Text style={styles.orgName}>{branding.companyName || 'Al Ameen Real Estate'}</Text>
+            <Text style={styles.orgSubtitle}>{branding.legalEntityName || 'Al Ameen Real Estate W.L.L'} • CR: {branding.crNumber || 'CR-90821-QA'}</Text>
+            <Text style={styles.orgSubtitle}>{branding.address || 'Grand Hamad Avenue, Building 42, Floor 7, Doha, State of Qatar'}</Text>
+          </View>
+          <View style={styles.orgRight}>
+            <Text style={styles.orgContact}>Tel: {branding.phone || '+974 4499 1234'}</Text>
+            <Text style={styles.orgContact}>Email: {branding.email || 'contact@alameen.qa'}</Text>
+            <Text style={styles.orgContact}>Web: {branding.website || 'www.alameen.qa'}</Text>
+          </View>
+        </View>
+
+        {/* ── Header Title & Subtitle ── */}
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>{ackSub?.documentTitle || 'RECEIPT ACKNOWLEDGEMENT'}</Text>
+          <Text style={styles.headerSubtitle}>{ackSub?.documentSubtitle || 'Official Transaction & Security Booking Acknowledgment'}</Text>
+        </View>
+
+        {/* ── Meta Bar ── */}
+        <View style={styles.metaBar}>
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>ACKNOWLEDGEMENT NO:</Text>
+            <Text style={styles.metaValue}>{data.acknowledgement_no || data.receipt_no}</Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>COLLECTION DATE:</Text>
+            <Text style={styles.metaValue}>{data.collection_date}</Text>
           </View>
         </View>
 
         {/* ── Info Grid ── */}
         <View style={styles.infoGrid}>
           <View style={styles.infoLeft}>
-            <View style={styles.infoRow}><Text style={styles.infoLabel}>Tenant Name</Text><Text style={styles.infoValue}>{data.tenant_name}</Text></View>
-            <View style={styles.infoRow}><Text style={styles.infoLabel}>Property Name</Text><Text style={styles.infoValue}>{data.property_name}</Text></View>
-            <View style={styles.infoRow}><Text style={styles.infoLabel}>Lease No</Text><Text style={styles.infoValue}>{data.lease_no}</Text></View>
-            {data.location_code && <View style={styles.infoRow}><Text style={styles.infoLabel}>Location code</Text><Text style={styles.infoValue}>{data.location_code}</Text></View>}
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>Tenant Name:</Text><Text style={styles.infoValue}>{data.tenant_name}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>Property Name:</Text><Text style={styles.infoValue}>{data.property_name}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoLabel}>Unit / Flat:</Text><Text style={styles.infoValue}>{data.location_code || '—'}</Text></View>
           </View>
           <View style={styles.infoRight}>
-            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Collection Date</Text><Text style={styles.infoRightValue}>{data.collection_date}</Text></View>
-            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Lease Start Date</Text><Text style={styles.infoRightValue}>{data.lease_start_date}</Text></View>
-            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Lease End Date</Text><Text style={styles.infoRightValue}>{data.lease_end_date}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Lease Ref #:</Text><Text style={styles.infoRightValue}>{data.lease_no}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Lease Start Date:</Text><Text style={styles.infoRightValue}>{data.lease_start_date}</Text></View>
+            <View style={styles.infoRow}><Text style={styles.infoRightLabel}>Lease End Date:</Text><Text style={styles.infoRightValue}>{data.lease_end_date}</Text></View>
           </View>
         </View>
 
         {/* ── Table Header ── */}
         <View style={styles.tableHeader}>
-          <Text style={[styles.cellSNo, styles.headerText]}>S.No</Text>
+          <Text style={[styles.cellSNo, styles.headerText]}>#</Text>
           <Text style={[styles.cellDesc, styles.headerText]}>Description</Text>
-          <Text style={[styles.cellCheque, styles.headerText]}>Check No/Cash Ref.</Text>
+          <Text style={[styles.cellCheque, styles.headerText]}>Cheque / Ref No.</Text>
           <Text style={[styles.cellMat, styles.headerText]}>Maturity Date</Text>
           <Text style={[styles.cellType, styles.headerText]}>Type</Text>
-          <Text style={[styles.cellStart, styles.headerText]}>Check Start Date</Text>
-          <Text style={[styles.cellEnd, styles.headerText]}>Check End Date</Text>
-          <Text style={[styles.cellBank, styles.headerText]}>Bank Name</Text>
-          <Text style={[styles.cellAmt, styles.headerText]}>Amount</Text>
+          <Text style={[styles.cellPeriod, styles.headerText]}>Period Covered</Text>
+          <Text style={[styles.cellBank, styles.headerText]}>Bank</Text>
+          <Text style={[styles.cellAmt, styles.headerText]}>Amount (QAR)</Text>
         </View>
 
         {/* ── Table Rows ── */}
-        {data.line_items.map((item, idx) => (
-          <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-            <Text style={[styles.cellSNo, styles.cellText]}>{item.sNo}</Text>
-            <Text style={[styles.cellDesc, styles.cellText]}>{item.description}</Text>
-            <Text style={[styles.cellCheque, styles.cellText]}>{item.chequeRef}</Text>
-            <Text style={[styles.cellMat, styles.cellText]}>{item.maturityDate}</Text>
-            <Text style={[styles.cellType, styles.cellText]}>{item.type}</Text>
-            <Text style={[styles.cellStart, styles.cellText]}>{item.checkStartDate || ''}</Text>
-            <Text style={[styles.cellEnd, styles.cellText]}>{item.checkEndDate || ''}</Text>
-            <Text style={[styles.cellBank, styles.cellText]}>{item.bankName || ''}</Text>
-            <Text style={[styles.cellAmt, styles.cellTextR]}>{item.amount.toLocaleString('en-QA', { minimumFractionDigits: 2 })}</Text>
+        {displayItems.length === 0 ? (
+          <View style={[styles.tableRow, { justifyContent: 'center' }]}>
+            <Text style={[styles.cellText, { textAlign: 'center', padding: 4 }]}>Total payment received and acknowledged.</Text>
           </View>
-        ))}
+        ) : (
+          displayItems.map((item, idx) => {
+            const periodStr = item.checkStartDate && item.checkEndDate
+              ? `${item.checkStartDate} to ${item.checkEndDate}`
+              : item.checkStartDate || item.checkEndDate || '—';
+            return (
+              <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
+                <Text style={[styles.cellSNo, styles.cellText]}>{item.sNo || idx + 1}</Text>
+                <Text style={[styles.cellDesc, styles.cellText]}>{item.description}</Text>
+                <Text style={[styles.cellCheque, styles.cellText]}>{item.chequeRef}</Text>
+                <Text style={[styles.cellMat, styles.cellText]}>{item.maturityDate}</Text>
+                <Text style={[styles.cellType, styles.cellText]}>{item.type}</Text>
+                <Text style={[styles.cellPeriod, styles.cellText]}>{periodStr}</Text>
+                <Text style={[styles.cellBank, styles.cellText]}>{item.bankName || '—'}</Text>
+                <Text style={[styles.cellAmt, styles.cellTextR]}>{item.amount.toLocaleString('en-QA', { minimumFractionDigits: 2 })}</Text>
+              </View>
+            );
+          })
+        )}
 
         {/* ── Total Row ── */}
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
+          <Text style={styles.totalLabel}>Total Acknowledged Collection (QAR):</Text>
           <Text style={styles.totalAmt}>{total.toLocaleString('en-QA', { minimumFractionDigits: 2 })}</Text>
         </View>
 
         {/* ── Amount in Words ── */}
         <View style={styles.wordsRow}>
-          <Text style={styles.wordsLabel}>AMOUNT IN WORDS</Text>
+          <Text style={styles.wordsLabel}>AMOUNT IN WORDS:</Text>
           <Text style={styles.wordsValue}>{wordsText}</Text>
         </View>
 
         {/* ── Remarks ── */}
-        <View style={styles.remarksRow}>
-          <Text style={styles.remarksLabel}>REMARKS</Text>
-          <View style={styles.remarksBox}><Text>{data.remarks || ''}</Text></View>
-        </View>
+        {data.remarks && (
+          <View style={styles.remarksRow}>
+            <Text style={styles.remarksLabel}>REMARKS / NOTES:</Text>
+            <View style={styles.remarksBox}><Text>{data.remarks}</Text></View>
+          </View>
+        )}
+
+        {/* ── Terms / Disclaimer ── */}
+        <Text style={styles.termsText}>
+          {ackSub?.termsAndConditions || 'This receipt is electronically generated and acknowledged. Valid subject to realization of cheque / payment.'}
+        </Text>
 
         {/* ── Signatures ── */}
         <View style={styles.sigRow}>
-          <Text style={styles.sigBlock}>PREPARED BY</Text>
-          <Text style={styles.sigBlock}>APPROVED BY</Text>
-          <Text style={styles.sigBlock}>RECEIVED BY</Text>
+          <View style={styles.sigBlock}>
+            <Text style={styles.sigTitle}>PREPARED BY</Text>
+            <Text style={styles.sigSub}>{data.prepared_by || 'Finance Cashier'}</Text>
+          </View>
+          <View style={styles.sigBlock}>
+            <Text style={styles.sigTitle}>AUTHORIZED SIGNATORY</Text>
+            <Text style={styles.sigSub}>{branding.authorizedSignatoryName || 'Jithin Abdul Latheef'} ({branding.authorizedSignatoryTitle || 'General Manager'})</Text>
+          </View>
+          <View style={styles.sigBlock}>
+            <Text style={styles.sigTitle}>TENANT ACKNOWLEDGEMENT</Text>
+            <Text style={styles.sigSub}>Received duplicate copy</Text>
+          </View>
         </View>
-
-        {data.prepared_by && (
-          <Text style={styles.preparedBy}>{data.prepared_by}</Text>
-        )}
       </Page>
     </Document>
   );
@@ -265,40 +303,4 @@ const ReceiptDocument = ({ data }: { data: ReceiptData }) => {
 export const generateReceiptBlob = async (data: ReceiptData): Promise<Blob> => {
   const blob = await pdf(<ReceiptDocument data={data} />).toBlob();
   return blob;
-};
-
-// ── Helper: Build ARE-RT-25-3962-0 receipt for Vivek Viswakumaran Nair ──────
-export const VIVEK_RECEIPT_DATA: ReceiptData = {
-  receipt_no: 'ARE-RT-25-3962-0',
-  acknowledgement_no: 'ARE-RT-25-3962-0',
-  po_box: '9012',
-  phone: '44485111',
-  tenant_name: 'Vivek Viswakumaran Nair',
-  property_name: 'Regency Residence Al Sadd 1',
-  lease_no: 'ARRS01-LES-25-52-0',
-  location_code: 'ARRS01-B00-F00-AG01',
-  collection_date: '23-DEC-25',
-  lease_start_date: '01-JAN-26',
-  lease_end_date: '31-DEC-26',
-  total_amount: 52000,
-  amount_in_words: 'Fifty Two Thousand Qatari Riyals and Zero Dirhams Only',
-  remarks: 'NEW',
-  prepared_by: 'Ms. MerricSuibai Murla',
-  line_items: [
-    { sNo: 1,  description: 'Security Deposit', chequeRef: '25631298',  maturityDate: '23-DEC-25', type: 'Cash',  checkStartDate: '',           checkEndDate: '',           bankName: '',    amount: 1000 },
-    { sNo: 2,  description: 'Security Deposit', chequeRef: '01000069',  maturityDate: '05-JAN-26', type: 'PDC',   checkStartDate: '',           checkEndDate: '',           bankName: 'CBQ', amount: 1500 },
-    { sNo: 3,  description: 'Security Deposit', chequeRef: '01000070',  maturityDate: '05-FEB-26', type: 'PDC',   checkStartDate: '',           checkEndDate: '',           bankName: 'CBQ', amount: 1500 },
-    { sNo: 4,  description: 'Rent',             chequeRef: '01000049',  maturityDate: '05-JAN-26', type: 'PDC',   checkStartDate: '01-JAN-26', checkEndDate: '31-JAN-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 5,  description: 'Rent',             chequeRef: '01000050',  maturityDate: '05-FEB-26', type: 'PDC',   checkStartDate: '01-FEB-26', checkEndDate: '28-FEB-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 6,  description: 'Rent',             chequeRef: '01000059',  maturityDate: '05-MAR-26', type: 'PDC',   checkStartDate: '01-MAR-26', checkEndDate: '31-MAR-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 7,  description: 'Rent',             chequeRef: '01000060',  maturityDate: '05-APR-26', type: 'PDC',   checkStartDate: '01-APR-26', checkEndDate: '30-APR-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 8,  description: 'Rent',             chequeRef: '01000061',  maturityDate: '05-MAY-26', type: 'PDC',   checkStartDate: '01-MAY-26', checkEndDate: '31-MAY-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 9,  description: 'Rent',             chequeRef: '01000062',  maturityDate: '05-JUN-26', type: 'PDC',   checkStartDate: '01-JUN-26', checkEndDate: '30-JUN-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 10, description: 'Rent',             chequeRef: '01000063',  maturityDate: '05-JUL-26', type: 'PDC',   checkStartDate: '01-JUL-26', checkEndDate: '31-JUL-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 11, description: 'Rent',             chequeRef: '01000064',  maturityDate: '05-AUG-26', type: 'PDC',   checkStartDate: '01-AUG-26', checkEndDate: '31-AUG-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 12, description: 'Rent',             chequeRef: '01000065',  maturityDate: '05-SEP-26', type: 'PDC',   checkStartDate: '01-SEP-26', checkEndDate: '30-SEP-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 13, description: 'Rent',             chequeRef: '01000066',  maturityDate: '05-OCT-26', type: 'PDC',   checkStartDate: '01-OCT-26', checkEndDate: '31-OCT-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 14, description: 'Rent',             chequeRef: '01000067',  maturityDate: '05-NOV-26', type: 'PDC',   checkStartDate: '01-NOV-26', checkEndDate: '30-NOV-26', bankName: 'CBQ', amount: 4000 },
-    { sNo: 15, description: 'Rent',             chequeRef: '01000068',  maturityDate: '05-DEC-26', type: 'PDC',   checkStartDate: '01-DEC-26', checkEndDate: '31-DEC-26', bankName: 'CBQ', amount: 4000 },
-  ],
 };

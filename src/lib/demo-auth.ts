@@ -85,6 +85,12 @@ const DEMO_USERS: Record<AppRole, DemoSession> = {
 };
 
 
+export const DEMO_CREDENTIALS: Record<string, { role: AppRole; password: string; fullName: string }> = {};
+
+export function findDemoUserByEmail(_email: string) {
+  return null;
+}
+
 export function createDemoSession(role: AppRole) {
   return DEMO_USERS[role];
 }
@@ -111,3 +117,4 @@ export function clearDemoSession() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(DEMO_SESSION_KEY);
 }
+

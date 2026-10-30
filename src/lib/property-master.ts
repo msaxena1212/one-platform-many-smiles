@@ -1,4 +1,5 @@
 import type { Property } from "@/lib/supabase";
+import { parseFloors } from "@/lib/utils";
 
 export type PropertySavePayload = Partial<Omit<Property, "id" | "created_at" | "property_images">>;
 
@@ -55,6 +56,7 @@ export function buildPropertyPayload(input: {
   };
   ownerLandlord?: string;
   hostId?: string;
+  documents?: any[];
 }): PropertySavePayload {
   const amenityValues = input.amenities ?? (input.amenityFields ?? []).filter(Boolean);
   const municipalityPayload = buildMunicipalityPayload(
@@ -63,6 +65,7 @@ export function buildPropertyPayload(input: {
     amenityValues,
     input.otherAmenitiesFacilities,
     input.proposedFields,
+    input.documents,
   );
 
   return {
@@ -94,7 +97,7 @@ export function buildPropertyPayload(input: {
     title_deed_no: input.titleDeedNo || undefined,
     municipality_ref_no: input.municipalityRefNo || undefined,
     property_manager: input.propertyManager || undefined,
-    no_of_floors: input.noOfFloors ? Number(input.noOfFloors) : undefined,
+    no_of_floors: input.noOfFloors != null ? (parseFloors(String(input.noOfFloors)) || undefined) : undefined,
     no_of_units: input.noOfUnits ? Number(input.noOfUnits) : input.totalUnits ? Number(input.totalUnits) : undefined,
     total_units: input.totalUnits ? Number(input.totalUnits) : input.noOfUnits ? Number(input.noOfUnits) : undefined,
     total_built_up_area_sqm: input.totalBuiltUpAreaSqm ? Number(input.totalBuiltUpAreaSqm) : undefined,
@@ -122,6 +125,7 @@ function buildMunicipalityPayload(
     costCenterCode?: string;
     costCenterName?: string;
   },
+  documents?: any[],
 ) {
   let municipality: any = null;
   try {
@@ -135,6 +139,7 @@ function buildMunicipalityPayload(
     owner_landlord: ownerLandlord || undefined,
     facility_amenities: amenitiesFields.filter(Boolean),
     other_amenities_facilities: otherAmenitiesFacilities || undefined,
+    property_documents: documents ?? municipality?.property_documents ?? undefined,
     change_request: {
       property_code_new: proposedFields?.propertyCode || undefined,
       property_name_new: proposedFields?.propertyName || undefined,

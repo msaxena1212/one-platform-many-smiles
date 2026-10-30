@@ -13,14 +13,13 @@ import {
   Building2, Users, Calendar, DollarSign, CheckCircle2,
   AlertCircle, Download, Printer, Plus, Trash2, ArrowRight,
   Layers, FileText, Sparkles, Filter, CheckSquare, Square,
-  Building, UserCheck, ShieldCheck, Clock
+  Building, UserCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
-import { calculateContractPeriodMonthlyRevenue, type ProrationMethod } from "@/lib/finance/revenue-engine";
 
 interface BulkInvoiceDialogProps {
   open: boolean;
@@ -47,13 +46,6 @@ interface BatchItem {
   status: "ready" | "generated";
   isRentFree?: boolean;
   concessionNote?: string;
-  periodText?: string;
-  applicableDays?: number;
-  totalDaysInMonth?: number;
-  isProrated?: boolean;
-  contractStart?: string;
-  contractEnd?: string;
-  isInactiveInMonth?: boolean;
 }
 
 function getConcessionBillingStatus(
@@ -125,11 +117,6 @@ const REVENUE_STREAMS = [
   { code: "41600", label: "41600 - Late Fee & Penalties" },
 ];
 
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
-];
-
 export function BulkInvoiceDialog({
   open,
   onOpenChange,
@@ -145,52 +132,21 @@ export function BulkInvoiceDialog({
 
   const [activeTab, setActiveTab] = useState<"property" | "customer">(defaultMode);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // MONTH-WISE ACCOUNTING CYCLE STATE (Month-Wise instead of 'As-On Date')
-  // ──────────────────────────────────────────────────────────────────────────
-  const now = useMemo(() => new Date(), []);
-  const initialMonthKey = useMemo(() => {
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  }, [now]);
-
-  const [selectedMonth, setSelectedMonth] = useState<string>(initialMonthKey);
-
-  // Generate rolling 24 months options (12 past, current, 11 future)
-  const availableMonths = useMemo(() => {
-    const list: { value: string; label: string }[] = [];
-    const centerDate = new Date();
-    for (let i = -12; i <= 11; i++) {
-      const d = new Date(centerDate.getFullYear(), centerDate.getMonth() + i, 1);
-      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
-      list.push({ value: val, label });
-    }
-    return list;
+  // Common date settings
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const defaultDueDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split("T")[0];
   }, []);
 
+  const [issueDate, setIssueDate] = useState<string>(todayStr);
+  const [dueDate, setDueDate] = useState<string>(defaultDueDate);
   const [billingPeriod, setBillingPeriod] = useState<string>(() => {
-    return `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+    const d = new Date();
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
   });
-
-  const [issueDate, setIssueDate] = useState<string>(() => {
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  });
-
-  const [dueDate, setDueDate] = useState<string>(() => {
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    return end.toISOString().split("T")[0];
-  });
-
-  const handleMonthChange = (monthKey: string) => {
-    setSelectedMonth(monthKey);
-    const [yStr, mStr] = monthKey.split("-");
-    const y = parseInt(yStr, 10);
-    const m = parseInt(mStr, 10) - 1;
-    setBillingPeriod(`${MONTH_NAMES[m]} ${y}`);
-    setIssueDate(`${monthKey}-01`);
-    const end = new Date(y, m + 1, 0);
-    setDueDate(end.toISOString().split("T")[0]);
-  };
 
   // ──────────────────────────────────────────────────────────────────────────
   // PROPERTY-WISE STATE
@@ -240,7 +196,7 @@ export function BulkInvoiceDialog({
   }, [initialProperty, initialCustomerId, defaultMode]);
 
   // ──────────────────────────────────────────────────────────────────────────
-  // BUILD PROPERTY ITEMS (MONTH-WISE CONTRACT ACCRUAL PRORATION)
+  // BUILD PROPERTY ITEMS
   // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedProperty) return;
@@ -252,85 +208,45 @@ export function BulkInvoiceDialog({
     const items: BatchItem[] = [];
     const usedUnits = new Set<string>();
 
-    // Process all leases under this property with exact month-wise contract period calculation
+    // First use leases (has tenant, rent, lease #)
     propLeases.forEach((l, idx) => {
       usedUnits.add(l.unit);
-      const baseMonthlyRent = Number(l.monthlyRent) || 0;
-
-      // Calculate the contract-period accrual for the selected accounting month
-      const proration = calculateContractPeriodMonthlyRevenue({
-        startDate: l.startDate,
-        endDate: l.endDate,
-        monthlyRent: baseMonthlyRent,
-        targetMonth: selectedMonth,
-      });
-
+      const baseRent = Number(l.monthlyRent) || 0;
       const concession = getConcessionBillingStatus(l, issueDate);
       const isConcession = concession.isFree && propertyPricingMode === "lease";
-
-      let finalAmt = 0;
-      let periodText = "";
-      let isInactive = false;
-
-      if (proration) {
-        if (isConcession) {
-          finalAmt = 0;
-          periodText = `Rent-Free Concession (${proration.periodStart.slice(-2)}–${proration.periodEnd.slice(-2)} ${billingPeriod.split(" ")[0]})`;
-        } else if (propertyPricingMode === "fixed") {
-          finalAmt = parseFloat(propertyFixedAmount) || baseMonthlyRent;
-          periodText = `Fixed Billing (${billingPeriod})`;
-        } else {
-          finalAmt = proration.recognizedRevenue;
-          periodText = proration.isFullMonth
-            ? `Full Month (${proration.totalDaysInMonth}/${proration.totalDaysInMonth} days)`
-            : `${proration.periodStart.slice(-2)}–${proration.periodEnd.slice(-2)} ${billingPeriod.split(" ")[0]} (${proration.applicableDays}/${proration.totalDaysInMonth} days)`;
-        }
-      } else {
-        // Contract not overlapping with this month
-        isInactive = true;
-        finalAmt = 0;
-        periodText = "Inactive / Outside contract period";
-      }
-
+      const amt = isConcession ? 0 : (propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent));
       const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : propertyStream;
       const unitClean = l.unit.replace(/[^\w]/g, "").slice(-4);
       const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
-      const invNo = `INV-${selectedMonth.replace("-", "")}-${propCode}-${unitClean || idx + 101}`;
+      const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 101}`;
 
       items.push({
         id: `prop-batch-${l.id || idx}`,
-        selected: !isInactive && finalAmt > 0,
+        selected: true,
         unit: l.unit,
         tenant: l.tenantName || "Occupied Tenant",
         customerId: l.customerId,
         property: selectedProperty,
         leaseNumber: l.contractNumber || `LS-${l.id.slice(-4)}`,
-        baseRent: baseMonthlyRent,
-        amount: finalAmt,
+        baseRent,
+        amount: amt,
         stream: stream,
         accountCode: stream.split(/\s+/)[0] || "41100",
         invoiceNo: invNo,
         status: "ready",
         isRentFree: isConcession,
         concessionNote: concession.note,
-        periodText,
-        applicableDays: proration?.applicableDays || 0,
-        totalDaysInMonth: proration?.totalDaysInMonth || 30,
-        isProrated: Boolean(proration && !proration.isFullMonth),
-        contractStart: l.startDate,
-        contractEnd: l.endDate,
-        isInactiveInMonth: isInactive,
       });
     });
 
     // Also include occupied units without explicit lease record
     propUnits.forEach((u, idx) => {
       if (!usedUnits.has(u.unit) && (u.status === "Occupied" || (u as any).currentTenant)) {
-        const baseMonthlyRent = Number(u.rent) || 5000;
-        const finalAmt = propertyPricingMode === "lease" ? baseMonthlyRent : (parseFloat(propertyFixedAmount) || baseMonthlyRent);
+        const baseRent = Number(u.rent) || 5000;
+        const amt = propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent);
         const unitClean = u.unit.replace(/[^\w]/g, "").slice(-4);
         const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
-        const invNo = `INV-${selectedMonth.replace("-", "")}-${propCode}-${unitClean || idx + 201}`;
+        const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 201}`;
 
         items.push({
           id: `prop-unit-batch-${u.id || idx}`,
@@ -338,17 +254,12 @@ export function BulkInvoiceDialog({
           unit: u.unit,
           tenant: (u as any).currentTenant || "Resident Tenant",
           property: selectedProperty,
-          baseRent: baseMonthlyRent,
-          amount: finalAmt,
+          baseRent,
+          amount: amt,
           stream: propertyStream,
           accountCode: propertyStream.split(/\s+/)[0] || "41100",
           invoiceNo: invNo,
           status: "ready",
-          periodText: `Full Month (${billingPeriod})`,
-          applicableDays: 30,
-          totalDaysInMonth: 30,
-          isProrated: false,
-          isInactiveInMonth: false,
         });
       }
     });
@@ -357,8 +268,8 @@ export function BulkInvoiceDialog({
     if (items.length === 0) {
       for (let i = 1; i <= 5; i++) {
         const unitName = `Unit ${100 + i}`;
-        const baseMonthlyRent = 4500 + i * 500;
-        const finalAmt = propertyPricingMode === "lease" ? baseMonthlyRent : (parseFloat(propertyFixedAmount) || baseMonthlyRent);
+        const baseRent = 4500 + i * 500;
+        const amt = propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent);
         const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
         items.push({
           id: `prop-demo-batch-${i}`,
@@ -366,28 +277,24 @@ export function BulkInvoiceDialog({
           unit: unitName,
           tenant: `Tenant ${unitName}`,
           property: selectedProperty,
-          baseRent: baseMonthlyRent,
-          amount: finalAmt,
+          baseRent,
+          amount: amt,
           stream: propertyStream,
           accountCode: propertyStream.split(/\s+/)[0] || "41100",
-          invoiceNo: `INV-${selectedMonth.replace("-", "")}-${propCode}-${100 + i}`,
+          invoiceNo: `INV-${new Date().getFullYear()}-${propCode}-${100 + i}`,
           status: "ready",
-          periodText: `Full Month (${billingPeriod})`,
-          applicableDays: 30,
-          totalDaysInMonth: 30,
-          isProrated: false,
-          isInactiveInMonth: false,
         });
       }
     }
 
     setPropertyBatchItems(items);
-  }, [selectedProperty, selectedMonth, billingPeriod, issueDate, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount]);
+  }, [selectedProperty, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount]);
 
   // ──────────────────────────────────────────────────────────────────────────
-  // BUILD CUSTOMER ITEMS (MONTH-WISE PRORATION)
+  // BUILD CUSTOMER ITEMS
   // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // If a specific customer is chosen, find all their units/leases
     if (selectedCustomerId) {
       const cust = customers.find(c => String(c.id) === selectedCustomerId || c.name === selectedCustomerId || c.customerId === selectedCustomerId);
       const custName = cust?.name || selectedCustomerId;
@@ -397,17 +304,10 @@ export function BulkInvoiceDialog({
       const items: BatchItem[] = [];
       if (custLeases.length > 0) {
         custLeases.forEach((l, idx) => {
-          const baseMonthlyRent = Number(l.monthlyRent) || 0;
-          const proration = calculateContractPeriodMonthlyRevenue({
-            startDate: l.startDate,
-            endDate: l.endDate,
-            monthlyRent: baseMonthlyRent,
-            targetMonth: selectedMonth,
-          });
-
+          const baseRent = Number(l.monthlyRent) || 0;
           const concession = getConcessionBillingStatus(l, issueDate);
           const isConcession = concession.isFree && customerPricingMode === "lease";
-          const finalAmt = isConcession ? 0 : (customerPricingMode === "lease" ? (proration?.recognizedRevenue ?? baseMonthlyRent) : (parseFloat(customerFixedAmount) || baseMonthlyRent));
+          const amt = isConcession ? 0 : (customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent));
           const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : customerStream;
           const custCode = (cust?.customerId || cust?.id || idx).toString().slice(-4).toUpperCase();
           const invNo = `INV-CUST-${custCode}-${idx + 101}`;
@@ -420,25 +320,20 @@ export function BulkInvoiceDialog({
             customerId: cust?.customerId || cust?.id,
             property: l.property,
             leaseNumber: l.contractNumber || `LS-${l.id.slice(-4)}`,
-            baseRent: baseMonthlyRent,
-            amount: finalAmt,
+            baseRent,
+            amount: amt,
             stream: stream,
             accountCode: stream.split(/\s+/)[0] || "41100",
             invoiceNo: invNo,
             status: "ready",
             isRentFree: isConcession,
             concessionNote: concession.note,
-            periodText: proration ? (proration.isFullMonth ? "Full Month" : `${proration.applicableDays}/${proration.totalDaysInMonth} days`) : "Standard Month",
-            applicableDays: proration?.applicableDays || 30,
-            totalDaysInMonth: proration?.totalDaysInMonth || 30,
-            isProrated: Boolean(proration && !proration.isFullMonth),
-            contractStart: l.startDate,
-            contractEnd: l.endDate,
           });
         });
       } else {
-        const baseMonthlyRent = 6500;
-        const amt = customerPricingMode === "lease" ? baseMonthlyRent : (parseFloat(customerFixedAmount) || baseMonthlyRent);
+        // Fallback for customer without explicit lease record
+        const baseRent = 6500;
+        const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
         items.push({
           id: `cust-default-${Date.now()}`,
           selected: true,
@@ -446,38 +341,22 @@ export function BulkInvoiceDialog({
           tenant: custName,
           customerId: cust?.customerId || cust?.id,
           property: "Old Salata - Residence No:23",
-          baseRent: baseMonthlyRent,
+          baseRent,
           amount: amt,
           stream: customerStream,
           accountCode: customerStream.split(/\s+/)[0] || "41100",
           invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
           status: "ready",
-          periodText: `Full Month (${billingPeriod})`,
         });
       }
       setCustomerBatchItems(items);
     } else {
-      // Multi-customer batch
+      // All customers batch (multi-customer billing)
       const activeCustomers = customers.slice(0, 15);
       const items: BatchItem[] = activeCustomers.map((c, idx) => {
         const lease = leases.find(l => l.customerId === c.id || l.tenantName === c.name);
-        const baseMonthlyRent = lease ? Number(lease.monthlyRent) : 5500;
-        let finalAmt = customerPricingMode === "lease" ? baseMonthlyRent : (parseFloat(customerFixedAmount) || baseMonthlyRent);
-        let periodText = `Full Month (${billingPeriod})`;
-
-        if (lease && customerPricingMode === "lease") {
-          const proration = calculateContractPeriodMonthlyRevenue({
-            startDate: lease.startDate,
-            endDate: lease.endDate,
-            monthlyRent: baseMonthlyRent,
-            targetMonth: selectedMonth,
-          });
-          if (proration) {
-            finalAmt = proration.recognizedRevenue;
-            periodText = proration.isFullMonth ? "Full Month" : `${proration.applicableDays}/${proration.totalDaysInMonth} days`;
-          }
-        }
-
+        const baseRent = lease ? Number(lease.monthlyRent) : 5500;
+        const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
         const custCode = (c.customerId || c.id || idx).toString().slice(-4).toUpperCase();
         return {
           id: `cust-multi-${c.id || idx}`,
@@ -487,24 +366,23 @@ export function BulkInvoiceDialog({
           customerId: c.customerId || c.id,
           property: lease?.property || "MANSOURA - BLDG06",
           leaseNumber: lease?.contractNumber || `LS-${idx + 101}`,
-          baseRent: baseMonthlyRent,
-          amount: finalAmt,
+          baseRent,
+          amount: amt,
           stream: customerStream,
           accountCode: customerStream.split(/\s+/)[0] || "41100",
           invoiceNo: `INV-CUST-${custCode}-${idx + 101}`,
           status: "ready",
-          periodText,
         };
       });
       setCustomerBatchItems(items);
     }
-  }, [selectedCustomerId, selectedMonth, billingPeriod, customers, leases, customerStream, customerPricingMode, customerFixedAmount]);
+  }, [selectedCustomerId, customers, leases, customerStream, customerPricingMode, customerFixedAmount]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // TOGGLES & AMOUNTS
   // ──────────────────────────────────────────────────────────────────────────
   const toggleSelectAllProperty = (checked: boolean) => {
-    setPropertyBatchItems(prev => prev.map(item => ({ ...item, selected: item.isInactiveInMonth ? false : checked })));
+    setPropertyBatchItems(prev => prev.map(item => ({ ...item, selected: checked })));
   };
 
   const toggleSelectPropertyItem = (id: string) => {
@@ -533,7 +411,6 @@ export function BulkInvoiceDialog({
   const currentItems = activeTab === "property" ? propertyBatchItems : customerBatchItems;
   const selectedItems = useMemo(() => currentItems.filter(i => i.selected), [currentItems]);
   const totalAmountSelected = useMemo(() => selectedItems.reduce((acc, i) => acc + (Number(i.amount) || 0), 0), [selectedItems]);
-  const proratedItemsCount = useMemo(() => selectedItems.filter(i => i.isProrated).length, [selectedItems]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // GENERATE BULK INVOICES
@@ -551,9 +428,7 @@ export function BulkInvoiceDialog({
       unit: item.unit,
       date: issueDate,
       due_date: dueDate,
-      stream: item.isRentFree
-        ? `Monthly Rental - Concession Period (${item.concessionNote || 'Rent-Free Concession'})`
-        : `${item.stream} (${item.periodText || billingPeriod})`,
+      stream: item.isRentFree ? `Monthly Rental - Concession Period (${item.concessionNote || 'Rent-Free Concession'})` : item.stream,
       account_code: item.accountCode,
       amount: item.amount,
       customerId: item.customerId,
@@ -579,9 +454,7 @@ export function BulkInvoiceDialog({
       invoices: createdList,
     });
 
-    toast.success(`Successfully generated ${selectedItems.length} invoices amounting to QAR ${totalAmountSelected.toLocaleString()}!`, {
-      description: `Invoiced for property ${selectedProperty} for month: ${billingPeriod}.`
-    });
+    toast.success(`Successfully generated ${selectedItems.length} invoices amounting to QAR ${totalAmountSelected.toLocaleString()}!`);
 
     if (onSuccess) {
       onSuccess(selectedItems.length, totalAmountSelected);
@@ -597,9 +470,9 @@ export function BulkInvoiceDialog({
   const handleExportBatchCSV = () => {
     const rows = [
       [`BULK INVOICE BATCH REGISTER - ${branding.companyName || "Al Ameen Real Estate"}`],
-      [`Billing Entity: ${branding.legalEntityName || "Al Ameen Real Estate W.L.L"} | Accounting Month: ${billingPeriod} | Generated: ${new Date().toISOString().split("T")[0]}`],
+      [`Billing Entity: ${branding.legalEntityName || "Al Ameen Real Estate W.L.L"} | Cycle: ${billingPeriod} | Generated: ${new Date().toISOString().split("T")[0]}`],
       [],
-      ["Invoice Number", "Issue Date", "Due Date", "Accounting Month", "Customer / Tenant", "Property", "Unit", "Contract Period In Month", "GL Account", "Amount (QAR)", "Status"],
+      ["Invoice Number", "Issue Date", "Due Date", "Period", "Customer / Tenant", "Property", "Unit", "Stream", "GL Account", "Amount (QAR)", "Status"],
       ...selectedItems.map(item => [
         item.invoiceNo,
         issueDate,
@@ -608,7 +481,7 @@ export function BulkInvoiceDialog({
         `"${item.tenant}"`,
         `"${item.property}"`,
         item.unit,
-        `"${item.periodText || 'Full Month'}"`,
+        `"${item.stream}"`,
         item.accountCode,
         item.amount,
         "Pending",
@@ -620,7 +493,7 @@ export function BulkInvoiceDialog({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `bulk-invoices-${selectedProperty.slice(0, 8)}-${selectedMonth}.csv`);
+    link.setAttribute("download", `bulk-invoices-${activeTab}-${issueDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -640,7 +513,7 @@ export function BulkInvoiceDialog({
                   <span>Bulk Invoice Generation Engine</span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Generate periodic accounts receivable invoices month-wise against properties for <strong className="text-foreground">{branding.companyName || "Al Ameen Real Estate"}</strong>.
+                  Generate periodic accounts receivable invoices in bulk for <strong className="text-foreground">{branding.companyName || "Al Ameen Real Estate"}</strong>.
                 </DialogDescription>
               </div>
 
@@ -648,8 +521,8 @@ export function BulkInvoiceDialog({
                 <Badge variant="outline" className="font-semibold text-xs px-2.5 py-1 bg-background/80 text-primary border-primary/30">
                   <Building2 className="h-3 w-3 mr-1" /> {branding.companyName || "Al Ameen Real Estate"}
                 </Badge>
-                <Badge variant="outline" className="font-mono text-xs px-2.5 py-1 bg-background/80 font-bold text-emerald-700 border-emerald-300">
-                  Month: {billingPeriod}
+                <Badge variant="outline" className="font-mono text-xs px-2.5 py-1 bg-background/80">
+                  Cycle: {billingPeriod}
                 </Badge>
               </div>
             </div>
@@ -668,37 +541,18 @@ export function BulkInvoiceDialog({
               </TabsList>
             </Tabs>
 
-            {/* Accrual Rule Info Banner */}
-            <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 text-emerald-950 dark:text-emerald-100">
-                <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>Accrual Billing Rule:</strong> Revenue is calculated &amp; generated based on each lease contract's applicable period within the selected month (e.g. 15–31 Oct for October, 1–14 Nov for November), irrespective of cheque clearance or payment receipt.
-                </span>
-              </div>
-              <Badge variant="outline" className="bg-white/80 font-mono text-[10px] text-emerald-800 border-emerald-300 shrink-0">
-                Accrual Standard
-              </Badge>
-            </div>
-
-            {/* Global Configuration Bar: Month-Wise Selection */}
+            {/* Global Configuration Bar */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-lg border bg-muted/20 text-xs">
               <div className="space-y-1">
-                <Label className="text-[11px] font-semibold text-foreground flex items-center gap-1">
-                  <Calendar className="h-3 w-3 text-primary" /> Select Accounting Month (Month-Wise) *
+                <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-primary" /> Billing Period / Month
                 </Label>
-                <Select value={selectedMonth} onValueChange={handleMonthChange}>
-                  <SelectTrigger className="h-8 text-xs font-bold bg-background text-primary border-primary/40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {availableMonths.map(m => (
-                      <SelectItem key={m.value} value={m.value} className="text-xs font-medium">
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  className="h-8 text-xs font-medium bg-background"
+                  value={billingPeriod}
+                  placeholder="e.g. November 2026"
+                  onChange={e => setBillingPeriod(e.target.value)}
+                />
               </div>
 
               <div className="space-y-1">
@@ -729,10 +583,10 @@ export function BulkInvoiceDialog({
                   {/* Property Selector */}
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold flex items-center gap-1">
-                      <Building className="h-3.5 w-3.5 text-primary" /> Target Property *
+                      <Building className="h-3.5 w-3.5 text-primary" /> Select Property *
                     </Label>
                     <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-                      <SelectTrigger className="h-8 text-xs bg-background font-bold text-foreground">
+                      <SelectTrigger className="h-8 text-xs bg-background font-medium">
                         <SelectValue placeholder="Select target property" />
                       </SelectTrigger>
                       <SelectContent>
@@ -767,7 +621,7 @@ export function BulkInvoiceDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lease">Contract Rent (Accrual Proration)</SelectItem>
+                          <SelectItem value="lease">Lease Contract Rent</SelectItem>
                           <SelectItem value="fixed">Uniform Fixed Fee</SelectItem>
                         </SelectContent>
                       </Select>
@@ -786,24 +640,18 @@ export function BulkInvoiceDialog({
 
                 {/* Property Stats Banner */}
                 <div className="flex items-center justify-between p-3 rounded-lg border bg-primary/5 text-xs">
-                  <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1.5 font-medium">
                       <Building2 className="h-4 w-4 text-primary" />
                       <span className="font-bold text-foreground">{selectedProperty}</span>
                     </div>
                     <span className="text-muted-foreground">|</span>
-                    <span className="text-muted-foreground">Month: <strong className="text-foreground">{billingPeriod}</strong></span>
-                    <span className="text-muted-foreground">Units: <strong className="text-foreground">{propertyBatchItems.length}</strong></span>
-                    <span className="text-muted-foreground">Selected: <strong className="text-primary font-bold">{selectedItems.length}</strong></span>
-                    {proratedItemsCount > 0 && (
-                      <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 border-amber-300">
-                        {proratedItemsCount} Prorated
-                      </Badge>
-                    )}
+                    <span className="text-muted-foreground">Units in property: <strong className="text-foreground">{propertyBatchItems.length}</strong></span>
+                    <span className="text-muted-foreground">Selected for billing: <strong className="text-primary font-bold">{selectedItems.length}</strong></span>
                   </div>
 
                   <div className="font-mono text-xs">
-                    Whole Month Income: <strong className="text-sm font-bold text-primary">QAR {totalAmountSelected.toLocaleString()}</strong>
+                    Total Amount: <strong className="text-sm font-bold text-primary">QAR {totalAmountSelected.toLocaleString()}</strong>
                   </div>
                 </div>
               </div>
@@ -884,8 +732,7 @@ export function BulkInvoiceDialog({
                         : "Scope: Multi-Customer Portfolio Invoicing"}
                     </span>
                     <span className="text-muted-foreground">|</span>
-                    <span className="text-muted-foreground">Month: <strong className="text-foreground">{billingPeriod}</strong></span>
-                    <span className="text-muted-foreground">Accounts: <strong className="text-foreground">{customerBatchItems.length}</strong></span>
+                    <span className="text-muted-foreground">Accounts to bill: <strong className="text-foreground">{customerBatchItems.length}</strong></span>
                     <span className="text-muted-foreground">Selected: <strong className="text-primary font-bold">{selectedItems.length}</strong></span>
                   </div>
 
@@ -905,7 +752,7 @@ export function BulkInvoiceDialog({
                   onClick={() => activeTab === "property" ? toggleSelectAllProperty(true) : toggleSelectAllCustomer(true)}
                   className="h-7 text-xs gap-1"
                 >
-                  <CheckSquare className="h-3 w-3" /> Select All Active ({currentItems.filter(i => !i.isInactiveInMonth).length})
+                  <CheckSquare className="h-3 w-3" /> Select All ({currentItems.length})
                 </Button>
                 <Button
                   variant="outline"
@@ -918,7 +765,7 @@ export function BulkInvoiceDialog({
               </div>
 
               <div className="text-xs text-muted-foreground font-medium">
-                Prorated based on contract period in <strong className="text-foreground">{billingPeriod}</strong>. Amounts are editable.
+                Amounts in the grid can be edited directly prior to batch generation.
               </div>
             </div>
 
@@ -931,11 +778,11 @@ export function BulkInvoiceDialog({
                     <TableHead className="w-10 text-center"></TableHead>
                     <TableHead className="font-bold">Unit</TableHead>
                     <TableHead className="font-bold">Tenant / Customer</TableHead>
-                    <TableHead className="font-bold">Contract Term</TableHead>
-                    <TableHead className="font-bold">Period in Month</TableHead>
+                    <TableHead className="font-bold">Property</TableHead>
+                    <TableHead className="font-bold">Lease / Ref</TableHead>
                     <TableHead className="font-bold">Invoice #</TableHead>
-                    <TableHead className="text-right font-bold">Monthly Rent</TableHead>
-                    <TableHead className="text-right font-bold">Income to Bill (QAR)</TableHead>
+                    <TableHead className="text-right font-bold">Base Rent</TableHead>
+                    <TableHead className="text-right font-bold">Billed Amount (QAR)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -955,7 +802,6 @@ export function BulkInvoiceDialog({
                         <TableCell className="text-center">
                           <Checkbox
                             checked={item.selected}
-                            disabled={item.isInactiveInMonth}
                             onCheckedChange={() => activeTab === "property" ? toggleSelectPropertyItem(item.id) : toggleSelectCustomerItem(item.id)}
                           />
                         </TableCell>
@@ -972,27 +818,13 @@ export function BulkInvoiceDialog({
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold text-foreground max-w-[170px] truncate" title={item.tenant}>
+                        <TableCell className="font-semibold text-foreground max-w-[180px] truncate" title={item.tenant}>
                           {item.tenant}
                         </TableCell>
-                        <TableCell className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                          {item.contractStart && item.contractEnd ? `${item.contractStart} → ${item.contractEnd}` : (item.leaseNumber || "—")}
+                        <TableCell className="text-muted-foreground max-w-[160px] truncate" title={item.property}>
+                          {item.property}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {item.isInactiveInMonth ? (
-                            <Badge variant="outline" className="text-[10px] text-muted-foreground border-dashed">
-                              Inactive
-                            </Badge>
-                          ) : item.isProrated ? (
-                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 border-amber-300">
-                              {item.periodText}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-700 border-emerald-300">
-                              {item.periodText}
-                            </Badge>
-                          )}
-                        </TableCell>
+                        <TableCell className="font-mono text-[11px] text-muted-foreground">{item.leaseNumber || "—"}</TableCell>
                         <TableCell className="font-mono text-xs text-primary font-bold">{item.invoiceNo}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
                           {item.baseRent.toLocaleString()}
@@ -1000,7 +832,6 @@ export function BulkInvoiceDialog({
                         <TableCell className="text-right">
                           <Input
                             type="number"
-                            disabled={item.isInactiveInMonth}
                             className="h-7 w-28 text-right font-mono font-bold text-xs bg-background inline-block"
                             value={item.amount}
                             onChange={e => {
@@ -1024,7 +855,7 @@ export function BulkInvoiceDialog({
           {/* Dialog Footer Actions */}
           <DialogFooter className="p-4 px-6 border-t bg-muted/40 flex items-center justify-between sm:justify-between shrink-0">
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Ready to generate for {billingPeriod}:</span>
+              <span className="text-muted-foreground">Ready to generate:</span>
               <Badge variant="outline" className="font-bold text-primary font-mono text-xs">
                 {selectedItems.length} Invoices &bull; QAR {totalAmountSelected.toLocaleString()}
               </Badge>
@@ -1041,7 +872,7 @@ export function BulkInvoiceDialog({
                 className="gap-2 bg-primary text-primary-foreground font-semibold shadow-md"
               >
                 <Sparkles className="h-4 w-4" />
-                Generate Month Income for {selectedProperty ? selectedProperty.slice(0, 16) : "Property"} ({selectedItems.length})
+                Generate {selectedItems.length} Invoices
               </Button>
             </div>
           </DialogFooter>
@@ -1059,7 +890,7 @@ export function BulkInvoiceDialog({
               <h3 className="text-lg font-bold text-foreground">Bulk Invoices Generated &amp; Posted!</h3>
               <p className="text-xs text-muted-foreground max-w-md mx-auto">
                 Successfully created and registered <strong>{batchResult.count} accounts receivable invoices</strong> totaling{" "}
-                <strong className="text-foreground font-mono">QAR {batchResult.totalAmount.toLocaleString()}</strong> for month: <strong>{billingPeriod}</strong>.
+                <strong className="text-foreground font-mono">QAR {batchResult.totalAmount.toLocaleString()}</strong> to the tenant sub-ledgers.
               </p>
 
               <div className="p-3 rounded-lg border bg-muted/30 text-xs font-mono grid grid-cols-2 gap-2 text-left my-4">
@@ -1068,16 +899,12 @@ export function BulkInvoiceDialog({
                   <span className="font-bold text-foreground">{branding.companyName || "Al Ameen Real Estate"}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block text-[10px] uppercase">Accounting Month:</span>
+                  <span className="text-muted-foreground block text-[10px] uppercase">Batch Period:</span>
                   <span className="font-bold text-foreground">{billingPeriod}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block text-[10px] uppercase">Property Scope:</span>
-                  <span className="font-bold text-foreground">{selectedProperty || "All Properties"}</span>
-                </div>
-                <div>
                   <span className="text-muted-foreground block text-[10px] uppercase">Posting Status:</span>
-                  <span className="text-emerald-600 font-bold">Posted to AR (12413) &amp; Revenue (41100)</span>
+                  <span className="text-emerald-600 font-bold">Posted to AR (12413)</span>
                 </div>
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase">Invoices Count:</span>
@@ -1089,7 +916,7 @@ export function BulkInvoiceDialog({
                 </div>
               </div>
 
-              {/* Printable Bulk Invoice Batch Register */}
+              {/* Printable Bulk Invoice Batch Register for Print / PDF */}
               <style dangerouslySetInnerHTML={{ __html: `
                 @media print {
                   @page {
@@ -1135,10 +962,9 @@ export function BulkInvoiceDialog({
                   </div>
                   <div className="text-right">
                     <span className="font-black text-xs uppercase px-2.5 py-1 bg-primary/10 text-primary rounded">
-                      BULK INVOICE BATCH REGISTER
+                      BULK INVOICE BATCH
                     </span>
-                    <p className="text-xs text-muted-foreground mt-1">Property: {selectedProperty}</p>
-                    <p className="text-xs text-muted-foreground">Accounting Month: {billingPeriod}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Period: {billingPeriod}</p>
                     <p className="text-xs text-muted-foreground">Date: {issueDate}</p>
                   </div>
                 </div>
@@ -1149,7 +975,7 @@ export function BulkInvoiceDialog({
                       <th className="p-2 text-left">Invoice No</th>
                       <th className="p-2 text-left">Tenant / Customer</th>
                       <th className="p-2 text-left">Property &amp; Unit</th>
-                      <th className="p-2 text-left">Contract Period in Month</th>
+                      <th className="p-2 text-left">Revenue Stream</th>
                       <th className="p-2 text-right">Amount (QAR)</th>
                       <th className="p-2 text-left">Due Date</th>
                     </tr>

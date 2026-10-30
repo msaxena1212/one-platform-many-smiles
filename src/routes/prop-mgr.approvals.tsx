@@ -15,6 +15,7 @@ import {
   fetchApprovalRequests, createApprovalRequest, processApproval,
   type ApprovalRequest
 } from "@/lib/supabase";
+import { formatDateUniform } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/prop-mgr/approvals")({
   component: ApprovalsPage,
@@ -218,7 +219,7 @@ function ApprovalsPage() {
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         <span>Requested by: <strong className="text-foreground">{req.requested_by}</strong></span>
                         <span>·</span>
-                        <span>{new Date(req.created_at).toLocaleDateString()}</span>
+                        <span>{formatDateUniform(req.created_at)}</span>
                       </div>
                     </div>
                     {req.status === "pending" && (

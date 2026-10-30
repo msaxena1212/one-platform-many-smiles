@@ -68,6 +68,8 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
     if (!error) {
       setOpen(false);
       loadPDCs();
+      // Notify FinanceStore so GL / Trial Balance reflect the new PDC immediately
+      window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
     } else {
       alert("Error adding PDC: " + error.message);
     }

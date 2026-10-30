@@ -1,10 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Receipt as ReceiptIcon, FileText, CheckCircle2, ArrowRightLeft, Wifi } from "lucide-react";
+import { Receipt as ReceiptIcon, FileText, CheckCircle2, ArrowRightLeft, Wifi, Banknote } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/lib/app-data-context";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FinanceModule } from "@/components/finance-module";
 
 export const Route = createFileRoute("/cashier/")({
   component: CashierDashboard,
@@ -12,6 +15,11 @@ export const Route = createFileRoute("/cashier/")({
 
 function CashierDashboard() {
   const { leases, pdcs, vouchers, syncing } = useAppData();
+  const search = useSearch({ strict: false }) as { tab?: string };
+  const selectedTab = search.tab;
+  if (selectedTab) {
+    return <FinanceModule role="cashier" />;
+  }
 
   const postedVouchers = vouchers.filter((voucher) => voucher.status === "posted");
   const totalCollected = postedVouchers.reduce((sum, voucher) => sum + voucher.amount, 0);
@@ -51,9 +59,17 @@ function CashierDashboard() {
             <Wifi className="h-3 w-3" />
             Live Sync
           </Badge>
-          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-            <ReceiptIcon className="h-4 w-4" />
-            Generate Receipt
+          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+            <Link to="/cashier/receipts">
+              <ReceiptIcon className="h-4 w-4" />
+              View Financial Receipts
+            </Link>
+          </Button>
+          <Button asChild className="bg-teal-700 hover:bg-teal-800 text-white gap-2">
+            <Link to="/cashier/pdc" search={{ collect: "1" }}>
+              <Banknote className="h-4 w-4" />
+              Collect PDC / Deposit
+            </Link>
           </Button>
         </div>
       </div>

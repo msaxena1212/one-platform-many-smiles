@@ -503,10 +503,6 @@ export function PdcManagement() {
   // Load data from DB & context smoothly on mount and subscribe to realtime DB updates
   useEffect(() => {
     load(true);
-    const handleSync = () => { load(false); };
-    window.addEventListener("pdcs_updated", handleSync);
-    window.addEventListener("finance_vouchers_updated", handleSync);
-
     const channel = supabase
       .channel("pdc-management:live")
       .on(
@@ -526,11 +522,7 @@ export function PdcManagement() {
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener("pdcs_updated", handleSync);
-      window.removeEventListener("finance_vouchers_updated", handleSync);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load(showLoading = true) {
@@ -711,157 +703,7 @@ export function PdcManagement() {
         });
       }
 
-      // Step 4: Include any standalone fin_pdc_register rows created in finance
-      for (const f of rawFinRegister) {
-        if (!f._used && (f.unit_name || f.unit_ref || f.tenant_name || f.cheque_number)) {
-          const chq = String(f.cheque_number || f.id || "").trim();
-          const fDate = toYmd(f.cheque_date || f.created_at);
-          const fAmt = Number(f.amount) || 0;
-          const uRef = String(f.unit_name || f.unit_ref || "").trim();
-          const exists = Array.from(dbDataMap.values()).some(
-            existing => String(existing.cheque_number).trim() === chq && (
-              !uRef || existing.unit_ref.toLowerCase() === uRef.toLowerCase()
-            )
-          );
-          if (!exists && chq) {
-            const rowKey = `fin-${f.id}`;
-            dbDataMap.set(rowKey, {
-              id: `fin-${f.id}`,
-              fin_id: f.id,
-              entry_date: f.created_at ? toYmd(f.created_at) : fDate,
-              cheque_date: fDate,
-              cheque_number: chq,
-              amount: fAmt,
-              status: normalizeStatus(f.status),
-              bank_name: f.bank_name || f.bank || "Qatar National Bank (QNB)",
-              property_name: f.property_name || f.property_code || "—",
-              unit_ref: uRef || "—",
-              tenant_name: f.tenant_name || "—",
-              lease_id: f.lease_id,
-              lease_start: f.lease_start || fDate,
-              lease_end: f.lease_end,
-              monthly_rent: fAmt,
-              _source: "fin_pdc_register",
-            });
-          }
-        }
-      }
-
-      // Step 5: Include PDCs from persistent local storage (e.g. renewal PDCs, offline overrides)
-      try {
-        const rawRenewal = localStorage.getItem("pms_renewal_pdcs");
-        const renewalList: any[] = rawRenewal ? JSON.parse(rawRenewal) : [];
-        for (const ren of renewalList) {
-          const chq = String(ren.chequeNo || ren.cheque_number || ren.id || "").trim();
-          const uRef = String(ren.unit || ren.unit_ref || ren.unit_name || "").trim();
-          const rDate = toYmd(ren.date || ren.cheque_date);
-          const rAmt = Number(ren.amount) || 0;
-          const exists = Array.from(dbDataMap.values()).some(
-            existing => String(existing.cheque_number).trim() === chq && (
-              !uRef || existing.unit_ref.toLowerCase() === uRef.toLowerCase()
-            )
-          );
-          if (!exists && chq) {
-            const rowKey = `ren-${ren.id || chq}-${uRef}`;
-            dbDataMap.set(rowKey, {
-              id: ren.id || `ren-${chq}`,
-              entry_date: rDate || "2026-10-05",
-              cheque_date: rDate || "2026-10-05",
-              cheque_number: chq,
-              amount: rAmt,
-              status: normalizeStatus(ren.status),
-              bank_name: ren.bank || ren.bank_name || "Qatar National Bank (QNB)",
-              property_name: ren.property || ren.property_name || "—",
-              unit_ref: uRef || "—",
-              tenant_name: ren.tenantName || ren.tenant_name || ren.payerName || "—",
-              lease_id: ren.leaseId || ren.lease_id,
-              lease_start: ren.tenureStart || ren.lease_start,
-              lease_end: ren.tenureEnd || ren.lease_end,
-              monthly_rent: rAmt,
-              _source: "renewal_store",
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to load local renewal PDCs:", err);
-      }
-
-      // Step 6: Include sharedPdcs from AppData context if not already in dbDataMap
-      if (Array.isArray(sharedPdcs) && sharedPdcs.length > 0) {
-        for (const sp of sharedPdcs) {
-          const chq = String(sp.chequeNo || (sp as any).cheque_number || sp.id || "").trim();
-          const uRef = String(sp.unit || (sp as any).unit_ref || (sp as any).unit_name || "").trim();
-          if (!chq) continue;
-          const exists = Array.from(dbDataMap.values()).some(
-            existing => String(existing.cheque_number).trim() === chq && (
-              !uRef || existing.unit_ref.toLowerCase() === uRef.toLowerCase()
-            )
-          );
-          if (!exists) {
-            const sDate = toYmd(sp.date || (sp as any).cheque_date);
-            const sAmt = Number(sp.amount) || 0;
-            const rowKey = `shared-${sp.id || chq}`;
-            dbDataMap.set(rowKey, {
-              id: sp.id,
-              entry_date: sDate,
-              cheque_date: sDate,
-              cheque_number: chq,
-              amount: sAmt,
-              status: normalizeStatus(sp.status),
-              bank_name: sp.bank || (sp as any).bank_name || "Qatar National Bank (QNB)",
-              property_name: sp.property || (sp as any).property_name || "—",
-              unit_ref: uRef || "—",
-              tenant_name: sp.tenantName || sp.payerName || (sp as any).tenant_name || "—",
-              lease_id: sp.leaseId,
-              lease_start: sp.tenureStart,
-              lease_end: sp.tenureEnd,
-              monthly_rent: sAmt,
-              _source: "app_context",
-            });
-          }
-        }
-      }
-
-      // Step 7: Guaranteed coverage for Unit MS80-20 renewed contract PDCs
-      const hasMs80_20 = Array.from(dbDataMap.values()).some(
-        p => String(p.unit_ref).toUpperCase().includes("MS80-20") ||
-             String(p.tenant_name).toLowerCase().includes("abdul rafay")
-      );
-      if (!hasMs80_20) {
-        const ms80_20_pdcs = [
-          { num: "1000071", date: "2026-10-05" },
-          { num: "1000072", date: "2026-11-05" },
-          { num: "1000073", date: "2026-12-05" },
-          { num: "1000074", date: "2027-01-05" },
-          { num: "1000075", date: "2027-02-05" },
-          { num: "1000076", date: "2027-03-05" },
-          { num: "1000077", date: "2027-04-05" },
-          { num: "1000078", date: "2027-05-05" },
-          { num: "1000079", date: "2027-06-05" },
-          { num: "1000080", date: "2027-07-05" },
-          { num: "1000081", date: "2027-08-05" },
-          { num: "1000082", date: "2027-09-05" },
-        ];
-        ms80_20_pdcs.forEach((ch, idx) => {
-          const rowKey = `ren-ms80-20-${ch.num}`;
-          dbDataMap.set(rowKey, {
-            id: `ren-ms80-20-${idx + 1}`,
-            entry_date: "2026-10-05",
-            cheque_date: ch.date,
-            cheque_number: ch.num,
-            amount: 4000,
-            status: "In Hand",
-            bank_name: "Qatar National Bank (QNB)",
-            property_name: "Al Ameen Residence 80",
-            unit_ref: "MS80-20",
-            tenant_name: "Mr. Abdul Rafay Anwar Siddiqui",
-            monthly_rent: 4000,
-            _source: "renewal_store",
-          });
-        });
-      }
-
-      // Dataset merges pdcs table, standalone fin_pdc_register, and active renewal PDCs
+      // Authoritative dataset is strictly the pdcs table (matches PDC vouchers 1-to-1)
       const allPdcs = Array.from(dbDataMap.values());
       setPdcs(allPdcs);
     } catch (e: any) {

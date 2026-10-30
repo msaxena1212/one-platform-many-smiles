@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,6 @@ import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
 import {
   generatePortfolioRevenueBatch,
   calculateLeaseRevenueSchedule,
-  calculateContractPeriodMonthlyRevenue,
   type ProrationMethod,
   type RevenuePeriodSchedule,
   type RevenueGenerationBatchSummary,
@@ -60,7 +59,6 @@ import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
 import { BulkInvoiceDialog } from "@/components/finance/bulk-invoice-dialog";
 import { CustomerStatementSubModule } from "@/components/finance/customer-statement-submodule";
 import { InvoiceViewDialog } from "@/components/finance/invoice-view-dialog";
-import { PropertyWiseProfitAndLossSubModule } from "@/components/finance/property-wise-pnl";
 
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
@@ -6012,9 +6010,7 @@ function RevenueGenerationSubModule() {
 
   // ── Period-Based Recognition Engine State (Revenue As-Of) ─────────────────
   const todayStr = new Date().toISOString().split("T")[0];
-  const now2 = new Date();
-  const currentMonthKey = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;
-  const [targetMonth, setTargetMonth] = useState<string>(currentMonthKey);
+  const [asOfDate, setAsOfDate] = useState<string>(todayStr);
   const [prorationMethod, setProrationMethod] = useState<ProrationMethod>("CALENDAR_DAYS");
   const [asOfProperty, setAsOfProperty] = useState<string>("all");
   const [asOfUnit, setAsOfUnit] = useState<string>("all");

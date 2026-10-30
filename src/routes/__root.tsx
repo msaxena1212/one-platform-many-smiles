@@ -46,13 +46,18 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
+      <div className="max-w-xl text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {error?.message && (
+          <div className="mt-4 p-3 bg-destructive/10 text-destructive text-xs rounded-lg text-left font-mono overflow-auto max-h-40">
+            {error.message}
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -80,14 +85,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ZYNO PMS" },
-      { name: "description", content: "ZYNO Property Management System" },
-      { name: "author", content: "ZYNO" },
-      { property: "og:title", content: "ZYNO PMS" },
-      { property: "og:description", content: "ZYNO Property Management System" },
+      { title: "Enterprise Property Management OS" },
+      { name: "description", content: "Enterprise Property Management, Real Estate ERP & Tenant Experience Platform" },
+      { name: "author", content: "Property Management OS" },
+      { property: "og:title", content: "Enterprise Property Management OS" },
+      { property: "og:description", content: "Enterprise Property Management, Real Estate ERP & Tenant Experience Platform" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@ZYNO" },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),

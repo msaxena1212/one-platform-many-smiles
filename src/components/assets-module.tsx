@@ -1,1564 +1,3907 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouterState, useNavigate } from "@tanstack/react-router";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
-  Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2, Eye, Pencil, Sparkles, User, DollarSign, Calendar, ShieldCheck, Tag
+  Loader2, Plus, Package, CheckCircle2, AlertTriangle, Trash2, Printer, ArrowRightLeft, FileDown, FileUp, Building2,
+  Calendar, Layers, ShieldCheck, Tag, DollarSign, Upload, Percent, RefreshCw, FileText, Check, PlusCircle, TrendingUp, TrendingDown,
+  Eye, Wrench, Clock, CheckCheck, XCircle, ArrowUpRight, ArrowDownLeft, Info, HelpCircle, User, MapPin, Hash, Sparkles,
+  Pencil, Search, Shield, FileCheck, Paperclip, ChevronRight, ChevronLeft, Download, FileSpreadsheet
 } from "lucide-react";
-import { fetchAssets, createAsset, updateAsset, fetchProperties, fetchUnits, createProperty, updateProperty, createUnit, updateUnit, type Asset, type Property, type Unit, supabase } from "@/lib/supabase";
-import {
-  fetchAssetCategories, fetchAssetSubcategories, fetchAssetOwnershipTypes,
-  fetchAssetConditions, fetchAssetStatuses, fetchDepartments,
-  type AssetCategory, type AssetSubcategory, type Simplemaster
+import { fetchAssets, createAsset, updateAsset, deleteAsset, fetchProperties, fetchUnits, type Asset, type Property, type Unit } from "@/lib/supabase";
+import { 
+  fetchAssetSubcategories, 
+  fetchAssetCategories, 
+  fetchAssetOwnershipTypes, 
+  fetchAssetConditions, 
+  fetchAssetStatuses,
+  fetchDepartments,
+  type AssetSubcategory, 
+  type AssetCategory,
+  type AssetOwnershipType,
+  type AssetCondition,
+  type AssetStatus,
+  type Simplemaster
 } from "@/lib/supabase-masters";
+import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
 import { useFinanceStore } from "@/lib/finance/finance-store";
+import { formatDDMMMYYYY, getTodayIST } from "@/lib/date-utils";
+import { DynamicMastersService } from "@/lib/dynamic-masters-service";
+import { hrmsService } from "@/lib/hrmsService";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { toast } from "sonner";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
 
+// ── Types for Sub-module Records ──────────────────────────────────────────
+export interface AssetRevaluationRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  prev_value: number;
+  new_value: number;
+  reason: string;
+  date: string;
+}
+
+export interface AssetSaleRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  book_value: number;
+  sale_value: number;
+  buyer: string;
+  date: string;
+  remarks: string;
+}
+
+export interface AssetWriteoffRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  book_value: number;
+  writeoff_reason: string;
+  date: string;
+  approved_by: string;
+}
+
+export interface AssetAllocationRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  action_type: "ALLOCATION" | "DEALLOCATION" | "TRANSFER";
+  allocation_type?: "PROPERTY_UNIT" | "OFFICIAL_STAFF";
+  from_property?: string;
+  from_unit?: string;
+  from_employee?: string;
+  to_property?: string;
+  to_unit?: string;
+  to_employee?: string;
+  department?: string;
+  date: string;
+  remarks: string;
+  condition?: string;
+}
+
+export interface AssetMaintenanceRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  maintenance_type: "Preventive Maintenance" | "Breakdown Repair" | "Routine Inspection" | "Calibration / Testing";
+  priority: "Low" | "Medium" | "High" | "Critical";
+  service_vendor: string;
+  technician_name?: string;
+  scheduled_date: string;
+  completed_date?: string;
+  estimated_cost: number;
+  actual_cost?: number;
+  status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  description: string;
+  completion_notes?: string;
+  invoice_ref?: string;
+  created_at: string;
+}
+
+export interface AssetWarrantyDocument {
+  id: string;
+  name: string;
+  file_name: string;
+  upload_date: string;
+  file_type?: string;
+}
+
+export interface AssetWarrantyRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  warranty_type: "Standard Manufacturer" | "Extended Warranty" | "Annual Maintenance Contract (AMC)" | "Comprehensive SLA";
+  provider_name: string;
+  policy_number?: string;
+  support_email?: string;
+  support_phone?: string;
+  start_date: string;
+  expiry_date: string;
+  duration_months: number;
+  coverage_scope: string;
+  amc_cost?: number;
+  status: "ACTIVE" | "EXPIRING_SOON" | "EXPIRED" | "EXTENDED";
+  documents: AssetWarrantyDocument[];
+  created_at: string;
+}
+
+export interface AssetDepreciationRecord {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  asset_code: string;
+  category: string;
+  purchase_date: string;
+  acquisition_cost: number;
+  depreciation_method: "Straight Line Method (SLM)" | "Written Down Value (WDV)";
+  useful_life_years: number;
+  depreciation_rate_pct: number;
+  accumulated_depreciation: number;
+  current_book_value: number;
+  last_depreciation_date?: string;
+  fiscal_year: string;
+}
+
+// ── Reusable Standard Pagination Footer ───────────────────────────────────
+function TablePagination({
+  currentPage,
+  totalItems,
+  pageSize = 15,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  currentPage: number;
+  totalItems: number;
+  pageSize?: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(totalItems, currentPage * pageSize);
+
+  return (
+    <div className="p-3 px-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs bg-muted/10">
+      <div className="text-muted-foreground">
+        Showing <span className="font-semibold text-foreground font-mono">{startItem}</span> to{" "}
+        <span className="font-semibold text-foreground font-mono">{endItem}</span> of{" "}
+        <span className="font-semibold text-foreground font-mono">{totalItems}</span> entries
+      </div>
+
+      <div className="flex items-center gap-2">
+        {onPageSizeChange && (
+          <div className="flex items-center gap-1.5 mr-2">
+            <span className="text-muted-foreground text-[11px]">Show</span>
+            <Select value={String(pageSize)} onValueChange={v => onPageSizeChange(Number(v))}>
+              <SelectTrigger className="h-7 w-16 text-xs bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="15">15</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground text-[11px]">per page</span>
+          </div>
+        )}
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-xs gap-1"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> Prev
+        </Button>
+
+        <span className="font-mono font-medium text-foreground px-1">
+          {currentPage} / {totalPages}
+        </span>
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-xs gap-1"
+          disabled={currentPage >= totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+        >
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
-  const { addJournalEntry } = useFinanceStore();
+  const routerSearch = useRouterState({ select: (s) => s.location.search }) as Record<string, any>;
+  const navigate = useNavigate();
+  const { addJournalEntry, addVoucher } = useFinanceStore();
+
   const [assets, setAssets] = useState<Asset[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [departments, setDepartments] = useState<Simplemaster[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
-
-  // Dynamic Masters
-  const [categories, setCategories] = useState<AssetCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<AssetSubcategory[]>([]);
-  const [ownershipTypes, setOwnershipTypes] = useState<Simplemaster[]>([]);
-  const [conditions, setConditions] = useState<Simplemaster[]>([]);
-  const [statuses, setStatuses] = useState<Simplemaster[]>([]);
-
+  const [vendors, setVendors] = useState<FinVendor[]>([]);
+  const [assetCategoriesList, setAssetCategoriesList] = useState<AssetCategory[]>([]);
+  const [assetSubcategoriesList, setAssetSubcategoriesList] = useState<AssetSubcategory[]>([]);
+  const [ownershipTypesList, setOwnershipTypesList] = useState<AssetOwnershipType[]>([]);
+  const [conditionsList, setConditionsList] = useState<AssetCondition[]>([]);
+  const [statusesList, setStatusesList] = useState<AssetStatus[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<Simplemaster[]>([]);
+  const [brandsList, setBrandsList] = useState<string[]>([]);
+  const [employeesList, setEmployeesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
-  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
-  const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
-  const [activeFormStep, setActiveFormStep] = useState<"general" | "financial" | "assignment" | "service">("general");
-
+  const [bulkAssetOpen, setBulkAssetOpen] = useState(false);
+  const [bulkAssetData, setBulkAssetData] = useState("");
+  const [bulkAssetLoading, setBulkAssetLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeRegistryFilter, setActiveRegistryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [printBarcode, setPrintBarcode] = useState<string | null>(null);
-  const [transferAsset, setTransferAsset] = useState<Asset | null>(null);
-  const [transferForm, setTransferForm] = useState({ assigned_property_id: "", assigned_employee_id: "" });
 
-  const initialFormState = {
-    // 1. Core Info
+  // ── Pagination States for each module ──
+  const [registryPage, setRegistryPage] = useState(1);
+  const [registryPageSize, setRegistryPageSize] = useState(15);
+
+  const [allocPage, setAllocPage] = useState(1);
+  const [allocPageSize, setAllocPageSize] = useState(15);
+
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(15);
+
+  const [warrantyPage, setWarrantyPage] = useState(1);
+  const [warrantyPageSize, setWarrantyPageSize] = useState(15);
+
+  const [maintPage, setMaintPage] = useState(1);
+  const [maintPageSize, setMaintPageSize] = useState(15);
+
+  const [revalPage, setRevalPage] = useState(1);
+  const [revalPageSize, setRevalPageSize] = useState(15);
+
+  const [sellPage, setSellPage] = useState(1);
+  const [sellPageSize, setSellPageSize] = useState(15);
+
+  const [writeoffPage, setWriteoffPage] = useState(1);
+  const [writeoffPageSize, setWriteoffPageSize] = useState(15);
+
+  const [deprPage, setDeprPage] = useState(1);
+  const [deprPageSize, setDeprPageSize] = useState(15);
+  const [deprMethodFilter, setDeprMethodFilter] = useState("all");
+  const [deprSearch, setDeprSearch] = useState("");
+
+  // ── Selected Asset for Detail View Modal ──
+  const [selectedAssetForDetail, setSelectedAssetForDetail] = useState<Asset | null>(null);
+
+  // ── Edit Asset Modal State ──
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
+  const [editForm, setEditForm] = useState({
+    // Identity
     asset_name: "",
-    category: "Furniture",
+    category: "",
     subcategory: "",
     brand: "",
     model: "",
     serial_number: "",
-    ownership_type: "Owned",
+    ownership_type: "",
     asset_code: "",
-    autoBarcode: true,
-
-    // 2. Financial & Depreciation
-    purchase_date: new Date().toISOString().split("T")[0],
+    // Purchase & Warranty
+    purchase_date: "",
     supplier: "",
     purchase_cost: "",
+    warranty_expiry_date: "",
+    warranty_status: "",
+    // Assignment
+    department: "",
+    assigned_property_code: "",
+    assigned_unit_code: "",
+    assigned_employee_id: "",
+    assigned_employee_name: "",
+    assignment_date: "",
+    // Status
+    asset_condition: "Good",
+    asset_status: "",
+    // Financials
+    life_of_asset: "",
+    depreciation_method: "",
+    depreciation_rate: "",
     opening_cost: "",
     addition_during_year: "",
     total_asset_value: "",
     disposal_value: "",
-    depreciation_method: "Straight Line (SLM)",
-    depreciation_rate: "20",
     opening_accumulated_depreciation: "",
     current_year_depreciation: "",
     closing_accumulated_depreciation: "",
     net_book_value: "",
-    life_of_asset: "5",
+    // Service
+    last_service_date: "",
+    next_service_date: "",
+    return_date: "",
+    disposal_date: "",
+    // Remarks
+    description: "",
+    remarks: "",
+  });
 
-    // 3. Assignment & Location
+  // ── Module-level sub-tabs (synced with URL ?tab=...) ──
+  const initialModuleTab = typeof routerSearch?.tab === "string" ? routerSearch.tab : "registry";
+  const [moduleTab, setModuleTabState] = useState(initialModuleTab);
+
+  useEffect(() => {
+    if (routerSearch?.tab && routerSearch.tab !== moduleTab) {
+      setModuleTabState(routerSearch.tab);
+    }
+  }, [routerSearch?.tab]);
+
+  // ── Persistent Sub-module Records (LocalStorage fallback) ──
+  const [revaluations, setRevaluations] = useState<AssetRevaluationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_revaluation_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [sells, setSells] = useState<AssetSaleRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_sale_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [writeoffs, setWriteoffs] = useState<AssetWriteoffRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_writeoff_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [allocations, setAllocations] = useState<AssetAllocationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_allocation_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [maintenances, setMaintenances] = useState<AssetMaintenanceRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_maintenance_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  const [warranties, setWarranties] = useState<AssetWarrantyRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("asset_warranty_records_v2");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Sync state changes to localStorage
+  useEffect(() => {
+    try { localStorage.setItem("asset_revaluation_records_v2", JSON.stringify(revaluations)); } catch {}
+  }, [revaluations]);
+
+  useEffect(() => {
+    try { localStorage.setItem("asset_sale_records_v2", JSON.stringify(sells)); } catch {}
+  }, [sells]);
+
+  useEffect(() => {
+    try { localStorage.setItem("asset_writeoff_records_v2", JSON.stringify(writeoffs)); } catch {}
+  }, [writeoffs]);
+
+  useEffect(() => {
+    try { localStorage.setItem("asset_allocation_records_v2", JSON.stringify(allocations)); } catch {}
+  }, [allocations]);
+
+  useEffect(() => {
+    try { localStorage.setItem("asset_maintenance_records_v2", JSON.stringify(maintenances)); } catch {}
+  }, [maintenances]);
+
+  useEffect(() => {
+    try { localStorage.setItem("asset_warranty_records_v2", JSON.stringify(warranties)); } catch {}
+  }, [warranties]);
+
+  const [showDepreciationModal, setShowDepreciationModal] = useState(false);
+  const [selectedAssetForDepr, setSelectedAssetForDepr] = useState<Asset | null>(null);
+  const [depreciationForm, setDepreciationForm] = useState({
+    fiscal_year: "2025-2026",
+    posting_date: getTodayIST(),
+    depreciation_method: "Straight Line Method (SLM)" as "Straight Line Method (SLM)" | "Written Down Value (WDV)",
+    useful_life_years: "5",
+    depreciation_rate_pct: "20",
+    charge_amount: "",
+    remarks: "",
+  });
+
+  // ── Dialog States ──
+  const [showRevaluation, setShowRevaluation] = useState(false);
+  const [revalForm, setRevalForm] = useState({ asset_id: "", prev_value: "", new_value: "", reason: "", date: getTodayIST() });
+
+  const [showSell, setShowSell] = useState(false);
+  const [sellForm, setSellForm] = useState({ asset_id: "", book_value: "", sale_value: "", buyer: "", date: getTodayIST(), remarks: "" });
+
+  const [showWriteoff, setShowWriteoff] = useState(false);
+  const [writeoffForm, setWriteoffForm] = useState({ asset_id: "", book_value: "", writeoff_reason: "", date: getTodayIST(), approved_by: "" });
+
+  // ── Warranty Dialogs ──
+  const [showWarrantyModal, setShowWarrantyModal] = useState(false);
+  const [warrantyModalMode, setWarrantyModalMode] = useState<"NEW" | "EXTEND">("NEW");
+  const [selectedWarrantyToEdit, setSelectedWarrantyToEdit] = useState<AssetWarrantyRecord | null>(null);
+  const [warrantyForm, setWarrantyForm] = useState({
+    asset_id: "",
+    warranty_type: "Standard Manufacturer" as AssetWarrantyRecord["warranty_type"],
+    provider_name: "",
+    policy_number: "",
+    support_email: "",
+    support_phone: "",
+    start_date: getTodayIST(),
+    duration_months: "12",
+    expiry_date: "",
+    coverage_scope: "Comprehensive Parts & Labor Coverage",
+    amc_cost: "0",
+    new_doc_name: "Warranty Certificate",
+    new_doc_filename: "",
+    documents: [] as AssetWarrantyDocument[],
+  });
+
+  // ── Allocation Action Dialog (Allocate / Deallocate / Transfer) ──
+  const [showAllocationDialog, setShowAllocationDialog] = useState(false);
+  const [allocationMode, setAllocationMode] = useState<"ALLOCATE" | "DEALLOCATE" | "TRANSFER">("ALLOCATE");
+  const [allocationTargetAsset, setAllocationTargetAsset] = useState<Asset | null>(null);
+  const [allocationForm, setAllocationForm] = useState({
+    asset_id: "",
+    allocation_type: "PROPERTY_UNIT" as "PROPERTY_UNIT" | "OFFICIAL_STAFF",
+    to_property_id: "",
+    to_unit_id: "",
+    to_employee_name: "",
+    department: "",
+    condition: "Good / Operational",
+    date: getTodayIST(),
+    remarks: "",
+  });
+
+  // Allocation screen sub-tab and search
+  const [allocSubTab, setAllocSubTab] = useState<"active" | "history">("active");
+  const [allocSearch, setAllocSearch] = useState("");
+
+  // Warranty screen sub-tab & search
+  const [warrantyFilter, setWarrantyFilter] = useState("all");
+  const [warrantySearch, setWarrantySearch] = useState("");
+
+  // ── Maintenance Dialogs ──
+  const [showNewMaintenance, setShowNewMaintenance] = useState(false);
+  const [maintForm, setMaintForm] = useState({
+    asset_id: "",
+    maintenance_type: "Preventive Maintenance" as AssetMaintenanceRecord["maintenance_type"],
+    priority: "Medium" as AssetMaintenanceRecord["priority"],
+    service_vendor: "",
+    technician_name: "",
+    scheduled_date: getTodayIST(),
+    estimated_cost: "0",
+    description: "",
+  });
+
+  const [completeMaintModal, setCompleteMaintModal] = useState<AssetMaintenanceRecord | null>(null);
+  const [completeMaintForm, setCompleteMaintForm] = useState({
+    actual_cost: "",
+    completed_date: getTodayIST(),
+    completion_notes: "",
+    invoice_ref: "",
+  });
+
+  // ── Canonical Multi-Step Direct Asset Creation Form ──
+  const [stepperStep, setStepperStep] = useState<1 | 2 | 3 | 4>(1);
+  const [form, setForm] = useState({
+    asset_type: "Fixed Asset",
+    category: "Furniture",
+    subcategory: "",
+    item_name: "",
+    brand: "",
+    model: "",
+    ownership_type: "Company Owned",
+    department: "",
+    commission_date: getTodayIST(),
+    put_to_use_date: getTodayIST(),
+    asset_tag_id: "",
+    serial_number: "",
+    acquisition_amount: "",
+    vendor_id: "",
+    useful_life_years: "5",
+    depreciation_rate: "20",
+    depreciation_method: "Straight Line Method (SLM)",
+
+    // Initial Assignment & Custody (Optional at registration)
     assigned_property_id: "",
+    assigned_property_code: "",
     assigned_unit_id: "",
+    assigned_unit_code: "",
     assigned_employee_id: "",
     assigned_employee_name: "",
     assignment_date: "",
-    department: "",
-
-    // 4. Status, Warranty & Service
-    asset_condition: "Good",
+    asset_condition: "New",
     asset_status: "Available",
-    warranty_expiry_date: "",
-    warranty_status: "Valid",
+
+    // Financial & Book Value Balances
+    opening_cost: "",
+    addition_during_year: "",
+    total_asset_value: "",
+    disposal_value: "",
+    opening_accumulated_depreciation: "",
+    current_year_depreciation: "",
+    closing_accumulated_depreciation: "",
+    net_book_value: "",
+
+    // Service & Lifecycle Dates
     last_service_date: "",
     next_service_date: "",
     return_date: "",
     disposal_date: "",
     remarks: "",
-  };
 
-  const [form, setForm] = useState(initialFormState);
+    account_rows: [
+      { id: "1", account_code: "12300001", account_name: "12300001 - Fixed Asset (Capital Cost / Asset A/C)", debit: "", credit: "" },
+      { id: "2", account_code: "22100001", account_name: "22100001 - Trade Payables (Vendors / Supplier A/C)", debit: "", credit: "" }
+    ],
 
-  const [propertyDialogOpen, setPropertyDialogOpen] = useState(false);
-  const [propertyDialogMode, setPropertyDialogMode] = useState<"create" | "edit">("create");
-  const [propertyForm, setPropertyForm] = useState({ 
-    title: "", 
-    address: "", 
-    city: "", 
-    country: "Qatar", 
-    property_type: "apartment", 
-    max_guests: "1", 
-    bedrooms: "1", 
-    beds: "1", 
-    bathrooms: "1", 
-    base_price_per_night: "0", 
-    cleaning_fee: "0", 
-    no_of_units: "",
-    amenities: [""],
-    other_amenities: ""
+    has_warranty: true,
+    warranty_type: "Standard Manufacturer" as AssetWarrantyRecord["warranty_type"],
+    warranty_provider: "",
+    warranty_policy_no: "",
+    warranty_start_date: getTodayIST(),
+    warranty_duration_months: "12",
+    warranty_expiry_date: "",
+    warranty_support_email: "",
+    warranty_support_phone: "",
+    warranty_coverage: "Standard 1-Year Comprehensive Manufacturer Warranty (Parts & Labor)",
+    amc_fee: "0",
+
+    documents: [] as AssetWarrantyDocument[],
+    doc_input_name: "Purchase Invoice",
+    doc_input_file: "",
+
+    specifications: [] as Array<{ id: string; spec_type: string; spec_details: string }>,
+    spec_type_input: "",
+    spec_details_input: "",
   });
-  const [unitDialogOpen, setUnitDialogOpen] = useState(false);
-  const [unitDialogMode, setUnitDialogMode] = useState<"create" | "edit">("create");
-  const [unitForm, setUnitForm] = useState({ property_id: "", unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
 
+  // Helper to calculate warranty expiry date
+  useEffect(() => {
+    if (form.warranty_start_date && form.warranty_duration_months) {
+      try {
+        const d = new Date(form.warranty_start_date);
+        d.setMonth(d.getMonth() + Number(form.warranty_duration_months));
+        setForm(f => ({ ...f, warranty_expiry_date: d.toISOString().split("T")[0] }));
+      } catch {}
+    }
+  }, [form.warranty_start_date, form.warranty_duration_months]);
+
+  useEffect(() => {
+    if (warrantyForm.start_date && warrantyForm.duration_months) {
+      try {
+        const d = new Date(warrantyForm.start_date);
+        d.setMonth(d.getMonth() + Number(warrantyForm.duration_months));
+        setWarrantyForm(f => ({ ...f, expiry_date: d.toISOString().split("T")[0] }));
+      } catch {}
+    }
+  }, [warrantyForm.start_date, warrantyForm.duration_months]);
+
+  // ── Dynamic Status Derivation ──────────────────────────────────────────
+  const getAssetStatus = useCallback((asset: Asset) => {
+    if (sells.some(s => s.asset_id === asset.id) || asset.asset_status === "Sold / Discarded" || asset.asset_status === "Sold") {
+      return {
+        key: "sold",
+        label: "Sold",
+        badgeClass: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 border-zinc-500/30",
+        isAllocated: false,
+        canBeActioned: false,
+        description: "Asset disposed through sale",
+      };
+    }
+    if (writeoffs.some(w => w.asset_id === asset.id) || asset.asset_status === "Disposed" || asset.asset_status === "Written Off") {
+      return {
+        key: "writeoff",
+        label: "Written Off",
+        badgeClass: "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30",
+        isAllocated: false,
+        canBeActioned: false,
+        description: "Asset decommissioned & written off",
+      };
+    }
+    const hasActiveMaint = maintenances.some(m => m.asset_id === asset.id && ["SCHEDULED", "IN_PROGRESS"].includes(m.status));
+    if (hasActiveMaint || asset.asset_status === "Maintenance" || asset.asset_status === "In Maintenance") {
+      return {
+        key: "maintenance",
+        label: "Under Maintenance",
+        badgeClass: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+        isAllocated: false,
+        canBeActioned: false,
+        description: "Under active service or work order",
+      };
+    }
+    const isAllocated = Boolean(
+      asset.assigned_property_id ||
+      asset.assigned_property_code ||
+      asset.assigned_unit_id ||
+      asset.assigned_unit_code ||
+      asset.assigned_employee_name ||
+      asset.properties?.title ||
+      asset.units?.unit_code ||
+      asset.asset_status === "Assigned" ||
+      asset.asset_status === "In Use" ||
+      asset.asset_status === "Allocated"
+    );
+
+    if (isAllocated) {
+      return {
+        key: "allocated",
+        label: "Allocated",
+        badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+        isAllocated: true,
+        canBeActioned: true,
+        description: "Assigned to a property, unit, or occupant",
+      };
+    }
+
+    return {
+      key: "available",
+      label: "Available",
+      badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+      isAllocated: false,
+      canBeActioned: true,
+      description: "In central inventory, ready for allocation",
+    };
+  }, [sells, writeoffs, maintenances]);
+
+  // ── Load Reference Data & Assets ──
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [
-        data, propertiesData, unitsData,
-        catsData, subcatsData, ownerData, condData, statsData, deptsData, empsRes
-      ] = await Promise.all([
+      const [allAssets, allProps, allUnits, allVendors, allAssetCats, allAssetSubcats, allOwnership, allConds, allStats, allDepts, allEmployees] = await Promise.all([
         fetchAssets(),
         fetchProperties(),
         fetchUnits(),
+        FinVendorsApi.fetchAll().catch(() => []),
         fetchAssetCategories().catch(() => []),
         fetchAssetSubcategories().catch(() => []),
         fetchAssetOwnershipTypes().catch(() => []),
         fetchAssetConditions().catch(() => []),
         fetchAssetStatuses().catch(() => []),
         fetchDepartments().catch(() => []),
-        supabase.from('employees').select('id, first_name, last_name, employee_code, department_id').order('first_name')
+        hrmsService.getEmployees().catch(() => []),
+      ]);
+      setAssets(allAssets);
+      setProperties(allProps);
+      setUnits(allUnits);
+      setVendors(allVendors);
+      setAssetCategoriesList(allAssetCats);
+      setAssetSubcategoriesList(allAssetSubcats);
+      setOwnershipTypesList(allOwnership);
+      setConditionsList(allConds);
+      setStatusesList(allStats);
+      setDepartmentsList(allDepts);
+      setEmployeesList(allEmployees || []);
+
+      const dynamicBrands = DynamicMastersService.getMasterStringOptions('asset_brand');
+      setBrandsList(dynamicBrands.length > 0 ? dynamicBrands : [
+        'Apple', 'Dell', 'HP', 'Lenovo', 'Samsung', 'LG Electronics', 'Daikin', 'Carrier',
+        'Mitsubishi Electric', 'Gree', 'Panasonic', 'Sony', 'Cisco', 'Huawei', 'Otis Elevator',
+        'KONE', 'Schindler', 'Schneider Electric', 'Siemens', 'Bosch', 'Hikvision', 'Dahua',
+        'Toyota', 'Nissan', 'Ford', 'IKEA', 'Steelcase', 'Herman Miller', 'Other'
       ]);
 
-      setAssets(data || []);
-      setProperties(propertiesData || []);
-      setUnits(unitsData || []);
-      setCategories(catsData || []);
-      setSubcategories(subcatsData || []);
-      setOwnershipTypes(ownerData || []);
-      setConditions(condData || []);
-      setStatuses(statsData || []);
-      setDepartments(deptsData || []);
-      setEmployees(empsRes.data || []);
-    } catch (e: any) { 
-      console.error(e.message); 
-    } finally { 
-      setLoading(false); 
+      // Sync warranties strictly with real assets
+      setWarranties(prev => {
+        if (allAssets.length === 0) return [];
+        // Keep only warranties belonging to existing assets
+        return prev.filter(w => allAssets.some(a => a.id === w.asset_id || a.asset_code === w.asset_code));
+      });
+    } catch (err: any) {
+      toast.error(`Failed to load assets: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  // Filter subcategories by current category selection
-  const currentCategoryObj = useMemo(() => {
-    return categories.find(c => c.name.toLowerCase() === (form.category || "").toLowerCase());
-  }, [categories, form.category]);
+  // ── Unallocated (Available) Assets Memo ──
+  const availableUnallocatedAssets = useMemo(() => {
+    return assets.filter(a => {
+      const st = getAssetStatus(a);
+      return !st.isAllocated && st.key === "available";
+    });
+  }, [assets, getAssetStatus]);
 
-  const filteredSubcategories = useMemo(() => {
-    if (!currentCategoryObj) return subcategories;
-    const matched = subcategories.filter(s => s.category_id === currentCategoryObj.id);
-    return matched.length > 0 ? matched : subcategories;
-  }, [subcategories, currentCategoryObj]);
+  // ── Currently Allocated Assets Memo ──
+  const allocatedAssetsList = useMemo(() => {
+    return assets.filter(a => getAssetStatus(a).isAllocated);
+  }, [assets, getAssetStatus]);
 
-  // Recalculate financial fields automatically when relevant values change
-  const handleCostChange = (val: string, overrides?: { method?: string; rate?: string; life?: string; openDep?: string }) => {
-    const cost = Number(val !== undefined ? val : form.purchase_cost) || 0;
-    const addYr = Number(form.addition_during_year) || 0;
-    const totalVal = cost + addYr;
-    const method = overrides?.method !== undefined ? overrides.method : form.depreciation_method;
-    const rate = Number(overrides?.rate !== undefined ? overrides.rate : form.depreciation_rate) || 0;
-    const lifeYears = Number(overrides?.life !== undefined ? overrides.life : form.life_of_asset) || 0;
-    const openDep = Number(overrides?.openDep !== undefined ? overrides.openDep : form.opening_accumulated_depreciation) || 0;
+  // Filtered & Paged Allocated Assets for Allocation screen
+  const filteredAllocatedAssets = useMemo(() => {
+    if (!allocSearch.trim()) return allocatedAssetsList;
+    const q = allocSearch.toLowerCase();
+    return allocatedAssetsList.filter(a =>
+      a.asset_name?.toLowerCase().includes(q) ||
+      a.asset_code?.toLowerCase().includes(q) ||
+      a.category?.toLowerCase().includes(q) ||
+      a.assigned_property_code?.toLowerCase().includes(q) ||
+      a.assigned_unit_code?.toLowerCase().includes(q) ||
+      a.assigned_employee_name?.toLowerCase().includes(q) ||
+      a.properties?.title?.toLowerCase().includes(q)
+    );
+  }, [allocatedAssetsList, allocSearch]);
 
-    let computedCurDep = 0;
-    if (method === "Straight Line (SLM)") {
-      if (rate > 0) {
-        computedCurDep = Math.round((totalVal * (rate / 100)) * 100) / 100;
-      } else if (lifeYears > 0) {
-        computedCurDep = Math.round((totalVal / lifeYears) * 100) / 100;
+  const pagedAllocatedAssets = useMemo(() => {
+    const start = (allocPage - 1) * allocPageSize;
+    return filteredAllocatedAssets.slice(start, start + allocPageSize);
+  }, [filteredAllocatedAssets, allocPage, allocPageSize]);
+
+  // Paged Allocation History
+  const pagedAllocationHistory = useMemo(() => {
+    const start = (historyPage - 1) * historyPageSize;
+    return allocations.slice(start, start + historyPageSize);
+  }, [allocations, historyPage, historyPageSize]);
+
+  // ── Warranties Filtered & Paged List ──
+  const effectiveWarranties = useMemo(() => {
+    if (assets.length === 0) return [];
+    return warranties.filter(w => assets.some(a => a.id === w.asset_id || a.asset_code === w.asset_code));
+  }, [warranties, assets]);
+
+  const filteredWarranties = useMemo(() => {
+    return effectiveWarranties.filter(w => {
+      if (warrantyFilter === "active" && w.status !== "ACTIVE" && w.status !== "EXTENDED") return false;
+      if (warrantyFilter === "expiring" && w.status !== "EXPIRING_SOON") return false;
+      if (warrantyFilter === "extended" && w.warranty_type !== "Extended Warranty" && w.warranty_type !== "Annual Maintenance Contract (AMC)") return false;
+      if (warrantyFilter === "expired" && w.status !== "EXPIRED") return false;
+
+      if (warrantySearch.trim()) {
+        const q = warrantySearch.toLowerCase();
+        return (
+          w.asset_name?.toLowerCase().includes(q) ||
+          w.asset_code?.toLowerCase().includes(q) ||
+          w.provider_name?.toLowerCase().includes(q) ||
+          w.policy_number?.toLowerCase().includes(q)
+        );
       }
-    } else if (method === "Written Down Value (WDV)") {
-      const openingBookValue = Math.max(0, totalVal - openDep);
-      if (rate > 0) {
-        computedCurDep = Math.round((openingBookValue * (rate / 100)) * 100) / 100;
-      } else if (lifeYears > 0) {
-        const impliedRate = Math.min(100, Math.round((100 / lifeYears) * 1.5 * 100) / 100);
-        computedCurDep = Math.round((openingBookValue * (impliedRate / 100)) * 100) / 100;
+      return true;
+    });
+  }, [effectiveWarranties, warrantyFilter, warrantySearch]);
+
+  const pagedWarranties = useMemo(() => {
+    const start = (warrantyPage - 1) * warrantyPageSize;
+    return filteredWarranties.slice(start, start + warrantyPageSize);
+  }, [filteredWarranties, warrantyPage, warrantyPageSize]);
+
+  // ── Warranty Metrics ──
+  const warrantyCounts = useMemo(() => {
+    let active = 0;
+    let expiringSoon = 0;
+    let expired = 0;
+    let extended = 0;
+
+    effectiveWarranties.forEach(w => {
+      if (w.status === "ACTIVE") active++;
+      if (w.status === "EXPIRING_SOON") expiringSoon++;
+      if (w.status === "EXPIRED") expired++;
+      if (w.warranty_type === "Extended Warranty" || w.warranty_type === "Annual Maintenance Contract (AMC)") extended++;
+    });
+
+    return { total: effectiveWarranties.length, active, expiringSoon, expired, extended };
+  }, [effectiveWarranties]);
+
+  // ── Status Counts ──
+  const assetCounts = useMemo(() => {
+    let available = 0;
+    let allocated = 0;
+    let maintenance = 0;
+    let disposed = 0;
+
+    assets.forEach(a => {
+      const st = getAssetStatus(a);
+      if (st.key === "available") available++;
+      else if (st.key === "allocated") allocated++;
+      else if (st.key === "maintenance") maintenance++;
+      else if (st.key === "sold" || st.key === "writeoff") disposed++;
+    });
+
+    return { total: assets.length, available, allocated, maintenance, disposed };
+  }, [assets, getAssetStatus]);
+
+  // ── Filtered Assets for Registry Table ──
+  const filteredAssets = useMemo(() => {
+    return assets.filter(a => {
+      const st = getAssetStatus(a);
+      if (activeRegistryFilter === "available" && st.key !== "available") return false;
+      if (activeRegistryFilter === "allocated" && st.key !== "allocated") return false;
+      if (activeRegistryFilter === "maintenance" && st.key !== "maintenance") return false;
+      if (activeRegistryFilter === "disposed" && st.key !== "sold" && st.key !== "writeoff") return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = a.asset_name?.toLowerCase().includes(q);
+        const matchCode = a.asset_code?.toLowerCase().includes(q);
+        const matchCat = a.category?.toLowerCase().includes(q);
+        const matchSerial = a.serial_number?.toLowerCase().includes(q);
+        const matchProp = a.assigned_property_code?.toLowerCase().includes(q) || a.properties?.title?.toLowerCase().includes(q);
+        if (!matchName && !matchCode && !matchCat && !matchSerial && !matchProp) return false;
       }
+      return true;
+    });
+  }, [assets, activeRegistryFilter, searchQuery, getAssetStatus]);
+
+  const pagedAssets = useMemo(() => {
+    const start = (registryPage - 1) * registryPageSize;
+    return filteredAssets.slice(start, start + registryPageSize);
+  }, [filteredAssets, registryPage, registryPageSize]);
+
+  // Paged lists for other submodules
+  const pagedMaintenances = useMemo(() => {
+    const start = (maintPage - 1) * maintPageSize;
+    return maintenances.slice(start, start + maintPageSize);
+  }, [maintenances, maintPage, maintPageSize]);
+
+  const pagedRevaluations = useMemo(() => {
+    const start = (revalPage - 1) * revalPageSize;
+    return revaluations.slice(start, start + revalPageSize);
+  }, [revaluations, revalPage, revalPageSize]);
+
+  const pagedSells = useMemo(() => {
+    const start = (sellPage - 1) * sellPageSize;
+    return sells.slice(start, start + sellPageSize);
+  }, [sells, sellPage, sellPageSize]);
+
+  const pagedWriteoffs = useMemo(() => {
+    const start = (writeoffPage - 1) * writeoffPageSize;
+    return writeoffs.slice(start, start + writeoffPageSize);
+  }, [writeoffs, writeoffPage, writeoffPageSize]);
+
+  // ── Asset Depreciation Computed Calculations ──
+  const assetDepreciationList = useMemo(() => {
+    return assets.map((a, idx) => {
+      const cost = Number(a.purchase_cost) || 0;
+      const purchaseYear = a.purchase_date ? new Date(a.purchase_date).getFullYear() : 2024;
+      const currentYear = new Date().getFullYear();
+      const yearsElapsed = Math.max(0, currentYear - purchaseYear);
+      const usefulYears = a.life_of_asset ? Math.max(1, Math.round(Number(a.life_of_asset) / 12)) : 5;
+      const deprMethod: "Straight Line Method (SLM)" | "Written Down Value (WDV)" = 
+        a.brand?.includes("WDV") || (idx % 3 === 0) ? "Written Down Value (WDV)" : "Straight Line Method (SLM)";
+      const ratePct = deprMethod === "Straight Line Method (SLM)" ? +(100 / usefulYears).toFixed(1) : +(150 / usefulYears).toFixed(1);
+
+      let accumulated = 0;
+      if (deprMethod === "Straight Line Method (SLM)") {
+        const annualDepr = cost / usefulYears;
+        accumulated = Math.min(cost, annualDepr * Math.min(yearsElapsed, usefulYears));
+      } else {
+        let remaining = cost;
+        for (let y = 0; y < Math.min(yearsElapsed, usefulYears); y++) {
+          const yearDepr = remaining * (ratePct / 100);
+          accumulated += yearDepr;
+          remaining -= yearDepr;
+        }
+      }
+      accumulated = Math.round(accumulated);
+      const bookValue = Math.max(0, cost - accumulated);
+
+      return {
+        id: `DEPR-${a.id}`,
+        asset_id: a.id,
+        asset_name: a.asset_name,
+        asset_code: a.asset_code || `AST-${1000 + idx}`,
+        category: a.category || "General Asset",
+        purchase_date: a.purchase_date || "2024-01-01",
+        acquisition_cost: cost,
+        depreciation_method: deprMethod,
+        useful_life_years: usefulYears,
+        depreciation_rate_pct: ratePct,
+        accumulated_depreciation: accumulated,
+        current_book_value: bookValue,
+        last_depreciation_date: `${currentYear}-01-01`,
+        fiscal_year: "2025-2026",
+      };
+    });
+  }, [assets]);
+
+  const filteredDepreciationList = useMemo(() => {
+    return assetDepreciationList.filter(item => {
+      if (deprMethodFilter === "slm" && item.depreciation_method !== "Straight Line Method (SLM)") return false;
+      if (deprMethodFilter === "wdv" && item.depreciation_method !== "Written Down Value (WDV)") return false;
+      if (deprSearch.trim()) {
+        const q = deprSearch.toLowerCase();
+        return (
+          item.asset_name?.toLowerCase().includes(q) ||
+          item.asset_code?.toLowerCase().includes(q) ||
+          item.category?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [assetDepreciationList, deprMethodFilter, deprSearch]);
+
+  const pagedDepreciationList = useMemo(() => {
+    const start = (deprPage - 1) * deprPageSize;
+    return filteredDepreciationList.slice(start, start + deprPageSize);
+  }, [filteredDepreciationList, deprPage, deprPageSize]);
+
+  const depreciationMetrics = useMemo(() => {
+    let totalCost = 0;
+    let totalAccum = 0;
+    let totalNetBook = 0;
+    assetDepreciationList.forEach(item => {
+      totalCost += item.acquisition_cost;
+      totalAccum += item.accumulated_depreciation;
+      totalNetBook += item.current_book_value;
+    });
+    return {
+      totalAssets: assetDepreciationList.length,
+      totalCost,
+      totalAccum,
+      totalNetBook,
+    };
+  }, [assetDepreciationList]);
+
+  // Open Post Depreciation Dialog for a single or global batch
+  function openDepreciationModal(targetAsset?: Asset) {
+    if (targetAsset) {
+      setSelectedAssetForDepr(targetAsset);
+      const cost = Number(targetAsset.purchase_cost) || 0;
+      const usefulYears = targetAsset.life_of_asset ? Math.max(1, Math.round(Number(targetAsset.life_of_asset) / 12)) : 5;
+      const isWdv = targetAsset.brand?.includes("WDV");
+      const deprMethod: "Straight Line Method (SLM)" | "Written Down Value (WDV)" = isWdv ? "Written Down Value (WDV)" : "Straight Line Method (SLM)";
+      const ratePct = isWdv ? (150 / usefulYears) : (100 / usefulYears);
+      const annualCharge = Math.round(cost * (ratePct / 100));
+
+      setDepreciationForm({
+        fiscal_year: "2025-2026",
+        posting_date: getTodayIST(),
+        depreciation_method: deprMethod,
+        useful_life_years: String(usefulYears),
+        depreciation_rate_pct: String(ratePct),
+        charge_amount: String(annualCharge),
+        remarks: `Annual Depreciation Charge FY 2025-26 for ${targetAsset.asset_name} (${targetAsset.asset_code || ""})`,
+      });
+    } else {
+      setSelectedAssetForDepr(null);
+      setDepreciationForm({
+        fiscal_year: "2025-2026",
+        posting_date: getTodayIST(),
+        depreciation_method: "Straight Line Method (SLM)",
+        useful_life_years: "5",
+        depreciation_rate_pct: "20",
+        charge_amount: String(Math.round(depreciationMetrics.totalCost * 0.15)),
+        remarks: "Portfolio-wide Periodic Depreciation Run for FY 2025-2026",
+      });
+    }
+    setShowDepreciationModal(true);
+  }
+
+  // Handle Post Depreciation Run to General Ledger
+  function handlePostDepreciation() {
+    const charge = Number(depreciationForm.charge_amount) || 0;
+    if (charge <= 0) {
+      toast.error("Please enter a valid depreciation charge amount.");
+      return;
     }
 
-    const closeDep = openDep + computedCurDep;
-    const nbv = Math.max(0, totalVal - closeDep);
-
-    setForm(f => ({
-      ...f,
-      purchase_cost: val !== undefined ? val : f.purchase_cost,
-      opening_cost: f.opening_cost ? f.opening_cost : (val !== undefined ? val : f.purchase_cost),
-      total_asset_value: String(totalVal),
-      current_year_depreciation: computedCurDep > 0 ? String(computedCurDep) : f.current_year_depreciation,
-      closing_accumulated_depreciation: String(closeDep),
-      net_book_value: String(nbv),
-      ...(overrides?.method !== undefined ? { depreciation_method: overrides.method } : {}),
-      ...(overrides?.rate !== undefined ? { depreciation_rate: overrides.rate } : {}),
-      ...(overrides?.life !== undefined ? { life_of_asset: overrides.life } : {}),
-      ...(overrides?.openDep !== undefined ? { opening_accumulated_depreciation: overrides.openDep } : {}),
-    }));
-  };
-
-  async function handleSaveAsset(e: React.FormEvent) {
-    e.preventDefault();
     setSaving(true);
     try {
-      let finalBarcode = form.asset_code;
-      if (form.autoBarcode || !finalBarcode) {
-        const catPrefix = (form.category || "AST").substring(0, 3).toUpperCase();
-        const namePrefix = (form.asset_name || "ITM").substring(0, 3).toUpperCase();
-        finalBarcode = `${catPrefix}-${namePrefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const jeNumber = `JE-DEPR-${Date.now().toString().slice(-6)}`;
+      addJournalEntry({
+        je_no: jeNumber,
+        posting_date: depreciationForm.posting_date || getTodayIST(),
+        reference: selectedAssetForDepr ? (selectedAssetForDepr.asset_code || selectedAssetForDepr.id) : "PORTFOLIO-BATCH",
+        narration: depreciationForm.remarks || `Depreciation Expense: ${selectedAssetForDepr ? selectedAssetForDepr.asset_name : "Portfolio Batch"} (FY ${depreciationForm.fiscal_year})`,
+        dr_account: "Depreciation Expense on Fixed Assets",
+        dr_code: "54100001",
+        cr_account: "Accumulated Depreciation - Fixed Assets",
+        cr_code: "12400001",
+        amount: charge,
+      });
+
+      toast.success(
+        selectedAssetForDepr
+          ? `Depreciation of QAR ${charge.toLocaleString()} posted to GL for ${selectedAssetForDepr.asset_name} (${jeNumber}).`
+          : `Batch depreciation of QAR ${charge.toLocaleString()} posted to GL (${jeNumber}).`
+      );
+      setShowDepreciationModal(false);
+    } catch (err: any) {
+      toast.error(`Depreciation posting failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Open Edit Asset Modal ──
+  function openEditAssetModal(a: Asset) {
+    setEditingAsset(a);
+    setEditForm({
+      // Identity
+      asset_name: a.asset_name || "",
+      category: a.category || "",
+      subcategory: a.subcategory || "",
+      brand: a.brand || "",
+      model: a.model || "",
+      serial_number: a.serial_number || "",
+      ownership_type: a.ownership_type || "",
+      asset_code: a.asset_code || "",
+      // Purchase & Warranty
+      purchase_date: a.purchase_date || "",
+      supplier: a.supplier || "",
+      purchase_cost: a.purchase_cost ? String(a.purchase_cost) : "",
+      warranty_expiry_date: a.warranty_expiry_date || "",
+      warranty_status: a.warranty_status || "",
+      // Assignment
+      department: a.department || "",
+      assigned_property_code: a.assigned_property_code || "",
+      assigned_unit_code: a.assigned_unit_code || "",
+      assigned_employee_id: a.assigned_employee_id || "",
+      assigned_employee_name: a.assigned_employee_name || "",
+      assignment_date: a.assignment_date || "",
+      // Status
+      asset_condition: a.asset_condition || "Good",
+      asset_status: a.asset_status || "",
+      // Financials
+      life_of_asset: a.life_of_asset ? String(a.life_of_asset) : "",
+      depreciation_method: a.depreciation_method || "",
+      depreciation_rate: a.depreciation_rate ? String(a.depreciation_rate) : "",
+      opening_cost: a.opening_cost ? String(a.opening_cost) : "",
+      addition_during_year: a.addition_during_year ? String(a.addition_during_year) : "",
+      total_asset_value: a.total_asset_value ? String(a.total_asset_value) : "",
+      disposal_value: a.disposal_value ? String(a.disposal_value) : "",
+      opening_accumulated_depreciation: a.opening_accumulated_depreciation ? String(a.opening_accumulated_depreciation) : "",
+      current_year_depreciation: a.current_year_depreciation ? String(a.current_year_depreciation) : "",
+      closing_accumulated_depreciation: a.closing_accumulated_depreciation ? String(a.closing_accumulated_depreciation) : "",
+      net_book_value: a.net_book_value ? String(a.net_book_value) : "",
+      // Service
+      last_service_date: a.last_service_date || "",
+      next_service_date: a.next_service_date || "",
+      return_date: a.return_date || "",
+      disposal_date: a.disposal_date || "",
+      // Remarks
+      description: a.description || "",
+      remarks: a.remarks || "",
+    });
+  }
+
+  // ── Submit Edit Asset Form ──
+  async function handleEditAssetSubmit() {
+    if (!editingAsset) return;
+    if (!editForm.asset_name.trim()) {
+      toast.error("Please enter an asset name.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const toNum = (v: string) => v ? Number(v) : undefined;
+      const payload: Partial<Asset> = {
+        // Identity
+        asset_name: editForm.asset_name.trim(),
+        category: editForm.category || undefined,
+        subcategory: editForm.subcategory || undefined,
+        brand: editForm.brand || undefined,
+        model: editForm.model || undefined,
+        serial_number: editForm.serial_number.trim() || undefined,
+        ownership_type: editForm.ownership_type || undefined,
+        asset_code: editForm.asset_code.trim() || editingAsset.asset_code,
+        // Purchase & Warranty
+        purchase_date: editForm.purchase_date || undefined,
+        supplier: editForm.supplier || undefined,
+        purchase_cost: editForm.purchase_cost ? Number(editForm.purchase_cost) : undefined,
+        warranty_expiry_date: editForm.warranty_expiry_date || undefined,
+        warranty_status: editForm.warranty_status || undefined,
+        // Assignment
+        department: editForm.department || undefined,
+        assigned_property_code: editForm.assigned_property_code || undefined,
+        assigned_unit_code: editForm.assigned_unit_code || undefined,
+        assigned_employee_id: editForm.assigned_employee_id || undefined,
+        assigned_employee_name: editForm.assigned_employee_name || undefined,
+        assignment_date: editForm.assignment_date || undefined,
+        // Status
+        asset_condition: editForm.asset_condition || "Good",
+        asset_status: editForm.asset_status || undefined,
+        // Financials
+        life_of_asset: toNum(editForm.life_of_asset),
+        depreciation_method: editForm.depreciation_method || undefined,
+        depreciation_rate: toNum(editForm.depreciation_rate),
+        opening_cost: toNum(editForm.opening_cost),
+        addition_during_year: toNum(editForm.addition_during_year),
+        total_asset_value: toNum(editForm.total_asset_value),
+        disposal_value: toNum(editForm.disposal_value),
+        opening_accumulated_depreciation: toNum(editForm.opening_accumulated_depreciation),
+        current_year_depreciation: toNum(editForm.current_year_depreciation),
+        closing_accumulated_depreciation: toNum(editForm.closing_accumulated_depreciation),
+        net_book_value: toNum(editForm.net_book_value),
+        // Service
+        last_service_date: editForm.last_service_date || undefined,
+        next_service_date: editForm.next_service_date || undefined,
+        return_date: editForm.return_date || undefined,
+        disposal_date: editForm.disposal_date || undefined,
+        // Remarks
+        description: editForm.description || undefined,
+        remarks: editForm.remarks || undefined,
+      };
+
+      await updateAsset(editingAsset.id, payload);
+      setAssets(prev => prev.map(a => a.id === editingAsset.id ? { ...a, ...payload } : a));
+      if (selectedAssetForDetail?.id === editingAsset.id) {
+        setSelectedAssetForDetail(prev => prev ? { ...prev, ...payload } : null);
+      }
+      toast.success(`Asset "${editForm.asset_name}" updated successfully.`);
+      setEditingAsset(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update asset.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Open Warranty Registration / Extension Modal ──
+  function openWarrantyModal(asset?: Asset, existingWarranty?: AssetWarrantyRecord) {
+    if (existingWarranty) {
+      setWarrantyModalMode("EXTEND");
+      setSelectedWarrantyToEdit(existingWarranty);
+      setWarrantyForm({
+        asset_id: existingWarranty.asset_id,
+        warranty_type: existingWarranty.warranty_type,
+        provider_name: existingWarranty.provider_name,
+        policy_number: existingWarranty.policy_number || "",
+        support_email: existingWarranty.support_email || "",
+        support_phone: existingWarranty.support_phone || "",
+        start_date: existingWarranty.start_date,
+        duration_months: String(existingWarranty.duration_months || 12),
+        expiry_date: existingWarranty.expiry_date,
+        coverage_scope: existingWarranty.coverage_scope || "",
+        amc_cost: String(existingWarranty.amc_cost || 0),
+        new_doc_name: "Extended Warranty Agreement",
+        new_doc_filename: "",
+        documents: existingWarranty.documents || [],
+      });
+    } else {
+      setWarrantyModalMode("NEW");
+      setSelectedWarrantyToEdit(null);
+      setWarrantyForm({
+        asset_id: asset?.id || "",
+        warranty_type: "Standard Manufacturer",
+        provider_name: asset?.supplier || "",
+        policy_number: `POL-${Date.now().toString().slice(-6)}`,
+        support_email: "support@provider.qa",
+        support_phone: "+974 4400 0000",
+        start_date: asset?.purchase_date || getTodayIST(),
+        duration_months: "12",
+        expiry_date: "",
+        coverage_scope: "Comprehensive Parts & On-site Repair SLA",
+        amc_cost: "0",
+        new_doc_name: "Warranty Certificate",
+        new_doc_filename: "",
+        documents: [
+          { id: `doc-${Date.now()}`, name: "Warranty Certificate", file_name: `Warranty_Cert_${asset?.asset_code || "AST"}.pdf`, upload_date: getTodayIST() }
+        ],
+      });
+    }
+    setShowWarrantyModal(true);
+  }
+
+  // ── Save Warranty Record (New or Extended) ──
+  function handleSaveWarranty() {
+    if (!warrantyForm.asset_id || !warrantyForm.provider_name) {
+      toast.error("Please select an asset and specify the warranty provider.");
+      return;
+    }
+    const asset = assets.find(a => a.id === warrantyForm.asset_id);
+    if (!asset) return;
+
+    const todayStr = getTodayIST();
+    const isExpired = warrantyForm.expiry_date < todayStr;
+    const daysLeft = Math.ceil((new Date(warrantyForm.expiry_date).getTime() - new Date(todayStr).getTime()) / (1000 * 3600 * 24));
+    const isExpiringSoon = !isExpired && daysLeft <= 45;
+
+    const status: AssetWarrantyRecord["status"] = isExpired ? "EXPIRED" : isExpiringSoon ? "EXPIRING_SOON" : warrantyForm.warranty_type === "Extended Warranty" ? "EXTENDED" : "ACTIVE";
+
+    const record: AssetWarrantyRecord = {
+      id: selectedWarrantyToEdit ? selectedWarrantyToEdit.id : `WAR-${asset.asset_code || Date.now().toString().slice(-6)}`,
+      asset_id: asset.id,
+      asset_name: asset.asset_name,
+      asset_code: asset.asset_code || "",
+      warranty_type: warrantyForm.warranty_type,
+      provider_name: warrantyForm.provider_name,
+      policy_number: warrantyForm.policy_number,
+      support_email: warrantyForm.support_email,
+      support_phone: warrantyForm.support_phone,
+      start_date: warrantyForm.start_date,
+      expiry_date: warrantyForm.expiry_date,
+      duration_months: Number(warrantyForm.duration_months) || 12,
+      coverage_scope: warrantyForm.coverage_scope,
+      amc_cost: Number(warrantyForm.amc_cost) || 0,
+      status,
+      documents: warrantyForm.documents,
+      created_at: selectedWarrantyToEdit ? selectedWarrantyToEdit.created_at : new Date().toISOString(),
+    };
+
+    setWarranties(prev => {
+      const idx = prev.findIndex(w => w.asset_id === asset.id || (selectedWarrantyToEdit && w.id === selectedWarrantyToEdit.id));
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = record;
+        return next;
+      }
+      return [record, ...prev];
+    });
+
+    toast.success(`Warranty terms updated for ${asset.asset_name}. Documents attached.`);
+    setShowWarrantyModal(false);
+  }
+
+  // ── Contextual Open Allocation Dialog ──
+  function openAllocationModalForAsset(asset: Asset, mode: "ALLOCATE" | "DEALLOCATE" | "TRANSFER") {
+    setAllocationMode(mode);
+    setAllocationTargetAsset(asset);
+    
+    // Check if currently assigned to Corporate Office / staff
+    const isCorpStaff = asset.assigned_property_code === "Corporate Office" || (!asset.assigned_property_id && Boolean(asset.assigned_employee_name));
+
+    setAllocationForm({
+      asset_id: asset.id,
+      allocation_type: isCorpStaff ? "OFFICIAL_STAFF" : "PROPERTY_UNIT",
+      to_property_id: mode === "TRANSFER" ? (asset.assigned_property_id || "") : "",
+      to_unit_id: mode === "TRANSFER" ? (asset.assigned_unit_code || asset.assigned_unit_id || "") : "",
+      to_employee_name: asset.assigned_employee_name || "",
+      department: isCorpStaff ? (asset.assigned_unit_code || "Administration & Executive") : "",
+      condition: "Good / Operational",
+      date: getTodayIST(),
+      remarks: mode === "DEALLOCATE" ? "Returned to central inventory" : "",
+    });
+    setShowAllocationDialog(true);
+  }
+
+  // ── Allocation Dialog Submit Handler ──
+  async function handleConfirmAllocation() {
+    if (!allocationForm.asset_id) {
+      toast.error("Please select an asset.");
+      return;
+    }
+    const asset = assets.find(a => a.id === allocationForm.asset_id);
+    if (!asset) return;
+
+    const currentStatus = getAssetStatus(asset);
+
+    if (allocationMode === "ALLOCATE") {
+      if (currentStatus.isAllocated) {
+        toast.error("This asset is already allocated. Use Transfer to relocate or Deallocate first.");
+        return;
       }
 
-      const cost = Number(form.purchase_cost) || 0;
-      const selectedProp = properties.find(p => p.id === form.assigned_property_id);
-      const selectedUnit = units.find(u => u.id === form.assigned_unit_id);
-      const selectedEmp = employees.find(emp => emp.id === form.assigned_employee_id);
+      if (allocationForm.allocation_type === "OFFICIAL_STAFF") {
+        if (!allocationForm.to_employee_name.trim()) {
+          toast.error("Please enter or select the official staff member name.");
+          return;
+        }
 
-      const payload: Partial<Asset> = {
-        asset_name: form.asset_name,
+        const corpProp = properties.find(p => 
+          p.title?.toLowerCase().includes("corporate") || 
+          p.title?.toLowerCase().includes("headquarter") || 
+          p.title?.toLowerCase().includes("hq")
+        );
+
+        const locationDetails = allocationForm.department 
+          ? `${allocationForm.department}${allocationForm.to_unit_id ? ` • ${allocationForm.to_unit_id}` : ""}`
+          : (allocationForm.to_unit_id || "HQ Office Space");
+
+        setSaving(true);
+        try {
+          await updateAsset(asset.id, {
+            assigned_property_id: corpProp?.id || undefined,
+            assigned_property_code: "Corporate Office",
+            assigned_unit_id: undefined,
+            assigned_unit_code: locationDetails,
+            assigned_employee_name: allocationForm.to_employee_name.trim(),
+            asset_status: "Assigned"
+          });
+
+          const newRec: AssetAllocationRecord = {
+            id: String(Date.now()),
+            asset_id: asset.id,
+            asset_name: asset.asset_name,
+            asset_code: asset.asset_code || "",
+            action_type: "ALLOCATION",
+            allocation_type: "OFFICIAL_STAFF",
+            from_property: "Central Storage (Available)",
+            to_property: "Corporate Office",
+            to_unit: locationDetails,
+            to_employee: allocationForm.to_employee_name.trim(),
+            department: allocationForm.department || "Corporate Office",
+            date: allocationForm.date,
+            remarks: allocationForm.remarks || `Allocated to Official Staff: ${allocationForm.to_employee_name.trim()} (${allocationForm.department || "Corporate Office"})`,
+            condition: allocationForm.condition
+          };
+          setAllocations(prev => [newRec, ...prev]);
+          toast.success(`Asset "${asset.asset_name}" allocated to ${allocationForm.to_employee_name.trim()} at Corporate Office.`);
+          setShowAllocationDialog(false);
+          setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+          await load();
+        } catch (err: any) {
+          toast.error(`Allocation failed: ${err.message}`);
+        } finally { setSaving(false); }
+
+      } else {
+        if (!allocationForm.to_property_id) {
+          toast.error("Please select a target Property for allocation.");
+          return;
+        }
+        const targetProp = properties.find(p => p.id === allocationForm.to_property_id);
+        const targetUnit = units.find(u => u.id === allocationForm.to_unit_id);
+
+        setSaving(true);
+        try {
+          await updateAsset(asset.id, {
+            assigned_property_id: targetProp?.id,
+            assigned_property_code: targetProp?.title,
+            assigned_unit_id: targetUnit?.id || undefined,
+            assigned_unit_code: targetUnit?.unit_ref || undefined,
+            assigned_employee_name: allocationForm.to_employee_name.trim() || undefined,
+            asset_status: "Assigned"
+          });
+
+          const newRec: AssetAllocationRecord = {
+            id: String(Date.now()),
+            asset_id: asset.id,
+            asset_name: asset.asset_name,
+            asset_code: asset.asset_code || "",
+            action_type: "ALLOCATION",
+            allocation_type: "PROPERTY_UNIT",
+            from_property: "Central Storage (Available)",
+            to_property: targetProp?.title || "Property",
+            to_unit: targetUnit?.unit_ref,
+            to_employee: allocationForm.to_employee_name.trim() || undefined,
+            date: allocationForm.date,
+            remarks: allocationForm.remarks || "Allocated to property/unit",
+            condition: allocationForm.condition
+          };
+          setAllocations(prev => [newRec, ...prev]);
+          toast.success(`Asset "${asset.asset_name}" allocated to ${targetProp?.title}${targetUnit ? ` (Unit ${targetUnit.unit_ref})` : ""}.`);
+          setShowAllocationDialog(false);
+          setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+          await load();
+        } catch (err: any) {
+          toast.error(`Allocation failed: ${err.message}`);
+        } finally { setSaving(false); }
+      }
+
+    } else if (allocationMode === "DEALLOCATE") {
+      setSaving(true);
+      try {
+        const fromPropName = asset.assigned_property_code || asset.properties?.title || "Allocated Site";
+        const fromUnitRef = asset.assigned_unit_code || asset.units?.unit_code;
+
+        await updateAsset(asset.id, {
+          assigned_property_id: undefined,
+          assigned_property_code: undefined,
+          assigned_unit_id: undefined,
+          assigned_unit_code: undefined,
+          assigned_employee_id: undefined,
+          assigned_employee_name: undefined,
+          asset_status: "Available"
+        });
+
+        const newRec: AssetAllocationRecord = {
+          id: String(Date.now()),
+          asset_id: asset.id,
+          asset_name: asset.asset_name,
+          asset_code: asset.asset_code || "",
+          action_type: "DEALLOCATION",
+          from_property: fromPropName,
+          from_unit: fromUnitRef,
+          from_employee: asset.assigned_employee_name,
+          to_property: "Central Storage (Available)",
+          date: allocationForm.date,
+          remarks: allocationForm.remarks || "Returned / Deallocated to inventory pool",
+          condition: allocationForm.condition
+        };
+        setAllocations(prev => [newRec, ...prev]);
+        toast.success(`Asset "${asset.asset_name}" deallocated and returned to inventory pool.`);
+        setShowAllocationDialog(false);
+        setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+        await load();
+      } catch (err: any) {
+        toast.error(`Deallocation failed: ${err.message}`);
+      } finally { setSaving(false); }
+
+    } else if (allocationMode === "TRANSFER") {
+      const fromPropName = asset.assigned_property_code || asset.properties?.title || "General Pool";
+      const fromUnitRef = asset.assigned_unit_code || asset.units?.unit_code;
+
+      if (allocationForm.allocation_type === "OFFICIAL_STAFF") {
+        if (!allocationForm.to_employee_name.trim()) {
+          toast.error("Please enter or select the official staff member.");
+          return;
+        }
+
+        const corpProp = properties.find(p => 
+          p.title?.toLowerCase().includes("corporate") || 
+          p.title?.toLowerCase().includes("headquarter") || 
+          p.title?.toLowerCase().includes("hq")
+        );
+
+        const locationDetails = allocationForm.department 
+          ? `${allocationForm.department}${allocationForm.to_unit_id ? ` • ${allocationForm.to_unit_id}` : ""}`
+          : (allocationForm.to_unit_id || "HQ Office Space");
+
+        setSaving(true);
+        try {
+          await updateAsset(asset.id, {
+            assigned_property_id: corpProp?.id || undefined,
+            assigned_property_code: "Corporate Office",
+            assigned_unit_id: undefined,
+            assigned_unit_code: locationDetails,
+            assigned_employee_name: allocationForm.to_employee_name.trim(),
+            asset_status: "Assigned"
+          });
+
+          const newRec: AssetAllocationRecord = {
+            id: String(Date.now()),
+            asset_id: asset.id,
+            asset_name: asset.asset_name,
+            asset_code: asset.asset_code || "",
+            action_type: "TRANSFER",
+            allocation_type: "OFFICIAL_STAFF",
+            from_property: fromPropName,
+            from_unit: fromUnitRef,
+            from_employee: asset.assigned_employee_name,
+            to_property: "Corporate Office",
+            to_unit: locationDetails,
+            to_employee: allocationForm.to_employee_name.trim(),
+            department: allocationForm.department || "Corporate Office",
+            date: allocationForm.date,
+            remarks: allocationForm.remarks || `Transferred to Official Staff: ${allocationForm.to_employee_name.trim()} at Corporate Office`,
+            condition: allocationForm.condition
+          };
+          setAllocations(prev => [newRec, ...prev]);
+          toast.success(`Asset "${asset.asset_name}" transferred to ${allocationForm.to_employee_name.trim()} (Corporate Office).`);
+          setShowAllocationDialog(false);
+          setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+          await load();
+        } catch (err: any) {
+          toast.error(`Transfer failed: ${err.message}`);
+        } finally { setSaving(false); }
+
+      } else {
+        if (!allocationForm.to_property_id) {
+          toast.error("Please select a target Property for transfer.");
+          return;
+        }
+        const targetProp = properties.find(p => p.id === allocationForm.to_property_id);
+        const targetUnit = units.find(u => u.id === allocationForm.to_unit_id);
+
+        setSaving(true);
+        try {
+          await updateAsset(asset.id, {
+            assigned_property_id: targetProp?.id,
+            assigned_property_code: targetProp?.title,
+            assigned_unit_id: targetUnit?.id || undefined,
+            assigned_unit_code: targetUnit?.unit_ref || undefined,
+            assigned_employee_name: allocationForm.to_employee_name.trim() || asset.assigned_employee_name,
+            asset_status: "Assigned"
+          });
+
+          const newRec: AssetAllocationRecord = {
+            id: String(Date.now()),
+            asset_id: asset.id,
+            asset_name: asset.asset_name,
+            asset_code: asset.asset_code || "",
+            action_type: "TRANSFER",
+            allocation_type: "PROPERTY_UNIT",
+            from_property: fromPropName,
+            from_unit: fromUnitRef,
+            from_employee: asset.assigned_employee_name,
+            to_property: targetProp?.title,
+            to_unit: targetUnit?.unit_ref,
+            to_employee: allocationForm.to_employee_name.trim() || asset.assigned_employee_name,
+            date: allocationForm.date,
+            remarks: allocationForm.remarks || `Transferred from ${fromPropName} to ${targetProp?.title}`,
+            condition: allocationForm.condition
+          };
+          setAllocations(prev => [newRec, ...prev]);
+          toast.success(`Asset "${asset.asset_name}" transferred to ${targetProp?.title}.`);
+          setShowAllocationDialog(false);
+          setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+          await load();
+        } catch (err: any) {
+          toast.error(`Transfer failed: ${err.message}`);
+        } finally { setSaving(false); }
+      }
+    }
+  }
+
+  // ── Asset Maintenance Handlers ──
+  async function handleCreateMaintenance() {
+    if (!maintForm.asset_id) {
+      toast.error("Please select an asset for maintenance.");
+      return;
+    }
+    const asset = assets.find(a => a.id === maintForm.asset_id);
+    if (!asset) return;
+
+    const st = getAssetStatus(asset);
+    if (st.isAllocated) {
+      toast.error(`Cannot schedule maintenance. "${asset.asset_name}" is currently allocated. Please deallocate it first.`);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const newMaint: AssetMaintenanceRecord = {
+        id: `WO-MAINT-${Date.now().toString().slice(-6)}`,
+        asset_id: asset.id,
+        asset_name: asset.asset_name,
+        asset_code: asset.asset_code || "",
+        maintenance_type: maintForm.maintenance_type,
+        priority: maintForm.priority,
+        service_vendor: maintForm.service_vendor || "In-House Facility Team",
+        technician_name: maintForm.technician_name,
+        scheduled_date: maintForm.scheduled_date,
+        estimated_cost: Number(maintForm.estimated_cost) || 0,
+        status: "SCHEDULED",
+        description: maintForm.description || "Routine preventive / corrective service work order",
+        created_at: new Date().toISOString()
+      };
+
+      setMaintenances(prev => [newMaint, ...prev]);
+      await updateAsset(asset.id, { asset_status: "Maintenance" }).catch(() => {});
+      toast.success(`Maintenance Order ${newMaint.id} created for ${asset.asset_name}.`);
+      setShowNewMaintenance(false);
+      setMaintForm({
+        asset_id: "",
+        maintenance_type: "Preventive Maintenance",
+        priority: "Medium",
+        service_vendor: "",
+        technician_name: "",
+        scheduled_date: getTodayIST(),
+        estimated_cost: "0",
+        description: "",
+      });
+      await load();
+    } catch (err: any) {
+      toast.error(`Failed to create maintenance: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleStartMaintenance(maint: AssetMaintenanceRecord) {
+    setMaintenances(prev => prev.map(m => m.id === maint.id ? { ...m, status: "IN_PROGRESS" } : m));
+    toast.success(`Work order ${maint.id} marked In-Progress.`);
+  }
+
+  async function handleCompleteMaintenance() {
+    if (!completeMaintModal) return;
+    const actualCost = Number(completeMaintForm.actual_cost) || completeMaintModal.estimated_cost;
+
+    setMaintenances(prev => prev.map(m => {
+      if (m.id === completeMaintModal.id) {
+        return {
+          ...m,
+          status: "COMPLETED",
+          actual_cost: actualCost,
+          completed_date: completeMaintForm.completed_date,
+          completion_notes: completeMaintForm.completion_notes,
+          invoice_ref: completeMaintForm.invoice_ref,
+        };
+      }
+      return m;
+    }));
+
+    await updateAsset(completeMaintModal.asset_id, { asset_status: "Available" }).catch(() => {});
+    toast.success(`Maintenance work order ${completeMaintModal.id} completed. Asset restored to Available inventory.`);
+    setCompleteMaintModal(null);
+    setCompleteMaintForm({ actual_cost: "", completed_date: getTodayIST(), completion_notes: "", invoice_ref: "" });
+    await load();
+  }
+
+  async function handleCancelMaintenance(maint: AssetMaintenanceRecord) {
+    if (!confirm(`Cancel maintenance work order ${maint.id}?`)) return;
+    setMaintenances(prev => prev.map(m => m.id === maint.id ? { ...m, status: "CANCELLED" } : m));
+    await updateAsset(maint.asset_id, { asset_status: "Available" }).catch(() => {});
+    toast.info(`Maintenance Order ${maint.id} cancelled.`);
+    await load();
+  }
+
+  // ── Multi-Step Direct Asset Creation Handler ──
+  async function handleCreateAsset() {
+    if (!form.item_name.trim()) {
+      toast.error("Please enter an Asset / Item Name.");
+      setStepperStep(1);
+      return;
+    }
+    const acqAmount = Number(form.acquisition_amount) || 0;
+    const usefulLifeMonths = (Number(form.useful_life_years) || 5) * 12;
+    const tagCode = form.asset_tag_id.trim() || `AST-${Date.now().toString().slice(-4)}`;
+
+    setSaving(true);
+    try {
+      // 1. Create the Asset record in Supabase / Local database
+      const newAsset = await createAsset({
+        asset_name: form.item_name.trim(),
         category: form.category,
-        subcategory: form.subcategory || undefined,
-        brand: form.brand || undefined,
-        model: form.model || undefined,
-        serial_number: form.serial_number || undefined,
-        ownership_type: form.ownership_type || "Owned",
-        asset_code: finalBarcode,
+        subcategory: form.subcategory.trim() || undefined,
+        brand: form.brand.trim() || undefined,
+        model: form.model.trim() || undefined,
+        asset_code: tagCode,
+        serial_number: form.serial_number.trim() || undefined,
+        ownership_type: form.ownership_type.trim() || "Company Owned",
+        department: form.department.trim() || undefined,
+        purchase_cost: acqAmount,
+        purchase_date: form.commission_date,
+        life_of_asset: usefulLifeMonths,
+        depreciation_method: form.depreciation_method,
+        depreciation_rate: form.depreciation_method === "None" ? 0 : Number(form.depreciation_rate) || 0,
+        supplier: vendors.find(v => v.id === form.vendor_id)?.name || form.warranty_provider || undefined,
         
-        purchase_date: form.purchase_date || new Date().toISOString().split("T")[0],
-        supplier: form.supplier || undefined,
-        purchase_cost: cost,
-        opening_cost: Number(form.opening_cost || form.purchase_cost) || 0,
-        addition_during_year: Number(form.addition_during_year) || 0,
-        total_asset_value: Number(form.total_asset_value || form.purchase_cost) || cost,
-        disposal_value: Number(form.disposal_value) || 0,
-        depreciation_method: form.depreciation_method || "Straight Line (SLM)",
-        depreciation_rate: Number(form.depreciation_rate) || 0,
-        opening_accumulated_depreciation: Number(form.opening_accumulated_depreciation) || 0,
-        current_year_depreciation: Number(form.current_year_depreciation) || 0,
-        closing_accumulated_depreciation: Number(form.closing_accumulated_depreciation) || 0,
-        net_book_value: Number(form.net_book_value || form.purchase_cost) || cost,
-        life_of_asset: Number(form.life_of_asset) || 5,
-
+        // Initial Allocation & Location
         assigned_property_id: form.assigned_property_id || undefined,
-        assigned_property_code: selectedProp?.property_code || selectedProp?.title || undefined,
+        assigned_property_code: form.assigned_property_code.trim() || (properties.find(p => p.id === form.assigned_property_id)?.title) || undefined,
         assigned_unit_id: form.assigned_unit_id || undefined,
-        assigned_unit_code: selectedUnit?.unit_code || selectedUnit?.unit_ref || undefined,
-        assigned_employee_id: form.assigned_employee_id || undefined,
-        assigned_employee_name: selectedEmp ? `${selectedEmp.first_name} ${selectedEmp.last_name}` : (form.assigned_employee_name || undefined),
-        assignment_date: form.assignment_date || (form.assigned_property_id || form.assigned_employee_id ? new Date().toISOString().split("T")[0] : undefined),
-        department_id: form.department || undefined,
+        assigned_unit_code: form.assigned_unit_code.trim() || (units.find(u => u.id === form.assigned_unit_id)?.unit_ref) || undefined,
+        assigned_employee_id: form.assigned_employee_id.trim() || undefined,
+        assigned_employee_name: form.assigned_employee_name.trim() || undefined,
+        assignment_date: form.assignment_date || undefined,
+        asset_condition: form.asset_condition || "New",
+        asset_status: form.assigned_property_id || form.assigned_employee_name ? "Assigned" : form.asset_status || "Available",
 
-        asset_condition: form.asset_condition || "Good",
-        asset_status: form.assigned_property_id || form.assigned_employee_id ? "Assigned" : (form.asset_status || "Available"),
-        warranty_expiry_date: form.warranty_expiry_date || undefined,
-        warranty_status: form.warranty_status || "Valid",
+        // Financial & Depreciation Balances
+        opening_cost: form.opening_cost ? Number(form.opening_cost) : acqAmount,
+        addition_during_year: form.addition_during_year ? Number(form.addition_during_year) : undefined,
+        total_asset_value: form.total_asset_value ? Number(form.total_asset_value) : acqAmount,
+        disposal_value: form.disposal_value ? Number(form.disposal_value) : undefined,
+        opening_accumulated_depreciation: form.opening_accumulated_depreciation ? Number(form.opening_accumulated_depreciation) : undefined,
+        current_year_depreciation: form.current_year_depreciation ? Number(form.current_year_depreciation) : undefined,
+        closing_accumulated_depreciation: form.closing_accumulated_depreciation ? Number(form.closing_accumulated_depreciation) : undefined,
+        net_book_value: form.net_book_value ? Number(form.net_book_value) : acqAmount,
+
+        // Lifecycle & Service Dates
         last_service_date: form.last_service_date || undefined,
         next_service_date: form.next_service_date || undefined,
         return_date: form.return_date || undefined,
         disposal_date: form.disposal_date || undefined,
-        remarks: form.remarks || undefined,
-      };
+        remarks: form.remarks.trim() || undefined,
 
-      if (editingAsset) {
-        await updateAsset(editingAsset.id, payload);
-      } else {
-        await createAsset(payload);
+        warranty_expiry_date: form.has_warranty ? (form.warranty_expiry_date || undefined) : undefined,
+        warranty_status: form.has_warranty ? (form.warranty_expiry_date < getTodayIST() ? "EXPIRED" : "ACTIVE") : "NONE",
 
-        // Auto GL entry for acquisition if cost > 0
-        if (cost > 0) {
-          addJournalEntry({
-            je_no: `JE-AST-CAP-${Date.now().toString().slice(-4)}`,
-            posting_date: form.purchase_date || new Date().toISOString().split("T")[0],
-            reference: `CAP-${finalBarcode}`,
-            narration: `Asset Capitalization: ${form.asset_name} (${form.category} / ${form.subcategory || 'General'}) for ${selectedProp?.title || 'General Master'} ${selectedUnit ? `(Unit: ${selectedUnit.unit_ref})` : ''}`,
-            dr_account: "Fixed Assets & Equipment (15000)",
-            dr_code: "15000",
-            cr_account: "Bank Operating Account (12000)",
-            cr_code: "12000",
-            amount: cost,
-          });
+        description: form.specifications.length > 0 ? form.specifications.map(s => `${s.spec_type}: ${s.spec_details}`).join(" | ") : undefined,
+      });
+
+      // 2. Post Journal Entry for Fixed Asset Capitalization if amount > 0
+      if (acqAmount > 0) {
+        addJournalEntry({
+          je_no: `JE-AST-CAP-${Date.now().toString().slice(-6)}`,
+          posting_date: form.commission_date,
+          reference: tagCode,
+          narration: `Asset Capitalization & Acquisition: ${form.item_name} (Tag: ${tagCode})`,
+          dr_account: "Fixed Asset (Capital Cost / Asset A/C)",
+          dr_code: "12300001",
+          cr_account: "Trade Payables (Vendors / Supplier A/C)",
+          cr_code: "22100001",
+          amount: acqAmount,
+        });
+      }
+
+      // 3. Register Warranty & Documents if configured
+      if (form.has_warranty && form.warranty_provider.trim()) {
+        const todayStr = getTodayIST();
+        const isExpired = form.warranty_expiry_date < todayStr;
+        const daysLeft = Math.ceil((new Date(form.warranty_expiry_date).getTime() - new Date(todayStr).getTime()) / (1000 * 3600 * 24));
+        const isExpiringSoon = !isExpired && daysLeft <= 45;
+
+        const newWar: AssetWarrantyRecord = {
+          id: `WAR-${tagCode}`,
+          asset_id: newAsset.id,
+          asset_name: form.item_name.trim(),
+          asset_code: tagCode,
+          warranty_type: form.warranty_type,
+          provider_name: form.warranty_provider.trim(),
+          policy_number: form.warranty_policy_no.trim() || `POL-${tagCode}`,
+          support_email: form.warranty_support_email.trim(),
+          support_phone: form.warranty_support_phone.trim(),
+          start_date: form.warranty_start_date,
+          expiry_date: form.warranty_expiry_date || form.warranty_start_date,
+          duration_months: Number(form.warranty_duration_months) || 12,
+          coverage_scope: form.warranty_coverage,
+          amc_cost: Number(form.amc_fee) || 0,
+          status: isExpired ? "EXPIRED" : isExpiringSoon ? "EXPIRING_SOON" : form.warranty_type === "Extended Warranty" ? "EXTENDED" : "ACTIVE",
+          documents: form.documents,
+          created_at: new Date().toISOString(),
+        };
+        setWarranties(prev => [newWar, ...prev]);
+      }
+
+      toast.success(`Asset "${form.item_name}" registered successfully with Tag ${tagCode}.`);
+      setShowNew(false);
+      // Reset form
+      setForm({
+        asset_type: "Fixed Asset",
+        category: "Furniture",
+        subcategory: "",
+        item_name: "",
+        brand: "",
+        model: "",
+        ownership_type: "Company Owned",
+        department: "",
+        commission_date: getTodayIST(),
+        put_to_use_date: getTodayIST(),
+        asset_tag_id: "",
+        serial_number: "",
+        acquisition_amount: "",
+        vendor_id: "",
+        useful_life_years: "5",
+        depreciation_rate: "20",
+        depreciation_method: "Straight Line Method (SLM)",
+
+        assigned_property_id: "",
+        assigned_property_code: "",
+        assigned_unit_id: "",
+        assigned_unit_code: "",
+        assigned_employee_id: "",
+        assigned_employee_name: "",
+        assignment_date: "",
+        asset_condition: "New",
+        asset_status: "Available",
+
+        opening_cost: "",
+        addition_during_year: "",
+        total_asset_value: "",
+        disposal_value: "",
+        opening_accumulated_depreciation: "",
+        current_year_depreciation: "",
+        closing_accumulated_depreciation: "",
+        net_book_value: "",
+
+        last_service_date: "",
+        next_service_date: "",
+        return_date: "",
+        disposal_date: "",
+        remarks: "",
+
+        account_rows: [
+          { id: "1", account_code: "12300001", account_name: "12300001 - Fixed Asset (Capital Cost / Asset A/C)", debit: "", credit: "" },
+          { id: "2", account_code: "22100001", account_name: "22100001 - Trade Payables (Vendors / Supplier A/C)", debit: "", credit: "" }
+        ],
+        has_warranty: true,
+        warranty_type: "Standard Manufacturer",
+        warranty_provider: "",
+        warranty_policy_no: "",
+        warranty_start_date: getTodayIST(),
+        warranty_duration_months: "12",
+        warranty_expiry_date: "",
+        warranty_support_email: "",
+        warranty_support_phone: "",
+        warranty_coverage: "Standard 1-Year Comprehensive Manufacturer Warranty (Parts & Labor)",
+        amc_fee: "0",
+        documents: [],
+        doc_input_name: "Purchase Invoice",
+        doc_input_file: "",
+        specifications: [],
+        spec_type_input: "",
+        spec_details_input: "",
+      });
+      setStepperStep(1);
+      await load();
+    } catch (err: any) {
+      toast.error(`Failed to create asset: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const downloadAssetCsvTemplate = () => {
+    const headers = ["AssetName", "Category", "AssetTag", "SerialNumber", "AcquisitionCost", "PurchaseDate", "UsefulLifeYears", "DepreciationMethod", "Supplier", "AssetCondition", "Description"];
+    const rows = [
+      ["Carrier 2.5 Ton Split AC", "HVAC", "AST-HVAC-001", "CR-8829102", "3800", "2026-01-15", "7", "Straight Line Method (SLM)", "Mannai Trading", "Brand New", "Master Bedroom High-Wall AC"],
+      ["LG Double-Door Refrigerator 600L", "Appliances", "AST-APP-002", "LG-RF-7721", "4500", "2026-02-01", "5", "Straight Line Method (SLM)", "LG Electronics Qatar", "Good", "Kitchen Main Refrigerator"]
+    ];
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `asset_import_template_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Asset CSV template downloaded");
+  };
+
+  const handleBulkAssetImport = async () => {
+    if (!bulkAssetData.trim()) {
+      toast.error("Please provide CSV content to import");
+      return;
+    }
+    setBulkAssetLoading(true);
+    try {
+      const lines = bulkAssetData.trim().split("\n").filter(l => l.trim().length > 0);
+      if (lines.length <= 1) {
+        toast.error("CSV contains no data rows");
+        setBulkAssetLoading(false);
+        return;
+      }
+      const dataRows = lines.slice(1);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const line of dataRows) {
+        const parts = line.split(",").map(p => p.trim());
+        if (!parts[0] || !parts[4]) {
+          failCount++;
+          continue;
+        }
+        const [
+          assetName, category, assetTag, serialNumber,
+          acquisitionCost, purchaseDate, usefulLife, depMethod,
+          supplier, condition, desc
+        ] = parts;
+
+        const code = assetTag || `AST-${String(assets.length + successCount + 1).padStart(4, "0")}`;
+        const costNum = parseFloat(acquisitionCost) || 0;
+
+        const payload: any = {
+          asset_name: assetName,
+          category: category || "Furniture",
+          asset_code: code,
+          serial_number: serialNumber || "",
+          purchase_cost: costNum,
+          purchase_date: purchaseDate || getTodayIST(),
+          commission_date: purchaseDate || getTodayIST(),
+          life_of_asset: usefulLife ? String(Number(usefulLife) * 12) : "60",
+          brand: depMethod || "Straight Line Method (SLM)",
+          supplier: supplier || "",
+          asset_condition: condition || "Good",
+          description: desc || "",
+          asset_status: "Available",
+          current_value: costNum,
+          created_at: new Date().toISOString()
+        };
+
+        const res = await createAsset(payload);
+        if (res) {
+          successCount++;
+        } else {
+          failCount++;
         }
       }
 
-      setShowNew(false);
-      setEditingAsset(null);
-      setForm(initialFormState);
+      toast.success(`Bulk Asset Ingestion Complete: ${successCount} created, ${failCount} failed.`);
+      setBulkAssetOpen(false);
+      setBulkAssetData("");
       await load();
-    } catch (e: any) { 
-      console.error(e.message);
-      alert(`Failed to save asset: ${e.message}`);
-    } finally { 
-      setSaving(false); 
+    } catch (err: any) {
+      toast.error("Bulk asset import failed: " + err.message);
+    } finally {
+      setBulkAssetLoading(false);
     }
-  }
-
-  const openEditAssetModal = (asset: Asset) => {
-    setEditingAsset(asset);
-    setForm({
-      asset_name: asset.asset_name || "",
-      category: asset.category || "Furniture",
-      subcategory: asset.subcategory || "",
-      brand: asset.brand || "",
-      model: asset.model || "",
-      serial_number: asset.serial_number || "",
-      ownership_type: asset.ownership_type || "Owned",
-      asset_code: asset.asset_code || "",
-      autoBarcode: false,
-
-      purchase_date: asset.purchase_date || "",
-      supplier: asset.supplier || "",
-      purchase_cost: asset.purchase_cost != null ? String(asset.purchase_cost) : "",
-      opening_cost: asset.opening_cost != null ? String(asset.opening_cost) : "",
-      addition_during_year: asset.addition_during_year != null ? String(asset.addition_during_year) : "",
-      total_asset_value: asset.total_asset_value != null ? String(asset.total_asset_value) : "",
-      disposal_value: asset.disposal_value != null ? String(asset.disposal_value) : "",
-      depreciation_method: asset.depreciation_method || "Straight Line (SLM)",
-      depreciation_rate: asset.depreciation_rate != null ? String(asset.depreciation_rate) : "20",
-      opening_accumulated_depreciation: asset.opening_accumulated_depreciation != null ? String(asset.opening_accumulated_depreciation) : "",
-      current_year_depreciation: asset.current_year_depreciation != null ? String(asset.current_year_depreciation) : "",
-      closing_accumulated_depreciation: asset.closing_accumulated_depreciation != null ? String(asset.closing_accumulated_depreciation) : "",
-      net_book_value: asset.net_book_value != null ? String(asset.net_book_value) : "",
-      life_of_asset: asset.life_of_asset != null ? String(asset.life_of_asset) : "5",
-
-      assigned_property_id: asset.assigned_property_id || "",
-      assigned_unit_id: asset.assigned_unit_id || "",
-      assigned_employee_id: asset.assigned_employee_id || "",
-      assigned_employee_name: asset.assigned_employee_name || "",
-      assignment_date: asset.assignment_date || "",
-      department: asset.department_id || "",
-
-      asset_condition: asset.asset_condition || "Good",
-      asset_status: asset.asset_status || "Available",
-      warranty_expiry_date: asset.warranty_expiry_date || "",
-      warranty_status: asset.warranty_status || "Valid",
-      last_service_date: asset.last_service_date || "",
-      next_service_date: asset.next_service_date || "",
-      return_date: asset.return_date || "",
-      disposal_date: asset.disposal_date || "",
-      remarks: asset.remarks || "",
-    });
-    setActiveFormStep("general");
-    setShowNew(true);
   };
 
-  async function handleStatusChange(id: string, status: string) {
-    await updateAsset(id, { asset_status: status });
-    await load();
-  }
+  // ── Asset Revaluation Handler ──
+  async function handleCreateRevaluation() {
+    if (!revalForm.asset_id || !revalForm.new_value) {
+      toast.error("Please select an asset and enter the new fair value.");
+      return;
+    }
+    const asset = assets.find(a => a.id === revalForm.asset_id);
+    if (!asset) return;
 
-  const handleExport = () => alert("Export functionality would generate a CSV of assets with all 34 fields.");
-  const handleImport = () => alert("Import functionality would open a dialog to upload an Excel file and sync data.");
-
-  const filtered = activeTab === "all" ? assets : assets.filter(a => a.asset_status?.toLowerCase() === activeTab);
-  const selectedPropertyUnits = form.assigned_property_id ? units.filter(u => u.property_id === form.assigned_property_id) : [];
-
-  async function saveProperty() {
-    if (!propertyForm.title.trim()) return alert("Property title is required.");
-    const validAmenities = (propertyForm.amenities || []).map(a => a.trim()).filter(Boolean);
-    const otherAmenitiesList = propertyForm.other_amenities ? propertyForm.other_amenities.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const totalAmenities = [...validAmenities, ...otherAmenitiesList];
-
-    if (totalAmenities.length === 0) {
-      return alert("At least one Amenity / Facility is mandatory for the property.");
+    const st = getAssetStatus(asset);
+    if (st.isAllocated) {
+      toast.error(`Cannot revalue "${asset.asset_name}" while allocated. Please deallocate it first.`);
+      return;
     }
 
+    const prevVal = Number(revalForm.prev_value) || Number(asset.purchase_cost) || 0;
+    const newVal = Number(revalForm.new_value) || 0;
+    const diff = newVal - prevVal;
+
+    setSaving(true);
     try {
-      let saved: Property;
-      if (propertyDialogMode === "edit" && form.assigned_property_id) {
-        saved = await updateProperty(form.assigned_property_id, {
-          ...propertyForm,
-          max_guests: Number(propertyForm.max_guests) || 1,
-          bedrooms: Number(propertyForm.bedrooms) || 1,
-          beds: Number(propertyForm.beds) || 1,
-          bathrooms: Number(propertyForm.bathrooms) || 1,
-          base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
-          cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
-          no_of_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
-          total_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
-          amenities: totalAmenities,
-          municipality_details: {
-            facility_amenities: validAmenities,
-            other_amenities_facilities: propertyForm.other_amenities || undefined,
-          },
+      const rec: AssetRevaluationRecord = {
+        id: `REV-${Date.now().toString().slice(-6)}`,
+        asset_id: asset.id,
+        asset_name: asset.asset_name,
+        asset_code: asset.asset_code || "",
+        prev_value: prevVal,
+        new_value: newVal,
+        reason: revalForm.reason || "Annual Fair Value Revaluation Assessment",
+        date: revalForm.date || getTodayIST(),
+      };
+
+      setRevaluations(prev => [rec, ...prev]);
+      await updateAsset(asset.id, { purchase_cost: newVal }).catch(() => {});
+
+      // Post Revaluation Journal Entry (Surplus or Impairment)
+      if (diff > 0) {
+        addJournalEntry({
+          je_no: `JE-REVAL-UP-${Date.now().toString().slice(-6)}`,
+          posting_date: revalForm.date,
+          reference: rec.id,
+          narration: `Asset Revaluation Surplus: ${asset.asset_name} (Tag: ${asset.asset_code})`,
+          dr_account: "Fixed Asset (Capital Cost / Asset A/C)",
+          dr_code: "12300001",
+          cr_account: "Revaluation Reserve / Surplus A/C",
+          cr_code: "31000001",
+          amount: diff,
         });
-        setProperties((items) => items.map((item) => (item.id === saved.id ? saved : item)));
-      } else {
-        saved = await createProperty({
-          title: propertyForm.title,
-          description: propertyForm.address || null,
-          property_type: propertyForm.property_type,
-          address: propertyForm.address,
-          city: propertyForm.city,
-          state: "",
-          zip_code: "",
-          country: propertyForm.country,
-          max_guests: Number(propertyForm.max_guests) || 1,
-          bedrooms: Number(propertyForm.bedrooms) || 1,
-          beds: Number(propertyForm.beds) || 1,
-          bathrooms: Number(propertyForm.bathrooms) || 1,
-          base_price_per_night: Number(propertyForm.base_price_per_night) || 0,
-          cleaning_fee: Number(propertyForm.cleaning_fee) || 0,
-          no_of_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
-          total_units: propertyForm.no_of_units ? Number(propertyForm.no_of_units) : undefined,
-          is_active: true,
-          room_details: {},
-          amenities: totalAmenities,
-          municipality_details: {
-            facility_amenities: validAmenities,
-            other_amenities_facilities: propertyForm.other_amenities || undefined,
-          },
-        } as any);
-        setProperties((items) => [saved, ...items]);
+      } else if (diff < 0) {
+        addJournalEntry({
+          je_no: `JE-REVAL-DOWN-${Date.now().toString().slice(-6)}`,
+          posting_date: revalForm.date,
+          reference: rec.id,
+          narration: `Asset Impairment Loss: ${asset.asset_name} (Tag: ${asset.asset_code})`,
+          dr_account: "Impairment Loss on Fixed Assets",
+          dr_code: "54200001",
+          cr_account: "Fixed Asset (Capital Cost / Asset A/C)",
+          cr_code: "12300001",
+          amount: Math.abs(diff),
+        });
       }
-      setForm((f) => ({ ...f, assigned_property_id: saved.id, assigned_unit_id: "" }));
-      setPropertyDialogOpen(false);
-      setPropertyForm({ 
-        title: "", 
-        address: "", 
-        city: "", 
-        country: "Qatar", 
-        property_type: "apartment", 
-        max_guests: "1", 
-        bedrooms: "1", 
-        beds: "1", 
-        bathrooms: "1", 
-        base_price_per_night: "0", 
-        cleaning_fee: "0", 
-        no_of_units: "",
-        amenities: [""],
-        other_amenities: ""
+
+      toast.success(`Revaluation recorded for ${asset.asset_name}. Book value adjusted to QAR ${newVal.toLocaleString()}.`);
+      setShowRevaluation(false);
+      setRevalForm({ asset_id: "", prev_value: "", new_value: "", reason: "", date: getTodayIST() });
+      await load();
+    } catch (err: any) {
+      toast.error(`Revaluation failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Asset Sale Handler ──
+  async function handleCreateSell() {
+    if (!sellForm.asset_id || !sellForm.sale_value || !sellForm.buyer.trim()) {
+      toast.error("Please select an asset, specify sale price, and enter the buyer name.");
+      return;
+    }
+    const asset = assets.find(a => a.id === sellForm.asset_id);
+    if (!asset) return;
+
+    const st = getAssetStatus(asset);
+    if (st.isAllocated) {
+      toast.error(`Cannot sell "${asset.asset_name}" while allocated. Please deallocate it first.`);
+      return;
+    }
+
+    const bookVal = Number(sellForm.book_value) || Number(asset.purchase_cost) || 0;
+    const saleVal = Number(sellForm.sale_value) || 0;
+    const gainLoss = saleVal - bookVal;
+
+    setSaving(true);
+    try {
+      const rec: AssetSaleRecord = {
+        id: `SALE-${Date.now().toString().slice(-6)}`,
+        asset_id: asset.id,
+        asset_name: asset.asset_name,
+        asset_code: asset.asset_code || "",
+        book_value: bookVal,
+        sale_value: saleVal,
+        buyer: sellForm.buyer.trim(),
+        date: sellForm.date || getTodayIST(),
+        remarks: sellForm.remarks || `Disposed via sale to ${sellForm.buyer.trim()}`,
+      };
+
+      setSells(prev => [rec, ...prev]);
+      await updateAsset(asset.id, { asset_status: "Sold / Discarded" }).catch(() => {});
+
+      // 1. Post Receipt Voucher for Cash/Bank received
+      addVoucher({
+        voucher_no: `RV-SALE-${Date.now().toString().slice(-6)}`,
+        voucher_type: "Receipt Voucher",
+        date: sellForm.date || getTodayIST(),
+        name: `Asset Disposal Proceeds — ${asset.asset_name} (${rec.buyer})`,
+        debit: "Bank Operating Account (QNB/CBQ)",
+        debit_code: "12000001",
+        credit: "Sundry Asset Disposal Clearing",
+        credit_code: "12399999",
+        amount: saleVal,
+        method: "Bank Transfer",
       });
-      await load();
-    } catch (err: any) {
-      console.error(err);
-      alert(`Failed to save property: ${err.message}`);
-    }
-  }
 
-  async function saveUnit() {
-    if (!unitForm.property_id) return alert("Please select a property for the unit.");
-    if (!unitForm.unit_ref.trim()) return alert("Unit reference is required.");
-    try {
-      let saved: Unit;
-      if (unitDialogMode === "edit" && form.assigned_unit_id) {
-        saved = await updateUnit(form.assigned_unit_id, {
-          ...unitForm,
-          price: Number(unitForm.price) || 0,
+      // 2. Post General Ledger Derecognition Journal Entry
+      addJournalEntry({
+        je_no: `JE-AST-SALE-${Date.now().toString().slice(-6)}`,
+        posting_date: sellForm.date || getTodayIST(),
+        reference: rec.id,
+        narration: `Asset Sale Derecognition: ${asset.asset_name} (Buyer: ${rec.buyer}, Tag: ${asset.asset_code})`,
+        dr_account: "Sundry Asset Disposal Clearing",
+        dr_code: "12399999",
+        cr_account: "Fixed Asset (Capital Cost / Asset A/C)",
+        cr_code: "12300001",
+        amount: bookVal,
+      });
+
+      // 3. Post Gain or Loss on Disposal if any difference
+      if (gainLoss > 0) {
+        addJournalEntry({
+          je_no: `JE-GAIN-DISP-${Date.now().toString().slice(-6)}`,
+          posting_date: sellForm.date || getTodayIST(),
+          reference: rec.id,
+          narration: `Gain on Disposal of Fixed Asset: ${asset.asset_name}`,
+          dr_account: "Sundry Asset Disposal Clearing",
+          dr_code: "12399999",
+          cr_account: "Gain on Sale of Fixed Assets",
+          cr_code: "43200001",
+          amount: gainLoss,
         });
-        setUnits((items) => items.map((item) => (item.id === saved.id ? saved : item)));
-      } else {
-        saved = await createUnit({
-          property_id: unitForm.property_id,
-          unit_ref: unitForm.unit_ref,
-          room_type: unitForm.room_type,
-          status: unitForm.status,
-          price: Number(unitForm.price) || 0,
+      } else if (gainLoss < 0) {
+        addJournalEntry({
+          je_no: `JE-LOSS-DISP-${Date.now().toString().slice(-6)}`,
+          posting_date: sellForm.date || getTodayIST(),
+          reference: rec.id,
+          narration: `Loss on Disposal of Fixed Asset: ${asset.asset_name}`,
+          dr_account: "Loss on Sale of Fixed Assets",
+          dr_code: "54200001",
+          cr_account: "Sundry Asset Disposal Clearing",
+          cr_code: "12399999",
+          amount: Math.abs(gainLoss),
         });
-        setUnits((items) => [saved, ...items]);
       }
-      setForm((f) => ({ ...f, assigned_unit_id: saved.id, assigned_property_id: saved.property_id }));
-      setUnitDialogOpen(false);
-      setUnitForm({ property_id: form.assigned_property_id || "", unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
+
+      toast.success(`Asset "${asset.asset_name}" marked as Sold. GL Derecognition & Receipt Voucher posted.`);
+      setShowSell(false);
+      setSellForm({ asset_id: "", book_value: "", sale_value: "", buyer: "", date: getTodayIST(), remarks: "" });
       await load();
     } catch (err: any) {
-      console.error(err);
-      alert(`Failed to save unit: ${err.message}`);
+      toast.error(`Sale recording failed: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
-  const searched = searchQuery ? filtered.filter(a => 
-    a.asset_code?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    a.asset_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.subcategory?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.serial_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.assigned_property_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.assigned_unit_code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.assigned_employee_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.properties?.title?.toLowerCase().includes(searchQuery.toLowerCase())
-  ) : filtered;
+  // ── Asset Write-off Handler ──
+  async function handleCreateWriteoff() {
+    if (!writeoffForm.asset_id || !writeoffForm.writeoff_reason.trim()) {
+      toast.error("Please select an asset and state the write-off reason.");
+      return;
+    }
+    const asset = assets.find(a => a.id === writeoffForm.asset_id);
+    if (!asset) return;
+
+    const st = getAssetStatus(asset);
+    if (st.isAllocated) {
+      toast.error(`Cannot write off "${asset.asset_name}" while allocated. Please deallocate it first.`);
+      return;
+    }
+
+    const bookVal = Number(writeoffForm.book_value) || Number(asset.purchase_cost) || 0;
+
+    setSaving(true);
+    try {
+      const rec: AssetWriteoffRecord = {
+        id: `WROFF-${Date.now().toString().slice(-6)}`,
+        asset_id: asset.id,
+        asset_name: asset.asset_name,
+        asset_code: asset.asset_code || "",
+        book_value: bookVal,
+        writeoff_reason: writeoffForm.writeoff_reason.trim(),
+        date: writeoffForm.date || getTodayIST(),
+        approved_by: writeoffForm.approved_by.trim() || "Management Committee",
+      };
+
+      setWriteoffs(prev => [rec, ...prev]);
+      await updateAsset(asset.id, { asset_status: "Written Off" }).catch(() => {});
+
+      // Post Journal Entry to record loss on write-off and derecognize fixed asset
+      if (bookVal > 0) {
+        addJournalEntry({
+          je_no: `JE-AST-WROFF-${Date.now().toString().slice(-6)}`,
+          posting_date: writeoffForm.date || getTodayIST(),
+          reference: rec.id,
+          narration: `Asset Derecognition & Write-Off: ${asset.asset_name} (Reason: ${rec.writeoff_reason}, Tag: ${asset.asset_code})`,
+          dr_account: "Loss on Asset Write-off & Scrapping",
+          dr_code: "54200001",
+          cr_account: "Fixed Asset (Capital Cost / Asset A/C)",
+          cr_code: "12300001",
+          amount: bookVal,
+        });
+      }
+
+      toast.success(`Asset "${asset.asset_name}" written off. Loss recognized in General Ledger.`);
+      setShowWriteoff(false);
+      setWriteoffForm({ asset_id: "", book_value: "", writeoff_reason: "", date: getTodayIST(), approved_by: "" });
+      await load();
+    } catch (err: any) {
+      toast.error(`Write-off failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Asset History Lookup for Details Modal ──
+  const assetDetailHistory = useMemo(() => {
+    if (!selectedAssetForDetail) return null;
+    const aid = selectedAssetForDetail.id;
+    return {
+      allocations: allocations.filter(a => a.asset_id === aid),
+      maintenances: maintenances.filter(m => m.asset_id === aid),
+      revaluations: revaluations.filter(r => r.asset_id === aid),
+      warranty: warranties.find(w => w.asset_id === aid) || null,
+      sale: sells.find(s => s.asset_id === aid) || null,
+      writeoff: writeoffs.find(w => w.asset_id === aid) || null,
+    };
+  }, [selectedAssetForDetail, allocations, maintenances, revaluations, warranties, sells, writeoffs]);
+
+  const pageHeaderInfo = useMemo(() => {
+    switch (moduleTab) {
+      case "depreciation":
+        return {
+          title: "Asset Depreciation & Book Valuation",
+          desc: "Calculate and monitor depreciation schedules (SLM & WDV), accumulated depreciation, and post journal entries to GL.",
+          badge: `${depreciationMetrics.totalAssets} Active Assets`,
+        };
+      case "allocation":
+        return {
+          title: "Asset Allocation & Movement",
+          desc: "Manage asset deployments across properties, units, and custodians, with full audit trail.",
+          badge: `${assetCounts.allocated} Active Deployments`,
+        };
+      case "warranty":
+        return {
+          title: "Asset Warranty & AMC Contracts",
+          desc: "Track manufacturer warranties, extended coverage, SLA agreements, and attached contract documents.",
+          badge: `${warrantyCounts.total} Tracked Policies`,
+        };
+      case "maintenance":
+        return {
+          title: "Asset Maintenance & Work Orders",
+          desc: "Schedule and manage preventive servicing, repairs, and calibration for unallocated assets.",
+          badge: `${assetCounts.maintenance} In Service`,
+        };
+      case "revaluation":
+        return {
+          title: "Asset Revaluation",
+          desc: "Record fair value adjustments, revaluation surpluses, and asset impairment logs.",
+          badge: `${revaluations.length} Records`,
+        };
+      case "sell":
+        return {
+          title: "Asset Sale & Derecognition",
+          desc: "Record asset disposals to buyers with automatic General Ledger derecognition & receipt voucher posting.",
+          badge: `${sells.length} Disposed`,
+        };
+      case "writeoff":
+        return {
+          title: "Asset Write-off & Disposal",
+          desc: "Retire damaged or obsolete assets with automated write-off loss postings to General Ledger.",
+          badge: `${writeoffs.length} Written Off`,
+        };
+      default:
+        return {
+          title: "Asset Registry",
+          desc: "Master register of all fixed assets, serials, tag barcodes, valuations, and lifecycle states.",
+          badge: `${assetCounts.total} Total Tracked`,
+        };
+    }
+  }, [moduleTab, assetCounts, warrantyCounts.total, revaluations.length, sells.length, writeoffs.length, depreciationMetrics.totalAssets]);
 
   return (
     <div className="space-y-6">
+      {/* ── Top Header Bar ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Assets & Inventory</h2>
-          <p className="text-muted-foreground mt-1">Manage fixed assets, subcategories, valuations, depreciations, and assignments.</p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold tracking-tight">{pageHeaderInfo.title}</h2>
+            <Badge variant="outline" className="text-xs font-mono bg-amber-500/10 text-amber-600 border-amber-500/30">
+              {pageHeaderInfo.badge}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {pageHeaderInfo.desc}
+          </p>
         </div>
-        <div className="flex gap-2">
-          {role === 'admin' && (
-             <>
-              <Button variant="outline" onClick={handleExport} className="gap-2">
-                <FileDown className="h-4 w-4" /> Export
+        <div className="flex gap-2 flex-wrap items-center">
+          <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-1.5 text-xs">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+
+          {moduleTab === "registry" && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setBulkAssetOpen(true)} className="gap-1.5 text-xs">
+                <FileSpreadsheet className="h-3.5 w-3.5 text-primary" /> Bulk Import
               </Button>
-              <Button variant="outline" onClick={handleImport} className="gap-2">
-                <FileUp className="h-4 w-4" /> Import
+              <Button size="sm" onClick={() => { setStepperStep(1); setShowNew(true); }} className="gap-1.5 text-xs bg-primary hover:bg-primary/90 text-white shadow-sm">
+                <Plus className="h-3.5 w-3.5" /> Add Asset
               </Button>
             </>
           )}
-          <Button onClick={() => {
-            setEditingAsset(null);
-            setForm(initialFormState);
-            setActiveFormStep("general");
-            setShowNew(true);
-          }} className="gap-2">
-            <Plus className="h-4 w-4" /> Add Asset
-          </Button>
+
+          {moduleTab === "depreciation" && (
+            <Button size="sm" onClick={() => openDepreciationModal()} className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> Run Depreciation Batch
+            </Button>
+          )}
+
+          {moduleTab === "warranty" && (
+            <Button size="sm" onClick={() => openWarrantyModal()} className="gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> Register / Extend Warranty
+            </Button>
+          )}
+
+          {moduleTab === "maintenance" && (
+            <Button size="sm" onClick={() => {
+              setMaintForm({ asset_id: "", maintenance_type: "Preventive Maintenance", priority: "Medium", service_vendor: "", technician_name: "", scheduled_date: getTodayIST(), estimated_cost: "0", description: "" });
+              setShowNewMaintenance(true);
+            }} className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> New Maintenance Order
+            </Button>
+          )}
+
+          {moduleTab === "revaluation" && (
+            <Button size="sm" onClick={() => setShowRevaluation(true)} className="gap-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> New Revaluation
+            </Button>
+          )}
+
+          {moduleTab === "sell" && (
+            <Button size="sm" onClick={() => setShowSell(true)} className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> Record Asset Sale
+            </Button>
+          )}
+
+          {moduleTab === "writeoff" && (
+            <Button size="sm" onClick={() => setShowWriteoff(true)} className="gap-1.5 text-xs bg-red-600 hover:bg-red-700 text-white shadow-sm">
+              <Plus className="h-3.5 w-3.5" /> New Write-off
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Assets</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{assets.length}</div>
-            <p className="text-xs text-muted-foreground">Tracked in system</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Available</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{assets.filter(a => a.asset_status === 'Available').length}</div>
-            <p className="text-xs text-muted-foreground">Ready for assignment</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Assigned</CardTitle>
-            <Building2 className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{assets.filter(a => a.asset_status === 'Assigned' || a.assigned_property_id || a.assigned_employee_id).length}</div>
-            <p className="text-xs text-muted-foreground">In active deployment</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">In Maintenance</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{assets.filter(a => a.asset_status === 'Maintenance' || a.asset_status === 'Under Maintenance').length}</div>
-            <p className="text-xs text-muted-foreground">Currently unavailable</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 1: ASSET REGISTRY ───────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "registry" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Total Assets</CardTitle>
+                <Package className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-foreground font-mono">{assetCounts.total}</div>
+                <p className="text-[10px] text-muted-foreground">Total tracked in registry</p>
+              </CardContent>
+            </Card>
 
-      <Card className="border-border overflow-hidden">
-        <Tabs defaultValue="all" onValueChange={setActiveTab} className="w-full">
-          <CardHeader className="border-b bg-muted/20 pb-4">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-              <TabsList>
-                <TabsTrigger value="all">All Assets</TabsTrigger>
-                <TabsTrigger value="available">Available</TabsTrigger>
-                <TabsTrigger value="assigned">Assigned</TabsTrigger>
-                <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-              </TabsList>
-              <Input
-                placeholder="Search by code, name, category, subcategory, property..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="max-w-xs"
-              />
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Available (In Stock)</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">{assetCounts.available}</div>
+                <p className="text-[10px] text-muted-foreground">Ready for allocation / service</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Allocated</CardTitle>
+                <Building2 className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-blue-600 font-mono">{assetCounts.allocated}</div>
+                <p className="text-[10px] text-muted-foreground">Deployed to properties &amp; units</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">In Maintenance</CardTitle>
+                <Wrench className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-amber-600 font-mono">{assetCounts.maintenance}</div>
+                <p className="text-[10px] text-muted-foreground">Under active repair or service</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <Tabs defaultValue="all" value={activeRegistryFilter} onValueChange={v => { setActiveRegistryFilter(v); setRegistryPage(1); }}>
+              <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-b">
+                <TabsList className="grid grid-cols-5 h-9 w-full md:w-auto">
+                  <TabsTrigger value="all" className="text-xs">All Assets ({assetCounts.total})</TabsTrigger>
+                  <TabsTrigger value="available" className="text-xs">Available ({assetCounts.available})</TabsTrigger>
+                  <TabsTrigger value="allocated" className="text-xs">Allocated ({assetCounts.allocated})</TabsTrigger>
+                  <TabsTrigger value="maintenance" className="text-xs">Maintenance ({assetCounts.maintenance})</TabsTrigger>
+                  <TabsTrigger value="disposed" className="text-xs">Disposed / Written Off ({assetCounts.disposed})</TabsTrigger>
+                </TabsList>
+
+                <div className="relative w-full md:w-80">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by code, name, category, serial, property..."
+                    className="pl-8 h-9 text-xs"
+                    value={searchQuery}
+                    onChange={e => { setSearchQuery(e.target.value); setRegistryPage(1); }}
+                  />
+                </div>
+              </div>
+
+              <CardContent className="p-0">
+                {loading ? (
+                  <div className="flex justify-center items-center py-20 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading asset register...
+                  </div>
+                ) : filteredAssets.length === 0 ? (
+                  <div className="text-center py-14 text-muted-foreground">
+                    <Package className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No assets found</p>
+                    <p className="text-xs text-muted-foreground mt-1">Try clearing filters or adding new assets.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b bg-muted/40 font-bold">
+                            <th className="h-9 px-3 text-left">Asset Name &amp; Code</th>
+                            <th className="h-9 px-2.5 text-left">Category</th>
+                            <th className="h-9 px-2.5 text-left">Allocation / Location</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Commission</th>
+                            <th className="h-9 px-2.5 text-right whitespace-nowrap">Value (QAR)</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Status</th>
+                            <th className="h-9 px-3 text-right whitespace-nowrap">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedAssets.map((asset) => {
+                            const st = getAssetStatus(asset);
+                            return (
+                              <tr key={asset.id} className="border-b hover:bg-muted/30 transition-colors">
+                                <td className="px-3 py-2.5 max-w-[220px]">
+                                  <div className="font-semibold text-foreground leading-snug line-clamp-2">{asset.asset_name}</div>
+                                  <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                                    <span>{asset.asset_code || "No Code"}</span>
+                                    {asset.asset_code && (
+                                      <button 
+                                        onClick={() => setPrintBarcode(asset.asset_code || "")}
+                                        className="hover:text-primary transition-colors"
+                                        title="Print Tag Barcode"
+                                      >
+                                        <Printer className="h-2.5 w-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className="px-2.5 py-2.5">
+                                  <Badge variant="secondary" className="text-[10px] font-normal truncate max-w-[110px]">
+                                    {asset.category || "Fixed Asset"}
+                                  </Badge>
+                                </td>
+
+                                <td className="px-2.5 py-2.5 max-w-[200px]">
+                                  {st.isAllocated ? (
+                                    <div className="space-y-0.5">
+                                      <div className="font-medium text-foreground flex items-center gap-1 truncate" title={asset.assigned_property_code || asset.properties?.title || "Assigned Property"}>
+                                        <Building2 className="h-3 w-3 text-blue-500 shrink-0" />
+                                        <span className="truncate">{asset.assigned_property_code || asset.properties?.title || "Assigned Property"}</span>
+                                      </div>
+                                      {asset.assigned_unit_code && (
+                                        <div className="text-[10px] text-muted-foreground ml-4 truncate">
+                                          Unit: {asset.assigned_unit_code}
+                                        </div>
+                                      )}
+                                      {asset.assigned_employee_name && (
+                                        <div className="text-[10px] text-muted-foreground ml-4 flex items-center gap-0.5 truncate">
+                                          <User className="h-2.5 w-2.5 shrink-0" /> <span className="truncate">{asset.assigned_employee_name}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground italic flex items-center gap-1 text-[11px]">
+                                      <MapPin className="h-3 w-3 opacity-40 shrink-0" /> Central Stock (Available)
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">
+                                  {formatDDMMMYYYY(asset.purchase_date)}
+                                </td>
+
+                                <td className="px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                                  QAR {asset.purchase_cost ? Number(asset.purchase_cost).toLocaleString() : "0"}
+                                </td>
+
+                                <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                  <Badge variant="outline" className={`text-[10px] font-medium ${st.badgeClass}`} title={st.description}>
+                                    {st.label}
+                                  </Badge>
+                                </td>
+
+                                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                  <div className="flex justify-end gap-1 items-center">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px] gap-1 border-primary/40 text-primary hover:bg-primary/10 font-medium"
+                                      onClick={() => setSelectedAssetForDetail(asset)}
+                                      title="View Asset Details & Complete History"
+                                    >
+                                      <Eye className="h-3 w-3" /> Details
+                                    </Button>
+
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px] gap-1 border-border text-foreground hover:bg-muted"
+                                      onClick={() => openEditAssetModal(asset)}
+                                      title="Edit Asset Details"
+                                    >
+                                      <Pencil className="h-3 w-3" /> Edit
+                                    </Button>
+
+                                    {/* CONTEXTUAL ALLOCATE CTA FOR AVAILABLE ASSETS */}
+                                    {st.key === "available" && (
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="h-7 px-2 text-[11px] gap-1 text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 font-medium"
+                                        onClick={() => openAllocationModalForAsset(asset, "ALLOCATE")}
+                                        title="Allocate Asset to Property / Unit"
+                                      >
+                                        <ArrowRightLeft className="h-3 w-3" /> Allocate
+                                      </Button>
+                                    )}
+
+                                    {/* CONTEXTUAL DEALLOCATE CTA FOR ALLOCATED ASSETS */}
+                                    {st.key === "allocated" && (
+                                      <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="h-7 px-2 text-[11px] gap-1 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 font-medium"
+                                        onClick={() => openAllocationModalForAsset(asset, "DEALLOCATE")}
+                                        title="Deallocate / Return Asset to Stock"
+                                      >
+                                        <ArrowDownLeft className="h-3 w-3" /> Deallocate
+                                      </Button>
+                                    )}
+
+                                    {role === "admin" && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                                        title="Delete Asset"
+                                        onClick={async () => {
+                                          if (!confirm(`Are you sure you want to delete asset "${asset.asset_name}"?`)) return;
+                                          await deleteAsset(asset.id);
+                                          toast.success("Asset deleted.");
+                                          load();
+                                        }}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination for Registry */}
+                    <TablePagination
+                      currentPage={registryPage}
+                      totalItems={filteredAssets.length}
+                      pageSize={registryPageSize}
+                      onPageChange={setRegistryPage}
+                      onPageSizeChange={(sz) => { setRegistryPageSize(sz); setRegistryPage(1); }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Tabs>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE: ASSET DEPRECIATION & VALUATION ─────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "depreciation" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Total Acquisition Cost</CardTitle>
+                <DollarSign className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-foreground font-mono">QAR {depreciationMetrics.totalCost.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Gross historical asset value</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Accumulated Depreciation</CardTitle>
+                <TrendingDown className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-amber-600 font-mono">QAR {depreciationMetrics.totalAccum.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Total depreciation charged to date</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Net Carrying (Book) Value</CardTitle>
+                <ShieldCheck className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">QAR {depreciationMetrics.totalNetBook.toLocaleString()}</div>
+                <p className="text-[10px] text-muted-foreground">Current balance sheet asset value</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Depreciated Portfolio</CardTitle>
+                <Package className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-blue-600 font-mono">{depreciationMetrics.totalAssets} Units</div>
+                <p className="text-[10px] text-muted-foreground">SLM &amp; WDV amortization models</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <Tabs defaultValue="all" value={deprMethodFilter} onValueChange={v => { setDeprMethodFilter(v); setDeprPage(1); }}>
+              <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-b">
+                <TabsList className="grid grid-cols-3 h-9 w-full md:w-auto">
+                  <TabsTrigger value="all" className="text-xs">All Methods ({assetDepreciationList.length})</TabsTrigger>
+                  <TabsTrigger value="slm" className="text-xs">Straight Line (SLM)</TabsTrigger>
+                  <TabsTrigger value="wdv" className="text-xs">Written Down Value (WDV)</TabsTrigger>
+                </TabsList>
+
+                <div className="relative w-full md:w-80">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search asset, tag, category..."
+                    className="pl-8 h-9 text-xs"
+                    value={deprSearch}
+                    onChange={e => { setDeprSearch(e.target.value); setDeprPage(1); }}
+                  />
+                </div>
+              </div>
+
+              <CardContent className="p-0">
+                {filteredDepreciationList.length === 0 ? (
+                  <div className="text-center py-14 text-muted-foreground">
+                    <TrendingDown className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No depreciation records found</p>
+                    <p className="text-xs text-muted-foreground mt-1">Try clearing filters or checking asset acquisition dates.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b bg-muted/40 font-bold">
+                            <th className="h-9 px-3 text-left">Asset Details</th>
+                            <th className="h-9 px-2.5 text-left">Category</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Acquisition</th>
+                            <th className="h-9 px-2.5 text-center">Method &amp; Rate</th>
+                            <th className="h-9 px-3 text-right">Cost (QAR)</th>
+                            <th className="h-9 px-3 text-right">Accum. Depr (QAR)</th>
+                            <th className="h-9 px-3 text-right">Net Book Value (QAR)</th>
+                            <th className="h-9 px-3 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {pagedDepreciationList.map(item => {
+                            const originalAsset = assets.find(a => a.id === item.asset_id);
+                            return (
+                              <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-semibold text-foreground">{item.asset_name}</div>
+                                  <div className="text-[11px] font-mono text-muted-foreground">{item.asset_code}</div>
+                                </td>
+                                <td className="p-2.5">
+                                  <Badge variant="outline" className="text-[10px] font-medium">{item.category}</Badge>
+                                </td>
+                                <td className="p-2 text-center whitespace-nowrap font-mono text-muted-foreground">
+                                  {formatDDMMMYYYY(item.purchase_date)}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <Badge variant="outline" className={`text-[10px] font-mono ${item.depreciation_method.includes("SLM") ? "bg-blue-500/10 text-blue-600 border-blue-500/30" : "bg-purple-500/10 text-purple-600 border-purple-500/30"}`}>
+                                    {item.depreciation_method.includes("SLM") ? "SLM" : "WDV"} ({item.depreciation_rate_pct}% / {item.useful_life_years}y)
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-right font-mono font-medium">
+                                  {item.acquisition_cost.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right font-mono text-amber-600 font-semibold">
+                                  {item.accumulated_depreciation.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right font-mono text-emerald-600 font-bold">
+                                  {item.current_book_value.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                                    onClick={() => originalAsset && openDepreciationModal(originalAsset)}
+                                  >
+                                    <TrendingUp className="h-3 w-3" /> Post GL Run
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <TablePagination
+                      currentPage={deprPage}
+                      totalItems={filteredDepreciationList.length}
+                      pageSize={deprPageSize}
+                      onPageChange={setDeprPage}
+                      onPageSizeChange={sz => { setDeprPageSize(sz); setDeprPage(1); }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Tabs>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 2: ASSET ALLOCATION (ACTIVE ALLOCATIONS & MOVEMENTS) ─────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "allocation" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Currently Allocated</CardTitle>
+                <Building2 className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-blue-600 font-mono">{assetCounts.allocated}</div>
+                <p className="text-[10px] text-muted-foreground">Active in properties &amp; units</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Available for Allocation</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">{assetCounts.available}</div>
+                <p className="text-[10px] text-muted-foreground">In stock ready to deploy</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Recorded Movement Logs</CardTitle>
+                <ArrowRightLeft className="h-4 w-4 text-purple-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-foreground font-mono">{allocations.length}</div>
+                <p className="text-[10px] text-muted-foreground">Historical transfers &amp; returns</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Quick Actions</CardTitle>
+                <Sparkles className="h-4 w-4 text-purple-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0 flex gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs flex-1 gap-1 border-blue-500/30 text-blue-600 hover:bg-blue-500/10" onClick={() => {
+                  setAllocationMode("ALLOCATE");
+                  setAllocationTargetAsset(null);
+                  setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+                  setShowAllocationDialog(true);
+                }}>
+                  <ArrowUpRight className="h-3 w-3" /> Allocate
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs flex-1 gap-1 border-amber-500/30 text-amber-600 hover:bg-amber-500/10" onClick={() => {
+                  setAllocationMode("DEALLOCATE");
+                  setAllocationTargetAsset(null);
+                  setAllocationForm({ asset_id: "", allocation_type: "PROPERTY_UNIT", to_property_id: "", to_unit_id: "", to_employee_name: "", department: "", condition: "Good / Operational", date: getTodayIST(), remarks: "" });
+                  setShowAllocationDialog(true);
+                }}>
+                  <ArrowDownLeft className="h-3 w-3" /> Return
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <Tabs defaultValue="active" value={allocSubTab} onValueChange={(v: any) => setAllocSubTab(v)}>
+              <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-b">
+                <TabsList className="grid grid-cols-2 h-9 w-full md:w-auto">
+                  <TabsTrigger value="active" className="text-xs gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-blue-500" /> Active Allocations ({assetCounts.allocated})
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="text-xs gap-1.5">
+                    <ArrowRightLeft className="h-3.5 w-3.5 text-purple-500" /> Movement Audit Trail ({allocations.length})
+                  </TabsTrigger>
+                </TabsList>
+
+                {allocSubTab === "active" && (
+                  <div className="relative w-full md:w-80">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search allocated asset, property, unit, staff..."
+                      className="pl-8 h-9 text-xs"
+                      value={allocSearch}
+                      onChange={e => { setAllocSearch(e.target.value); setAllocPage(1); }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* TAB 1: ACTIVE ALLOCATIONS LIST */}
+              {allocSubTab === "active" && (
+                <CardContent className="p-0">
+                  {filteredAllocatedAssets.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Building2 className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                      <p className="text-sm font-medium">No allocated assets found</p>
+                      <p className="text-xs text-muted-foreground mt-1">Use Quick Actions &gt; Allocate to deploy stock assets to properties, units, or corporate office staff.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="border-b bg-muted/40 font-bold">
+                              <th className="h-9 px-3 text-left">Asset Name &amp; Tag</th>
+                              <th className="h-9 px-2.5 text-left">Category</th>
+                              <th className="h-9 px-2.5 text-left">Assigned Property</th>
+                              <th className="h-9 px-2.5 text-left">Unit / Staff Custodian</th>
+                              <th className="h-9 px-2 text-center whitespace-nowrap">Commission</th>
+                              <th className="h-9 px-2.5 text-right whitespace-nowrap">Value (QAR)</th>
+                              <th className="h-9 px-2 text-center whitespace-nowrap">Status</th>
+                              <th className="h-9 px-3 text-right whitespace-nowrap">Allocation Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedAllocatedAssets.map(asset => {
+                              const isCorpStaff = asset.assigned_property_code === "Corporate Office" || (!asset.assigned_property_id && Boolean(asset.assigned_employee_name));
+                              return (
+                                <tr key={asset.id} className="border-b hover:bg-muted/30">
+                                  <td className="px-3 py-2.5 max-w-[220px]">
+                                    <div className="font-semibold text-foreground leading-snug line-clamp-2">{asset.asset_name}</div>
+                                    <div className="text-[10px] font-mono text-muted-foreground">{asset.asset_code || "No Code"}</div>
+                                  </td>
+                                  <td className="px-2.5 py-2.5">
+                                    <Badge variant="secondary" className="text-[10px] truncate max-w-[100px]">{asset.category || "Fixed Asset"}</Badge>
+                                  </td>
+                                  <td className="px-2.5 py-2.5 max-w-[190px]">
+                                    {isCorpStaff ? (
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <Badge variant="outline" className="text-[10px] bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/30 gap-1 font-semibold truncate">
+                                          <Building2 className="h-3 w-3 text-indigo-600 shrink-0" />
+                                          <span className="truncate">Corporate Office</span>
+                                        </Badge>
+                                      </div>
+                                    ) : (
+                                      <div className="font-medium text-foreground flex items-center gap-1 truncate" title={asset.assigned_property_code || asset.properties?.title || "Assigned Property"}>
+                                        <Building2 className="h-3 w-3 text-blue-500 shrink-0" />
+                                        <span className="truncate">{asset.assigned_property_code || asset.properties?.title || "Assigned Property"}</span>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-2.5 py-2.5 max-w-[160px]">
+                                    {isCorpStaff ? (
+                                      <div className="space-y-0.5">
+                                        <div className="font-semibold text-foreground text-xs flex items-center gap-1 truncate" title={asset.assigned_employee_name}>
+                                          <User className="h-3 w-3 text-indigo-600 shrink-0" />
+                                          <span className="truncate">{asset.assigned_employee_name || "Official Staff"}</span>
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground truncate" title={asset.assigned_unit_code || "HQ Space"}>
+                                          {asset.assigned_unit_code || "HQ Office Workspace"}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <div className="truncate">{asset.assigned_unit_code ? `Unit ${asset.assigned_unit_code}` : "—"}</div>
+                                        {asset.assigned_employee_name && (
+                                          <div className="text-[10px] text-muted-foreground flex items-center gap-0.5 truncate">
+                                            <User className="h-2.5 w-2.5 shrink-0" /> <span className="truncate">{asset.assigned_employee_name}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(asset.purchase_date)}</td>
+                                  <td className="px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                                    QAR {Number(asset.purchase_cost || 0).toLocaleString()}
+                                  </td>
+                                  <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                    <Badge variant="outline" className={`text-[10px] ${isCorpStaff ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/30" : "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30"}`}>
+                                      {isCorpStaff ? "Staff Custody" : "Allocated"}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                    <div className="flex justify-end gap-1 items-center">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[11px] gap-1 border-purple-500/30 text-purple-600 hover:bg-purple-500/10"
+                                        onClick={() => openAllocationModalForAsset(asset, "TRANSFER")}
+                                        title="Transfer Asset to another property/unit/staff"
+                                      >
+                                        <ArrowRightLeft className="h-3 w-3" /> Transfer
+                                      </Button>
+
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[11px] gap-1 border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                                        onClick={() => openAllocationModalForAsset(asset, "DEALLOCATE")}
+                                        title="Return / Deallocate Asset to Stock"
+                                      >
+                                        <ArrowDownLeft className="h-3 w-3" /> Return
+                                      </Button>
+
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 px-1.5 text-xs text-primary hover:bg-primary/10"
+                                        onClick={() => setSelectedAssetForDetail(asset)}
+                                        title="View Details"
+                                      >
+                                        <Eye className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <TablePagination
+                        currentPage={allocPage}
+                        totalItems={filteredAllocatedAssets.length}
+                        pageSize={allocPageSize}
+                        onPageChange={setAllocPage}
+                        onPageSizeChange={(sz) => { setAllocPageSize(sz); setAllocPage(1); }}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              )}
+
+              {/* TAB 2: HISTORICAL MOVEMENT AUDIT TRAIL */}
+              {allocSubTab === "history" && (
+                <CardContent className="p-0">
+                  {allocations.length === 0 ? (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <ArrowRightLeft className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                      <p className="text-xs">No movement history logs recorded yet.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="border-b bg-muted/40 font-bold">
+                              <th className="h-9 px-3 text-left">Asset</th>
+                              <th className="h-9 px-2.5 text-left whitespace-nowrap">Action</th>
+                              <th className="h-9 px-2 text-center whitespace-nowrap">Date</th>
+                              <th className="h-9 px-2.5 text-left">From</th>
+                              <th className="h-9 px-2.5 text-left">To Destination</th>
+                              <th className="h-9 px-2.5 text-left">Condition</th>
+                              <th className="h-9 px-3 text-left">Remarks</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pagedAllocationHistory.map(al => {
+                              const isStaffHist = al.allocation_type === "OFFICIAL_STAFF" || al.to_property === "Corporate Office" || al.from_property === "Corporate Office";
+                              return (
+                                <tr key={al.id} className="border-b hover:bg-muted/30">
+                                  <td className="px-3 py-2.5 max-w-[200px]">
+                                    <div className="font-semibold text-foreground truncate">{al.asset_name}</div>
+                                    <div className="text-[10px] font-mono text-muted-foreground">{al.asset_code}</div>
+                                  </td>
+                                  <td className="px-2.5 py-2.5 whitespace-nowrap">
+                                    <div className="flex items-center gap-1">
+                                      <Badge 
+                                        variant="outline" 
+                                        className={`text-[10px] font-mono ${
+                                          al.action_type === "ALLOCATION" ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+                                          al.action_type === "DEALLOCATION" ? "bg-amber-500/10 text-amber-600 border-amber-500/30" :
+                                          "bg-purple-500/10 text-purple-600 border-purple-500/30"
+                                        }`}
+                                      >
+                                        {al.action_type}
+                                      </Badge>
+                                      {isStaffHist && (
+                                        <Badge variant="outline" className="text-[9px] bg-indigo-500/10 text-indigo-600 border-indigo-500/30 font-mono">
+                                          Staff
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(al.date)}</td>
+                                  <td className="px-2.5 py-2.5 text-muted-foreground max-w-[160px]">
+                                    <div className="truncate">{al.from_property || "Central Inventory"}</div>
+                                    {al.from_unit && <div className="text-[10px] truncate">Space: {al.from_unit}</div>}
+                                    {al.from_employee && <div className="text-[10px] text-muted-foreground truncate">From: {al.from_employee}</div>}
+                                  </td>
+                                  <td className="px-2.5 py-2.5 font-medium text-foreground max-w-[180px]">
+                                    <div className="truncate">{al.to_property || "Central Inventory"}</div>
+                                    {al.to_unit && <div className="text-[10px] text-primary truncate">Space: {al.to_unit}</div>}
+                                    {al.to_employee && <div className="text-[10px] text-muted-foreground truncate">Recipient: {al.to_employee}</div>}
+                                  </td>
+                                  <td className="px-2.5 py-2.5 text-muted-foreground text-[11px] whitespace-nowrap">{al.condition || "Operational"}</td>
+                                  <td className="px-3 py-2.5 text-muted-foreground text-[11px] max-w-[200px] truncate">{al.remarks || "—"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <TablePagination
+                        currentPage={historyPage}
+                        totalItems={allocations.length}
+                        pageSize={historyPageSize}
+                        onPageChange={setHistoryPage}
+                        onPageSizeChange={(sz) => { setHistoryPageSize(sz); setHistoryPage(1); }}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              )}
+            </Tabs>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 3: ASSET WARRANTY & AMC CONTRACTS ───────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "warranty" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Active Warranties</CardTitle>
+                <ShieldCheck className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">{warrantyCounts.active}</div>
+                <p className="text-[10px] text-muted-foreground">Fully covered under active terms</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Expiring Soon</CardTitle>
+                <Clock className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-amber-600 font-mono">{warrantyCounts.expiringSoon}</div>
+                <p className="text-[10px] text-muted-foreground">Expiring within 45 days</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Extended / AMC</CardTitle>
+                <Shield className="h-4 w-4 text-indigo-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-indigo-600 font-mono">{warrantyCounts.extended}</div>
+                <p className="text-[10px] text-muted-foreground">Annual AMC &amp; extended policies</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Expired Warranties</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-red-600 font-mono">{warrantyCounts.expired}</div>
+                <p className="text-[10px] text-muted-foreground">Eligible for renewal or AMC</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <Tabs defaultValue="all" value={warrantyFilter} onValueChange={(v) => { setWarrantyFilter(v); setWarrantyPage(1); }}>
+              <div className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 border-b">
+                <TabsList className="grid grid-cols-5 h-9 w-full md:w-auto">
+                  <TabsTrigger value="all" className="text-xs">All ({warrantyCounts.total})</TabsTrigger>
+                  <TabsTrigger value="active" className="text-xs">Active ({warrantyCounts.active})</TabsTrigger>
+                  <TabsTrigger value="expiring" className="text-xs">Expiring Soon ({warrantyCounts.expiringSoon})</TabsTrigger>
+                  <TabsTrigger value="extended" className="text-xs">Extended / AMC ({warrantyCounts.extended})</TabsTrigger>
+                  <TabsTrigger value="expired" className="text-xs">Expired ({warrantyCounts.expired})</TabsTrigger>
+                </TabsList>
+
+                <div className="relative w-full md:w-80">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search asset, provider, policy #..."
+                    className="pl-8 h-9 text-xs"
+                    value={warrantySearch}
+                    onChange={e => { setWarrantySearch(e.target.value); setWarrantyPage(1); }}
+                  />
+                </div>
+              </div>
+
+              <CardContent className="p-0">
+                {filteredWarranties.length === 0 ? (
+                  <div className="text-center py-14 text-muted-foreground">
+                    <ShieldCheck className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                    <p className="text-sm font-medium">No warranty records found</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click "Register / Extend Warranty" to add coverage with documents.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b bg-muted/40 font-bold">
+                            <th className="h-9 px-3 text-left">Asset Name &amp; Tag</th>
+                            <th className="h-9 px-2.5 text-left">Warranty &amp; Policy #</th>
+                            <th className="h-9 px-2.5 text-left">Provider &amp; Support</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Start</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Expiry</th>
+                            <th className="h-9 px-2 text-center whitespace-nowrap">Status</th>
+                            <th className="h-9 px-2.5 text-left">Attached Documents</th>
+                            <th className="h-9 px-3 text-right whitespace-nowrap">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedWarranties.map(w => {
+                            const todayStr = getTodayIST();
+                            const isExpired = w.expiry_date < todayStr;
+                            const daysLeft = Math.ceil((new Date(w.expiry_date).getTime() - new Date(todayStr).getTime()) / (1000 * 3600 * 24));
+
+                            return (
+                              <tr key={w.id} className="border-b hover:bg-muted/30">
+                                <td className="px-3 py-2.5 max-w-[200px]">
+                                  <div className="font-semibold text-foreground leading-snug truncate">{w.asset_name}</div>
+                                  <div className="text-[10px] font-mono text-muted-foreground">{w.asset_code}</div>
+                                </td>
+                                <td className="px-2.5 py-2.5 max-w-[170px]">
+                                  <Badge variant="outline" className={`text-[10px] truncate max-w-[160px] ${
+                                    w.warranty_type === "Extended Warranty" ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/30" :
+                                    w.warranty_type === "Annual Maintenance Contract (AMC)" ? "bg-purple-500/10 text-purple-600 border-purple-500/30" :
+                                    "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                                  }`}>
+                                    {w.warranty_type}
+                                  </Badge>
+                                  {w.policy_number && (
+                                    <div className="text-[10px] font-mono text-muted-foreground mt-0.5 truncate">#{w.policy_number}</div>
+                                  )}
+                                </td>
+                                <td className="px-2.5 py-2.5 max-w-[150px]">
+                                  <div className="font-medium text-foreground truncate">{w.provider_name}</div>
+                                  <div className="text-[10px] text-muted-foreground truncate">{w.support_phone || w.support_email || "Contact on file"}</div>
+                                </td>
+                                <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(w.start_date)}</td>
+                                <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">
+                                  <div className="font-bold text-foreground">{formatDDMMMYYYY(w.expiry_date)}</div>
+                                  <div className={`text-[10px] font-semibold ${
+                                    isExpired ? "text-red-500" :
+                                    daysLeft <= 45 ? "text-amber-500" :
+                                    "text-emerald-600"
+                                  }`}>
+                                    {isExpired ? "Expired" : `${daysLeft}d left`}
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                  <Badge variant="outline" className={`text-[10px] font-mono ${
+                                    w.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" :
+                                    w.status === "EXPIRING_SOON" ? "bg-amber-500/10 text-amber-600 border-amber-500/30 animate-pulse" :
+                                    w.status === "EXTENDED" ? "bg-indigo-500/10 text-indigo-600 border-indigo-500/30" :
+                                    "bg-red-500/10 text-red-600 border-red-500/30"
+                                  }`}>
+                                    {w.status.replace("_", " ")}
+                                  </Badge>
+                                </td>
+                                <td className="px-2.5 py-2.5 max-w-[160px]">
+                                  {w.documents && w.documents.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {w.documents.map(d => (
+                                        <Badge 
+                                          key={d.id} 
+                                          variant="secondary" 
+                                          className="text-[9px] gap-1 cursor-pointer hover:bg-muted/80 max-w-[130px] truncate"
+                                          onClick={() => toast.info(`Viewing document: ${d.name} (${d.file_name})`)}
+                                        >
+                                          <Paperclip className="h-2.5 w-2.5 shrink-0" /> <span className="truncate">{d.name}</span>
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-[10px] italic">No files attached</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                  <div className="flex justify-end gap-1 items-center">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px] gap-1 border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10 font-medium"
+                                      onClick={() => openWarrantyModal(undefined, w)}
+                                      title="Extend or Update Warranty Terms"
+                                    >
+                                      <ShieldCheck className="h-3 w-3" /> Extend
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-1.5 text-xs text-primary hover:bg-primary/10"
+                                      onClick={() => {
+                                        const matchingAsset = assets.find(a => a.id === w.asset_id);
+                                        if (matchingAsset) setSelectedAssetForDetail(matchingAsset);
+                                      }}
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <TablePagination
+                      currentPage={warrantyPage}
+                      totalItems={filteredWarranties.length}
+                      pageSize={warrantyPageSize}
+                      onPageChange={setWarrantyPage}
+                      onPageSizeChange={(sz) => { setWarrantyPageSize(sz); setWarrantyPage(1); }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Tabs>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 4: ASSET MAINTENANCE ────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "maintenance" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Active Work Orders</CardTitle>
+                <Wrench className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-amber-600 font-mono">
+                  {maintenances.filter(m => ["SCHEDULED", "IN_PROGRESS"].includes(m.status)).length}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Scheduled or In-Progress</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Completed Services</CardTitle>
+                <CheckCheck className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">
+                  {maintenances.filter(m => m.status === "COMPLETED").length}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Restored to available pool</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Total Maint. Spend</CardTitle>
+                <DollarSign className="h-4 w-4 text-primary" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-foreground font-mono">
+                  QAR {maintenances.reduce((acc, m) => acc + (m.actual_cost || m.estimated_cost || 0), 0).toLocaleString()}
+                </div>
+                <p className="text-[10px] text-muted-foreground">Actual incurred service costs</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50">
+              <CardHeader className="flex flex-row items-center justify-between pb-1 p-4">
+                <CardTitle className="text-xs font-semibold text-muted-foreground">Eligible Assets</CardTitle>
+                <Package className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                <div className="text-xl font-bold text-emerald-600 font-mono">{availableUnallocatedAssets.length}</div>
+                <p className="text-[10px] text-muted-foreground">Unallocated pool ready for service</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border">
+            <CardHeader className="border-b bg-muted/20 pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> Asset Maintenance &amp; Service Work Orders
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Log and track maintenance requests, technician assignments, costs, and return assets to available inventory upon service completion.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {maintenances.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Wrench className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                  <p className="text-xs">No maintenance work orders logged yet.</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="border-b bg-muted/40 font-bold">
+                          <th className="h-9 px-3 text-left">Order #</th>
+                          <th className="h-9 px-3 text-left">Asset</th>
+                          <th className="h-9 px-2.5 text-left">Type</th>
+                          <th className="h-9 px-2.5 text-left">Vendor &amp; Tech</th>
+                          <th className="h-9 px-2 text-center whitespace-nowrap">Scheduled Date</th>
+                          <th className="h-9 px-2.5 text-right whitespace-nowrap">Cost (QAR)</th>
+                          <th className="h-9 px-2 text-center whitespace-nowrap">Status</th>
+                          <th className="h-9 px-3 text-right whitespace-nowrap">Workflow Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedMaintenances.map(m => (
+                          <tr key={m.id} className="border-b hover:bg-muted/30">
+                            <td className="px-3 py-2.5 font-mono font-semibold text-foreground whitespace-nowrap">{m.id}</td>
+                            <td className="px-3 py-2.5 max-w-[200px]">
+                              <div className="font-semibold text-foreground truncate">{m.asset_name}</div>
+                              <div className="text-[10px] font-mono text-muted-foreground">{m.asset_code}</div>
+                            </td>
+                            <td className="px-2.5 py-2.5">
+                              <Badge variant="outline" className="text-[10px]">{m.maintenance_type}</Badge>
+                            </td>
+                            <td className="px-2.5 py-2.5 text-muted-foreground max-w-[150px]">
+                              <div className="font-medium text-foreground truncate">{m.service_vendor}</div>
+                              {m.technician_name && <div className="text-[10px] truncate">Tech: {m.technician_name}</div>}
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(m.scheduled_date)}</td>
+                            <td className="px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                              {m.actual_cost ? `QAR ${m.actual_cost.toLocaleString()}` : `Est: QAR ${m.estimated_cost.toLocaleString()}`}
+                            </td>
+                            <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                              <Badge 
+                                variant="outline"
+                                className={`text-[10px] font-mono ${
+                                  m.status === "SCHEDULED" ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+                                  m.status === "IN_PROGRESS" ? "bg-amber-500/10 text-amber-600 border-amber-500/30 animate-pulse" :
+                                  m.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30" :
+                                  "bg-zinc-500/10 text-zinc-600 border-zinc-500/30"
+                                }`}
+                              >
+                                {m.status}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                              <div className="flex justify-end gap-1.5 items-center">
+                                {m.status === "SCHEDULED" && (
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    className="h-6 px-2 text-[11px] gap-1 text-amber-600 border-amber-500/30 hover:bg-amber-500/10"
+                                    onClick={() => handleStartMaintenance(m)}
+                                  >
+                                    Start Work
+                                  </Button>
+                                )}
+
+                                {m.status === "IN_PROGRESS" && (
+                                  <Button 
+                                    size="sm" 
+                                    className="h-6 px-2 text-[11px] gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    onClick={() => {
+                                      setCompleteMaintModal(m);
+                                      setCompleteMaintForm({
+                                        actual_cost: String(m.estimated_cost || ""),
+                                        completed_date: getTodayIST(),
+                                        completion_notes: "",
+                                        invoice_ref: "",
+                                      });
+                                    }}
+                                  >
+                                    <Check className="h-3 w-3" /> Complete
+                                  </Button>
+                                )}
+
+                                {["SCHEDULED", "IN_PROGRESS"].includes(m.status) && (
+                                  <Button 
+                                    size="icon" 
+                                    variant="ghost" 
+                                    className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleCancelMaintenance(m)}
+                                    title="Cancel Work Order"
+                                  >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <TablePagination
+                    currentPage={maintPage}
+                    totalItems={maintenances.length}
+                    pageSize={maintPageSize}
+                    onPageChange={setMaintPage}
+                    onPageSizeChange={(sz) => { setMaintPageSize(sz); setMaintPage(1); }}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 5: ASSET REVALUATION ────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "revaluation" && (
+        <Card className="border-border">
+          <CardHeader className="border-b bg-muted/20 pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-500" /> Asset Revaluation Register
+              </CardTitle>
+              <CardDescription className="text-xs">Fair value adjustments and revaluation reserve logs.</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="ml-2 text-muted-foreground">Loading assets...</span>
-              </div>
-            ) : searched.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Package className="mx-auto h-12 w-12 mb-4 opacity-30" />
-                <p className="font-medium">No assets found</p>
-                <p className="text-sm mt-1">Try adjusting your filters or add a new asset.</p>
+            {revaluations.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <TrendingUp className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                <p className="text-xs">No revaluation entries recorded yet. Click "New Revaluation" to add.</p>
               </div>
             ) : (
-              <div className="relative w-full overflow-auto">
-                <table className="w-full caption-bottom text-sm text-left">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="h-12 px-4 font-medium">Asset ID & Name</th>
-                      <th className="h-12 px-4 font-medium">Category & Subcategory</th>
-                      <th className="h-12 px-4 font-medium">Brand / Model</th>
-                      <th className="h-12 px-4 font-medium">Property / Unit / Custodian</th>
-                      <th className="h-12 px-4 font-medium">Purchase Value (QAR)</th>
-                      <th className="h-12 px-4 font-medium">Status</th>
-                      <th className="h-12 px-4 font-medium text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {searched.map((asset) => (
-                      <tr key={asset.id} className="border-b hover:bg-muted/50 transition-colors">
-                        <td className="p-4">
-                          <div className="font-semibold text-foreground hover:underline cursor-pointer" onClick={() => setViewingAsset(asset)}>
-                            {asset.asset_name}
-                          </div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1 cursor-pointer hover:text-primary" onClick={() => setPrintBarcode(asset.asset_code || "")}>
-                            <Tag className="h-3 w-3" /> {asset.asset_code || "N/A"} <Printer className="h-3 w-3 ml-1" />
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <Badge variant="outline" className="font-medium bg-primary/5 text-primary border-primary/20">
-                            {asset.category || 'General'}
-                          </Badge>
-                          {asset.subcategory && (
-                            <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                              <span>↳</span> {asset.subcategory}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm font-medium">{asset.brand || '—'}</div>
-                          {asset.model && <div className="text-xs text-muted-foreground">{asset.model}</div>}
-                          {asset.serial_number && <div className="text-[11px] text-muted-foreground font-mono">S/N: {asset.serial_number}</div>}
-                        </td>
-                        <td className="p-4">
-                          {asset.properties?.title || asset.assigned_property_code ? (
-                            <div>
-                              <div className="flex items-center gap-1 text-sm font-medium">
-                                <Building2 className="h-3.5 w-3.5 text-primary"/>
-                                {asset.assigned_property_code || asset.properties?.title}
-                              </div>
-                              {(asset.assigned_unit_code || asset.units?.unit_code) && (
-                                <div className="text-xs text-muted-foreground ml-4">
-                                  Unit: <span className="font-semibold text-foreground">{asset.assigned_unit_code || asset.units?.unit_code}</span>
-                                </div>
-                              )}
-                            </div>
-                          ) : asset.employees?.first_name || asset.assigned_employee_name ? (
-                            <div className="text-sm flex items-center gap-1">
-                              <User className="h-3.5 w-3.5 text-muted-foreground" />
-                              {asset.assigned_employee_name || `${asset.employees?.first_name} ${asset.employees?.last_name}`}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground italic text-xs">Unassigned</span>
-                          )}
-                        </td>
-                        <td className="p-4 font-medium">
-                          QAR {asset.purchase_cost != null ? Number(asset.purchase_cost).toLocaleString() : '0'}
-                          {asset.net_book_value != null && (
-                            <div className="text-[11px] text-muted-foreground">
-                              NBV: QAR {Number(asset.net_book_value).toLocaleString()}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <Select
-                            value={(asset.asset_status || "Available").toLowerCase()}
-                            onValueChange={(val) => handleStatusChange(asset.id, val.charAt(0).toUpperCase() + val.slice(1))}
-                          >
-                            <SelectTrigger className="h-8 w-[130px] text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="available">Available</SelectItem>
-                              <SelectItem value="assigned">Assigned</SelectItem>
-                              <SelectItem value="in use">In Use</SelectItem>
-                              <SelectItem value="maintenance">Maintenance</SelectItem>
-                              <SelectItem value="under maintenance">Under Maintenance</SelectItem>
-                              <SelectItem value="damaged">Damaged</SelectItem>
-                              <SelectItem value="disposed">Disposed</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="View Asset Details" onClick={() => setViewingAsset(asset)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" title="Transfer Asset" onClick={() => setTransferAsset(asset)}>
-                              <ArrowRightLeft className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" title="Edit Asset" onClick={() => openEditAssetModal(asset)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b bg-muted/40 font-bold">
+                        <th className="h-9 px-3 text-left">Asset</th>
+                        <th className="h-9 px-2 text-center whitespace-nowrap">Date</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">Previous Value (QAR)</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">New Value (QAR)</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">Gain / Loss (QAR)</th>
+                        <th className="h-9 px-3 text-left">Reason</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {pagedRevaluations.map(r => {
+                        const diff = r.new_value - r.prev_value;
+                        return (
+                          <tr key={r.id} className="border-b hover:bg-muted/30">
+                            <td className="px-3 py-2.5 font-medium text-foreground max-w-[200px]">
+                              <div className="truncate">{r.asset_name}</div>
+                              <div className="text-[10px] font-mono text-muted-foreground">{r.asset_code}</div>
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(r.date)}</td>
+                            <td className="px-2.5 py-2.5 text-right font-mono text-muted-foreground whitespace-nowrap">QAR {r.prev_value.toLocaleString()}</td>
+                            <td className="px-2.5 py-2.5 text-right font-mono font-bold text-primary whitespace-nowrap">QAR {r.new_value.toLocaleString()}</td>
+                            <td className={`px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap ${diff >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+                              {diff >= 0 ? `+QAR ${diff.toLocaleString()}` : `-QAR ${Math.abs(diff).toLocaleString()}`}
+                            </td>
+                            <td className="px-3 py-2.5 text-muted-foreground max-w-[220px] truncate">{r.reason}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <TablePagination
+                  currentPage={revalPage}
+                  totalItems={revaluations.length}
+                  pageSize={revalPageSize}
+                  onPageChange={setRevalPage}
+                  onPageSizeChange={(sz) => { setRevalPageSize(sz); setRevalPage(1); }}
+                />
               </div>
             )}
           </CardContent>
-        </Tabs>
-      </Card>
+        </Card>
+      )}
 
-      {/* Complete Asset Creation / Edit Dialog supporting all 34 Excel fields */}
-      <Dialog open={showNew} onOpenChange={setShowNew}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <form onSubmit={handleSaveAsset}>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl font-bold">
-                <Package className="h-5 w-5 text-primary" />
-                {editingAsset ? `Edit Asset: ${editingAsset.asset_name}` : "Register New Fixed Asset"}
-              </DialogTitle>
-              <DialogDescription>
-                Fill out the comprehensive asset record with categorization, valuation, depreciation, and assignment details.
-              </DialogDescription>
-            </DialogHeader>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 6: ASSET SALE & DERECOGNITION (WITH GL POSTING) ─────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "sell" && (
+        <Card className="border-border">
+          <CardHeader className="border-b bg-muted/20 pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" /> Asset Sale Register &amp; General Ledger Postings
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Disposal of fixed assets to third parties with automated Receipt Voucher generation and General Ledger derecognition.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {sells.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <DollarSign className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                <p className="text-xs">No asset sales recorded yet. Click "Record Asset Sale" to begin.</p>
+              </div>
+            ) : (
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b bg-muted/40 font-bold">
+                        <th className="h-9 px-3 text-left">Asset</th>
+                        <th className="h-9 px-2 text-center whitespace-nowrap">Sale Date</th>
+                        <th className="h-9 px-2.5 text-left">Buyer</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">Book Value (QAR)</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">Sale Price (QAR)</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">GL Gain / Loss</th>
+                        <th className="h-9 px-3 text-left">Remarks &amp; Posting</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedSells.map(s => {
+                        const gainLoss = s.sale_value - s.book_value;
+                        return (
+                          <tr key={s.id} className="border-b hover:bg-muted/30">
+                            <td className="px-3 py-2.5 font-medium text-foreground max-w-[190px]">
+                              <div className="truncate">{s.asset_name}</div>
+                              <div className="text-[10px] font-mono text-muted-foreground">{s.asset_code}</div>
+                            </td>
+                            <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(s.date)}</td>
+                            <td className="px-2.5 py-2.5 font-medium max-w-[140px] truncate">{s.buyer}</td>
+                            <td className="px-2.5 py-2.5 text-right font-mono text-muted-foreground whitespace-nowrap">QAR {s.book_value.toLocaleString()}</td>
+                            <td className="px-2.5 py-2.5 text-right font-mono font-bold text-emerald-600 whitespace-nowrap">QAR {s.sale_value.toLocaleString()}</td>
+                            <td className={`px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap ${gainLoss >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+                              {gainLoss >= 0 ? `+QAR ${gainLoss.toLocaleString()}` : `-QAR ${Math.abs(gainLoss).toLocaleString()}`}
+                            </td>
+                            <td className="px-3 py-2.5 text-muted-foreground max-w-[180px]">
+                              <div className="truncate">{s.remarks || "Sold to buyer"}</div>
+                              <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-mono mt-0.5 whitespace-nowrap">
+                                GL Posted
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-            <Tabs value={activeFormStep} onValueChange={(v: any) => setActiveFormStep(v)} className="w-full mt-4">
-              <TabsList className="grid grid-cols-4 w-full">
-                <TabsTrigger value="general">1. Core & Brand</TabsTrigger>
-                <TabsTrigger value="financial">2. Valuation & GL</TabsTrigger>
-                <TabsTrigger value="assignment">3. Assignment & Loc</TabsTrigger>
-                <TabsTrigger value="service">4. Service & Status</TabsTrigger>
-              </TabsList>
+                <TablePagination
+                  currentPage={sellPage}
+                  totalItems={sells.length}
+                  pageSize={sellPageSize}
+                  onPageChange={setSellPage}
+                  onPageSizeChange={(sz) => { setSellPageSize(sz); setSellPage(1); }}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-              {/* STEP 1: Core & Classification */}
-              <TabsContent value="general" className="space-y-4 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="asset_name">Asset Name <span className="text-destructive">*</span></Label>
-                    <Input
-                      id="asset_name"
-                      required
-                      placeholder="e.g. Split AC 2.0 Ton, Executive Chair, Dell Latitude"
-                      value={form.asset_name}
-                      onChange={e => setForm(f => ({ ...f, asset_name: e.target.value }))}
-                    />
-                  </div>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── SUB-MODULE 7: ASSET WRITE-OFF (WITH GL LOSS POSTINGS) ──────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {moduleTab === "writeoff" && (
+        <Card className="border-border">
+          <CardHeader className="border-b bg-muted/20 pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Asset Write-off Register &amp; GL Loss Logs
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Scrapped or decommissioned unallocated assets with automated General Ledger write-off loss journal vouchers.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {writeoffs.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <AlertTriangle className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                <p className="text-xs">No write-offs recorded yet. Click "New Write-off" to add.</p>
+              </div>
+            ) : (
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b bg-muted/40 font-bold">
+                        <th className="h-9 px-3 text-left">Asset</th>
+                        <th className="h-9 px-2 text-center whitespace-nowrap">Write-off Date</th>
+                        <th className="h-9 px-2.5 text-right whitespace-nowrap">Written-off Value (QAR)</th>
+                        <th className="h-9 px-3 text-left">Reason</th>
+                        <th className="h-9 px-2.5 text-left">Approved By</th>
+                        <th className="h-9 px-2 text-center whitespace-nowrap">GL Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedWriteoffs.map(w => (
+                        <tr key={w.id} className="border-b hover:bg-muted/30">
+                          <td className="px-3 py-2.5 font-medium text-foreground max-w-[200px]">
+                            <div className="truncate">{w.asset_name}</div>
+                            <div className="text-[10px] font-mono text-muted-foreground">{w.asset_code}</div>
+                          </td>
+                          <td className="px-2 py-2.5 text-center font-mono text-[11px] whitespace-nowrap">{formatDDMMMYYYY(w.date)}</td>
+                          <td className="px-2.5 py-2.5 text-right font-mono font-bold text-destructive whitespace-nowrap">QAR {w.book_value.toLocaleString()}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground max-w-[200px] truncate">{w.writeoff_reason}</td>
+                          <td className="px-2.5 py-2.5 max-w-[140px] truncate">{w.approved_by || "—"}</td>
+                          <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                            <Badge variant="outline" className="text-[9px] bg-red-500/10 text-red-600 border-red-500/20 font-mono">
+                              Loss Posted
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="barcode">Asset ID / Barcode <span className="text-destructive">*</span></Label>
-                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={form.autoBarcode}
-                          onChange={e => setForm(f => ({ ...f, autoBarcode: e.target.checked }))}
-                          className="rounded border-gray-300"
-                        />
-                        Auto-generate
-                      </label>
-                    </div>
-                    <Input
-                      id="barcode"
-                      disabled={form.autoBarcode}
-                      placeholder={form.autoBarcode ? "Auto-generated upon save" : "e.g. AST-00104"}
-                      value={form.asset_code}
-                      onChange={e => setForm(f => ({ ...f, asset_code: e.target.value }))}
-                    />
-                  </div>
+                <TablePagination
+                  currentPage={writeoffPage}
+                  totalItems={writeoffs.length}
+                  pageSize={writeoffPageSize}
+                  onPageChange={setWriteoffPage}
+                  onPageSizeChange={(sz) => { setWriteoffPageSize(sz); setWriteoffPage(1); }}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-                  <div className="space-y-2">
-                    <Label htmlFor="category">Asset Category <span className="text-destructive">*</span></Label>
-                    <Select
-                      value={form.category}
-                      onValueChange={v => {
-                        setForm(f => ({ ...f, category: v, subcategory: "" }));
-                      }}
-                    >
-                      <SelectTrigger id="category">
-                        <SelectValue placeholder="Select Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.length > 0 ? (
-                          categories.map(c => (
-                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                          ))
-                        ) : (
-                          ["Furniture", "IT Equipment", "Electrical", "Plumbing", "Appliances", "Vehicles", "HVAC", "Other"].map(c => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: CONTEXTUAL ALLOCATION / DEALLOCATION / TRANSFER ─────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showAllocationDialog} onOpenChange={setShowAllocationDialog}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4 text-blue-500" />
+              {allocationMode === "ALLOCATE" ? "Allocate Asset to Property / Unit / Office Staff" :
+               allocationMode === "DEALLOCATE" ? "Deallocate Asset (Return to Central Stock)" :
+               "Transfer Asset between Properties / Units / Staff"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {allocationMode === "ALLOCATE" ? "Assign an available stock asset to a Property/Unit or directly to Corporate Office Staff." :
+               allocationMode === "DEALLOCATE" ? "Return an allocated asset back to available central stock with condition verification." :
+               "Relocate an allocated asset directly to another Property/Unit or Corporate Office Staff member."}
+            </DialogDescription>
+          </DialogHeader>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="subcategory">Asset Subcategory</Label>
-                    {filteredSubcategories.length > 0 ? (
-                      <div className="flex gap-2">
-                        <Select
-                          value={form.subcategory}
-                          onValueChange={v => setForm(f => ({ ...f, subcategory: v }))}
-                        >
-                          <SelectTrigger id="subcategory" className="flex-1">
-                            <SelectValue placeholder="Select Subcategory" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {filteredSubcategories.map(s => (
-                              <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          placeholder="Or type custom"
-                          value={form.subcategory}
-                          onChange={e => setForm(f => ({ ...f, subcategory: e.target.value }))}
-                          className="w-1/3"
-                        />
-                      </div>
+          <div className="space-y-3.5 py-2 text-xs">
+            {/* CONTEXTUAL MODE SWITCHER:
+                - If allocating an available item: show ONLY Allocate (no switcher)
+                - If item is allocated: show ONLY Deallocate / Return and Transfer (2 buttons, no Allocate)
+            */}
+            {allocationMode !== "ALLOCATE" && (
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted/40 border">
+                {(["DEALLOCATE", "TRANSFER"] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setAllocationMode(m);
+                    }}
+                    className={`py-1.5 text-xs font-semibold rounded transition-all ${
+                      allocationMode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {m === "DEALLOCATE" ? "Deallocate / Return" : "Transfer / Relocate"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Asset Selector */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Selected Asset *</Label>
+              <Select 
+                value={allocationForm.asset_id} 
+                onValueChange={v => {
+                  const a = assets.find(x => x.id === v);
+                  setAllocationTargetAsset(a || null);
+                  setAllocationForm(f => ({ ...f, asset_id: v }));
+                }}
+                disabled={Boolean(allocationTargetAsset)}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Choose asset..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allocationMode === "ALLOCATE" ? (
+                    availableUnallocatedAssets.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-muted-foreground">No available unallocated assets in stock.</div>
                     ) : (
-                      <Input
-                        id="subcategory"
-                        placeholder="e.g. Split AC, Laptop, Sofa Set, Microwave"
-                        value={form.subcategory}
-                        onChange={e => setForm(f => ({ ...f, subcategory: e.target.value }))}
-                      />
-                    )}
-                  </div>
+                      availableUnallocatedAssets.map(a => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.asset_name} ({a.asset_code || "No Code"}) — Available in Stock (QAR {Number(a.purchase_cost || 0).toLocaleString()})
+                        </SelectItem>
+                      ))
+                    )
+                  ) : (
+                    allocatedAssetsList.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-muted-foreground">No currently allocated assets found.</div>
+                    ) : (
+                      allocatedAssetsList.map(a => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.asset_name} ({a.asset_code || "No Code"}) — At: {a.assigned_property_code || a.properties?.title || "Property"} {a.assigned_unit_code ? `(${a.assigned_unit_code})` : ""} {a.assigned_employee_name ? `• ${a.assigned_employee_name}` : ""}
+                        </SelectItem>
+                      ))
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="brand">Brand / Manufacturer</Label>
-                    <Input
-                      id="brand"
-                      placeholder="e.g. Daikin, Dell, Herman Miller, Samsung"
-                      value={form.brand}
-                      onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
-                    />
-                  </div>
+            {/* Allocation Target Type: Property & Unit vs Official Staff (Corporate Office) */}
+            {(allocationMode === "ALLOCATE" || allocationMode === "TRANSFER") && (
+              <div className="space-y-1.5 pt-1">
+                <Label className="text-xs font-semibold">Allocation Target Type *</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAllocationForm(f => ({ 
+                      ...f, 
+                      allocation_type: "PROPERTY_UNIT",
+                      to_employee_name: "",
+                      department: ""
+                    }))}
+                    className={`p-2.5 rounded-lg border text-left flex items-start gap-2.5 transition-all ${
+                      allocationForm.allocation_type === "PROPERTY_UNIT"
+                        ? "border-blue-500 bg-blue-500/10 text-foreground ring-1 ring-blue-500"
+                        : "border-border bg-card/60 text-muted-foreground hover:bg-muted/40"
+                    }`}
+                  >
+                    <Building2 className={`h-4 w-4 mt-0.5 shrink-0 ${allocationForm.allocation_type === "PROPERTY_UNIT" ? "text-blue-500" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="font-semibold text-xs text-foreground">Property &amp; Unit</div>
+                      <div className="text-[10px] text-muted-foreground">Deploy to site, building, tenant or unit</div>
+                    </div>
+                  </button>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="model">Model Number / Spec</Label>
-                    <Input
-                      id="model"
-                      placeholder="e.g. FTKF50TV, XPS 15 9520, Series 7"
-                      value={form.model}
-                      onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="serial_number">Serial / IMEI / Tag No.</Label>
-                    <Input
-                      id="serial_number"
-                      placeholder="e.g. SN-9874523-QAT"
-                      value={form.serial_number}
-                      onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="ownership_type">Ownership Type</Label>
-                    <Select
-                      value={form.ownership_type}
-                      onValueChange={v => setForm(f => ({ ...f, ownership_type: v }))}
-                    >
-                      <SelectTrigger id="ownership_type">
-                        <SelectValue placeholder="Select Ownership Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ownershipTypes.length > 0 ? (
-                          ownershipTypes.map(o => (
-                            <SelectItem key={o.id} value={o.name}>{o.name}</SelectItem>
-                          ))
-                        ) : (
-                          ["Owned", "Leased", "Customer Provided", "Landlord Provided"].map(o => (
-                            <SelectItem key={o} value={o}>{o}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAllocationForm(f => ({ 
+                      ...f, 
+                      allocation_type: "OFFICIAL_STAFF",
+                      to_property_id: "",
+                      to_unit_id: "",
+                      department: f.department || "Administration & Executive"
+                    }))}
+                    className={`p-2.5 rounded-lg border text-left flex items-start gap-2.5 transition-all ${
+                      allocationForm.allocation_type === "OFFICIAL_STAFF"
+                        ? "border-indigo-500 bg-indigo-500/10 text-foreground ring-1 ring-indigo-500"
+                        : "border-border bg-card/60 text-muted-foreground hover:bg-muted/40"
+                    }`}
+                  >
+                    <User className={`h-4 w-4 mt-0.5 shrink-0 ${allocationForm.allocation_type === "OFFICIAL_STAFF" ? "text-indigo-600" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="font-semibold text-xs text-foreground">Office Staff</div>
+                      <div className="text-[10px] text-muted-foreground">Fixed to Corporate Office HQ &amp; staff</div>
+                    </div>
+                  </button>
                 </div>
-              </TabsContent>
+              </div>
+            )}
 
-              {/* STEP 2: Financial, Valuation & GL */}
-              <TabsContent value="financial" className="space-y-4 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="purchase_cost">Purchase Cost (QAR) <span className="text-destructive">*</span></Label>
-                    <Input
-                      id="purchase_cost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      required
-                      placeholder="0.00"
-                      value={form.purchase_cost}
-                      onChange={e => handleCostChange(e.target.value)}
-                    />
+            {/* FLOW A: OFFICIAL STAFF ALLOCATION (PROPERTY FIXED TO CORPORATE OFFICE) */}
+            {(allocationMode === "ALLOCATE" || allocationMode === "TRANSFER") && allocationForm.allocation_type === "OFFICIAL_STAFF" && (
+              <div className="p-3 rounded-lg border border-indigo-500/30 bg-indigo-500/5 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold flex items-center justify-between">
+                      <span>Assigned Property</span>
+                      <Badge variant="outline" className="text-[9px] bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 font-semibold">
+                        Auto-Fixed for Staff
+                      </Badge>
+                    </Label>
+                    <div className="h-8 px-3 rounded-md border bg-muted/70 flex items-center gap-2 text-xs font-semibold text-foreground">
+                      <Building2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                      <span>Corporate Office (HQ)</span>
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="purchase_date">Purchase / Capitalization Date</Label>
-                    <Input
-                      id="purchase_date"
-                      type="date"
-                      value={form.purchase_date}
-                      onChange={e => setForm(f => ({ ...f, purchase_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="supplier">Supplier / Vendor</Label>
-                    <Input
-                      id="supplier"
-                      placeholder="e.g. Al Mannai Trading, Jarir Bookstore"
-                      value={form.supplier}
-                      onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="opening_cost">Opening Cost (QAR)</Label>
-                    <Input
-                      id="opening_cost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.opening_cost}
-                      onChange={e => setForm(f => ({ ...f, opening_cost: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="addition_during_year">Addition During Year (QAR)</Label>
-                    <Input
-                      id="addition_during_year"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.addition_during_year}
-                      onChange={e => {
-                        const addVal = e.target.value;
-                        const total = (Number(form.purchase_cost) || 0) + (Number(addVal) || 0);
-                        const closeDep = (Number(form.opening_accumulated_depreciation) || 0) + (Number(form.current_year_depreciation) || 0);
-                        setForm(f => ({
-                          ...f,
-                          addition_during_year: addVal,
-                          total_asset_value: String(total),
-                          net_book_value: String(Math.max(0, total - closeDep)),
-                        }));
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="total_asset_value">Total Asset Value (QAR)</Label>
-                    <Input
-                      id="total_asset_value"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.total_asset_value}
-                      onChange={e => setForm(f => ({ ...f, total_asset_value: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="depreciation_method">Depreciation Method</Label>
-                    <Select
-                      value={form.depreciation_method}
-                      onValueChange={v => handleCostChange(form.purchase_cost, { method: v })}
-                    >
-                      <SelectTrigger id="depreciation_method">
-                        <SelectValue placeholder="Select Method" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Straight Line (SLM)">Straight Line (SLM)</SelectItem>
-                        <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
-                        <SelectItem value="None">None / No Depreciation</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="depreciation_rate">Depreciation Rate (% / Annum)</Label>
-                    <Input
-                      id="depreciation_rate"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      placeholder="e.g. 20"
-                      value={form.depreciation_rate}
-                      onChange={e => handleCostChange(form.purchase_cost, { rate: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="life_of_asset">Life of Asset (Years)</Label>
-                    <Input
-                      id="life_of_asset"
-                      type="number"
-                      min="1"
-                      placeholder="e.g. 5 or 10"
-                      value={form.life_of_asset}
-                      onChange={e => handleCostChange(form.purchase_cost, { life: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="opening_accumulated_depreciation">Opening Acc. Depreciation (QAR)</Label>
-                    <Input
-                      id="opening_accumulated_depreciation"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.opening_accumulated_depreciation}
-                      onChange={e => {
-                        const val = e.target.value;
-                        const close = (Number(val) || 0) + (Number(form.current_year_depreciation) || 0);
-                        const totalVal = Number(form.total_asset_value || form.purchase_cost) || 0;
-                        setForm(f => ({
-                          ...f,
-                          opening_accumulated_depreciation: val,
-                          closing_accumulated_depreciation: String(close),
-                          net_book_value: String(Math.max(0, totalVal - close)),
-                        }));
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="current_year_depreciation">Current Year Depreciation (QAR)</Label>
-                    <Input
-                      id="current_year_depreciation"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.current_year_depreciation}
-                      onChange={e => {
-                        const val = e.target.value;
-                        const close = (Number(form.opening_accumulated_depreciation) || 0) + (Number(val) || 0);
-                        const totalVal = Number(form.total_asset_value || form.purchase_cost) || 0;
-                        setForm(f => ({
-                          ...f,
-                          current_year_depreciation: val,
-                          closing_accumulated_depreciation: String(close),
-                          net_book_value: String(Math.max(0, totalVal - close)),
-                        }));
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="closing_accumulated_depreciation">Closing Acc. Depreciation (QAR)</Label>
-                    <Input
-                      id="closing_accumulated_depreciation"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.closing_accumulated_depreciation}
-                      onChange={e => setForm(f => ({ ...f, closing_accumulated_depreciation: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="net_book_value">Net Book Value (QAR)</Label>
-                    <Input
-                      id="net_book_value"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      className="font-bold text-primary"
-                      value={form.net_book_value}
-                      onChange={e => setForm(f => ({ ...f, net_book_value: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="disposal_value">Disposal Value (QAR)</Label>
-                    <Input
-                      id="disposal_value"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={form.disposal_value}
-                      onChange={e => setForm(f => ({ ...f, disposal_value: e.target.value }))}
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Department / Business Unit *</Label>
+                    <SearchableSelect
+                      options={[
+                        { label: "— All Departments —", value: "" },
+                        ...departmentsList.map(d => ({ label: d.name, value: d.name }))
+                      ]}
+                      value={allocationForm.department}
+                      onValueChange={v => setAllocationForm(f => ({ ...f, department: v, to_employee_name: "" }))}
+                      placeholder="Select Department..."
                     />
                   </div>
                 </div>
-              </TabsContent>
 
-              {/* STEP 3: Assignment & Location */}
-              <TabsContent value="assignment" className="space-y-4 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="assigned_property">Assigned Property</Label>
-                    <Select
-                      value={form.assigned_property_id}
-                      onValueChange={value => setForm(f => ({ ...f, assigned_property_id: value, assigned_unit_id: "" }))}
-                    >
-                      <SelectTrigger id="assigned_property">
-                        <SelectValue placeholder="Select property (optional)" />
-                      </SelectTrigger>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Official Staff / Employee Name *</Label>
+                    {(() => {
+                      const filteredEmployeesForAllocation = employeesList.filter(emp => {
+                        if (!allocationForm.department) return true;
+                        const deptName = emp.departments?.name || emp.department || "";
+                        const deptId = emp.department_id || "";
+                        return deptName.toLowerCase() === allocationForm.department.toLowerCase() ||
+                               departmentsList.some(d => d.name.toLowerCase() === allocationForm.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+                      });
+
+                      return (
+                        <SearchableSelect
+                          options={[
+                            { label: "— Select Staff Member —", value: "" },
+                            ...filteredEmployeesForAllocation.map(emp => ({
+                              label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                              value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                            }))
+                          ]}
+                          value={allocationForm.to_employee_name}
+                          onValueChange={v => {
+                            const matchedEmp = filteredEmployeesForAllocation.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                               employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                            setAllocationForm(f => ({
+                              ...f,
+                              to_employee_name: v,
+                              department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                            }));
+                          }}
+                          placeholder={allocationForm.department ? `Select employee in ${allocationForm.department}...` : "Select employee..."}
+                        />
+                      );
+                    })()}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Workspace / Desk / Room (Optional)</Label>
+                    <Input
+                      className="h-8 text-xs bg-background"
+                      placeholder="e.g. HQ 2nd Floor - Desk #12 / Office 204"
+                      value={allocationForm.to_unit_id}
+                      onChange={e => setAllocationForm(f => ({ ...f, to_unit_id: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* FLOW B: PROPERTY / UNIT ALLOCATION */}
+            {(allocationMode === "ALLOCATE" || allocationMode === "TRANSFER") && allocationForm.allocation_type === "PROPERTY_UNIT" && (
+              <div className="p-3 rounded-lg border bg-muted/20 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Target Property *</Label>
+                    <Select value={allocationForm.to_property_id} onValueChange={v => setAllocationForm(f => ({ ...f, to_property_id: v, to_unit_id: "" }))}>
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Property" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="unassigned">— General / Unassigned Pool —</SelectItem>
                         {properties.map(p => (
                           <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={() => {
-                        setPropertyDialogMode("create");
-                        setPropertyForm({ title: "", address: "", city: "", country: "Qatar", property_type: "apartment", max_guests: "1", bedrooms: "1", beds: "1", bathrooms: "1", base_price_per_night: "0", cleaning_fee: "0", no_of_units: "1" });
-                        setPropertyDialogOpen(true);
-                      }}>Add Property</Button>
-                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="assigned_unit">Assigned Unit</Label>
-                    <Select
-                      value={form.assigned_unit_id}
-                      onValueChange={value => setForm(f => ({ ...f, assigned_unit_id: value }))}
-                      disabled={!form.assigned_property_id || form.assigned_property_id === "unassigned"}
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Target Unit (Optional)</Label>
+                    <Select 
+                      value={allocationForm.to_unit_id} 
+                      onValueChange={v => setAllocationForm(f => ({ ...f, to_unit_id: v }))}
+                      disabled={!allocationForm.to_property_id}
                     >
-                      <SelectTrigger id="assigned_unit">
-                        <SelectValue placeholder={form.assigned_property_id ? "Select unit (optional)" : "Select property first"} />
-                      </SelectTrigger>
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Unit" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="unassigned">— Entire Property / Building Unit —</SelectItem>
-                        {selectedPropertyUnits.map(u => (
+                        <SelectItem value="">— Entire Property —</SelectItem>
+                        {units.filter(u => u.property_id === allocationForm.to_property_id).map(u => (
                           <SelectItem key={u.id} value={u.id}>{u.unit_ref || `Unit ${u.id}`}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" size="sm" disabled={!form.assigned_property_id || form.assigned_property_id === "unassigned"} onClick={() => {
-                        setUnitDialogMode("create");
-                        setUnitForm({ property_id: form.assigned_property_id, unit_ref: "", room_type: "Flat", status: "Available", price: "0" });
-                        setUnitDialogOpen(true);
-                      }}>Add Unit</Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="assigned_employee">Assigned Custodian / Employee</Label>
-                    <Select
-                      value={form.assigned_employee_id}
-                      onValueChange={value => {
-                        const emp = employees.find(e => e.id === value);
-                        setForm(f => ({
-                          ...f,
-                          assigned_employee_id: value === "unassigned" ? "" : value,
-                          assigned_employee_name: emp ? `${emp.first_name} ${emp.last_name}` : "",
-                          department: emp?.department_id || f.department
-                        }));
-                      }}
-                    >
-                      <SelectTrigger id="assigned_employee">
-                        <SelectValue placeholder="Select Employee Custodian (optional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">— No Employee Assigned —</SelectItem>
-                        {employees.map(emp => (
-                          <SelectItem key={emp.id} value={emp.id}>
-                            {emp.first_name} {emp.last_name} {emp.employee_code ? `(${emp.employee_code})` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
-                    <Select
-                      value={form.department}
-                      onValueChange={value => setForm(f => ({ ...f, department: value }))}
-                    >
-                      <SelectTrigger id="department">
-                        <SelectValue placeholder="Select Department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {departments.length > 0 ? (
-                          departments.map(d => (
-                            <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                          ))
-                        ) : (
-                          ["Administration", "Finance & Accounts", "Operations & Maintenance", "IT", "HR", "Leasing"].map(d => (
-                            <SelectItem key={d} value={d}>{d}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="assignment_date">Assignment Date</Label>
-                    <Input
-                      id="assignment_date"
-                      type="date"
-                      value={form.assignment_date}
-                      onChange={e => setForm(f => ({ ...f, assignment_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="return_date">Expected Return Date</Label>
-                    <Input
-                      id="return_date"
-                      type="date"
-                      value={form.return_date}
-                      onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))}
-                    />
                   </div>
                 </div>
-              </TabsContent>
 
-              {/* STEP 4: Service, Warranty & Status */}
-              <TabsContent value="service" className="space-y-4 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="asset_status">Asset Status</Label>
-                    <Select
-                      value={form.asset_status}
-                      onValueChange={v => setForm(f => ({ ...f, asset_status: v }))}
-                    >
-                      <SelectTrigger id="asset_status">
-                        <SelectValue placeholder="Select Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statuses.length > 0 ? (
-                          statuses.map(s => (
-                            <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-                          ))
-                        ) : (
-                          ["Available", "In Use", "Assigned", "Under Maintenance", "Damaged", "Disposed"].map(s => (
-                            <SelectItem key={s} value={s}>{s}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="asset_condition">Asset Condition</Label>
-                    <Select
-                      value={form.asset_condition}
-                      onValueChange={v => setForm(f => ({ ...f, asset_condition: v }))}
-                    >
-                      <SelectTrigger id="asset_condition">
-                        <SelectValue placeholder="Select Condition" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {conditions.length > 0 ? (
-                          conditions.map(c => (
-                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                          ))
-                        ) : (
-                          ["Brand New", "Good", "Fair", "Needs Repair", "Scrap / Disposed"].map(c => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="warranty_status">Warranty Status</Label>
-                    <Select
-                      value={form.warranty_status}
-                      onValueChange={v => setForm(f => ({ ...f, warranty_status: v }))}
-                    >
-                      <SelectTrigger id="warranty_status">
-                        <SelectValue placeholder="Select Warranty Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["Valid", "Expired", "Not Applicable", "Extended Warranty"].map(w => (
-                          <SelectItem key={w} value={w}>{w}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="warranty_expiry_date">Warranty Expiry Date</Label>
-                    <Input
-                      id="warranty_expiry_date"
-                      type="date"
-                      value={form.warranty_expiry_date}
-                      onChange={e => setForm(f => ({ ...f, warranty_expiry_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="last_service_date">Last Service Date</Label>
-                    <Input
-                      id="last_service_date"
-                      type="date"
-                      value={form.last_service_date}
-                      onChange={e => setForm(f => ({ ...f, last_service_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="next_service_date">Next Service Date</Label>
-                    <Input
-                      id="next_service_date"
-                      type="date"
-                      value={form.next_service_date}
-                      onChange={e => setForm(f => ({ ...f, next_service_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="disposal_date">Disposal Date (if applicable)</Label>
-                    <Input
-                      id="disposal_date"
-                      type="date"
-                      value={form.disposal_date}
-                      onChange={e => setForm(f => ({ ...f, disposal_date: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="remarks">Remarks / Technical Specifications</Label>
-                    <Textarea
-                      id="remarks"
-                      rows={3}
-                      placeholder="Enter warranty notes, serial verification, accessories included, or condition remarks..."
-                      value={form.remarks}
-                      onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            <DialogFooter className="mt-6 flex justify-between sm:justify-between items-center gap-2">
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={activeFormStep === "general"}
-                  onClick={() => {
-                    const steps: ("general" | "financial" | "assignment" | "service")[] = ["general", "financial", "assignment", "service"];
-                    const currIdx = steps.indexOf(activeFormStep);
-                    if (currIdx > 0) setActiveFormStep(steps[currIdx - 1]);
-                  }}
-                >
-                  Previous Step
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={activeFormStep === "service"}
-                  onClick={() => {
-                    const steps: ("general" | "financial" | "assignment" | "service")[] = ["general", "financial", "assignment", "service"];
-                    const currIdx = steps.indexOf(activeFormStep);
-                    if (currIdx < steps.length - 1) setActiveFormStep(steps[currIdx + 1]);
-                  }}
-                >
-                  Next Step
-                </Button>
-              </div>
-
-              <div className="flex gap-2">
-                <Button type="button" variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : null}
-                  {editingAsset ? "Update Asset" : "Save Asset"}
-                </Button>
-              </div>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Asset View Details Dialog */}
-      <Dialog open={!!viewingAsset} onOpenChange={(open) => !open && setViewingAsset(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          {viewingAsset && (
-            <div className="space-y-6">
-              <DialogHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                      {viewingAsset.asset_name}
-                      <Badge variant="outline" className="text-xs font-normal">
-                        {viewingAsset.asset_status || "Available"}
-                      </Badge>
-                    </DialogTitle>
-                    <DialogDescription className="mt-1">
-                      Code: <span className="font-mono font-medium text-foreground">{viewingAsset.asset_code}</span> | Category: <span className="font-medium text-foreground">{viewingAsset.category}</span>
-                      {viewingAsset.subcategory ? ` › ${viewingAsset.subcategory}` : ''}
-                    </DialogDescription>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => {
-                    const target = viewingAsset;
-                    setViewingAsset(null);
-                    openEditAssetModal(target);
-                  }}>
-                    <Pencil className="h-4 w-4 mr-2" /> Edit Asset
-                  </Button>
-                </div>
-              </DialogHeader>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/30 p-4 rounded-lg border">
-                <div>
-                  <span className="text-xs text-muted-foreground block">Purchase Cost</span>
-                  <span className="text-lg font-bold text-foreground">QAR {viewingAsset.purchase_cost != null ? Number(viewingAsset.purchase_cost).toLocaleString() : '0'}</span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block">Net Book Value</span>
-                  <span className="text-lg font-bold text-primary">QAR {viewingAsset.net_book_value != null ? Number(viewingAsset.net_book_value).toLocaleString() : '0'}</span>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground block">Acc. Depreciation</span>
-                  <span className="text-lg font-bold text-muted-foreground">QAR {viewingAsset.closing_accumulated_depreciation != null ? Number(viewingAsset.closing_accumulated_depreciation).toLocaleString() : '0'}</span>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Unit Tenant / Property Custodian Name (Optional)</Label>
+                  <Input
+                    className="h-8 text-xs bg-background"
+                    placeholder="e.g. Unit Tenant / Site Caretaker"
+                    value={allocationForm.to_employee_name}
+                    onChange={e => setAllocationForm(f => ({ ...f, to_employee_name: e.target.value }))}
+                  />
                 </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-foreground border-b pb-1">Specifications & Brand</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <span className="text-muted-foreground">Category:</span>
-                    <span className="font-medium">{viewingAsset.category || '—'}</span>
-                    <span className="text-muted-foreground">Subcategory:</span>
-                    <span className="font-medium">{viewingAsset.subcategory || '—'}</span>
-                    <span className="text-muted-foreground">Brand:</span>
-                    <span className="font-medium">{viewingAsset.brand || '—'}</span>
-                    <span className="text-muted-foreground">Model:</span>
-                    <span className="font-medium">{viewingAsset.model || '—'}</span>
-                    <span className="text-muted-foreground">Serial / IMEI:</span>
-                    <span className="font-medium font-mono">{viewingAsset.serial_number || '—'}</span>
-                    <span className="text-muted-foreground">Ownership:</span>
-                    <span className="font-medium">{viewingAsset.ownership_type || 'Owned'}</span>
-                    <span className="text-muted-foreground">Condition:</span>
-                    <span className="font-medium">{viewingAsset.asset_condition || 'Good'}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-foreground border-b pb-1">Assignment & Location</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <span className="text-muted-foreground">Assigned Property:</span>
-                    <span className="font-medium">{viewingAsset.properties?.title || viewingAsset.assigned_property_code || '—'}</span>
-                    <span className="text-muted-foreground">Assigned Unit:</span>
-                    <span className="font-medium">{viewingAsset.units?.unit_code || viewingAsset.assigned_unit_code || '—'}</span>
-                    <span className="text-muted-foreground">Assigned Custodian:</span>
-                    <span className="font-medium">{viewingAsset.assigned_employee_name || (viewingAsset.employees ? `${viewingAsset.employees.first_name} ${viewingAsset.employees.last_name}` : '—')}</span>
-                    <span className="text-muted-foreground">Assignment Date:</span>
-                    <span className="font-medium">{viewingAsset.assignment_date || '—'}</span>
-                    <span className="text-muted-foreground">Expected Return:</span>
-                    <span className="font-medium">{viewingAsset.return_date || '—'}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-foreground border-b pb-1">Purchasing & Warranty</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <span className="text-muted-foreground">Supplier / Vendor:</span>
-                    <span className="font-medium">{viewingAsset.supplier || '—'}</span>
-                    <span className="text-muted-foreground">Purchase Date:</span>
-                    <span className="font-medium">{viewingAsset.purchase_date || '—'}</span>
-                    <span className="text-muted-foreground">Depreciation Method:</span>
-                    <span className="font-medium">{viewingAsset.depreciation_method || 'Straight Line (SLM)'}</span>
-                    <span className="text-muted-foreground">Depreciation Rate:</span>
-                    <span className="font-medium">{viewingAsset.depreciation_rate != null ? `${viewingAsset.depreciation_rate}% / yr` : '—'}</span>
-                    <span className="text-muted-foreground">Useful Life:</span>
-                    <span className="font-medium">{viewingAsset.life_of_asset ? `${viewingAsset.life_of_asset} years` : '—'}</span>
-                    <span className="text-muted-foreground">Warranty Status:</span>
-                    <span className="font-medium">{viewingAsset.warranty_status || '—'}</span>
-                    <span className="text-muted-foreground">Warranty Expiry:</span>
-                    <span className="font-medium">{viewingAsset.warranty_expiry_date || '—'}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-foreground border-b pb-1">Service & Lifecycle</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <span className="text-muted-foreground">Last Service Date:</span>
-                    <span className="font-medium">{viewingAsset.last_service_date || '—'}</span>
-                    <span className="text-muted-foreground">Next Service Date:</span>
-                    <span className="font-medium">{viewingAsset.next_service_date || '—'}</span>
-                    <span className="text-muted-foreground">Disposal Date:</span>
-                    <span className="font-medium">{viewingAsset.disposal_date || '—'}</span>
-                    <span className="text-muted-foreground">Disposal Value:</span>
-                    <span className="font-medium">QAR {viewingAsset.disposal_value ? Number(viewingAsset.disposal_value).toLocaleString() : '0'}</span>
-                  </div>
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Effective Movement Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs bg-background"
+                  value={allocationForm.date}
+                  onChange={e => setAllocationForm(f => ({ ...f, date: e.target.value }))}
+                />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Asset Condition Check</Label>
+                <Select value={allocationForm.condition} onValueChange={v => setAllocationForm(f => ({ ...f, condition: v }))}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["New", "Good / Operational", "Minor Wear", "Requires Maintenance"].map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-              {viewingAsset.remarks && (
-                <div className="p-3 bg-muted/20 border rounded-md text-sm">
-                  <span className="font-semibold block mb-1">Remarks & Notes:</span>
-                  <p className="text-muted-foreground">{viewingAsset.remarks}</p>
-                </div>
-              )}
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setViewingAsset(null)}>Close</Button>
-                <Button onClick={() => setPrintBarcode(viewingAsset.asset_code || "")}>
-                  <Printer className="h-4 w-4 mr-2" /> Print Asset Tag
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Property Dialog */}
-      <Dialog open={propertyDialogOpen} onOpenChange={setPropertyDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>{propertyDialogMode === "edit" ? "Edit Property" : "Add Property"}</DialogTitle>
-            <DialogDescription>{propertyDialogMode === "edit" ? "Update the selected property details." : "Add a property to assign this asset to."}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="propTitle" className="text-right">Title</Label>
-              <Input id="propTitle" className="col-span-3" value={propertyForm.title} onChange={e => setPropertyForm(f => ({ ...f, title: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="propCity" className="text-right">City</Label>
-              <Input id="propCity" className="col-span-3" value={propertyForm.city} onChange={e => setPropertyForm(f => ({ ...f, city: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="propAddress" className="text-right">Address</Label>
-              <Textarea id="propAddress" className="col-span-3" value={propertyForm.address} onChange={e => setPropertyForm(f => ({ ...f, address: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="propType" className="text-right">Type</Label>
-              <Select value={propertyForm.property_type} onValueChange={v => setPropertyForm(f => ({ ...f, property_type: v }))}>
-                <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {['apartment', 'villa', 'commercial', 'townhouse'].map((option) => (
-                    <SelectItem key={option} value={option}>{option}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="propUnits" className="text-right">Units Count</Label>
-              <Input id="propUnits" type="number" min="0" className="col-span-3" placeholder="e.g. 10" value={propertyForm.no_of_units} onChange={e => setPropertyForm(f => ({ ...f, no_of_units: e.target.value }))} />
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Movement Remarks &amp; Handover Notes</Label>
+              <Input
+                className="h-8 text-xs bg-background"
+                placeholder="e.g. Issued for official staff workstation / Routine unit handover"
+                value={allocationForm.remarks}
+                onChange={e => setAllocationForm(f => ({ ...f, remarks: e.target.value }))}
+              />
             </div>
             <div className="col-span-4 border-t pt-3 mt-1 space-y-2">
               <div className="flex justify-between items-center">
@@ -1620,165 +3963,2805 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
               </div>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPropertyDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveProperty}>{propertyDialogMode === "edit" ? "Update Property" : "Save Property"}</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowAllocationDialog(false)}>Cancel</Button>
+            <Button 
+              size="sm" 
+              disabled={saving}
+              className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]" 
+              onClick={handleConfirmAllocation}
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              {allocationMode === "ALLOCATE" ? "Confirm Allocation" : allocationMode === "DEALLOCATE" ? "Confirm Deallocation" : "Confirm Transfer"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Unit Dialog */}
-      <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: REGISTER / EXTEND WARRANTY (WITH DOCUMENT UPLOAD) ───────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showWarrantyModal} onOpenChange={setShowWarrantyModal}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{unitDialogMode === "edit" ? "Edit Unit" : "Add Unit"}</DialogTitle>
-            <DialogDescription>{unitDialogMode === "edit" ? "Update the selected unit details." : "Add a unit to assign this asset to."}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="unitProperty" className="text-right">Property</Label>
-              <Select value={unitForm.property_id} onValueChange={v => setUnitForm(f => ({ ...f, property_id: v }))}>
-                <SelectTrigger className="col-span-3"><SelectValue placeholder="Select property" /></SelectTrigger>
-                <SelectContent>
-                  {properties.map((property) => (
-                    <SelectItem key={property.id} value={property.id}>{property.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="unitRef" className="text-right">Unit Reference</Label>
-              <Input id="unitRef" className="col-span-3" value={unitForm.unit_ref} onChange={e => setUnitForm(f => ({ ...f, unit_ref: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="roomType" className="text-right">Room Type</Label>
-              <Input id="roomType" className="col-span-3" value={unitForm.room_type} onChange={e => setUnitForm(f => ({ ...f, room_type: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="unitPrice" className="text-right">Price</Label>
-              <Input id="unitPrice" type="number" min="0" className="col-span-3" value={unitForm.price} onChange={e => setUnitForm(f => ({ ...f, price: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="unitStatus" className="text-right">Status</Label>
-              <Select value={unitForm.status} onValueChange={v => setUnitForm(f => ({ ...f, status: v }))}>
-                <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {['Available', 'Occupied', 'Maintenance'].map((option) => (
-                    <SelectItem key={option} value={option}>{option}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUnitDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveUnit}>{unitDialogMode === "edit" ? "Update Unit" : "Save Unit"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Barcode Print Dialog */}
-      <Dialog open={!!printBarcode} onOpenChange={(open) => !open && setPrintBarcode(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Asset Tag</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center justify-center py-6 gap-6 bg-white rounded-md border border-dashed">
-            {printBarcode && <QRCodeSVG value={printBarcode} size={150} />}
-            {printBarcode && <Barcode value={printBarcode} height={40} fontSize={14} background="transparent" />}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPrintBarcode(null)}>Close</Button>
-            <Button onClick={() => window.print()}><Printer className="mr-2 h-4 w-4"/> Print Tag</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Transfer Asset Dialog */}
-      <Dialog open={!!transferAsset} onOpenChange={(open) => !open && setTransferAsset(null)}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle>Transfer / Reassign Asset</DialogTitle>
-            <DialogDescription>
-              Transfer <strong>{transferAsset?.asset_name}</strong> ({transferAsset?.asset_code}) to a different Property and Unit.
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-indigo-600" />
+              {warrantyModalMode === "EXTEND" ? "Extend / Update Asset Warranty Terms" : "Register New Asset Warranty Policy"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Configure manufacturer warranty, extended warranty, or comprehensive AMC SLA with attached contract documents.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <Label>Target Property</Label>
-              <Select
-                value={transferForm.assigned_property_id}
-                onValueChange={(val) => setTransferForm(f => ({ ...f, assigned_property_id: val, assigned_unit_id: "" } as any))}
+
+          <div className="space-y-4 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Select Asset *</Label>
+              <Select 
+                value={warrantyForm.asset_id} 
+                onValueChange={v => setWarrantyForm(f => ({ ...f, asset_id: v }))}
+                disabled={warrantyModalMode === "EXTEND"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select target property" />
-                </SelectTrigger>
+                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Choose asset..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unassigned">— Unassign / General Pool —</SelectItem>
-                  {properties.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                  {assets.map(a => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.asset_name} ({a.asset_code || "No Tag"})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Target Unit</Label>
-              <Select
-                value={(transferForm as any).assigned_unit_id || "unassigned"}
-                onValueChange={(val) => setTransferForm(f => ({ ...f, assigned_unit_id: val === "unassigned" ? "" : val } as any))}
-                disabled={!transferForm.assigned_property_id || transferForm.assigned_property_id === "unassigned"}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select unit (optional)" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Warranty / Coverage Type *</Label>
+                <Select 
+                  value={warrantyForm.warranty_type} 
+                  onValueChange={(v: any) => setWarrantyForm(f => ({ ...f, warranty_type: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Standard Manufacturer">Standard Manufacturer Warranty</SelectItem>
+                    <SelectItem value="Extended Warranty">Extended Warranty (Add-on)</SelectItem>
+                    <SelectItem value="Annual Maintenance Contract (AMC)">Annual Maintenance Contract (AMC)</SelectItem>
+                    <SelectItem value="Comprehensive SLA">Comprehensive SLA / 24x7 Support</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Warranty Provider / Vendor *</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Al-Futtaim Engineering / Carrier Qatar"
+                  value={warrantyForm.provider_name}
+                  onChange={e => setWarrantyForm(f => ({ ...f, provider_name: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Policy / Certificate #</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="POL-2026-XXXX"
+                  value={warrantyForm.policy_number}
+                  onChange={e => setWarrantyForm(f => ({ ...f, policy_number: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Start Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={warrantyForm.start_date}
+                  onChange={e => setWarrantyForm(f => ({ ...f, start_date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Duration (Months)</Label>
+                <Select value={warrantyForm.duration_months} onValueChange={v => setWarrantyForm(f => ({ ...f, duration_months: v }))}>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6 Months</SelectItem>
+                    <SelectItem value="12">12 Months (1 Year)</SelectItem>
+                    <SelectItem value="24">24 Months (2 Years)</SelectItem>
+                    <SelectItem value="36">36 Months (3 Years)</SelectItem>
+                    <SelectItem value="60">60 Months (5 Years)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Support Contact Email</Label>
+                <Input
+                  type="email"
+                  className="h-8 text-xs"
+                  placeholder="service@vendor.qa"
+                  value={warrantyForm.support_email}
+                  onChange={e => setWarrantyForm(f => ({ ...f, support_email: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Support Helpline Phone</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="+974 4400 0000"
+                  value={warrantyForm.support_phone}
+                  onChange={e => setWarrantyForm(f => ({ ...f, support_phone: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Coverage Terms &amp; Inclusions</Label>
+              <Textarea
+                className="text-xs"
+                rows={2}
+                placeholder="Details of covered components (e.g. Compressor, motor, free labor, emergency response within 4 hours)..."
+                value={warrantyForm.coverage_scope}
+                onChange={e => setWarrantyForm(f => ({ ...f, coverage_scope: e.target.value }))}
+              />
+            </div>
+
+            {/* Document Upload Section */}
+            <div className="p-3 rounded-lg border bg-muted/20 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Paperclip className="h-3.5 w-3.5 text-primary" /> Upload Warranty Certificates &amp; Invoices
+                </Label>
+                <span className="text-[10px] text-muted-foreground">PDF / Images</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  className="h-8 text-xs col-span-1"
+                  placeholder="Doc Name (e.g. Warranty Certificate)"
+                  value={warrantyForm.new_doc_name}
+                  onChange={e => setWarrantyForm(f => ({ ...f, new_doc_name: e.target.value }))}
+                />
+                <Input
+                  type="file"
+                  className="h-8 text-xs col-span-1 bg-background"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) setWarrantyForm(prev => ({ ...prev, new_doc_filename: f.name }));
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                  onClick={() => {
+                    if (!warrantyForm.new_doc_name.trim()) return toast.error("Please enter a document name.");
+                    const docName = warrantyForm.new_doc_name.trim();
+                    const fileName = warrantyForm.new_doc_filename || `${docName.replace(/\s+/g, "_")}.pdf`;
+                    setWarrantyForm(prev => ({
+                      ...prev,
+                      documents: [
+                        ...prev.documents,
+                        { id: `doc-${Date.now()}`, name: docName, file_name: fileName, upload_date: getTodayIST() }
+                      ],
+                      new_doc_filename: ""
+                    }));
+                    toast.success(`Document "${docName}" attached.`);
+                  }}
+                >
+                  <Upload className="h-3 w-3" /> Attach File
+                </Button>
+              </div>
+
+              {warrantyForm.documents.length > 0 && (
+                <div className="space-y-1.5 mt-2">
+                  {warrantyForm.documents.map((doc, idx) => (
+                    <div key={doc.id} className="flex items-center justify-between p-2 rounded bg-card border text-xs">
+                      <div className="flex items-center gap-2">
+                        <FileCheck className="h-3.5 w-3.5 text-emerald-600" />
+                        <span className="font-semibold text-foreground">{doc.name}</span>
+                        <span className="text-[10px] font-mono text-muted-foreground">({doc.file_name})</span>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-5 w-5 text-destructive hover:bg-destructive/10"
+                        onClick={() => setWarrantyForm(prev => ({
+                          ...prev,
+                          documents: prev.documents.filter((_, i) => i !== idx)
+                        }))}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowWarrantyModal(false)}>Cancel</Button>
+            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleSaveWarranty}>
+              Save Warranty Record
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: EDIT ASSET DETAILS ──────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!editingAsset} onOpenChange={open => !open && setEditingAsset(null)}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary" /> Edit Asset — {editingAsset?.asset_name}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Update all asset specifications, valuation, assignment, and service details.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2 text-xs">
+
+            {/* ── Section: Identity ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Identity & Classification</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs font-semibold">Asset Name *</Label>
+                  <Input className="h-8 text-xs" value={editForm.asset_name} onChange={e => setEditForm(f => ({ ...f, asset_name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Category</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...assetCategoriesList.map(c => c.name),
+                      "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
+                    ])).map(c => ({ label: c, value: c }))}
+                    value={editForm.category}
+                    onValueChange={v => setEditForm(f => ({ ...f, category: v, subcategory: "" }))}
+                    placeholder="Select category..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">SubCategory</Label>
+                  {(() => {
+                    const matchedCat = assetCategoriesList.find(c => c.name.toLowerCase() === editForm.category.toLowerCase());
+                    const filteredSubs = matchedCat ? assetSubcategoriesList.filter(sc => sc.category_id === matchedCat.id) : assetSubcategoriesList;
+                    const subOpts = filteredSubs.length > 0
+                      ? filteredSubs.map(sc => ({ label: sc.name, value: sc.name }))
+                      : [
+                          { label: "General / Standard", value: "General / Standard" },
+                          { label: "Split AC", value: "Split AC" },
+                          { label: "Office Table", value: "Office Table" },
+                        ];
+                    return (
+                      <SearchableSelect
+                        options={subOpts}
+                        value={editForm.subcategory}
+                        onValueChange={v => setEditForm(f => ({ ...f, subcategory: v }))}
+                        placeholder="Select subcategory..."
+                      />
+                    );
+                  })()}
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Brand</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...brandsList,
+                      "Apple", "Dell", "HP", "Lenovo", "Samsung", "LG Electronics", "Daikin", "Carrier",
+                      "Mitsubishi Electric", "Gree", "Panasonic", "Sony", "Cisco", "Huawei", "Otis Elevator",
+                      "KONE", "Schindler", "Schneider Electric", "Siemens", "Bosch", "Hikvision", "Dahua",
+                      "Toyota", "Nissan", "Ford", "IKEA", "Steelcase", "Herman Miller", "Other"
+                    ])).map(b => ({ label: b, value: b }))}
+                    value={editForm.brand}
+                    onValueChange={v => setEditForm(f => ({ ...f, brand: v }))}
+                    placeholder="Select brand..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Model</Label>
+                  <Input className="h-8 text-xs" placeholder="e.g. FTKM50 / Latitude 5420" value={editForm.model} onChange={e => setEditForm(f => ({ ...f, model: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Serial / IMEI No.</Label>
+                  <Input className="h-8 text-xs font-mono" placeholder="e.g. SN-98234" value={editForm.serial_number} onChange={e => setEditForm(f => ({ ...f, serial_number: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Ownership Type</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([
+                      ...ownershipTypesList.map(o => o.name),
+                      "Company Owned", "Leased", "Rented", "Freehold", "Third-Party Custody", "Client Owned"
+                    ])).map(ot => ({ label: ot, value: ot }))}
+                    value={editForm.ownership_type}
+                    onValueChange={v => setEditForm(f => ({ ...f, ownership_type: v }))}
+                    placeholder="Select ownership type..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset ID / Tag</Label>
+                  <Input className="h-8 text-xs font-mono" value={editForm.asset_code} onChange={e => setEditForm(f => ({ ...f, asset_code: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Purchase & Warranty ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Purchase & Warranty</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Purchase Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.purchase_date} onChange={e => setEditForm(f => ({ ...f, purchase_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Purchase Cost (QAR)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.purchase_cost}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, purchase_cost: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Supplier / Vendor</Label>
+                  <SearchableSelect
+                    options={vendors.map(v => ({ label: v.name, value: v.name }))}
+                    value={editForm.supplier}
+                    onValueChange={v => setEditForm(f => ({ ...f, supplier: v }))}
+                    placeholder="Select supplier..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Warranty Expiry Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.warranty_expiry_date} onChange={e => setEditForm(f => ({ ...f, warranty_expiry_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Warranty Status</Label>
+                  <SearchableSelect
+                    options={[
+                      { label: "Under Warranty", value: "Under Warranty" },
+                      { label: "Expired", value: "Expired" },
+                      { label: "Extended", value: "Extended" },
+                      { label: "No Warranty", value: "No Warranty" },
+                    ]}
+                    value={editForm.warranty_status}
+                    onValueChange={v => setEditForm(f => ({ ...f, warranty_status: v }))}
+                    placeholder="Select status..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Assignment ── */}
+            {(() => {
+              const selectedEditProp = properties.find(p => (p.property_code && p.property_code === editForm.assigned_property_code) || p.id === editForm.assigned_property_code || p.title === editForm.assigned_property_code);
+              const isEditCorp = editForm.assigned_property_code === "Corporate Office" || editForm.assigned_property_code === "corporate" || Boolean(
+                selectedEditProp && (
+                  (selectedEditProp.property_type && selectedEditProp.property_type.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.property_category && selectedEditProp.property_category.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.title && selectedEditProp.title.toLowerCase().includes("corporate")) ||
+                  (selectedEditProp.cost_center_name && selectedEditProp.cost_center_name.toLowerCase().includes("corporate"))
+                )
+              );
+
+              const filteredEditEmployees = employeesList.filter(emp => {
+                if (!editForm.department) return true;
+                const deptName = emp.departments?.name || emp.department || "";
+                const deptId = emp.department_id || "";
+                return deptName.toLowerCase() === editForm.department.toLowerCase() ||
+                       departmentsList.some(d => d.name.toLowerCase() === editForm.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+              });
+
+              return (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Assignment & Location</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Assigned Property</Label>
+                      <SearchableSelect
+                        options={[
+                          { label: "— None / Unassigned —", value: "" },
+                          { label: "🏢 Corporate Office (HQ & Staff)", value: "Corporate Office" },
+                          ...properties.map(p => ({
+                            label: `${p.property_code || p.id} – ${p.title}${p.property_type?.toLowerCase().includes("corporate") || p.title.toLowerCase().includes("corporate") ? " [Corporate]" : ""}`,
+                            value: p.property_code || p.id,
+                          }))
+                        ]}
+                        value={editForm.assigned_property_code}
+                        onValueChange={v => {
+                          if (v === "Corporate Office") {
+                            setEditForm(f => ({
+                              ...f,
+                              assigned_property_code: "Corporate Office",
+                              assigned_unit_code: "",
+                            }));
+                            return;
+                          }
+                          const p = properties.find(prop => (prop.property_code && prop.property_code === v) || prop.id === v || prop.title === v);
+                          const willBeCorp = Boolean(
+                            p && (
+                              (p.property_type && p.property_type.toLowerCase().includes("corporate")) ||
+                              (p.property_category && p.property_category.toLowerCase().includes("corporate")) ||
+                              (p.title && p.title.toLowerCase().includes("corporate")) ||
+                              (p.cost_center_name && p.cost_center_name.toLowerCase().includes("corporate"))
+                            )
+                          );
+                          setEditForm(f => ({
+                            ...f,
+                            assigned_property_code: v,
+                            ...(willBeCorp ? { assigned_unit_code: "" } : { department: "", assigned_employee_name: "", assigned_employee_id: "" })
+                          }));
+                        }}
+                        placeholder="Select property..."
+                      />
+                    </div>
+
+                    {!isEditCorp && (
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Unit Code</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— None / Common Area —", value: "" },
+                            ...units.map(u => ({
+                              label: `${u.unit_code || u.unit_ref || u.id} ${u.unit_name ? `(${u.unit_name})` : ""}`.trim(),
+                              value: u.unit_code || u.unit_ref || u.id,
+                            }))
+                          ]}
+                          value={editForm.assigned_unit_code}
+                          onValueChange={v => setEditForm(f => ({ ...f, assigned_unit_code: v }))}
+                          placeholder="Select unit..."
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Assignment Date</Label>
+                      <Input type="date" className="h-8 text-xs" value={editForm.assignment_date} onChange={e => setEditForm(f => ({ ...f, assignment_date: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {isEditCorp && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 mt-3 border-t border-border/60">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Department</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— All Departments —", value: "" },
+                            ...departmentsList.map(d => ({ label: d.name, value: d.name }))
+                          ]}
+                          value={editForm.department}
+                          onValueChange={v => setEditForm(f => ({ ...f, department: v, assigned_employee_name: "", assigned_employee_id: "" }))}
+                          placeholder="Select department..."
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Employee Name</Label>
+                        <SearchableSelect
+                          options={[
+                            { label: "— Unassigned —", value: "" },
+                            ...filteredEditEmployees.map(emp => ({
+                              label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                              value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                            }))
+                          ]}
+                          value={editForm.assigned_employee_name}
+                          onValueChange={v => {
+                            const matchedEmp = filteredEditEmployees.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                               employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                            setEditForm(f => ({
+                              ...f,
+                              assigned_employee_name: v,
+                              assigned_employee_id: matchedEmp?.employee_id_code || (v ? f.assigned_employee_id : ""),
+                              department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                            }));
+                          }}
+                          placeholder={editForm.department ? `Search in ${editForm.department}...` : "Search employee in HRMS..."}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Assigned Employee ID</Label>
+                        <Input
+                          className="h-8 text-xs font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                          placeholder="Auto-populated from employee"
+                          value={editForm.assigned_employee_id}
+                          readOnly
+                          disabled
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Section: Condition & Status ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Condition & Status</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset Condition</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([...conditionsList.map(c => c.name), "New", "Good", "Fair", "Poor", "Under Repair", "Damaged", "Disposed"])).map(c => ({ label: c, value: c }))}
+                    value={editForm.asset_condition}
+                    onValueChange={v => setEditForm(f => ({ ...f, asset_condition: v }))}
+                    placeholder="Select condition..."
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Asset Status</Label>
+                  <SearchableSelect
+                    options={Array.from(new Set([...statusesList.map(s => s.name), "Active", "Inactive", "Under Maintenance", "Disposed", "Lost"])).map(s => ({ label: s, value: s }))}
+                    value={editForm.asset_status}
+                    onValueChange={v => setEditForm(f => ({ ...f, asset_status: v }))}
+                    placeholder="Select status..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Depreciation & Financials ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Depreciation & Financials</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Life of Asset (Months)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs"
+                    value={editForm.life_of_asset}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, life_of_asset: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Depreciation Method</Label>
+                  <Select value={editForm.depreciation_method} onValueChange={v => setEditForm(f => ({ ...f, depreciation_method: v }))}>
+                    <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Method..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Straight Line Method (SLM)">Straight Line Method (SLM)</SelectItem>
+                      <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                      <SelectItem value="Units of Production">Units of Production</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Depreciation Rate (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.depreciation_rate}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, depreciation_rate: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Opening Cost</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.opening_cost}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, opening_cost: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Addition During Year</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.addition_during_year}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, addition_during_year: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Total Asset Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.total_asset_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, total_asset_value: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Disposal Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.disposal_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, disposal_value: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Opening Acc. Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.opening_accumulated_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, opening_accumulated_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Current Year Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.current_year_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, current_year_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Closing Acc. Depreciation</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.closing_accumulated_depreciation}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, closing_accumulated_depreciation: val }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Net Book Value</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-8 text-xs font-mono"
+                    value={editForm.net_book_value}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val === "" || Number(val) >= 0) setEditForm(f => ({ ...f, net_book_value: val }));
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Service Dates ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Service & Disposal Dates</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Last Service Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.last_service_date} onChange={e => setEditForm(f => ({ ...f, last_service_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Next Service Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.next_service_date} onChange={e => setEditForm(f => ({ ...f, next_service_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Return Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.return_date} onChange={e => setEditForm(f => ({ ...f, return_date: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Disposal Date</Label>
+                  <Input type="date" className="h-8 text-xs" value={editForm.disposal_date} onChange={e => setEditForm(f => ({ ...f, disposal_date: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section: Remarks ── */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 pb-1 border-b border-border">Notes & Remarks</p>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Description / Notes</Label>
+                  <Textarea className="text-xs" rows={2} value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Remarks</Label>
+                  <Textarea className="text-xs" rows={2} value={editForm.remarks} onChange={e => setEditForm(f => ({ ...f, remarks: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setEditingAsset(null)}>Cancel</Button>
+            <Button size="sm" disabled={saving} className="bg-primary hover:bg-primary/90 text-white" onClick={handleEditAssetSubmit}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: ASSET DETAILS & COMPLETE LIFECYCLE AUDIT (VIEW ASSET) ───────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!selectedAssetForDetail} onOpenChange={open => !open && setSelectedAssetForDetail(null)}>
+        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden">
+          {selectedAssetForDetail && (
+            <>
+              <DialogHeader className="p-5 pb-3 border-b bg-gradient-to-r from-muted/60 via-background to-muted/40 shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                      <Package className="h-5 w-5 text-primary" /> {selectedAssetForDetail.asset_name}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs flex items-center gap-2 font-mono">
+                      <span>Tag: {selectedAssetForDetail.asset_code || "No Code"}</span>
+                      <span>•</span>
+                      <span>Category: {selectedAssetForDetail.category || "Fixed Asset"}</span>
+                      {selectedAssetForDetail.serial_number && (
+                        <>
+                          <span>•</span>
+                          <span>S/N: {selectedAssetForDetail.serial_number}</span>
+                        </>
+                      )}
+                    </DialogDescription>
+                  </div>
+                  <Badge variant="outline" className={`text-xs px-2.5 py-0.5 font-medium ${getAssetStatus(selectedAssetForDetail).badgeClass}`}>
+                    {getAssetStatus(selectedAssetForDetail).label}
+                  </Badge>
+                </div>
+              </DialogHeader>
+
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* 4 Summary Highlight KPI Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-lg border bg-card/60">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Purchase Cost</span>
+                    <p className="text-sm font-bold font-mono text-emerald-600 mt-0.5">
+                      QAR {Number(selectedAssetForDetail.purchase_cost || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-card/60">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Net Book Value</span>
+                    <p className="text-sm font-bold font-mono text-primary mt-0.5">
+                      QAR {Number(selectedAssetForDetail.net_book_value || selectedAssetForDetail.purchase_cost || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-card/60">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Ownership / Dept</span>
+                    <p className="text-sm font-semibold mt-0.5 truncate text-foreground">
+                      {selectedAssetForDetail.ownership_type || "Company Owned"}
+                      {selectedAssetForDetail.department ? ` • ${selectedAssetForDetail.department}` : ""}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-card/60">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Assigned Location</span>
+                    <p className="text-sm font-semibold text-foreground mt-0.5 truncate">
+                      {selectedAssetForDetail.assigned_property_code || selectedAssetForDetail.properties?.title || "Central Stock"}
+                      {selectedAssetForDetail.assigned_unit_code ? ` (Unit ${selectedAssetForDetail.assigned_unit_code})` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <Tabs defaultValue="overview" className="w-full">
+                  <TabsList className="grid grid-cols-6 h-9">
+                    <TabsTrigger value="overview" className="text-xs gap-1">
+                      <Layers className="h-3 w-3" /> Master Info
+                    </TabsTrigger>
+                    <TabsTrigger value="financials" className="text-xs gap-1">
+                      <DollarSign className="h-3 w-3" /> Financials &amp; Depr.
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="text-xs gap-1">
+                      <ArrowRightLeft className="h-3 w-3" /> Custody &amp; Move
+                    </TabsTrigger>
+                    <TabsTrigger value="warranty" className="text-xs gap-1">
+                      <ShieldCheck className="h-3 w-3" /> Warranty &amp; AMC
+                    </TabsTrigger>
+                    <TabsTrigger value="maintenance" className="text-xs gap-1">
+                      <Wrench className="h-3 w-3" /> Maintenance
+                    </TabsTrigger>
+                    <TabsTrigger value="lifecycle" className="text-xs gap-1">
+                      <Clock className="h-3 w-3" /> Service &amp; Remarks
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* ── TAB 1: MASTER INFO & SPECIFICATIONS ── */}
+                  <TabsContent value="overview" className="space-y-4 pt-3 text-xs">
+                    <div className="p-4 rounded-lg border bg-muted/20 space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Tag className="h-3.5 w-3.5 text-primary" /> Asset Identification &amp; Master Classification
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-card p-3 rounded-lg border">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset ID / Code</span>
+                          <p className="font-mono font-bold text-foreground text-xs">{selectedAssetForDetail.asset_code || selectedAssetForDetail.id}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Name</span>
+                          <p className="font-bold text-foreground text-xs">{selectedAssetForDetail.asset_name}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Category</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.category || "Fixed Asset"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Subcategory</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.subcategory || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Brand</span>
+                          <p className="text-foreground text-xs font-semibold">{selectedAssetForDetail.brand || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Model</span>
+                          <p className="text-foreground text-xs font-semibold">{selectedAssetForDetail.model || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Serial / IMEI No.</span>
+                          <p className="font-mono text-foreground text-xs">{selectedAssetForDetail.serial_number || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Ownership Type</span>
+                          <p className="text-foreground text-xs font-medium">{selectedAssetForDetail.ownership_type || "Company Owned"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Department</span>
+                          <p className="text-foreground text-xs font-medium">{selectedAssetForDetail.department || selectedAssetForDetail.departments?.name || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Supplier / Vendor</span>
+                          <p className="text-foreground text-xs">{selectedAssetForDetail.supplier || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Condition</span>
+                          <Badge variant="outline" className="text-[10px] mt-0.5 bg-background">
+                            {selectedAssetForDetail.asset_condition || "New / Good"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Asset Status</span>
+                          <Badge variant="outline" className={`text-[10px] mt-0.5 ${getAssetStatus(selectedAssetForDetail).badgeClass}`}>
+                            {selectedAssetForDetail.asset_status || getAssetStatus(selectedAssetForDetail).label}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Technical Specs & Description */}
+                    <div className="p-4 rounded-lg border bg-muted/20 space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Layers className="h-3.5 w-3.5 text-blue-500" /> Technical Data &amp; Description
+                      </h4>
+                      <p className="p-3 rounded bg-card border text-foreground leading-relaxed text-xs">
+                        {selectedAssetForDetail.description || "Standard fixed asset unit with complete technical documentation."}
+                      </p>
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 2: EXTENDED FINANCIALS & DEPRECIATION (ALL 13 FINANCIAL FIELDS) ── */}
+                  <TabsContent value="financials" className="space-y-4 pt-3 text-xs">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Acquisition, Valuation &amp; General Ledger Balances
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Purchase Cost</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.purchase_cost || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Opening Cost</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.opening_cost ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Addition during Year</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.addition_during_year || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Total Asset Value</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">QAR {Number(selectedAssetForDetail.total_asset_value ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Disposal Value</span>
+                          <p className="font-mono font-bold text-amber-600 text-sm mt-0.5">QAR {Number(selectedAssetForDetail.disposal_value || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Life of Asset</span>
+                          <p className="font-semibold text-foreground text-sm mt-0.5">
+                            {selectedAssetForDetail.life_of_asset ? `${(selectedAssetForDetail.life_of_asset / 12).toFixed(1)} Years (${selectedAssetForDetail.life_of_asset} Mos)` : "5.0 Years (60 Mos)"}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Depreciation Method</span>
+                          <p className="font-medium text-foreground text-sm mt-0.5">{selectedAssetForDetail.depreciation_method || selectedAssetForDetail.brand || "Straight Line Method (SLM)"}</p>
+                        </div>
+                        <div className="p-3 rounded bg-card border">
+                          <span className="text-[10px] text-muted-foreground font-semibold">Depreciation Rate</span>
+                          <p className="font-mono font-bold text-foreground text-sm mt-0.5">{selectedAssetForDetail.depreciation_rate ?? 20}%</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-lg border bg-card space-y-2.5">
+                        <h5 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Accumulated Depreciation &amp; Net Book Value Breakdown</h5>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Opening Acc. Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.opening_accumulated_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Current Year Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.current_year_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-muted/40 border">
+                            <span className="text-[10px] text-muted-foreground">Closing Acc. Depreciation</span>
+                            <p className="font-mono font-bold text-destructive text-xs mt-0.5">QAR {Number(selectedAssetForDetail.closing_accumulated_depreciation || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="p-2.5 rounded bg-emerald-500/10 border border-emerald-500/30">
+                            <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold">Net Book Value (Current)</span>
+                            <p className="font-mono font-bold text-emerald-600 text-sm mt-0.5">QAR {Number(selectedAssetForDetail.net_book_value ?? selectedAssetForDetail.purchase_cost ?? 0).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {assetDetailHistory?.revaluations && assetDetailHistory.revaluations.length > 0 && (
+                        <div className="mt-3">
+                          <h5 className="text-[11px] font-bold text-foreground mb-1.5">Revaluation History</h5>
+                          {assetDetailHistory.revaluations.map(r => (
+                            <div key={r.id} className="p-2 rounded bg-card border flex justify-between text-xs font-mono">
+                              <span>{formatDDMMMYYYY(r.date)}: QAR {r.prev_value.toLocaleString()} → QAR {r.new_value.toLocaleString()}</span>
+                              <span className="text-muted-foreground">({r.reason})</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 3: CUSTODY, ALLOCATION & TRANSFERS ── */}
+                  <TabsContent value="history" className="space-y-3 pt-3">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Current Deployment &amp; Custody
+                        </h4>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                          onClick={() => openAllocationModalForAsset(selectedAssetForDetail, "ALLOCATE")}
+                        >
+                          <ArrowRightLeft className="h-3 w-3" /> Transfer / Reallocate
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Property</span>
+                          <p className="font-semibold text-foreground mt-0.5">{selectedAssetForDetail.assigned_property_code || selectedAssetForDetail.properties?.title || "Central Stock (Unallocated)"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Unit Code</span>
+                          <p className="font-mono text-foreground mt-0.5">{selectedAssetForDetail.assigned_unit_code || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Employee ID</span>
+                          <p className="font-mono text-foreground mt-0.5">{selectedAssetForDetail.assigned_employee_id || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assigned Employee Name</span>
+                          <p className="font-semibold text-foreground mt-0.5">{selectedAssetForDetail.assigned_employee_name || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Assignment Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.assignment_date)}</p>
+                        </div>
+                      </div>
+
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mt-4 mb-2 flex items-center gap-1.5">
+                        <ArrowRightLeft className="h-3.5 w-3.5 text-primary" /> Movement History Trail
+                      </h4>
+                      {assetDetailHistory?.allocations.length === 0 ? (
+                        <div className="text-center py-6 text-muted-foreground bg-card rounded border">
+                          <ArrowRightLeft className="mx-auto h-5 w-5 mb-1 opacity-40" />
+                          <p className="text-xs">No transfer movements recorded yet.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {assetDetailHistory?.allocations.map(al => (
+                            <div key={al.id} className="flex items-start gap-3 p-2.5 rounded border bg-card text-xs">
+                              <div className="p-1.5 rounded bg-primary/10 text-primary font-mono text-[10px] font-bold shrink-0">
+                                {al.action_type}
+                              </div>
+                              <div className="flex-1 space-y-0.5">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-semibold text-foreground">
+                                    {al.action_type === "ALLOCATION" ? `Allocated to ${al.to_property}` :
+                                     al.action_type === "DEALLOCATION" ? `Deallocated back to inventory` :
+                                     `Transferred: ${al.from_property} → ${al.to_property}`}
+                                  </span>
+                                  <span className="text-[11px] font-mono text-muted-foreground">{formatDDMMMYYYY(al.date)}</span>
+                                </div>
+                                <p className="text-muted-foreground text-[11px]">
+                                  {al.to_unit && `Unit: ${al.to_unit} • `}
+                                  {al.to_employee && `Recipient: ${al.to_employee} • `}
+                                  Condition: {al.condition || "Good"}
+                                </p>
+                                {al.remarks && <p className="text-xs italic text-muted-foreground mt-1">"{al.remarks}"</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 4: WARRANTY & AMC ── */}
+                  <TabsContent value="warranty" className="space-y-3 pt-3">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-indigo-500" /> Active Warranty Policy &amp; Terms
+                        </h4>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="h-7 text-xs gap-1 border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10"
+                          onClick={() => openWarrantyModal(selectedAssetForDetail, assetDetailHistory?.warranty || undefined)}
+                        >
+                          <ShieldCheck className="h-3 w-3" /> Update Warranty
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Warranty Expiry Date</span>
+                          <p className="font-mono font-bold text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.warranty_expiry_date || assetDetailHistory?.warranty?.expiry_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Warranty Status</span>
+                          <Badge variant="outline" className="text-[10px] mt-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/30 font-mono">
+                            {selectedAssetForDetail.warranty_status || assetDetailHistory?.warranty?.status || "ACTIVE"}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Policy Provider</span>
+                          <p className="font-semibold text-foreground mt-0.5">{assetDetailHistory?.warranty?.provider_name || selectedAssetForDetail.supplier || "Manufacturer"}</p>
+                        </div>
+                      </div>
+
+                      {assetDetailHistory?.warranty?.coverage_scope && (
+                        <div className="p-3 rounded bg-card border text-xs">
+                          <span className="text-[10px] text-muted-foreground font-bold uppercase">Coverage Scope &amp; Terms:</span>
+                          <p className="text-foreground mt-1">{assetDetailHistory.warranty.coverage_scope}</p>
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 5: MAINTENANCE WORK ORDERS ── */}
+                  <TabsContent value="maintenance" className="space-y-3 pt-3">
+                    <div className="rounded-lg border p-4 bg-muted/20">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                        <Wrench className="h-3.5 w-3.5 text-amber-500" /> Maintenance &amp; Repair Work Orders
+                      </h4>
+                      {assetDetailHistory?.maintenances.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Wrench className="mx-auto h-6 w-6 mb-1 opacity-40" />
+                          <p className="text-xs">No maintenance work orders logged for this asset.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {assetDetailHistory?.maintenances.map(m => (
+                            <div key={m.id} className="p-3 rounded border bg-card flex items-center justify-between gap-3 text-xs">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-foreground">{m.id}</span>
+                                  <Badge variant="outline" className="text-[10px]">{m.maintenance_type}</Badge>
+                                  <Badge variant="outline" className="text-[10px] font-mono text-amber-600 bg-amber-500/10 border-amber-500/30">
+                                    {m.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                  Vendor: {m.service_vendor} {m.technician_name && `• Tech: ${m.technician_name}`} • Scheduled: {formatDDMMMYYYY(m.scheduled_date)}
+                                </p>
+                              </div>
+                              <div className="text-right font-mono font-bold">
+                                QAR {(m.actual_cost || m.estimated_cost || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── TAB 6: SERVICE DATES, LIFECYCLE & REMARKS (ALL REMAINING FIELDS) ── */}
+                  <TabsContent value="lifecycle" className="space-y-4 pt-3 text-xs">
+                    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-blue-500" /> Service Dates &amp; Complete Lifecycle Timeline
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-card p-3 rounded-lg border text-xs">
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Purchase Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.purchase_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Last Service Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.last_service_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Next Service Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.next_service_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Return Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.return_date)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-muted-foreground font-semibold">Disposal Date</span>
+                          <p className="font-mono text-foreground mt-0.5">{formatDDMMMYYYY(selectedAssetForDetail.disposal_date)}</p>
+                        </div>
+                      </div>
+
+                      {/* Remarks & Notes */}
+                      <div className="p-3.5 rounded-lg border bg-card space-y-1.5">
+                        <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Remarks &amp; Lifecycle Notes:</span>
+                        <p className="text-foreground text-xs leading-relaxed">
+                          {selectedAssetForDetail.remarks || "No additional remarks recorded for this asset."}
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              <DialogFooter className="p-3 border-t bg-muted/20 shrink-0">
+                <Button size="sm" variant="outline" onClick={() => setSelectedAssetForDetail(null)}>Close</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: 4-STEP CANONICAL ASSET CREATION (ADD ASSET) ────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showNew} onOpenChange={setShowNew}>
+        <DialogContent className="max-w-3xl max-h-[92vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3 border-b bg-gradient-to-r from-muted/60 via-background to-muted/40 shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                  <Package className="h-5 w-5 text-primary" /> Register New Fixed Asset
+                </DialogTitle>
+                <DialogDescription className="text-xs mt-0.5">
+                  Complete asset details, finance general ledger setup, warranty terms, and document attachments.
+                </DialogDescription>
+              </div>
+              <Badge variant="outline" className="text-xs font-mono bg-primary/10 text-primary border-primary/20">
+                Step {stepperStep} of 4
+              </Badge>
+            </div>
+
+            {/* Stepper Navigation */}
+            <div className="grid grid-cols-4 gap-2 pt-3">
+              {[
+                { step: 1, label: "Asset & Finance GL", icon: DollarSign },
+                { step: 2, label: "Warranty & SLA", icon: ShieldCheck },
+                { step: 3, label: "Documents & Invoices", icon: Paperclip },
+                { step: 4, label: "Specifications & Review", icon: Layers },
+              ].map((s) => {
+                const Icon = s.icon;
+                const isActive = stepperStep === s.step;
+                const isDone = stepperStep > s.step;
+                return (
+                  <button
+                    key={s.step}
+                    type="button"
+                    onClick={() => setStepperStep(s.step as any)}
+                    className={`flex items-center gap-2 p-2 rounded-lg text-left text-xs transition-all border ${
+                      isActive
+                        ? "bg-primary text-white border-primary shadow-sm font-semibold"
+                        : isDone
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                        : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+                    }`}
+                  >
+                    <div className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold ${
+                      isActive ? "bg-white text-primary" : isDone ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {isDone ? <Check className="h-3 w-3" /> : s.step}
+                    </div>
+                    <span className="truncate text-[11px]">{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+            {/* ── STEP 1: ASSET DETAILS & FINANCE GENERAL LEDGER ── */}
+            {stepperStep === 1 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Asset / Item Name *</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="e.g. Executive Wooden Conference Table"
+                      value={form.item_name}
+                      onChange={e => setForm(f => ({ ...f, item_name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Category *</Label>
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...assetCategoriesList.map(c => c.name),
+                        "Furniture", "Appliances", "Electronics", "Plant & Machinery", "Vehicles", "Office Equipment", "Fixtures & Fittings", "Building Improvement", "Other"
+                      ])).map(c => ({ label: c, value: c }))}
+                      value={form.category}
+                      onValueChange={v => setForm(f => ({ ...f, category: v, subcategory: "" }))}
+                      placeholder="Select category..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">SubCategory</Label>
+                    {(() => {
+                      const matchedCat = assetCategoriesList.find(c => c.name.toLowerCase() === form.category.toLowerCase());
+                      const filteredSubcategories = matchedCat
+                        ? assetSubcategoriesList.filter(sc => sc.category_id === matchedCat.id)
+                        : assetSubcategoriesList;
+
+                      const subOptions = filteredSubcategories.length > 0
+                        ? filteredSubcategories.map(sc => ({ label: sc.name, value: sc.name }))
+                        : [
+                            { label: "General / Standard", value: "General / Standard" },
+                            { label: "Split AC", value: "Split AC" },
+                            { label: "Office Table", value: "Office Table" },
+                            { label: "Executive Chair", value: "Executive Chair" },
+                            { label: "Refrigerator", value: "Refrigerator" },
+                            { label: "Water Heater", value: "Water Heater" },
+                          ];
+
+                      return (
+                        <SearchableSelect
+                          options={subOptions}
+                          value={form.subcategory}
+                          onValueChange={v => setForm(f => ({ ...f, subcategory: v }))}
+                          placeholder="Select subcategory..."
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Brand</Label>
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...brandsList,
+                        "Apple", "Dell", "HP", "Lenovo", "Samsung", "LG Electronics", "Daikin", "Carrier",
+                        "Mitsubishi Electric", "Gree", "Panasonic", "Sony", "Cisco", "Huawei", "Otis Elevator",
+                        "KONE", "Schindler", "Schneider Electric", "Siemens", "Bosch", "Hikvision", "Dahua",
+                        "Toyota", "Nissan", "Ford", "IKEA", "Steelcase", "Herman Miller", "Other"
+                      ])).map(b => ({ label: b, value: b }))}
+                      value={form.brand}
+                      onValueChange={v => setForm(f => ({ ...f, brand: v }))}
+                      placeholder="Select brand..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Model</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="e.g. FTKM50 / Latitude 5420"
+                      value={form.model}
+                      onChange={e => setForm(f => ({ ...f, model: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Ownership Type</Label>
+                    <SearchableSelect
+                      options={Array.from(new Set([
+                        ...ownershipTypesList.map(o => o.name),
+                        "Company Owned", "Leased", "Rented", "Freehold", "Third-Party Custody", "Client Owned"
+                      ])).map(ot => ({ label: ot, value: ot }))}
+                      value={form.ownership_type}
+                      onValueChange={v => setForm(f => ({ ...f, ownership_type: v }))}
+                      placeholder="Select ownership type..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Asset ID / Barcode Code *</Label>
+                    <Input
+                      className="h-8 text-xs font-mono"
+                      placeholder="e.g. AST-0820 (Auto if blank)"
+                      value={form.asset_tag_id}
+                      onChange={e => setForm(f => ({ ...f, asset_tag_id: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Serial / IMEI No.</Label>
+                    <Input
+                      className="h-8 text-xs font-mono"
+                      placeholder="e.g. SN-98234-LG / IMEI-8612..."
+                      value={form.serial_number}
+                      onChange={e => setForm(f => ({ ...f, serial_number: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Supplier / Vendor</Label>
+                    <SearchableSelect
+                      options={vendors.map(v => ({ label: v.name, value: v.id }))}
+                      value={form.vendor_id}
+                      onValueChange={v => setForm(f => ({ ...f, vendor_id: v }))}
+                      placeholder="Select supplier..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Acquisition / Purchase Cost (QAR) *</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className="h-8 text-xs font-mono"
+                      placeholder="0.00"
+                      value={form.acquisition_amount}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, acquisition_amount: val }));
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Depreciation Method</Label>
+                    <Select
+                      value={form.depreciation_method}
+                      onValueChange={v => {
+                        setForm(f => ({
+                          ...f,
+                          depreciation_method: v,
+                          depreciation_rate: v === "None" ? "0" : f.depreciation_rate === "0" ? "20" : f.depreciation_rate,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Straight Line Method (SLM)">Straight Line (SLM)</SelectItem>
+                        <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                        <SelectItem value="None">None / No Depreciation</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Depreciation Rate (%)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
+                      placeholder="e.g. 20"
+                      disabled={form.depreciation_method === "None"}
+                      value={form.depreciation_method === "None" ? "0" : form.depreciation_rate}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, depreciation_rate: val }));
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Useful Life (Years)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className={`h-8 text-xs font-mono ${form.depreciation_method === "None" ? "bg-muted text-muted-foreground opacity-60 cursor-not-allowed" : ""}`}
+                      disabled={form.depreciation_method === "None"}
+                      value={form.useful_life_years}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, useful_life_years: val }));
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Commission / Purchase Date</Label>
+                    <Input
+                      type="date"
+                      className="h-8 text-xs"
+                      value={form.commission_date}
+                      onChange={e => setForm(f => ({ ...f, commission_date: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Put To Use Date</Label>
+                    <Input
+                      type="date"
+                      className="h-8 text-xs"
+                      value={form.put_to_use_date}
+                      onChange={e => setForm(f => ({ ...f, put_to_use_date: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Finance GL Account Mapping Box */}
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <DollarSign className="h-3.5 w-3.5 text-emerald-600" /> General Ledger Accounting Postings (Automated)
+                    </Label>
+                    <Badge variant="outline" className="text-[10px] font-mono text-emerald-600 border-emerald-500/30">
+                      Balance: QAR {Number(form.acquisition_amount || 0).toLocaleString()}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between p-2 rounded bg-card border text-xs">
+                      <span className="font-mono text-muted-foreground">Dr: 12300001 - Fixed Asset (Capital Cost / Asset A/C)</span>
+                      <span className="font-mono font-bold text-emerald-600">QAR {Number(form.acquisition_amount || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded bg-card border text-xs">
+                      <span className="font-mono text-muted-foreground">Cr: 22100001 - Trade Payables (Vendors / Supplier A/C)</span>
+                      <span className="font-mono font-bold text-emerald-600">QAR {Number(form.acquisition_amount || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 2: WARRANTY & SLA ── */}
+            {stepperStep === 2 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+                  <div>
+                    <p className="font-bold text-foreground text-xs">Register Warranty &amp; Maintenance Terms</p>
+                    <p className="text-[11px] text-muted-foreground">Enable to track manufacturer warranty, SLA coverage, and renewal dates.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                    checked={form.has_warranty}
+                    onChange={e => setForm(f => ({ ...f, has_warranty: e.target.checked }))}
+                  />
+                </div>
+
+                {form.has_warranty && (
+                  <div className="space-y-3 p-3.5 rounded-lg border bg-card">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Warranty Policy Type *</Label>
+                        <Select
+                          value={form.warranty_type}
+                          onValueChange={v => setForm(f => ({ ...f, warranty_type: v as any }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Standard Manufacturer">Standard Manufacturer Warranty</SelectItem>
+                            <SelectItem value="Extended Warranty">Extended Warranty</SelectItem>
+                            <SelectItem value="Annual Maintenance Contract (AMC)">Annual Maintenance Contract (AMC)</SelectItem>
+                            <SelectItem value="Comprehensive SLA">Comprehensive SLA</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Warranty / Service Provider *</Label>
+                        <SearchableSelect
+                          options={Array.from(new Set([
+                            ...vendors.map(vnd => vnd.name),
+                            "Al-Futtaim Technologies",
+                            "LG Electronics Gulf",
+                            "Daikin Air Conditioning",
+                            "Otis Elevator Company",
+                            "Schneider Electric QA"
+                          ])).map(name => ({ label: name, value: name }))}
+                          value={form.warranty_provider}
+                          onValueChange={v => {
+                            const selectedVendor = vendors.find(vnd => vnd.name === v || vnd.id === v);
+                            setForm(f => ({
+                              ...f,
+                              warranty_provider: selectedVendor ? selectedVendor.name : v,
+                              warranty_support_email: selectedVendor?.email || f.warranty_support_email,
+                              warranty_support_phone: selectedVendor?.phone || f.warranty_support_phone,
+                            }));
+                          }}
+                          placeholder="Select warranty / service vendor..."
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Policy / Contract No.</Label>
+                        <Input
+                          className="h-8 text-xs font-mono"
+                          placeholder="e.g. POL-QA-2026-9021"
+                          value={form.warranty_policy_no}
+                          onChange={e => setForm(f => ({ ...f, warranty_policy_no: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Warranty Start Date</Label>
+                        <Input
+                          type="date"
+                          className="h-8 text-xs"
+                          value={form.warranty_start_date}
+                          onChange={e => setForm(f => ({ ...f, warranty_start_date: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Duration (Months)</Label>
+                        <Input
+                          type="number"
+                          className="h-8 text-xs font-mono"
+                          value={form.warranty_duration_months}
+                          onChange={e => setForm(f => ({ ...f, warranty_duration_months: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Support Contact Email</Label>
+                        <Input
+                          type="email"
+                          className="h-8 text-xs"
+                          placeholder="service@provider.qa"
+                          value={form.warranty_support_email}
+                          onChange={e => setForm(f => ({ ...f, warranty_support_email: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold">Support Helpline Phone</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          placeholder="+974 4400 0000"
+                          value={form.warranty_support_phone}
+                          onChange={e => setForm(f => ({ ...f, warranty_support_phone: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Coverage Terms &amp; Inclusions</Label>
+                      <Textarea
+                        className="text-xs"
+                        rows={2}
+                        value={form.warranty_coverage}
+                        onChange={e => setForm(f => ({ ...f, warranty_coverage: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── STEP 3: DOCUMENT UPLOADS ── */}
+            {stepperStep === 3 && (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                        <Paperclip className="h-4 w-4 text-primary" /> Attach Invoices, Warranty Cards &amp; Manuals
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Upload supporting documentation for compliance and warranty claims.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input
+                      className="h-8 text-xs col-span-1"
+                      placeholder="Doc Name (e.g. Invoice / Warranty Card)"
+                      value={form.doc_input_name}
+                      onChange={e => setForm(f => ({ ...f, doc_input_name: e.target.value }))}
+                    />
+                    <Input
+                      type="file"
+                      className="h-8 text-xs col-span-1 bg-background"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          setForm(prev => ({
+                            ...prev,
+                            doc_input_file: f.name,
+                            doc_input_name: prev.doc_input_name || f.name.replace(/\.[^/.]+$/, "")
+                          }));
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!form.doc_input_file}
+                      className={`h-8 text-xs gap-1 border-primary/30 ${!form.doc_input_file ? 'opacity-50 cursor-not-allowed' : 'text-primary hover:bg-primary/10'}`}
+                      onClick={() => {
+                        if (!form.doc_input_file) {
+                          return toast.error("Please select a file to attach.");
+                        }
+                        if (!form.doc_input_name.trim()) return toast.error("Please enter a document title.");
+                        const docName = form.doc_input_name.trim();
+                        const fileName = form.doc_input_file;
+                        setForm(prev => ({
+                          ...prev,
+                          documents: [
+                            ...prev.documents,
+                            { id: `doc-${Date.now()}`, name: docName, file_name: fileName, upload_date: getTodayIST() }
+                          ],
+                          doc_input_name: "",
+                          doc_input_file: ""
+                        }));
+                        toast.success(`Document "${docName}" attached.`);
+                      }}
+                    >
+                      <Upload className="h-3 w-3" /> Attach File
+                    </Button>
+                  </div>
+
+                  {form.documents.length > 0 ? (
+                    <div className="space-y-1.5 pt-2">
+                      {form.documents.map((doc, idx) => (
+                        <div key={doc.id} className="flex items-center justify-between p-2 rounded bg-card border text-xs">
+                          <div className="flex items-center gap-2">
+                            <FileCheck className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="font-semibold text-foreground">{doc.name}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">({doc.file_name})</span>
+                          </div>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-5 w-5 text-destructive hover:bg-destructive/10"
+                            onClick={() => setForm(prev => ({
+                              ...prev,
+                              documents: prev.documents.filter((_, i) => i !== idx)
+                            }))}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground border border-dashed rounded-lg">
+                      <Paperclip className="mx-auto h-5 w-5 mb-1 opacity-40" />
+                      <p className="text-xs">No documents attached yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── STEP 4: SPECIFICATIONS & REVIEW ── */}
+            {stepperStep === 4 && (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-primary" /> Technical Specifications
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="Property (e.g. Dimensions)"
+                      value={form.spec_type_input}
+                      onChange={e => setForm(f => ({ ...f, spec_type_input: e.target.value }))}
+                    />
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder="Value (e.g. 200cm x 100cm)"
+                      value={form.spec_details_input}
+                      onChange={e => setForm(f => ({ ...f, spec_details_input: e.target.value }))}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1"
+                      onClick={() => {
+                        if (!form.spec_type_input.trim() || !form.spec_details_input.trim()) {
+                          return toast.error("Enter specification key and value.");
+                        }
+                        setForm(f => ({
+                          ...f,
+                          specifications: [...f.specifications, { id: String(Date.now()), spec_type: f.spec_type_input.trim(), spec_details: f.spec_details_input.trim() }],
+                          spec_type_input: "",
+                          spec_details_input: "",
+                        }));
+                      }}
+                    >
+                      <Plus className="h-3 w-3" /> Add Spec
+                    </Button>
+                  </div>
+
+                  {form.specifications.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      {form.specifications.map((s, idx) => (
+                        <div key={s.id} className="flex items-center justify-between p-2 rounded bg-card border text-xs">
+                          <div>
+                            <span className="font-semibold text-foreground">{s.spec_type}:</span> {s.spec_details}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setForm(f => ({ ...f, specifications: f.specifications.filter((_, i) => i !== idx) }))}
+                            className="text-destructive hover:opacity-75"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Section A: Deployment, Custody & Condition */}
+                {(() => {
+                  const selectedProp = properties.find(p => p.id === form.assigned_property_id);
+                  const isCorporate = form.assigned_property_id === "corporate" || Boolean(
+                    selectedProp && (
+                      (selectedProp.property_type && selectedProp.property_type.toLowerCase().includes("corporate")) ||
+                      (selectedProp.property_category && selectedProp.property_category.toLowerCase().includes("corporate")) ||
+                      (selectedProp.title && selectedProp.title.toLowerCase().includes("corporate")) ||
+                      (selectedProp.cost_center_name && selectedProp.cost_center_name.toLowerCase().includes("corporate"))
+                    )
+                  );
+
+                  // Filter employees by selected department if department is set
+                  const filteredEmployees = employeesList.filter(emp => {
+                    if (!form.department) return true;
+                    const deptName = emp.departments?.name || emp.department || "";
+                    const deptId = emp.department_id || "";
+                    return deptName.toLowerCase() === form.department.toLowerCase() ||
+                           departmentsList.some(d => d.name.toLowerCase() === form.department.toLowerCase() && (d.id === deptId || d.name === deptName));
+                  });
+
+                  return (
+                    <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                      <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Custody, Location &amp; Physical Condition
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Assigned Property</Label>
+                          <SearchableSelect
+                            options={[
+                              { label: "— Unassigned (Central Storage) —", value: "none" },
+                              { label: "🏢 Corporate Office (HQ & Staff)", value: "corporate" },
+                              ...properties.map(p => ({
+                                label: `${p.title} (${p.property_code || "No Code"})${p.property_type?.toLowerCase().includes("corporate") || p.title.toLowerCase().includes("corporate") ? " [Corporate]" : ""}`,
+                                value: p.id,
+                              }))
+                            ]}
+                            value={form.assigned_property_id || "none"}
+                            onValueChange={v => {
+                              if (v === "corporate") {
+                                setForm(f => ({
+                                  ...f,
+                                  assigned_property_id: "corporate",
+                                  assigned_property_code: "Corporate Office",
+                                  assigned_unit_id: "",
+                                  assigned_unit_code: "",
+                                }));
+                                return;
+                              }
+                              const p = properties.find(prop => prop.id === v);
+                              const willBeCorp = Boolean(
+                                p && (
+                                  (p.property_type && p.property_type.toLowerCase().includes("corporate")) ||
+                                  (p.property_category && p.property_category.toLowerCase().includes("corporate")) ||
+                                  (p.title && p.title.toLowerCase().includes("corporate")) ||
+                                  (p.cost_center_name && p.cost_center_name.toLowerCase().includes("corporate"))
+                                )
+                              );
+                              setForm(f => ({
+                                ...f,
+                                assigned_property_id: v === "none" ? "" : v,
+                                assigned_property_code: p?.title || "",
+                                // If not corporate, clear employee & department assignment
+                                ...(willBeCorp ? { assigned_unit_id: "", assigned_unit_code: "" } : { department: "", assigned_employee_name: "", assigned_employee_id: "" })
+                              }));
+                            }}
+                            placeholder="Select property..."
+                          />
+                        </div>
+
+                        {!isCorporate && (
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Unit Code</Label>
+                            <SearchableSelect
+                              options={[
+                                { label: "— None / Common Area —", value: "none" },
+                                ...units
+                                  .filter(u => !form.assigned_property_id || form.assigned_property_id === "none" || u.property_id === form.assigned_property_id)
+                                  .map(u => ({
+                                    label: `Unit ${u.unit_code || u.unit_name || u.unit_ref || u.id}`,
+                                    value: u.id,
+                                  }))
+                              ]}
+                              value={form.assigned_unit_id || "none"}
+                              onValueChange={v => {
+                                const u = units.find(unit => unit.id === v);
+                                setForm(f => ({ ...f, assigned_unit_id: v === "none" ? "" : v, assigned_unit_code: u?.unit_code || u?.unit_ref || "" }));
+                              }}
+                              placeholder="Select unit..."
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Assignment Date</Label>
+                          <Input
+                            type="date"
+                            className="h-8 text-xs"
+                            value={form.assignment_date}
+                            onChange={e => setForm(f => ({ ...f, assignment_date: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Corporate-only fields: Department, Assigned Employee Name, Assigned Employee ID */}
+                      {isCorporate && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-border/60">
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Department</Label>
+                            <SearchableSelect
+                              options={Array.from(new Set([
+                                ...departmentsList.map(d => d.name),
+                                "Administration", "Operations", "Finance", "HR", "Facility Management", "IT & Security", "Executive Office"
+                              ])).map(dept => ({ label: dept, value: dept }))}
+                              value={form.department}
+                              onValueChange={v => setForm(f => ({ ...f, department: v, assigned_employee_name: "", assigned_employee_id: "" }))}
+                              placeholder="Select department..."
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Employee Name</Label>
+                            <SearchableSelect
+                              options={[
+                                { label: "— Unassigned —", value: "" },
+                                ...filteredEmployees.map(emp => ({
+                                  label: `${emp.first_name || ""} ${emp.last_name || ""} (${emp.employee_id_code || emp.id || "No Code"})${emp.departments?.name ? ` — ${emp.departments.name}` : ""}`.trim(),
+                                  value: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(),
+                                }))
+                              ]}
+                              value={form.assigned_employee_name}
+                              onValueChange={v => {
+                                const matchedEmp = filteredEmployees.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v) ||
+                                                   employeesList.find(emp => `${emp.first_name || ""} ${emp.last_name || ""}`.trim() === v);
+                                setForm(f => ({
+                                  ...f,
+                                  assigned_employee_name: v,
+                                  assigned_employee_id: matchedEmp?.employee_id_code || (v ? f.assigned_employee_id : ""),
+                                  // Auto-fill department if not already selected
+                                  department: (!f.department && matchedEmp?.departments?.name) ? matchedEmp.departments.name : f.department,
+                                }));
+                              }}
+                              placeholder={form.department ? `Search in ${form.department}...` : "Search employee in HRMS..."}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Assigned Employee ID</Label>
+                            <Input
+                              className="h-8 text-xs font-mono bg-muted text-muted-foreground cursor-not-allowed"
+                              placeholder="Auto-populated from employee"
+                              value={form.assigned_employee_id}
+                              readOnly
+                              disabled
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/60">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Asset Condition</Label>
+                          <SearchableSelect
+                            options={Array.from(new Set([...conditionsList.map(c => c.name), "New", "Good / Operational", "Minor Wear", "Needs Maintenance", "Fair", "Damaged"])).map(c => ({ label: c, value: c }))}
+                            value={form.asset_condition}
+                            onValueChange={v => setForm(f => ({ ...f, asset_condition: v }))}
+                            placeholder="Select condition..."
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Asset Status</Label>
+                          <SearchableSelect
+                            options={Array.from(new Set([...statusesList.map(s => s.name), "Available", "Assigned", "Under Maintenance", "In Repair", "Decommissioned", "Disposed"])).map(st => ({ label: st, value: st }))}
+                            value={form.asset_status}
+                            onValueChange={v => setForm(f => ({ ...f, asset_status: v }))}
+                            placeholder="Select status..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Section B: Financial & Depreciation Balances */}
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-500" /> Depreciation &amp; Asset Valuation Balances (QAR)
+                  </h4>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Opening Cost (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.opening_cost}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, opening_cost: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Addition during Year (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.addition_during_year}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, addition_during_year: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Total Asset Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.total_asset_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, total_asset_value: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Disposal Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.disposal_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, disposal_value: val }));
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Opening Acc. Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.opening_accumulated_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, opening_accumulated_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Current Year Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.current_year_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, current_year_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Closing Acc. Depr. (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder="0.00"
+                        value={form.closing_accumulated_depreciation}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, closing_accumulated_depreciation: val }));
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Net Book Value (QAR)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-8 text-xs font-mono"
+                        placeholder={form.acquisition_amount || "0.00"}
+                        value={form.net_book_value}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === "" || Number(val) >= 0) setForm(f => ({ ...f, net_book_value: val }));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section C: Lifecycle Dates & Remarks */}
+                <div className="p-3.5 rounded-lg border bg-muted/20 space-y-3">
+                  <h4 className="font-bold text-foreground text-xs flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-amber-500" /> Service Dates, Lifecycle &amp; Remarks
+                  </h4>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Last Service Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.last_service_date}
+                        onChange={e => setForm(f => ({ ...f, last_service_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Next Service Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.next_service_date}
+                        onChange={e => setForm(f => ({ ...f, next_service_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Return Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.return_date}
+                        onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">Disposal Date</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-xs"
+                        value={form.disposal_date}
+                        onChange={e => setForm(f => ({ ...f, disposal_date: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Remarks &amp; Lifecycle Notes</Label>
+                    <Textarea
+                      rows={2}
+                      className="text-xs"
+                      placeholder="Enter asset remarks, procurement notes, warranty caveats..."
+                      value={form.remarks}
+                      onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Summary Review Card */}
+                <div className="p-3.5 rounded-lg border bg-card space-y-2.5">
+                  <h4 className="font-bold text-foreground text-xs uppercase tracking-wider text-muted-foreground">
+                    Registration Summary
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div className="p-2 rounded bg-muted/40">
+                      <span className="text-[10px] text-muted-foreground">Asset Name</span>
+                      <p className="font-semibold truncate">{form.item_name || "—"}</p>
+                    </div>
+                    <div className="p-2 rounded bg-muted/40">
+                      <span className="text-[10px] text-muted-foreground">Brand / Model</span>
+                      <p className="font-semibold truncate">{form.brand ? `${form.brand} ${form.model}` : "—"}</p>
+                    </div>
+                    <div className="p-2 rounded bg-muted/40">
+                      <span className="text-[10px] text-muted-foreground">Category</span>
+                      <p className="font-semibold">{form.category}</p>
+                    </div>
+                    <div className="p-2 rounded bg-muted/40">
+                      <span className="text-[10px] text-muted-foreground">Acquisition Cost</span>
+                      <p className="font-mono font-bold text-emerald-600">QAR {Number(form.acquisition_amount || 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-muted/20 shrink-0 flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={stepperStep === 1}
+              onClick={() => setStepperStep(s => Math.max(1, s - 1) as any)}
+            >
+              Previous
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowNew(false)}>
+                Cancel
+              </Button>
+              {stepperStep < 4 ? (
+                <Button
+                  size="sm"
+                  className="bg-primary text-white"
+                  onClick={() => {
+                    if (stepperStep === 1 && !form.item_name.trim()) {
+                      return toast.error("Please enter Asset Name.");
+                    }
+                    setStepperStep(s => Math.min(4, s + 1) as any);
+                  }}
+                >
+                  Next Step
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={handleCreateAsset}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]"
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Complete &amp; Capitalize
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: NEW MAINTENANCE WORK ORDER ──────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showNewMaintenance} onOpenChange={setShowNewMaintenance}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-amber-500" /> New Maintenance Work Order
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Log preventive maintenance, service ticket, or repair for unallocated available stock items.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Select Available Asset *</Label>
+              <Select value={maintForm.asset_id} onValueChange={v => setMaintForm(f => ({ ...f, asset_id: v }))}>
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Select available unallocated asset..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unassigned">— Entire Property / Unassigned Unit —</SelectItem>
-                  {units
-                    .filter((u) => u.property_id === transferForm.assigned_property_id)
-                    .map((u) => (
-                      <SelectItem key={u.id} value={u.id}>{u.unit_ref || `Unit ${u.id}`}</SelectItem>
-                    ))}
+                  {availableUnallocatedAssets.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-muted-foreground">No available unallocated assets found.</div>
+                  ) : (
+                    availableUnallocatedAssets.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.asset_name} ({a.asset_code || "No Code"}) — Available in Stock
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Maintenance Type *</Label>
+                <Select
+                  value={maintForm.maintenance_type}
+                  onValueChange={v => setMaintForm(f => ({ ...f, maintenance_type: v as any }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["Preventive Maintenance", "Corrective Repair", "Calibration / Testing", "Inspection / Audit", "Major Overhaul"].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Priority *</Label>
+                <Select
+                  value={maintForm.priority}
+                  onValueChange={v => setMaintForm(f => ({ ...f, priority: v as any }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["Low", "Medium", "High", "Critical"].map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Service Vendor / Contractor</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. In-House Facility Team / Al-Mana MEP"
+                  value={maintForm.service_vendor}
+                  onChange={e => setMaintForm(f => ({ ...f, service_vendor: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Technician Name</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Tariq Mahmoud"
+                  value={maintForm.technician_name}
+                  onChange={e => setMaintForm(f => ({ ...f, technician_name: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Scheduled Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={maintForm.scheduled_date}
+                  onChange={e => setMaintForm(f => ({ ...f, scheduled_date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Estimated Cost (QAR)</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono"
+                  value={maintForm.estimated_cost}
+                  onChange={e => setMaintForm(f => ({ ...f, estimated_cost: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Work Order Description</Label>
+              <Textarea
+                className="text-xs"
+                rows={2}
+                placeholder="Scope of service, fault reported, parts to inspect..."
+                value={maintForm.description}
+                onChange={e => setMaintForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
           </div>
+
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setTransferAsset(null)}>Cancel</Button>
-            <Button onClick={async () => {
-              if (transferAsset) {
-                const targetPropId = transferForm.assigned_property_id === "unassigned" ? null : transferForm.assigned_property_id;
-                const targetUnitId = (transferForm as any).assigned_unit_id || null;
-                const targetProp = properties.find(p => p.id === targetPropId);
-                const targetUnit = units.find(u => u.id === targetUnitId);
+            <Button variant="outline" size="sm" onClick={() => setShowNewMaintenance(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handleCreateMaintenance} className="bg-amber-600 hover:bg-amber-700 text-white min-w-[120px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Create Work Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                await updateAsset(transferAsset.id, {
-                  assigned_property_id: targetPropId || undefined,
-                  assigned_unit_id: targetUnitId || undefined,
-                  asset_status: targetPropId ? "Assigned" : "Available",
-                  remarks: targetProp ? `Transferred to ${targetProp.title} ${targetUnit ? `(Unit: ${targetUnit.unit_ref})` : ''}` : "Transferred to General Pool"
-                });
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: COMPLETE MAINTENANCE WORK ORDER ─────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!completeMaintModal} onOpenChange={open => !open && setCompleteMaintModal(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Complete Work Order {completeMaintModal?.id}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Record completion details and restore {completeMaintModal?.asset_name} to Available inventory.
+            </DialogDescription>
+          </DialogHeader>
 
-                // Update General Ledger note
-                const cost = Number(transferAsset.purchase_cost) || 0;
-                if (cost > 0) {
-                  addJournalEntry({
-                    je_no: `JE-AST-TRF-${Date.now().toString().slice(-4)}`,
-                    posting_date: new Date().toISOString().split("T")[0],
-                    reference: `TRF-${transferAsset.asset_code}`,
-                    narration: `Asset Transfer: ${transferAsset.asset_name} transferred to ${targetProp?.title || 'General Pool'} (Unit: ${targetUnit?.unit_ref || 'N/A'})`,
-                    dr_account: "Fixed Assets & Equipment (15000)",
-                    dr_code: "15000",
-                    cr_account: "Fixed Assets & Equipment (15000)",
-                    cr_code: "15000",
-                    amount: cost,
-                  });
-                }
+          <div className="space-y-3 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Actual Incurred Cost (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono"
+                  placeholder={String(completeMaintModal?.estimated_cost || 0)}
+                  value={completeMaintForm.actual_cost}
+                  onChange={e => setCompleteMaintForm(f => ({ ...f, actual_cost: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Completion Date</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={completeMaintForm.completed_date}
+                  onChange={e => setCompleteMaintForm(f => ({ ...f, completed_date: e.target.value }))}
+                />
+              </div>
+            </div>
 
-                setTransferAsset(null);
-                load();
-              }
-            }}>Complete Transfer</Button>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Vendor Invoice / Reference No.</Label>
+              <Input
+                className="h-8 text-xs font-mono"
+                placeholder="e.g. INV-SVC-9921"
+                value={completeMaintForm.invoice_ref}
+                onChange={e => setCompleteMaintForm(f => ({ ...f, invoice_ref: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Completion Notes / Work Carried Out</Label>
+              <Textarea
+                className="text-xs"
+                rows={2}
+                placeholder="Summary of repair actions, filters replaced, oil changed..."
+                value={completeMaintForm.completion_notes}
+                onChange={e => setCompleteMaintForm(f => ({ ...f, completion_notes: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCompleteMaintModal(null)}>Cancel</Button>
+            <Button size="sm" onClick={handleCompleteMaintenance} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              Complete &amp; Restore Asset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: NEW ASSET REVALUATION ───────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showRevaluation} onOpenChange={setShowRevaluation}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-purple-500" /> Record Asset Revaluation
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Adjust carrying fair market value for unallocated assets. Surplus or impairment is posted to GL.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Select Available Asset *</Label>
+              <Select
+                value={revalForm.asset_id}
+                onValueChange={v => {
+                  const a = assets.find(x => x.id === v);
+                  setRevalForm(f => ({
+                    ...f,
+                    asset_id: v,
+                    prev_value: a ? String(a.purchase_cost || 0) : "",
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Choose unallocated asset..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUnallocatedAssets.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-muted-foreground">No available unallocated assets.</div>
+                  ) : (
+                    availableUnallocatedAssets.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.asset_name} ({a.asset_code || "No Code"}) — Book Val: QAR {Number(a.purchase_cost || 0).toLocaleString()}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Previous Book Value (QAR)</Label>
+                <Input
+                  className="h-8 text-xs font-mono bg-muted"
+                  disabled
+                  value={revalForm.prev_value}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">New Fair Value (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-bold text-purple-600"
+                  placeholder="0.00"
+                  value={revalForm.new_value}
+                  onChange={e => setRevalForm(f => ({ ...f, new_value: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Revaluation Date *</Label>
+              <Input
+                type="date"
+                className="h-8 text-xs"
+                value={revalForm.date}
+                onChange={e => setRevalForm(f => ({ ...f, date: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Reason for Adjustment</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. Annual market valuation, expert appraisal, tech obsolescence"
+                value={revalForm.reason}
+                onChange={e => setRevalForm(f => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowRevaluation(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handleCreateRevaluation} className="bg-purple-600 hover:bg-purple-700 text-white min-w-[120px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Post Revaluation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: RECORD ASSET SALE ───────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showSell} onOpenChange={setShowSell}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-emerald-500" /> Record Asset Sale &amp; Disposal
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Dispose of unallocated assets with automated Receipt Voucher generation and GL derecognition.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Select Available Asset *</Label>
+              <Select
+                value={sellForm.asset_id}
+                onValueChange={v => {
+                  const a = assets.find(x => x.id === v);
+                  setSellForm(f => ({
+                    ...f,
+                    asset_id: v,
+                    book_value: a ? String(a.purchase_cost || 0) : "",
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Choose unallocated asset..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUnallocatedAssets.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-muted-foreground">No available unallocated assets.</div>
+                  ) : (
+                    availableUnallocatedAssets.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.asset_name} ({a.asset_code || "No Code"}) — Book Val: QAR {Number(a.purchase_cost || 0).toLocaleString()}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Book Value (QAR)</Label>
+                <Input
+                  className="h-8 text-xs font-mono bg-muted"
+                  disabled
+                  value={sellForm.book_value}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Agreed Sale Price (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-bold text-emerald-600"
+                  placeholder="0.00"
+                  value={sellForm.sale_value}
+                  onChange={e => setSellForm(f => ({ ...f, sale_value: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Buyer Name / Entity *</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="e.g. Al-Diyar Trading LLC"
+                  value={sellForm.buyer}
+                  onChange={e => setSellForm(f => ({ ...f, buyer: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Disposal Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={sellForm.date}
+                  onChange={e => setSellForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Remarks / Sales Invoice Ref</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. Salvage disposal invoice #SINV-8021"
+                value={sellForm.remarks}
+                onChange={e => setSellForm(f => ({ ...f, remarks: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowSell(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handleCreateSell} className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[120px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Record Sale &amp; Post GL
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: RECORD ASSET WRITE-OFF ──────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showWriteoff} onOpenChange={setShowWriteoff}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-500" /> New Asset Write-Off &amp; Scrapping
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Decommission damaged or unserviceable assets. Derecognizes asset and posts write-off loss to GL.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Select Available Asset *</Label>
+              <Select
+                value={writeoffForm.asset_id}
+                onValueChange={v => {
+                  const a = assets.find(x => x.id === v);
+                  setWriteoffForm(f => ({
+                    ...f,
+                    asset_id: v,
+                    book_value: a ? String(a.purchase_cost || 0) : "",
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Choose unallocated asset..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUnallocatedAssets.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-muted-foreground">No available unallocated assets.</div>
+                  ) : (
+                    availableUnallocatedAssets.map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.asset_name} ({a.asset_code || "No Code"}) — Book Val: QAR {Number(a.purchase_cost || 0).toLocaleString()}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Carrying Value (QAR)</Label>
+                <Input
+                  className="h-8 text-xs font-mono bg-muted"
+                  disabled
+                  value={writeoffForm.book_value}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Write-off Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={writeoffForm.date}
+                  onChange={e => setWriteoffForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Write-off Reason *</Label>
+              <Select
+                value={writeoffForm.writeoff_reason}
+                onValueChange={v => setWriteoffForm(f => ({ ...f, writeoff_reason: v }))}
+              >
+                <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select reason..." /></SelectTrigger>
+                <SelectContent>
+                  {["Severe Water Damage", "Irreparable Hardware Failure", "Technical Obsolescence", "Lost / Stolen", "Scrapped after Lifespan Expiry", "Health & Safety Hazard"].map(r => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Approved By (Authority)</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="e.g. Asset Committee / GM"
+                value={writeoffForm.approved_by}
+                onChange={e => setWriteoffForm(f => ({ ...f, approved_by: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowWriteoff(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handleCreateWriteoff} className="bg-red-600 hover:bg-red-700 text-white min-w-[120px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Approve &amp; Write Off
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: BULK ASSET IMPORT ─────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={bulkAssetOpen} onOpenChange={setBulkAssetOpen}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
+          <ExcelImportEmbedded
+            module="asset"
+            title="Fixed Assets: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for HVAC, equipment, machinery, and fixtures."
+            onCompleted={() => {
+              load();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      {/* ── MODAL: POST ASSET DEPRECIATION TO GENERAL LEDGER ─────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showDepreciationModal} onOpenChange={setShowDepreciationModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-amber-500" />
+              {selectedAssetForDepr ? `Post Depreciation: ${selectedAssetForDepr.asset_name}` : "Portfolio Periodic Depreciation Run"}
+            </DialogTitle>
+            <DialogDescription>
+              Record periodic depreciation amortization charge and automatically post journal entry debiting Depreciation Expense (54100001) and crediting Accumulated Depreciation (12400001).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Fiscal Year *</Label>
+                <Select
+                  value={depreciationForm.fiscal_year}
+                  onValueChange={v => setDepreciationForm(f => ({ ...f, fiscal_year: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2024-2025">FY 2024-2025</SelectItem>
+                    <SelectItem value="2025-2026">FY 2025-2026</SelectItem>
+                    <SelectItem value="2026-2027">FY 2026-2027</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">GL Posting Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={depreciationForm.posting_date}
+                  onChange={e => setDepreciationForm(f => ({ ...f, posting_date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Depreciation Method</Label>
+                <Select
+                  value={depreciationForm.depreciation_method}
+                  onValueChange={(v: any) => setDepreciationForm(f => ({ ...f, depreciation_method: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Straight Line Method (SLM)">Straight Line Method (SLM)</SelectItem>
+                    <SelectItem value="Written Down Value (WDV)">Written Down Value (WDV)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">Depreciation Charge (QAR) *</Label>
+                <Input
+                  type="number"
+                  className="h-8 text-xs font-mono font-bold text-amber-600"
+                  placeholder="0.00"
+                  value={depreciationForm.charge_amount}
+                  onChange={e => setDepreciationForm(f => ({ ...f, charge_amount: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Journal Narration / Audit Memo</Label>
+              <Textarea
+                className="text-xs h-18"
+                placeholder="Narration for General Ledger journal entry..."
+                value={depreciationForm.remarks}
+                onChange={e => setDepreciationForm(f => ({ ...f, remarks: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowDepreciationModal(false)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={handlePostDepreciation} className="bg-amber-600 hover:bg-amber-700 text-white min-w-[130px]">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null} Post GL Journal Entry
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

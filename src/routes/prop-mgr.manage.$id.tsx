@@ -3,13 +3,15 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench } from "lucide-react";
-import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, updatePropertyImages, type Property } from "@/lib/supabase";
+import { ChevronLeft, Save, Trash2, Calendar as CalendarIcon, Users, Loader2, AlertCircle, Plus, Wrench, Pencil, Building2, Sparkles, FileText, CheckCircle2 } from "lucide-react";
+import { fetchPropertyById, fetchHostBookings, updateProperty, createMaintenanceTicket, fetchUnits, fetchLeases, fetchPropertyTypes, fetchOwnershipTypes, fetchPropertyCategories, fetchCostCenters, fetchPropertyManagerEmployees, updatePropertyImages, type Property } from "@/lib/supabase";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
+import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { properties as mockProperties, units as mockUnits, leases as mockLeases, type Property as MockProperty } from "@/lib/mock-data";
 import { buildPropertyPayload } from "@/lib/property-master";
 import { toast } from "sonner";
@@ -17,6 +19,9 @@ import { useJsApiLoader } from "@react-google-maps/api";
 
 export const Route = createFileRoute("/prop-mgr/manage/$id")({
   component: PropMgrManageProperty,
+  validateSearch: (search: Record<string, unknown>): { mode?: "view" | "edit" } => ({
+    mode: (search.mode as string) === 'edit' ? 'edit' : 'view',
+  }),
 });
 
 const MOCK_HOST_ID = "00000000-0000-4000-8000-000000000001";
@@ -133,17 +138,21 @@ function mapMockPropertyToManagedProperty(mockProperty: MockProperty): Property 
 
 function PropMgrManageProperty() {
   const { id } = Route.useParams();
-  return <ManagePropertyPage basePath="/prop-mgr" id={id} />;
+  const { mode } = Route.useSearch();
+  return <ManagePropertyPage basePath="/prop-mgr" id={id} mode={mode} />;
 }
 
 export function ManagePropertyPage({
   basePath,
   id,
+  mode = 'edit',
 }: {
   basePath: "/admin" | "/owner" | "/prop-mgr";
   id: string;
+  mode?: 'view' | 'edit';
 }) {
   const navigate = useNavigate();
+  const isViewMode = mode === 'view';
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -165,7 +174,9 @@ export function ManagePropertyPage({
   const [propTypeOptions, setPropTypeOptions] = useState<{ id: string; label: string }[]>([]);
   const [ownershipOptions, setOwnershipOptions] = useState<{ id: string; label: string }[]>([]);
   const [costCenterOptions, setCostCenterOptions] = useState<{ code: string; name: string }[]>([]);
+  const [propertyManagerOptions, setPropertyManagerOptions] = useState<{ id: string; name: string; email?: string; designation?: string }[]>([]);
   const [images, setImages] = useState<ImageFile[]>([]);
+  const [documents, setDocuments] = useState<PropertyDocument[]>([]);
 
   // Editable form state
   const [title, setTitle] = useState("");
@@ -287,6 +298,11 @@ export function ManagePropertyPage({
     setRemarks(prop.remarks || "");
     setKahramaaNumber((prop as any).kahramaa_number || "");
     setMunicipalityDetails(JSON.stringify(prop.municipality_details || {}, null, 2));
+    if (Array.isArray(municipality.property_documents)) {
+      setDocuments(municipality.property_documents);
+    } else {
+      setDocuments([]);
+    }
   };
 
   useEffect(() => {
@@ -337,12 +353,14 @@ export function ManagePropertyPage({
       fetchPropertyTypes(),
       fetchOwnershipTypes(),
       fetchCostCenters(),
+      fetchPropertyManagerEmployees(),
     ])
-      .then(([prop, bks, pc, pt, ow, cc]) => {
+      .then(([prop, bks, pc, pt, ow, cc, pms]) => {
         setPropCategoryOptions(pc);
         setPropTypeOptions(pt);
         setOwnershipOptions(ow);
         setCostCenterOptions(cc);
+        setPropertyManagerOptions(pms || []);
         populateForm(prop);
         
         if (prop.room_details) {
@@ -493,6 +511,7 @@ export function ManagePropertyPage({
         costCenterName: proposedCostCenterName,
       },
       ownerLandlord,
+      documents,
     });
     if (isMockProperty) {
       setProperty({
@@ -659,31 +678,44 @@ export function ManagePropertyPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-3">
             <Link to={`${basePath}/properties`}><ChevronLeft className="mr-1 h-4 w-4" /> Back to Properties</Link>
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Edit Property</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            {isViewMode ? 'View Property' : 'Edit Property'}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">{property.title} · {property.city}, {property.country}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
-            <Trash2 className="mr-2 h-4 w-4" /> Deactivate
-          </Button>
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            {saving ? "Saving..." : "Save Changes"}
-          </Button>
+          {isViewMode ? (
+            <Button
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={() => navigate({ to: `${basePath}/manage/$id`, params: { id }, search: { mode: 'edit' } } as any)}
+            >
+              <Pencil className="mr-2 h-4 w-4" /> Edit Property
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" /> Deactivate
+              </Button>
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-3">
+      <div className="grid gap-8 lg:grid-cols-3">
 
         {/* ── Left Column: Property Edit Form ── */}
-        <div className="md:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
 
           {/* 1. Identity & Codes */}
           <Card className="border-border">
@@ -694,7 +726,7 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
                   <Label>Listing Title</Label>
-                  <Input value={title} onChange={e => setTitle(e.target.value)} />
+                  <Input value={title} onChange={e => setTitle(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>Property Code</Label>
@@ -703,9 +735,10 @@ export function ManagePropertyPage({
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:bg-muted disabled:cursor-not-allowed"
                     value={isActive ? "active" : "inactive"}
                     onChange={e => setIsActive(e.target.value === "active")}
+                    disabled={isViewMode}
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -735,7 +768,7 @@ export function ManagePropertyPage({
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-20" />
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="h-20" readOnly={isViewMode} disabled={isViewMode} />
               </div>
             </CardContent>
           </Card>
@@ -749,7 +782,8 @@ export function ManagePropertyPage({
               <ImageUploader 
                 images={images} 
                 onChange={setImages} 
-                categories={['Exterior', 'Interior', 'Floor Plan', 'Other']} 
+                categories={['Exterior', 'Interior', 'Floor Plan', 'Other']}
+                disabled={isViewMode}
               />
             </CardContent>
           </Card>
@@ -763,19 +797,17 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Property Type</Label>
-                  <Select value={propertyType} onValueChange={v => {
-                    setPropertyType(v);
-                    if (v !== "Other") setCustomPropertyType("");
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                    <SelectContent>
-                      {propTypeOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                      {propertyType && propertyType !== "Other" && !propTypeOptions.find(o => o.id === propertyType) && (
-                         <SelectItem value={propertyType} className="capitalize">{propertyType}</SelectItem>
-                      )}
-                      <SelectItem value="Other">Other (Add new)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={[
+                      ...propTypeOptions.map(u => ({ label: u.label, value: u.id })),
+                      ...(propertyType && propertyType !== "Other" && !propTypeOptions.find(o => o.id === propertyType) ? [{ label: propertyType, value: propertyType }] : []),
+                      { label: 'Other (Add new)', value: 'Other' },
+                    ]}
+                    value={propertyType}
+                    onValueChange={v => { setPropertyType(v); if (v !== "Other") setCustomPropertyType(""); }}
+                    placeholder="Search property type..."
+                    disabled={isViewMode}
+                  />
                   {propertyType === "Other" && (
                     <div className="mt-1 flex gap-2">
                       <Input placeholder="Enter custom type..." value={customPropertyType} onChange={e => setCustomPropertyType(e.target.value)} className="h-8 text-xs" />
@@ -784,21 +816,23 @@ export function ManagePropertyPage({
                 </div>
                 <div className="space-y-2">
                   <Label>Property Category</Label>
-                  <Select value={propertyCategory} onValueChange={v => setPropertyCategory(v)}>
-                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                    <SelectContent>
-                      {propCategoryOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={propCategoryOptions.map(u => ({ label: u.label, value: u.id }))}
+                    value={propertyCategory}
+                    onValueChange={v => setPropertyCategory(v)}
+                    placeholder="Search category..."
+                    disabled={isViewMode}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Ownership Type</Label>
-                  <Select value={ownershipType} onValueChange={v => setOwnershipType(v)}>
-                    <SelectTrigger><SelectValue placeholder="Select ownership" /></SelectTrigger>
-                    <SelectContent>
-                      {ownershipOptions.map(u => <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    options={ownershipOptions.map(u => ({ label: u.label, value: u.id }))}
+                    value={ownershipType}
+                    onValueChange={v => setOwnershipType(v)}
+                    placeholder="Search ownership type..."
+                    disabled={isViewMode}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -815,7 +849,10 @@ export function ManagePropertyPage({
                 <Input 
                   value={address} 
                   onChange={e => handleAddressSearch(e.target.value)} 
-                  onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
+                  onFocus={() => { if (!isViewMode && predictions.length > 0) setShowPredictions(true); }}
+                  readOnly={isViewMode}
+                  disabled={isViewMode}
+                  className={isViewMode ? 'bg-muted' : ''}
                 />
                 {showPredictions && (
                   <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-md shadow-lg overflow-hidden max-h-60 overflow-y-auto">
@@ -836,19 +873,60 @@ export function ManagePropertyPage({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Country</Label>
-                  <Input value={country} onChange={e => setCountry(e.target.value)} />
+                  <Input value={country} onChange={e => setCountry(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>City</Label>
-                  <Input value={city} onChange={e => setCity(e.target.value)} />
+                  <Input value={city} onChange={e => setCity(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
-                  <Label>State / Province</Label>
-                  <Input value={state} onChange={e => setState(e.target.value)} />
+                  <Label>Area / Zone</Label>
+                  <Input value={areaZone} onChange={e => setAreaZone(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
                 </div>
                 <div className="space-y-2">
                   <Label>Zip / Postal Code</Label>
-                  <Input value={zipCode} onChange={e => setZipCode(e.target.value)} />
+                  <Input value={zipCode} onChange={e => setZipCode(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 pt-2 border-t border-border">
+                <div className="space-y-2">
+                  <Label>Street / Building Name</Label>
+                  <Input value={streetBuildingName} onChange={e => setStreetBuildingName(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Street 840 / Tower A" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Plot / Building No.</Label>
+                  <Input value={plotBuildingNo} onChange={e => setPlotBuildingNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Bldg 23 / Plot 45" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Title Deed / Reg. No.</Label>
+                  <Input value={titleDeedNo} onChange={e => setTitleDeedNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. TD-998822" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Municipality / Bldg Ref No.</Label>
+                  <Input value={municipalityRefNo} onChange={e => setMunicipalityRefNo(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. MUN-44012" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Owner / Landlord</Label>
+                  <Input value={ownerLandlord} onChange={e => setOwnerLandlord(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} placeholder="e.g. Sheikh Hassan" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Manager</Label>
+                  {isViewMode ? (
+                    <Input value={propertyManager} readOnly disabled className="bg-muted" placeholder="e.g. Jithin Abdul Latheef" />
+                  ) : (
+                    <SearchableSelect
+                      options={propertyManagerOptions.map((pm) => ({
+                        id: pm.name,
+                        value: pm.name,
+                        label: `${pm.name}${pm.designation ? ` (${pm.designation})` : ""}`,
+                      }))}
+                      value={propertyManager}
+                      onValueChange={setPropertyManager}
+                      placeholder="Select Property Manager from HRMS..."
+                    />
+                  )}
                 </div>
               </div>
               {(city || country) && (
@@ -863,43 +941,256 @@ export function ManagePropertyPage({
               )}
             </CardContent>
           </Card>
+
+          {/* 4. Specifications & Structure */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" /> Specifications &amp; Structure
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>No. of Floors</Label>
+                  <Input type="number" min="1" value={noOfFloors} onChange={e => setNoOfFloors(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 8" />
+                </div>
+                <div className="space-y-2">
+                  <Label>No. of Units</Label>
+                  <Input type="number" min="1" value={noOfUnits} onChange={e => setNoOfUnits(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 44" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Parking Count</Label>
+                  <Input type="number" min="0" value={parkingCount} onChange={e => setParkingCount(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 12" />
+                </div>
+                <div className="space-y-2">
+                  <Label>No of Elevator</Label>
+                  <Input type="number" min="0" value={noOfElevators} onChange={e => setNoOfElevators(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 2" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
+                <div className="space-y-2">
+                  <Label>Total Built-up Area (Sqm)</Label>
+                  <Input type="number" min="0" value={totalBuiltUpAreaSqm} onChange={e => setTotalBuiltUpAreaSqm(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 4500" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Common Area (Sqm)</Label>
+                  <Input type="number" min="0" value={commonAreaSqm} onChange={e => setCommonAreaSqm(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`font-mono ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 5. Key Dates & Compliance */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-primary" /> Key Dates &amp; Compliance Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Completion Date</Label>
+                  <Input type="date" value={completionDate} onChange={e => setCompletionDate(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Handover Date</Label>
+                  <Input type="date" value={handoverDate} onChange={e => setHandoverDate(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={isViewMode ? 'bg-muted' : ''} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Property Status</Label>
+                  <Select value={propertyStatus || "Active"} onValueChange={setPropertyStatus} disabled={isViewMode}>
+                    <SelectTrigger className={`bg-background ${isViewMode ? 'bg-muted' : ''}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Under Construction">Under Construction</SelectItem>
+                      <SelectItem value="Under Maintenance">Under Maintenance</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 items-center pt-2 border-t border-border">
+                <div className="flex items-center space-x-2 pt-2">
+                  <input
+                    type="checkbox"
+                    id="prop_docs_received"
+                    checked={documentsReceived}
+                    onChange={e => setDocumentsReceived(e.target.checked)}
+                    disabled={isViewMode}
+                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  <Label htmlFor="prop_docs_received" className="text-xs font-semibold cursor-pointer">
+                    Documents Received?
+                  </Label>
+                </div>
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs font-semibold">Remarks</Label>
+                  <Input
+                    value={remarks}
+                    onChange={e => setRemarks(e.target.value)}
+                    readOnly={isViewMode}
+                    disabled={isViewMode}
+                    placeholder="e.g. Standard residential building under prime management"
+                    className={`text-xs ${isViewMode ? 'bg-muted' : ''}`}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 6. Amenities & Facilities */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" /> Amenities &amp; Facilities
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 1</Label>
+                  <Input value={amenity1} onChange={e => setAmenity1(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Swimming Pool" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 2</Label>
+                  <Input value={amenity2} onChange={e => setAmenity2(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. 24/7 Security" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 3</Label>
+                  <Input value={amenity3} onChange={e => setAmenity3(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Gym & Fitness" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 4</Label>
+                  <Input value={amenity4} onChange={e => setAmenity4(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Covered Parking" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Amenity / Facility 5</Label>
+                  <Input value={amenity5} onChange={e => setAmenity5(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. High-speed Elevators" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Other Amenities / Facilities</Label>
+                  <Input value={otherAmenitiesFacilities} onChange={e => setOtherAmenitiesFacilities(e.target.value)} readOnly={isViewMode} disabled={isViewMode} className={`text-xs ${isViewMode ? 'bg-muted' : ''}`} placeholder="e.g. Sauna, BBQ area" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 7. Property Documents */}
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" /> Property Documents &amp; Compliance Files
+              </CardTitle>
+              <CardDescription>
+                Upload, view, and manage property title deeds, permits, blueprints, and municipality certificates.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PropertyDocumentsManager
+                documents={documents}
+                onChange={setDocuments}
+                disabled={isViewMode}
+              />
+            </CardContent>
+          </Card>
         </div>
 
         {/* ── Right Column: Summary Sidebar ── */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
 
           {/* Property Summary */}
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Property Summary</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Property Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Units</span>
-                <span className="font-semibold">{unitsCount ?? '—'}</span>
+                <span className="font-semibold">{unitsCount ?? (noOfUnits || '—')}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Occupancy</span>
-                <span className="font-semibold">{occupancyPct != null ? `${occupancyPct}%` : '—'}</span>
+                <span className="font-semibold">{occupancyPct != null ? `${occupancyPct}%` : '100%'}</span>
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">Status</span>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${property.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                  {property.is_active ? 'Active' : 'Inactive'}
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}`}>
+                  {isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
+              {propertyType && (
+                <div className="flex justify-between items-center text-sm pt-2 border-t border-border">
+                  <span className="text-muted-foreground">Type</span>
+                  <span className="font-medium text-foreground">{propertyType}</span>
+                </div>
+              )}
+              {propertyCategory && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Category</span>
+                  <span className="font-medium text-foreground">{propertyCategory}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Key Specifications Overview */}
+          <Card className="border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" /> Key Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Floors</span>
+                <span className="font-semibold font-mono text-foreground">{noOfFloors || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Parking Bays</span>
+                <span className="font-semibold font-mono text-foreground">{parkingCount || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Elevators</span>
+                <span className="font-semibold font-mono text-foreground">{noOfElevators || "—"}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Built-up Area</span>
+                <span className="font-semibold font-mono text-foreground">{totalBuiltUpAreaSqm ? `${totalBuiltUpAreaSqm} sqm` : "—"}</span>
+              </div>
+              {city && (
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="text-muted-foreground">City / Zone</span>
+                  <span className="font-medium text-foreground">{city}{areaZone ? ` · Zone ${areaZone}` : ''}</span>
+                </div>
+              )}
+              {ownerLandlord && (
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Landlord</span>
+                  <span className="font-medium text-foreground truncate max-w-[140px]" title={ownerLandlord}>{ownerLandlord}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Quick Actions */}
           <Card className="border-border">
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button asChild variant="outline" className="w-full justify-start" size="sm">
+              <Button asChild variant="outline" className="w-full justify-start text-xs font-medium" size="sm">
                 <Link to={`${basePath}/units` as any} search={{ property_id: id } as any}>
-                  <Users className="mr-2 h-4 w-4" /> Manage Units
+                  <Users className="mr-2 h-4 w-4 text-primary" /> Manage Units
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="w-full justify-start text-xs font-medium" size="sm">
+                <Link to={`${basePath}/leases` as any}>
+                  <FileText className="mr-2 h-4 w-4 text-primary" /> View Leases
                 </Link>
               </Button>
             </CardContent>

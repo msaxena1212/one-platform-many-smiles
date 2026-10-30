@@ -1,9 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://rnebpqnzignwjeukgztz.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuZWJwcW56aWdud2pldWtnenR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxNzU4ODIsImV4cCI6MjA5OTc1MTg4Mn0.maLd6Jgr8uggrfu5uZg9sjRmG0z0r7NlaMB4wIdSRTg';
+const supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ||
+  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined) ||
+  '';
+const supabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined) ||
+  '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error(
+    '[Supabase] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from environment variables.\n' +
+    'On the production server, ensure /home/ubuntu/one-platform-many-smiles/.env contains:\n' +
+    '  VITE_SUPABASE_URL=https://<project-ref>.supabase.co\n' +
+    '  VITE_SUPABASE_ANON_KEY=<your-anon-key>\n' +
+    'Then rebuild: npm run build && pm2 restart pms-app'
+  );
+}
+
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder'
+);
+
+
 
 // ---- Typed Helpers ----
 
@@ -89,23 +110,61 @@ export type Profile = {
 export type Customer = {
   id: string;
   customer_type: 'Individual' | 'Company';
+  display_name?: string;
   full_name: string;
-  qatar_id?: string;
-  passport_number?: string;
-  commercial_registration?: string;
-  nationality?: string;
-  mobile_number: string;
+  primary_mobile: string;
+  mobile_number?: string;
+  primary_email?: string;
   email_address?: string;
-  permanent_address?: string;
-  local_address?: string;
+  current_address?: string;
+  preferred_communication?: 'WhatsApp' | 'Email' | 'SMS' | 'Phone Call';
+  customer_status?: 'Active' | 'Inactive' | 'Blacklisted' | 'Prospect';
+  approval_status?: 'Pending' | 'Approved' | 'Rejected' | 'Under Review';
+  remarks?: string;
+
+  // Individual specific fields
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  nationality?: string;
+  qatar_id?: string;
+  qid_expiry_date?: string;
+  passport_number?: string;
+  passport_expiry_date?: string;
+  date_of_birth?: string;
+  gender?: 'Male' | 'Female' | 'Other';
+  employer_name?: string;
+  designation?: string;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
-  employer_name?: string;
-  employer_address?: string;
-  designation?: string;
-  monthly_income?: number;
+
+  // Company specific fields
+  company_legal_name?: string;
+  trade_name?: string;
+  commercial_registration?: string;
+  cr_expiry_date?: string;
+  trade_licence_no?: string;
+  trade_licence_expiry_date?: string;
+  computer_card_no?: string;
+  computer_card_expiry_date?: string;
+  tax_identification_no?: string;
+  registered_office_address?: string;
+  billing_address?: string;
+  company_telephone?: string;
+  website?: string;
+  industry_activity?: string;
   authorized_signatory_name?: string;
+  signatory_qid_passport?: string;
   authorized_signatory_id?: string;
+  signatory_id_expiry_date?: string;
+  primary_contact_person?: string;
+  contact_designation?: string;
+  contact_mobile?: string;
+  contact_email?: string;
+
+  permanent_address?: string;
+  local_address?: string;
+  monthly_income?: number;
   verification_status: 'Pending' | 'Verified' | 'Rejected' | 'Additional Info Required';
   verified_by?: string;
   verified_at?: string;
@@ -455,19 +514,6 @@ export type Invoice = {
   created_at: string;
 };
 
-export type Receipt = {
-  id: string;
-  customer_id?: string;
-  payment_mode: 'cash' | 'bank' | 'cheque' | 'sadad' | 'mada' | 'apple_pay' | 'stc_pay' | 'card' | 'bank_transfer';
-  amount: number;
-  currency: string;
-  ref?: string;
-  received_at: string;
-  allocations: any;
-  status: string;
-  created_at: string;
-};
-
 export type CustomerDraft = {
   id: string;
   name: string;
@@ -516,16 +562,6 @@ export async function fetchJournalEntries() {
   return data as JournalEntry[];
 }
 
-export async function fetchReceipts() {
-  const { data, error } = await supabase
-    .from('receipts')
-    .select('*')
-    .order('received_at', { ascending: false });
-
-  if (error) throw error;
-  return data as Receipt[];
-}
-
 // ---- Maintenance Types ----
 
 export type MaintenanceTicket = {
@@ -536,7 +572,7 @@ export type MaintenanceTicket = {
   description: string | null;
   category: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'new' | 'assigned' | 'in_progress' | 'resolved' | 'closed';
+  status: 'new' | 'assigned' | 'dispatched' | 'scheduled' | 'in_progress' | 'resolved' | 'completed' | 'closed' | 'cancelled';
   assignee: string | null;
   host_id: string | null;
   reported_by: string | null;
@@ -552,6 +588,8 @@ export type InventoryPart = {
   quantity_on_hand: number;
   unit_cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
+  unit_of_measure?: string;
 };
 
 export type MaterialUsage = {
@@ -561,6 +599,7 @@ export type MaterialUsage = {
   quantity: number;
   cost: number;
   created_at: string;
+  procurement_item_id?: string | null;
 };
 
 export type PropertyImage = {
@@ -588,6 +627,7 @@ export type Asset = {
   warranty_expiry_date?: string;
   warranty_status?: string;
   department_id?: string;
+  department?: string;
   assigned_property_id?: string;
   assigned_property_code?: string;
   assigned_unit_id?: string;
@@ -598,7 +638,7 @@ export type Asset = {
   asset_condition?: string;
   asset_status?: string;
   life_of_asset?: number;
-  depreciation_method?: 'Straight Line (SLM)' | 'Written Down Value (WDV)' | 'None' | string;
+  depreciation_method?: string;
   depreciation_rate?: number;
   opening_cost?: number;
   last_service_date?: string;
@@ -613,6 +653,7 @@ export type Asset = {
   closing_accumulated_depreciation?: number;
   net_book_value?: number;
   remarks?: string;
+  description?: string;
   created_at: string;
   updated_at: string;
   
@@ -734,6 +775,18 @@ export async function updateAsset(id: string, payload: Partial<Asset>) {
   return data as Asset;
 }
 
+export async function deleteAsset(id: string) {
+  const { error } = await supabase.from('assets').delete().eq('id', id);
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteAllAssets() {
+  const { error } = await supabase.from('assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) throw error;
+  return true;
+}
+
 
 export type ApprovalRequest = {
   id: string;
@@ -805,7 +858,40 @@ export async function fetchPDCs(leaseId?: string) {
 export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'updated_at'>) {
   const { data, error } = await supabase.from('pdcs').insert(payload).select().single();
   if (error) throw error;
-  return data as PDC;
+  const pdc = data as PDC;
+
+  // Post a GL receipt voucher: Dr 12900001 PDC In Hand / Cr 21400001 Customer PDC Liability
+  const chequeNo = pdc.cheque_number || String(pdc.id);
+  const voucherNo = `VCH-PDC-RCV-${chequeNo}`;
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    const { data: vData, error: vErr } = await supabase.from('fin_vouchers').insert({
+      voucher_number: voucherNo,
+      voucher_date: (pdc as any).deposit_date || (pdc as any).maturity_date || today,
+      voucher_type: 'RV',
+      description: `PDC Received — Cheque #${chequeNo}`,
+      total_amount: pdc.amount,
+      status: 'posted',
+      posted_at: new Date().toISOString(),
+    }).select('id').single();
+    if (!vErr && vData?.id) {
+      // Insert both ledger lines for this receipt voucher
+      await supabase.from('fin_voucher_lines').insert([
+        { voucher_id: vData.id, account_code: '12900001', account_name: 'Rent PDC In Hand', debit: pdc.amount, credit: 0, description: `PDC Received — Cheque #${chequeNo}` },
+        { voucher_id: vData.id, account_code: '21400001', account_name: 'Customer PDC Liability', debit: 0, credit: pdc.amount, description: `PDC Received — Cheque #${chequeNo}` },
+      ]);
+    }
+  } catch (glErr) {
+    // Best-effort: GL posting failure should not block PDC creation
+    console.warn('[createPDC] GL posting note:', glErr);
+  }
+
+  // Notify Finance Store so GL/Trial Balance refresh immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('finance_vouchers_updated'));
+  }
+
+  return pdc;
 }
 
 export async function updatePDC(id: string, status: PDC['status']) {
@@ -849,19 +935,6 @@ export async function updateJournalEntry(id: string, payload: Partial<Pick<Journ
   const { data, error } = await supabase.from('journal_entries').update(payload).eq('id', id).select().single();
   if (error) throw error;
   return data as JournalEntry;
-}
-
-// Receipts — Create & Update
-export async function createReceipt(payload: Omit<Receipt, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('receipts').insert(payload).select().single();
-  if (error) throw error;
-  return data as Receipt;
-}
-
-export async function updateReceipt(id: string, payload: Partial<Pick<Receipt, 'status' | 'amount' | 'payment_mode'>>) {
-  const { data, error } = await supabase.from('receipts').update(payload).eq('id', id).select().single();
-  if (error) throw error;
-  return data as Receipt;
 }
 
 // Fixed Assets
@@ -927,14 +1000,22 @@ export async function fetchMaterialUsage(ticketId: string) {
   return data;
 }
 
-export async function logMaterialUsage(payload: { ticket_id: string; part_id?: string; quantity: number; cost: number }) {
-  const { data, error } = await supabase.from('material_usage').insert(payload).select().single();
+export async function logMaterialUsage(payload: { ticket_id: string; part_id: string; quantity: number }) {
+  const { data, error } = await supabase.rpc('issue_maintenance_material', {
+    p_ticket_id: payload.ticket_id,
+    p_part_id: payload.part_id,
+    p_quantity: payload.quantity,
+  });
   if (error) throw error;
-  return data;
+  return data as string;
 }
 
 export async function fetchInventoryParts() {
-  const { data, error } = await supabase.from('inventory_parts').select('*').order('name');
+  const { data, error } = await supabase
+    .from('inventory_parts')
+    .select('*')
+    .not('procurement_item_id', 'is', null)
+    .order('name');
   if (error) throw error;
   return data as InventoryPart[];
 }
@@ -948,10 +1029,19 @@ export type Unit = {
   bedrooms?: number;
   bathrooms?: number;
   area?: string;
+  unit_area?: number | string;
+  unit_area_uom?: string;
   price?: number;
   status?: string;
   created_at: string;
   // ERP Extended Fields
+  unit_type?: string;
+  unit_category?: string;
+  furnishing_type?: string;
+  rent?: number;
+  market_rent?: number;
+  no_of_bedrooms?: number;
+  no_of_bathrooms?: number;
   unit_code?: string;
   unit_cost_center_code?: string;
   unit_name?: string;
@@ -997,14 +1087,83 @@ export async function fetchUnits(filters?: { property_id?: string }) {
   return data as Unit[];
 }
 
+/** Columns present on public.units (PostgREST schema). */
+const UNITS_WRITE_KEYS = new Set([
+  'property_id',
+  'unit_ref',
+  'room_type',
+  'bedrooms',
+  'bathrooms',
+  'area',
+  'price',
+  'status',
+  'unit_code',
+  'unit_cost_center_code',
+  'unit_name',
+  'parent_cost_center_code',
+  'unit_usage',
+  'block_tower',
+  'floor',
+  'balcony_sqm',
+  'total_area_sqm',
+  'view_type',
+  'furnishing',
+  'parking_slot_no',
+  'electricity_meter_no',
+  'water_meter_no',
+  'cooling_meter_no',
+  'lease_status',
+  'rent_frequency',
+  'current_tenant',
+  'contract_no',
+  'contract_start_date',
+  'contract_end_date',
+  'current_rent',
+  'security_deposit_type',
+  'security_deposit_amount',
+  'service_charge',
+  'maintenance_responsibility',
+  'handover_date',
+  'documents_received',
+  'remarks',
+  'max_adults',
+  'max_children',
+  'total_occupancy',
+  'weekend_price',
+  'holiday_price',
+  'cleaning_fee',
+]);
+
+export function sanitizeUnitWritePayload<T extends Record<string, unknown>>(payload: T): T {
+  const sanitized = {} as T;
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    // Strip client-only keys or invalid property keys
+    if (key === 'host_id' || key === 'id' || key === 'created_at' || key === 'updated_at') {
+      continue;
+    }
+    if (UNITS_WRITE_KEYS.has(key)) {
+      (sanitized as Record<string, unknown>)[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 export async function createUnit(payload: Partial<Unit>) {
-  const { data, error } = await supabase.from('units').insert(payload).select().single();
+  const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
+  const { data, error } = await supabase.from('units').insert(sanitized).select().single();
   if (error) throw error;
   return data as Unit;
 }
 
 export async function updateUnit(id: string, payload: Partial<Unit>) {
-  const { data, error } = await supabase.from('units').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
+  const { data, error } = await supabase
+    .from('units')
+    .update({ ...sanitized, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
   if (error) throw error;
   return data as Unit;
 }
@@ -1191,16 +1350,132 @@ export async function createERPVoucher(
   voucher: Omit<ERPVoucher, 'id' | 'created_at' | 'journal_entries'>,
   lines: Omit<ERPJournalEntry, 'id' | 'voucher_id' | 'created_at'>[]
 ) {
-  const { data: v, error: ve } = await supabase.from('erp_vouchers').insert(voucher).select().single();
-  if (ve) throw ve;
-  const linePayloads = lines.map(l => ({ ...l, voucher_id: (v as any).id }));
-  const { error: le } = await supabase.from('erp_journal_entries').insert(linePayloads);
-  if (le) throw le;
-  return v as ERPVoucher;
+  // DEPRECATED (Phase 2 — 2026-08-27):
+  // The PMS Finance architecture mandates a single-accounting-engine model
+  // where every accounting event flows through the resolver + posting
+  // engine (fin_accounting_events -> fin_vouchers / fin_voucher_lines).
+  // Direct erp_vouchers / erp_journal_entries writes are no longer supported.
+  //
+  // Callers should use:
+  //   - postVoucher() in src/lib/finance/posting-engine.ts for direct
+  //     voucher creation
+  //   - resolveAccountingAccounts() in src/lib/finance/account-resolver.ts
+  //     for GL/SL resolution
+  //
+  // This shim is preserved only to keep old callers compiling during the
+  // cutover window; it throws so the runtime is forced onto the new path.
+  void voucher; void lines;
+  throw new Error(
+    'createERPVoucher is deprecated. Use postVoucher() in src/lib/finance/posting-engine.ts ' +
+    'and resolveAccountingAccounts() in src/lib/finance/account-resolver.ts instead. ' +
+    'See phase2-account-resolver-hardened.md and the Phase 2 enforcement migration ' +
+    '(20260829110000) for the migration path.'
+  );
 }
 
+export type CoaType = {
+  id: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  report_type: 'Balance Sheet' | 'Profit & Loss';
+  is_active: boolean;
+  created_at: string;
+};
+
+export type CoaGroup = {
+  id: string;
+  type_id: string;
+  type_code: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type CoaClass = {
+  id: string;
+  group_id: string;
+  type_id: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type CoaGL = {
+  id: string;
+  class_id: string;
+  group_id: string;
+  type_id: string;
+  class_code: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  is_control_account: boolean;
+  is_posting_account: boolean;
+  allows_direct_posting: boolean;
+  requires_property: boolean;
+  requires_unit: boolean;
+  requires_tenant: boolean;
+  requires_vendor: boolean;
+  requires_employee: boolean;
+  is_active: boolean;
+};
+
+export type CoaSL = {
+  id: string;
+  gl_id: string;
+  class_id: string;
+  group_id: string;
+  type_id: string;
+  gl_code: string;
+  class_code: string;
+  group_code: string;
+  type_code: string;
+  code: string;
+  name: string;
+  normal_balance: 'Debit' | 'Credit';
+  is_control_account: boolean;
+  is_posting_account: boolean;
+  allows_direct_posting: boolean;
+  is_active: boolean;
+};
+
+export type UnitCoaMapping = {
+  id: string;
+  unit_id: string;
+  property_id?: string;
+  unit_code: string;
+  property_name?: string;
+  receivable_sl_id?: string;
+  receivable_sl_code?: string;
+  receivable_sl_name?: string;
+  pdc_sl_id?: string;
+  pdc_sl_code?: string;
+  pdc_sl_name?: string;
+  deposit_sl_id?: string;
+  deposit_sl_code?: string;
+  deposit_sl_name?: string;
+  status: 'Active' | 'Inactive';
+};
+
+export type PropertyCoaMapping = {
+  id: string;
+  property_id: string;
+  property_code?: string;
+  property_name?: string;
+  rental_revenue_gl_code?: string;
+  property_management_fee_gl_code?: string;
+  other_income_gl_code?: string;
+  gain_loss_disposal_gl_code?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export async function fetchERPChartOfAccounts() {
-  // Supabase defaults to 1000 rows max. Paginate to fetch all COA records.
   const PAGE_SIZE = 1000;
   let allData: ERPChartOfAccount[] = [];
   let from = 0;
@@ -1217,17 +1492,62 @@ export async function fetchERPChartOfAccounts() {
 
     allData = [...allData, ...(data as ERPChartOfAccount[])];
 
-    if (data.length < PAGE_SIZE) break; // Last page
+    if (data.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
 
   return allData;
 }
 
+export async function fetchCoaHierarchyTree() {
+  const [typesRes, groupsRes, classesRes, glsRes] = await Promise.all([
+    supabase.from('coa_types').select('*').order('code'),
+    supabase.from('coa_groups').select('*').order('code'),
+    supabase.from('coa_classes').select('*').order('code'),
+    supabase.from('coa_gl').select('*').order('code'),
+  ]);
+
+  if (typesRes.error) throw typesRes.error;
+  if (groupsRes.error) throw groupsRes.error;
+  if (classesRes.error) throw classesRes.error;
+  if (glsRes.error) throw glsRes.error;
+
+  return {
+    types: (typesRes.data || []) as CoaType[],
+    groups: (groupsRes.data || []) as CoaGroup[],
+    classes: (classesRes.data || []) as CoaClass[],
+    gls: (glsRes.data || []) as CoaGL[]
+  };
+}
+
 export async function fetchUnitCOAs() {
   const { data, error } = await supabase.from('unit_coas').select('*').order('unit_code');
   if (error) throw error;
   return data as UnitCOA[];
+}
+
+export async function fetchUnitCoaMappings() {
+  const { data, error } = await supabase.from('unit_coa_mapping').select('*').order('unit_code');
+  if (error) throw error;
+  return data as UnitCoaMapping[];
+}
+
+export async function fetchPropertyCoaMappings() {
+  const { data, error } = await supabase.from('property_coa_mapping').select('*').order('property_name');
+  if (error) throw error;
+  return data as PropertyCoaMapping[];
+}
+
+export async function fetchCoaSLByGL(glIdOrCode: string) {
+  const query = supabase.from('coa_sl').select('*');
+  if (glIdOrCode.length === 36 && glIdOrCode.includes('-')) {
+    query.eq('gl_id', glIdOrCode);
+  } else {
+    query.eq('gl_code', glIdOrCode);
+  }
+  const { data, error } = await query.order('code');
+  if (error) throw error;
+  return data as CoaSL[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
@@ -1248,3 +1568,88 @@ export async function createUnitRooms(rooms: Record<string, unknown>[]): Promise
   if (error) throw error;
   return data ?? [];
 }
+
+export async function fetchPropertyManagerEmployees(): Promise<{ id: string; name: string; email?: string; designation?: string }[]> {
+  try {
+    const results: { id: string; name: string; email?: string; designation?: string }[] = [];
+    const seenNames = new Set<string>();
+
+    // 1. Fetch from profiles table for users with PROP_MGR role (authoritative PMS role)
+    try {
+      const { data: profiles, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, role')
+        .eq('role', 'PROP_MGR');
+
+      if (!profileErr && profiles && profiles.length > 0) {
+        profiles.forEach((p: any) => {
+          const name = (p.full_name || p.email || '').trim();
+          if (name && !seenNames.has(name.toLowerCase())) {
+            seenNames.add(name.toLowerCase());
+            results.push({
+              id: p.id,
+              name: name,
+              email: p.email,
+              designation: 'Property Manager',
+            });
+          }
+        });
+      }
+    } catch {
+      // Ignore profile lookup error if not accessible
+    }
+
+    // 2. Fetch from HRMS employees table strictly with Property Manager designation
+    try {
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, email, employee_status, designations(title)')
+        .order('first_name');
+
+      if (!empError && empData && empData.length > 0) {
+        const pmEmps = empData.filter((e: any) => {
+          if (e.employee_status && e.employee_status.toLowerCase() === 'terminated') return false;
+          const desig = (e.designations?.title || '').toLowerCase().trim();
+          // Strictly check if designation is Property Manager or Estate/Facility Manager
+          return desig.includes('property manager') || desig.includes('prop mgr') || desig.includes('estate manager') || desig.includes('facility manager');
+        });
+
+        pmEmps.forEach((e: any) => {
+          const name = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+          if (name && !seenNames.has(name.toLowerCase())) {
+            seenNames.add(name.toLowerCase());
+            results.push({
+              id: e.id,
+              name: name,
+              email: e.email,
+              designation: e.designations?.title || 'Property Manager',
+            });
+          }
+        });
+      }
+    } catch {
+      // Ignore employee lookup error
+    }
+
+    // Default fallback list if no active PM found in DB
+    if (results.length === 0) {
+      results.push(
+        { id: 'default-pm-1', name: 'Jithin Abdul Latheef', designation: 'Property Manager' },
+        { id: 'default-pm-2', name: 'Shajid Varikkodath', designation: 'Property Manager' },
+        { id: 'default-pm-3', name: 'Mohamed Farhan Abdul Salam', designation: 'Property Manager' },
+        { id: 'default-pm-4', name: 'Mohamed Shafraz Hussain', designation: 'Property Manager' }
+      );
+    }
+
+    return results;
+  } catch (err) {
+    console.error('Error fetching property managers:', err);
+    return [
+      { id: 'default-pm-1', name: 'Jithin Abdul Latheef', designation: 'Property Manager' },
+      { id: 'default-pm-2', name: 'Shajid Varikkodath', designation: 'Property Manager' },
+      { id: 'default-pm-3', name: 'Mohamed Farhan Abdul Salam', designation: 'Property Manager' },
+      { id: 'default-pm-4', name: 'Mohamed Shafraz Hussain', designation: 'Property Manager' }
+    ];
+  }
+}
+

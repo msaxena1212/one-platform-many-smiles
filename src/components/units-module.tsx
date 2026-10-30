@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
+import { exportToExcel } from "@/lib/excel-export";
 import {
   AlertTriangle,
   Bath,
@@ -18,7 +21,11 @@ import {
   Users,
   X,
   Zap,
+  FileUp,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,6 +79,7 @@ type PropertyOption = {
   property_code?: string;
   cost_center_code?: string;
   cost_center_name?: string;
+  no_of_units?: number;
 };
 
 type RoomEntry = {
@@ -136,12 +144,7 @@ const EMPTY_FORM: FormState = {
   electricity_meter_no: "",
   water_meter_no: "",
   cooling_meter_no: "",
-  max_adults: 2,
-  max_children: 0,
-  total_occupancy: 2,
   price: 0,
-  weekend_price: undefined,
-  holiday_price: undefined,
   cleaning_fee: 0,
   status: "Available",
   lease_status: "Vacant",
@@ -321,6 +324,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           property_code: p.property_code,
           cost_center_code: p.cost_center_code,
           cost_center_name: p.cost_center_name,
+          no_of_units: (p as any).no_of_units ?? undefined,
         })),
       );
       setFurnishingTypes(fur);
@@ -440,7 +444,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
         
         if (created?.id) {
           try {
-            const unitLabel = form.unit_name || form.unit_ref || created.id.slice(0, 6);
+            const unitLabel = form.unit_code || form.unit_ref || created.id.slice(0, 6);
             const unitCcCode = `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`;
             const unitCcName = `Unit ${unitLabel} Cost Center`;
             await supabase.from('fin_cost_centers').upsert({
@@ -507,7 +511,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
       } else {
         const end = new Date(unit.contract_end_date);
         end.setHours(0, 0, 0, 0);
-        matchStatus = end <= in60Days;
+        matchStatus = end >= today && end <= in60Days;
       }
     } else {
       matchStatus = unit.status?.toLowerCase() === filterStatus.toLowerCase();
@@ -531,19 +535,35 @@ export function UnitsModule({ role }: UnitsModuleProps) {
   // Reset to page 1 whenever filters change
   useEffect(() => { setCurrentPage(1); }, [filterStatus, filterProperty, search]);
 
-  const total = units.length;
-  const occupied = units.filter(
-    (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
+  // Derive stats dynamically based on the selected property (or all units if 'all')
+  const scopeUnits = filterProperty === "all" ? units : units.filter((u) => u.property_id === filterProperty);
+
+  const total = scopeUnits.length;
+  const occupied = scopeUnits.filter(
+    (u) =>
+      u.status?.toLowerCase() === "occupied" ||
+      (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available"),
   ).length;
-  const available = units.filter(
-    (u) => u.status?.toLowerCase() === "available" || u.lease_status === "Vacant",
+  const available = scopeUnits.filter(
+    (u) =>
+      u.status?.toLowerCase() === "available" ||
+      u.lease_status?.toLowerCase() === "vacant" ||
+      (!u.status && !u.lease_status),
   ).length;
-  const renewalDue = units.filter((u) => {
-    const isVacant = u.status?.toLowerCase() === "available" || u.lease_status?.toLowerCase() === "vacant";
-    if (isVacant || !u.contract_end_date) return false;
+  const maintenance = scopeUnits.filter(
+    (u) =>
+      u.status?.toLowerCase() === "maintenance" ||
+      u.status?.toLowerCase() === "under maintenance" ||
+      u.status?.toLowerCase() === "vacant - under maintenance",
+  ).length;
+  const renewalDue = scopeUnits.filter((u) => {
+    const isOccupied =
+      u.status?.toLowerCase() === "occupied" ||
+      (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available");
+    if (!isOccupied || !u.contract_end_date) return false;
     const end = new Date(u.contract_end_date);
     end.setHours(0, 0, 0, 0);
-    return end <= in60Days; // includes already expired + expiring within 60 days
+    return end >= today && end <= in60Days;
   }).length;
   const occupancyRate = total > 0 ? Math.round((occupied / total) * 100) : 0;
 
@@ -552,6 +572,17 @@ export function UnitsModule({ role }: UnitsModuleProps) {
     const a = parseFloat(r.area);
     return sum + (isNaN(a) ? 0 : a * r.count);
   }, 0);
+
+  // ── Unit capacity enforcement ──────────────────────────────────────────────
+  const selectedPropertyOption = properties.find((p) => p.id === form.property_id);
+  const propertyUnitLimit = selectedPropertyOption?.no_of_units ?? null;
+  const existingUnitCountForProperty = units.filter((u) => u.property_id === form.property_id).length;
+  const isAtCapacity =
+    !editingUnitId && // only block new units, not edits
+    propertyUnitLimit !== null &&
+    existingUnitCountForProperty >= propertyUnitLimit;
+  const remainingSlots =
+    propertyUnitLimit !== null ? Math.max(0, propertyUnitLimit - existingUnitCountForProperty) : null;
 
   const masterOptions = {
     furnishing: furnishingTypes.length ? furnishingTypes : fallbackOptions.furnishing,
@@ -564,12 +595,105 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
   // --- Property occupancy breakdown for the list ---
   const unitsByProperty = properties.map((prop) => {
-    const propUnits = units.filter((u) => u.property_id === prop.id);
+    const propUnits = units.filter((u) => {
+      if (u.property_id === prop.id) return true;
+      const uProp = (u.property_id || "").trim().toLowerCase();
+      const pId = (prop.id || "").trim().toLowerCase();
+      const pCode = (prop.property_code || "").trim().toLowerCase();
+      const pTitle = (prop.title || "").trim().toLowerCase();
+      return uProp === pId || (pCode && uProp === pCode) || (pTitle && uProp === pTitle);
+    });
     const propOccupied = propUnits.filter(
-      (u) => u.status?.toLowerCase() === "occupied" || u.lease_status?.toLowerCase() === "leased" || u.lease_status?.toLowerCase() === "active",
+      (u) =>
+        u.status?.toLowerCase() === "occupied" ||
+        (u.lease_status?.toLowerCase() === "leased" && u.status?.toLowerCase() !== "available"),
     ).length;
     return { ...prop, total: propUnits.length, occupied: propOccupied };
   });
+
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [bulkSelectedProp, setBulkSelectedProp] = useState("");
+  const [csvText, setCsvText] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  const downloadCsvTemplate = () => {
+    const headers = "UnitNumber,Floor,UnitType,Bedrooms,Bathrooms,AreaSqFt,MarketRentMonthly,ElectricityMeterNo,WaterMeterNo";
+    const sample = "101,1,1 BHK Apartment,1,1,750,5500,ELEC-998811,WTR-112233\n102,1,2 BHK Apartment,2,2,1100,7500,ELEC-998812,WTR-112234\n201,2,Studio,0,1,500,4000,ELEC-998813,WTR-112235";
+    const blob = new Blob([headers + "\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk_units_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("CSV Unit Template downloaded!");
+  };
+
+  const handleBulkImport = async () => {
+    if (!bulkSelectedProp) {
+      toast.error("Please select a target property for the units.");
+      return;
+    }
+    if (!csvText.trim()) {
+      toast.error("Please paste CSV data or upload a file.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const lines = csvText.trim().split("\n");
+      if (lines.length <= 1) {
+        toast.error("CSV must contain at least 1 unit data row.");
+        return;
+      }
+      // Capacity check for legacy CSV bulk import
+      const bulkPropOption = properties.find((p) => p.id === bulkSelectedProp);
+      const bulkLimit = bulkPropOption?.no_of_units ?? null;
+      const bulkExistingCount = units.filter((u) => u.property_id === bulkSelectedProp).length;
+      const dataRows = lines.slice(1).filter((r) => r.trim() && r.split(",")[0]?.trim());
+      if (bulkLimit !== null && bulkExistingCount + dataRows.length > bulkLimit) {
+        const available = Math.max(0, bulkLimit - bulkExistingCount);
+        toast.error(
+          `Cannot import ${dataRows.length} unit(s). Property "${bulkPropOption?.title}" has a limit of ${bulkLimit} units — ${bulkExistingCount} already registered, only ${available} slot(s) remaining.`
+        );
+        return;
+      }
+      let successCount = 0;
+      for (const row of dataRows) {
+        const cols = row.split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        if (!cols[0]) continue;
+        const [unitRef, floor, unitType, beds, baths, area, rent, elec, wtr] = cols;
+        await createUnit({
+          property_id: bulkSelectedProp,
+          unit_ref: unitRef,
+          unit_name: `${unitRef}`,
+          floor: floor || "1",
+          unit_type: unitType || "Apartment",
+          unit_category: "Residential",
+          furnishing_type: "Unfurnished",
+          rent: Number(rent) || 5000,
+          market_rent: Number(rent) || 5000,
+          status: "Available",
+          lease_status: "Vacant",
+          electricity_meter_no: elec || undefined,
+          water_meter_no: wtr || undefined,
+          no_of_bedrooms: Number(beds) || 1,
+          no_of_bathrooms: Number(baths) || 1,
+          unit_area: Number(area) || 800,
+          unit_area_uom: "sqft",
+        });
+        successCount++;
+      }
+      toast.success(`Successfully bulk imported ${successCount} units!`);
+      setBulkImportOpen(false);
+      setCsvText("");
+      await load();
+    } catch (err: any) {
+      toast.error("Failed bulk unit import: " + err.message);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -580,20 +704,74 @@ export function UnitsModule({ role }: UnitsModuleProps) {
             Manage all rental and sale units across your portfolio.
           </p>
         </div>
-        {role !== "owner" && (
+        <div className="flex flex-wrap items-center gap-2">
           <Button
+            variant="outline"
             onClick={() => {
-              setForm(EMPTY_FORM);
-              setRooms([makeRoomEntry("Bedroom")]);
-              setStep(1);
-              setOpen(true);
+              exportToExcel(
+                units.map((u) => {
+                  const prop = properties.find((p) => p.id === u.property_id);
+                  return {
+                    "Unit Ref / No": u.unit_ref || u.unit_name || u.id,
+                    "Property": prop?.title || u.property_id || "—",
+                    "Floor": u.floor || "1",
+                    "Unit Type": u.unit_type || "Apartment",
+                    "Category": u.unit_category || "Residential",
+                    "Bedrooms": u.no_of_bedrooms || 1,
+                    "Bathrooms": u.no_of_bathrooms || 1,
+                    "Area (sqft)": u.unit_area || "—",
+                    "Monthly Rent (QAR)": u.rent || u.market_rent || 0,
+                    "Electricity Meter": u.electricity_meter_no || "—",
+                    "Water Meter": u.water_meter_no || "—",
+                    "Status": u.status || "Available",
+                    "Lease Status": u.lease_status || "Vacant",
+                  };
+                }),
+                `Units_Master_${new Date().toISOString().split("T")[0]}`
+              );
             }}
-            className="gap-2"
+            className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400"
           >
-            <Plus className="h-4 w-4" /> Add Unit
+            <Download className="h-4 w-4" /> Export to Excel
           </Button>
-        )}
+          {role !== "owner" && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setBulkImportOpen(true)}
+                className="gap-2"
+              >
+                <FileSpreadsheet className="h-4 w-4 text-primary" /> Excel Bulk Import / Manage
+              </Button>
+              <Button
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setRooms([makeRoomEntry("Bedroom")]);
+                  setStep(1);
+                  setOpen(true);
+                }}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" /> Add Unit
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Bulk Unit Import Dialog */}
+      <Dialog open={bulkImportOpen} onOpenChange={setBulkImportOpen}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto bg-card p-6">
+          <ExcelImportEmbedded
+            module="unit"
+            title="Unit Master: Excel Bulk Import & Management"
+            description="Production-grade Excel CREATE, UPDATE, and DELETE engine for apartments, commercial units, and villas."
+            onCompleted={() => {
+              load();
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -630,45 +808,55 @@ export function UnitsModule({ role }: UnitsModuleProps) {
 
         <TabsContent value="property" className="m-0">
           {/* Property Occupancy Summary */}
-          {unitsByProperty.some((p) => p.total > 0) && (
+          {properties.length === 0 ? (
+            <Card className="border-border">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                <Building2 className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                <p className="font-medium">No properties found</p>
+                <p className="text-xs">Add properties first to manage units.</p>
+              </CardContent>
+            </Card>
+          ) : (
             <Card className="border-border">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Property-wise Occupancy</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                  {unitsByProperty
-                    .filter((p) => p.total > 0)
-                    .map((p) => {
-                      const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
-                      return (
-                        <div
-                          key={p.id}
-                          onClick={() => {
-                            setFilterProperty(p.id);
-                            setFilterStatus("all");
-                            setCurrentTab("unit");
-                          }}
-                          className="rounded-lg border border-border bg-muted/10 p-3 text-sm cursor-pointer hover:bg-muted/30 transition-colors"
-                        >
-                          <div className="truncate font-medium" title={p.title}>
-                            {p.property_code || p.title}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {p.occupied}/{p.total} occupied
-                          </div>
-                          <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
-                            <div
-                              className="h-1.5 rounded-full bg-blue-500 transition-all"
-                              style={{ width: `${rate}%` }}
-                            />
-                          </div>
-                          <div className="mt-0.5 text-right text-xs font-semibold text-blue-600">
-                            {rate}%
-                          </div>
+                  {unitsByProperty.map((p) => {
+                    const rate = p.total > 0 ? Math.round((p.occupied / p.total) * 100) : 0;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setFilterProperty(p.id);
+                          setFilterStatus("all");
+                          setCurrentTab("unit");
+                        }}
+                        className="rounded-lg border border-border bg-muted/10 p-3 text-sm cursor-pointer hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="truncate font-medium" title={p.title}>
+                          {p.property_code ? `${p.property_code} - ` : ""}{p.title}
                         </div>
-                      );
-                    })}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {p.total === 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">0 units added</span>
+                          ) : (
+                            <span>{p.occupied}/{p.total} occupied</span>
+                          )}
+                        </div>
+                        <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
+                          <div
+                            className={`h-1.5 rounded-full transition-all ${p.total > 0 ? "bg-blue-500" : "bg-muted-foreground/30"}`}
+                            style={{ width: `${p.total > 0 ? rate : 0}%` }}
+                          />
+                        </div>
+                        <div className="mt-0.5 text-right text-xs font-semibold text-muted-foreground">
+                          {p.total > 0 ? `${rate}%` : "0%"}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -696,7 +884,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                   Available ({available})
                 </TabsTrigger>
                 <TabsTrigger value="maintenance" className="text-xs">
-                  Maintenance
+                  Maintenance ({maintenance})
                 </TabsTrigger>
                 <TabsTrigger value="renewal_due" className="text-xs text-amber-600">
                   Renewal Due ({renewalDue})
@@ -746,7 +934,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <tr>
                   {[
                     "Unit Code",
-                    "Unit Name",
                     "Property",
                     "Floor",
                     "BR/BA",
@@ -796,9 +983,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                       >
                         <td className="px-4 py-3 font-mono text-xs font-medium">
                           {unit.unit_code || unit.unit_ref}
-                        </td>
-                        <td className="max-w-[160px] truncate px-4 py-3 font-medium">
-                          {unit.unit_name || unit.unit_ref}
                         </td>
                         <td className="max-w-[140px] truncate px-4 py-3 text-xs text-muted-foreground">
                           {propertyLabel}
@@ -913,7 +1097,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
-              {selectedUnit?.unit_name || selectedUnit?.unit_ref}
+              {selectedUnit?.unit_code || selectedUnit?.unit_ref}
             </DialogTitle>
             <DialogDescription>{selectedUnit?.unit_cost_center_code}</DialogDescription>
           </DialogHeader>
@@ -926,7 +1110,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3">
                   {[
                     ["Unit Code", selectedUnit.unit_code],
-                    ["Unit Name", selectedUnit.unit_name],
+                    ["Unit Ref", selectedUnit.unit_ref],
                     ["Cost Center", selectedUnit.unit_cost_center_code],
                     ["Block/Tower", selectedUnit.block_tower],
                     ["Floor", selectedUnit.floor],
@@ -957,8 +1141,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     ["Balcony (sqm)", selectedUnit.balcony_sqm],
                     ["Total Area (sqm)", selectedUnit.total_area_sqm],
                     ["Parking Slot", selectedUnit.parking_slot_no],
-                    ["Max Adults", selectedUnit.max_adults],
-                    ["Max Children", selectedUnit.max_children],
                   ].map(([label, value]) => (
                     <div key={label as string}>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1143,15 +1325,43 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                       <SelectValue placeholder="Select property" />
                     </SelectTrigger>
                     <SelectContent>
-                      {properties.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.property_code ? `${p.property_code} - ` : ""}
-                          {p.title}
-                        </SelectItem>
-                      ))}
+                      {properties.map((p) => {
+                        const propExisting = units.filter((u) => u.property_id === p.id).length;
+                        const propLimit = p.no_of_units ?? null;
+                        const propFull = propLimit !== null && propExisting >= propLimit;
+                        return (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.property_code ? `${p.property_code} - ` : ""}
+                            {p.title}
+                            {propLimit !== null && (
+                              <span className={`ml-2 text-[10px] ${propFull ? "text-red-500" : "text-muted-foreground"}`}>
+                                ({propExisting}/{propLimit} units{propFull ? " — FULL" : ""})
+                              </span>
+                            )}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
+                {/* Capacity Banner */}
+                {form.property_id && propertyUnitLimit !== null && (
+                  <div className={`col-span-2 flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
+                    isAtCapacity
+                      ? "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/40"
+                      : remainingSlots !== null && remainingSlots <= 2
+                        ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40"
+                        : "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/40"
+                  }`}>
+                    <span className={isAtCapacity ? "font-semibold text-red-700 dark:text-red-300" : remainingSlots !== null && remainingSlots <= 2 ? "font-semibold text-amber-700 dark:text-amber-300" : "font-medium text-emerald-700 dark:text-emerald-300"}>
+                      {isAtCapacity
+                        ? `⛔ Unit limit reached — this property allows ${propertyUnitLimit} unit(s) and all slots are filled.`
+                        : `✓ ${existingUnitCountForProperty} / ${propertyUnitLimit} units registered — ${remainingSlots} slot(s) remaining`}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>Unit Reference *</Label>
                   <Input
@@ -1170,14 +1380,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                     readOnly
                     className="bg-muted/40 cursor-not-allowed font-mono"
                     placeholder="Select property & enter unit ref"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Unit Name</Label>
-                  <Input
-                    value={form.unit_name || ""}
-                    onChange={(e) => setF("unit_name", e.target.value)}
-                    placeholder="Enter unit name manually"
                   />
                 </div>
 {/* Cost center selection removed as per new logic */}
@@ -1234,18 +1436,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="space-y-1">
                   <Label className="flex items-center gap-1"><Bath className="h-3 w-3" /> Bathrooms</Label>
                   <Input type="number" min={0} max={10} value={form.bathrooms} onChange={(e) => setF("bathrooms", Number(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Max Adults</Label>
-                  <Input type="number" min={1} value={form.max_adults} onChange={(e) => { const a = Number(e.target.value); setF("max_adults", a); setF("total_occupancy", a + (form.max_children || 0)); }} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Max Children</Label>
-                  <Input type="number" min={0} value={form.max_children} onChange={(e) => { const c = Number(e.target.value); setF("max_children", c); setF("total_occupancy", (form.max_adults || 0) + c); }} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Total Occupancy</Label>
-                  <Input type="number" value={form.total_occupancy} disabled className="bg-muted/40" />
                 </div>
                 <div className="space-y-1">
                   <Label>Furnishing</Label>
@@ -1348,14 +1538,6 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                 <div className="space-y-1">
                   <Label>Current Rent (QR)</Label>
                   <Input type="number" value={form.current_rent || ""} onChange={(e) => setF("current_rent", toNumberOrUndefined(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Weekend Rate (QR)</Label>
-                  <Input type="number" value={form.weekend_price || ""} onChange={(e) => setF("weekend_price", toNumberOrUndefined(e.target.value))} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Holiday Rate (QR)</Label>
-                  <Input type="number" value={form.holiday_price || ""} onChange={(e) => setF("holiday_price", toNumberOrUndefined(e.target.value))} />
                 </div>
                 <div className="space-y-1">
                   <Label>Cleaning Fee (QR)</Label>
@@ -1607,12 +1789,13 @@ export function UnitsModule({ role }: UnitsModuleProps) {
               {step < STEPS.length ? (
                 <Button
                   onClick={() => setStep((s) => Math.min(STEPS.length, s + 1))}
-                  disabled={step === 1 && (!form.property_id || !form.unit_ref)}
+                  disabled={step === 1 && (!form.property_id || !form.unit_ref || isAtCapacity)}
+                  title={isAtCapacity ? `Unit limit of ${propertyUnitLimit} reached for this property` : undefined}
                 >
                   Next <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                <Button onClick={handleCreate} disabled={saving}>
+                <Button onClick={handleCreate} disabled={saving || isAtCapacity}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {editingUnitId ? "Update Unit" : "Create Unit"}
                 </Button>

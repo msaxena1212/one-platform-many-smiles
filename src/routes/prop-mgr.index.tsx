@@ -54,7 +54,8 @@ function HostDashboard() {
       try {
         const { count: propCount } = await supabase.from('properties').select('*', { count: 'exact', head: true });
         const { count: unitCount } = await supabase.from('units').select('*', { count: 'exact', head: true });
-        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).eq('lease_status', 'ACTIVE');
+        const { count: leaseCount } = await supabase.from('leases').select('*', { count: 'exact', head: true }).or('lease_status.ilike.active,lease_status.ilike.fully_signed,lease_status.ilike.renewed');
+        const { count: occupiedCount } = await supabase.from('units').select('*', { count: 'exact', head: true }).or('status.ilike.occupied,lease_status.ilike.leased');
         
         const { data: propData } = await supabase.from('properties').select('id');
         const propIds = propData?.map(p => p.id) || [];
@@ -72,7 +73,7 @@ function HostDashboard() {
         setStats({
           properties: propCount || 0,
           units: unitCount || 0,
-          activeLeases: leaseCount || 0,
+          activeLeases: leaseCount || occupiedCount || 0,
           monthlyRevenue: 0, 
           pendingTickets: 0,
           assetsCount: assetsCount,
@@ -102,44 +103,32 @@ function HostDashboard() {
       <div className="grid gap-6 md:grid-cols-4 mb-8">
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Monthly Earnings</CardTitle>
-            <BarChart className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              ${monthlyEarnings.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">Estimated (15 nights/property)</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Active Listings</CardTitle>
             <Home className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{activeCount}</div>
-            <p className="text-xs text-muted-foreground">Properties live</p>
+            <div className="text-2xl font-bold text-foreground">{loading ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : activeCount}</div>
+            <p className="text-xs text-muted-foreground">Properties live in portfolio</p>
           </CardContent>
         </Card>
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Unread Messages</CardTitle>
-            <Inbox className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Leases</CardTitle>
+            <BarChart className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">2</div>
-            <p className="text-xs text-muted-foreground">Requires attention</p>
+            <div className="text-2xl font-bold text-foreground">{loading ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : stats.activeLeases}</div>
+            <p className="text-xs text-muted-foreground">Currently active contracts</p>
           </CardContent>
         </Card>
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Upcoming Check-ins</CardTitle>
-            <CalendarIcon className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Available Units</CardTitle>
+            <Home className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">5</div>
-            <p className="text-xs text-muted-foreground">Within next 7 days</p>
+            <div className="text-2xl font-bold text-foreground">{loading ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : stats.units}</div>
+            <p className="text-xs text-muted-foreground">Total rentable units</p>
           </CardContent>
         </Card>
         <Card className="border-border">
@@ -148,18 +137,8 @@ function HostDashboard() {
             <Package className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{stats.assetsCount}</div>
+            <div className="text-2xl font-bold text-foreground">{loading ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : stats.assetsCount}</div>
             <p className="text-xs text-muted-foreground">Assigned to your properties</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Assigned Staff</CardTitle>
-            <Users className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{stats.employeesCount}</div>
-            <p className="text-xs text-muted-foreground">Employees linked to assets</p>
           </CardContent>
         </Card>
       </div>

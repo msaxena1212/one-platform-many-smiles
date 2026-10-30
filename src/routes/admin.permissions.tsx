@@ -39,9 +39,11 @@ function AdminPermissions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Role Access</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Role Permissions & Access Matrix
+          </h1>
           <p className="text-muted-foreground">
-            Manage module access for your organization's staff roles.
+            Manage granular module access for your organization's staff roles.
           </p>
         </div>
       </div>

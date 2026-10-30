@@ -4,9 +4,12 @@ import { LogOut, ChevronRight } from "lucide-react";
 import { type ReactNode, useState, useEffect } from "react";
 
 import { clearDemoSession } from "@/lib/demo-auth";
+import { getImpersonationSession, stopImpersonation } from "@/lib/impersonation";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { InAppNotificationBell } from "@/components/in-app-notification-bell";
+import { getDocumentBranding } from "@/lib/document-branding";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,33 +109,68 @@ export function AppShell({
     return pathOk;
   }
 
+  const [impersonation, setImpersonation] = useState<any>(null);
+
+  useEffect(() => {
+    setImpersonation(getImpersonationSession());
+  }, [pathname]);
+
+  function handleExitImpersonation() {
+    stopImpersonation();
+    navigate({ to: "/super-admin/tenants" as any });
+  }
+
+  const branding = getDocumentBranding();
+  const orgName = impersonation?.tenantName || branding.companyName || "Al Ameen Real Estate";
+  const orgInitial = orgName.charAt(0).toUpperCase();
+
   // ════════════════════════════════════════════════════════════════════════════
   // 3-Layer nav (navModules) – single-column accordion
   // ════════════════════════════════════════════════════════════════════════════
   if (navModules) {
     return (
-      <div className="flex min-h-screen">
-        <NavModulesSidebar
-          navModules={navModules}
-          consoleLabel={consoleLabel}
-          profile={profile}
-          isItemActive={isItemActive}
-          pathname={pathname}
-          searchParams={searchParams}
-          onSignOut={handleSignOut}
-        />
-        {/* ── Main content ─────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 bg-background">
-          {/* Top bar */}
-          <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm gap-3">
-            <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
-          </header>
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+      <div className="flex flex-col h-screen overflow-hidden">
+        {impersonation && impersonation.isImpersonating && (
+          <div className="bg-amber-500 text-slate-950 px-4 py-1.5 flex items-center justify-between text-xs font-semibold z-50 shrink-0 shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-600 animate-ping" />
+              <span>SUPPORT IMPERSONATION MODE: Viewing console as Tenant Admin for <strong>"{impersonation.tenantName}"</strong> ({impersonation.tenantKey})</span>
+            </div>
+            <button
+              onClick={handleExitImpersonation}
+              className="px-2.5 py-0.5 rounded bg-slate-950 text-white text-[11px] font-bold hover:bg-slate-800 transition-all flex items-center gap-1 shadow-sm"
+            >
+              Exit Impersonation → Return to Super Admin
+            </button>
+          </div>
+        )}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <NavModulesSidebar
+            navModules={navModules}
+            consoleLabel={consoleLabel}
+            profile={profile}
+            isItemActive={isItemActive}
+            pathname={pathname}
+            searchParams={searchParams}
+            onSignOut={handleSignOut}
+            orgName={orgName}
+            orgInitial={orgInitial}
+          />
+          {/* ── Main content ─────────────────────────────────── */}
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-background">
+            {/* Top bar */}
+            <header className="h-12 border-b flex items-center justify-between px-6 shrink-0 bg-background/95 backdrop-blur-sm gap-3">
+              <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
+              <div className="flex items-center gap-2">
+                <InAppNotificationBell />
+              </div>
+            </header>
+            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+          </div>
         </div>
       </div>
     );
   }
-
   // ════════════════════════════════════════════════════════════════════════════
   // Legacy 2-layer nav (navGroups)
   // ════════════════════════════════════════════════════════════════════════════
@@ -145,6 +183,8 @@ export function AppShell({
         title={title}
         isItemActive={isItemActive}
         onSignOut={handleSignOut}
+        orgName={orgName}
+        orgInitial={orgInitial}
       >
         {children}
       </LegacyNavGroupsLayout>
@@ -155,12 +195,12 @@ export function AppShell({
   // Flat nav
   // ════════════════════════════════════════════════════════════════════════════
   return (
-    <div className="flex min-h-screen">
-      <nav className={cn("hidden md:flex w-56 shrink-0 flex-col border-r", DIVIDER, SIDEBAR_BG)}>
+    <div className="flex h-screen overflow-hidden">
+      <nav className={cn("hidden md:flex w-56 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b", DIVIDER, SIDEBAR_HEADER)}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">{orgInitial}</div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+            <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
             <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
           </div>
         </div>
@@ -184,11 +224,11 @@ export function AppShell({
           </button>
         </div>
       </nav>
-      <div className="flex-1 flex flex-col min-w-0 bg-background">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
         <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm">
           <h1 className="text-sm font-semibold truncate">{title}</h1>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );
@@ -204,6 +244,8 @@ function NavModulesSidebar({
   pathname,
   searchParams,
   onSignOut,
+  orgName = "Al Ameen Real Estate",
+  orgInitial = "A",
 }: {
   navModules: NavModule[];
   consoleLabel?: string;
@@ -212,6 +254,8 @@ function NavModulesSidebar({
   pathname: string;
   searchParams: Record<string, any>;
   onSignOut: () => void;
+  orgName?: string;
+  orgInitial?: string;
 }) {
   // ── Detect active state: pick ONLY the single most-specific matching item ──
   // This prevents "/prop-mgr" (Dashboard) from also matching when on "/prop-mgr/leases"
@@ -259,26 +303,33 @@ function NavModulesSidebar({
   // ── Exclusive accordion toggles ─────────────────────────────────────────
 
   function toggleModule(mi: number) {
-    const isAlreadyOpen = openMods.has(mi);
-    if (isAlreadyOpen) {
-      // Collapse this module
-      setOpenMods(new Set());
-    } else {
-      // Open this module ONLY, collapse all others
-      setOpenMods(new Set([mi]));
-      // Auto-expand first sub-group if none previously open
-      setOpenGrps((prev) => ({
-        ...prev,
-        [mi]: prev[mi]?.size ? prev[mi] : new Set([0]),
-      }));
-    }
+    setOpenMods((prev) => {
+      const next = new Set(prev);
+      if (next.has(mi)) {
+        next.delete(mi);
+      } else {
+        next.add(mi);
+        // Auto-expand first sub-group if none open in this module
+        setOpenGrps((gPrev) => {
+          if (!gPrev[mi] || gPrev[mi].size === 0) {
+            return { ...gPrev, [mi]: new Set([0]) };
+          }
+          return gPrev;
+        });
+      }
+      return next;
+    });
   }
 
   function toggleGroup(mi: number, gi: number) {
     setOpenGrps((prev) => {
-      const isAlreadyOpen = prev[mi]?.has(gi);
-      // Exclusive: only one sub-group open at a time per module
-      return { ...prev, [mi]: isAlreadyOpen ? new Set() : new Set([gi]) };
+      const current = new Set(prev[mi] ?? []);
+      if (current.has(gi)) {
+        current.delete(gi);
+      } else {
+        current.add(gi);
+      }
+      return { ...prev, [mi]: current };
     });
   }
 
@@ -288,10 +339,10 @@ function NavModulesSidebar({
       {/* ── Header: logo + console name ──────────────────────────────────── */}
       <div className={cn("flex items-center gap-3 px-5 py-4 border-b shrink-0", DIVIDER, SIDEBAR_HEADER)}>
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">
-          Z
+          {orgInitial}
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+          <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
           <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
         </div>
       </div>
@@ -451,6 +502,8 @@ function LegacyNavGroupsLayout({
   isItemActive,
   onSignOut,
   children,
+  orgName = "Al Ameen Real Estate",
+  orgInitial = "A",
 }: {
   navGroups: NavGroup[];
   consoleLabel?: string;
@@ -459,6 +512,8 @@ function LegacyNavGroupsLayout({
   isItemActive: (item: NavItem) => boolean;
   onSignOut: () => void;
   children?: React.ReactNode;
+  orgName?: string;
+  orgInitial?: string;
 }) {
   function findActiveGroup(): number {
     const idx = navGroups.findIndex((g) => g.items.some(isItemActive));
@@ -479,13 +534,13 @@ function LegacyNavGroupsLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <nav className={cn("hidden md:flex w-60 shrink-0 flex-col border-r overflow-hidden", DIVIDER, SIDEBAR_BG)}>
+    <div className="flex h-screen overflow-hidden">
+      <nav className={cn("hidden md:flex w-60 shrink-0 flex-col border-r h-screen overflow-hidden", DIVIDER, SIDEBAR_BG)}>
         {/* Logo */}
         <div className={cn("flex items-center gap-3 px-5 py-4 border-b shrink-0", DIVIDER, SIDEBAR_HEADER)}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">Z</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white font-bold text-xs shrink-0">{orgInitial}</div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate">ZYNO PMS</p>
+            <p className="text-xs font-bold text-white truncate" title={orgName}>{orgName}</p>
             <p className="text-[10px] text-white/40 truncate">{consoleLabel}</p>
           </div>
         </div>
@@ -560,11 +615,11 @@ function LegacyNavGroupsLayout({
         </div>
       </nav>
 
-      <div className="flex-1 flex flex-col min-w-0 bg-background">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
         <header className="h-12 border-b flex items-center px-6 shrink-0 bg-background/95 backdrop-blur-sm">
           <h1 className="text-sm font-semibold truncate">{title}</h1>
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

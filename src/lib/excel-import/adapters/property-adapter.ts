@@ -1,5 +1,15 @@
-import { supabase, type Property } from '../../supabase';
-import type { EntityImportAdapter, ColumnDefinition, ImportErrorDetail, FieldComparison, DependencyCheckItem, ImportOperation } from '../types';
+import { supabase, createProperty, updateProperty, type Property } from '../../supabase';
+import { parseFloors } from '../../utils';
+import { 
+  type EntityImportAdapter, 
+  type ColumnDefinition, 
+  type ImportErrorDetail, 
+  type FieldComparison, 
+  type DependencyCheckItem, 
+  type ImportOperation,
+  getCellValue,
+  sanitizeDateForPostgres
+} from '../types';
 import { getErrorDefinition } from '../error-codes';
 import { referenceDropdowns } from '../../reference-data';
 
@@ -13,27 +23,29 @@ export const PROPERTY_COLUMNS: ColumnDefinition[] = [
   { key: 'ownership_type', label: 'Ownership Type', type: 'enum', required: false, allowedValues: referenceDropdowns.ownershipTypes.map(p => p.value), sampleValue: 'Leased' },
   { key: 'country', label: 'Country', type: 'string', required: true, sampleValue: 'Qatar' },
   { key: 'city', label: 'City', type: 'string', required: true, sampleValue: 'Doha' },
-  { key: 'area_zone', label: 'Area / Zone', type: 'string', required: false, sampleValue: 'Area 18' },
-  { key: 'street_building_name', label: 'Street / Building Name', type: 'string', required: false, sampleValue: 'Street 840' },
+  { key: 'area_zone', label: 'Area / Zone', type: 'string', required: true, sampleValue: 'Area 18' },
+  { key: 'street_building_name', label: 'Street / Building Name', type: 'string', required: true, sampleValue: 'Street 840' },
   { key: 'plot_building_no', label: 'Plot / Building No.', type: 'string', required: false, sampleValue: 'Bldg 23' },
-  { key: 'title_deed_no', label: 'Title Deed / Reg No.', type: 'string', required: false, sampleValue: 'TD-998822' },
-  { key: 'municipality_ref_no', label: 'Municipality Ref No.', type: 'string', required: false, sampleValue: 'MUN-44012' },
-  { key: 'property_manager', label: 'Property Manager', type: 'string', required: false, sampleValue: 'Jithin Abdul Latheef' },
-  { key: 'no_of_floors', label: 'No. of Floors', type: 'number', required: false, sampleValue: 8 },
-  { key: 'no_of_units', label: 'No. of Units', type: 'number', required: false, sampleValue: 44 },
+  { key: 'title_deed_no', label: 'Title Deed / Registration No.', type: 'string', required: false, sampleValue: 'TD-998822' },
+  { key: 'municipality_ref_no', label: 'Municipality / Building Ref No.', type: 'string', required: false, sampleValue: 'MUN-44012' },
+  { key: 'owner_landlord', label: 'Owner / Landlord', type: 'string', required: false, sampleValue: 'Sheikh Hassan Al-Thani' },
+  { key: 'property_manager', label: 'Property Manager', type: 'string', required: true, sampleValue: 'Jithin Abdul Latheef' },
+  { key: 'no_of_floors', label: 'No. of Floors', type: 'number', required: true, sampleValue: 8 },
+  { key: 'no_of_units', label: 'No. of Units', type: 'number', required: true, sampleValue: 44 },
   { key: 'total_built_up_area_sqm', label: 'Total Built-up Area Sqm', type: 'number', required: false, sampleValue: 4500 },
   { key: 'common_area_sqm', label: 'Common Area Sqm', type: 'number', required: false, sampleValue: 600 },
   { key: 'parking_count', label: 'Parking Count', type: 'number', required: false, sampleValue: 12 },
-  { key: 'no_of_elevators', label: 'No. of Elevators', type: 'number', required: false, sampleValue: 2 },
+  { key: 'no_of_elevators', label: 'No of Elevator', type: 'number', required: false, sampleValue: 2 },
+  { key: 'amenity_1', label: 'Amenity / Facility 1', type: 'string', required: false, sampleValue: 'Swimming Pool' },
+  { key: 'amenity_2', label: 'Amenity / Facility 2', type: 'string', required: false, sampleValue: 'Fitness Center / Gym' },
+  { key: 'amenity_3', label: 'Amenity / Facility 3', type: 'string', required: false, sampleValue: '24/7 Security & CCTV' },
+  { key: 'amenity_4', label: 'Amenity / Facility 4', type: 'string', required: false, sampleValue: 'Covered Basement Parking' },
+  { key: 'amenity_5', label: 'Amenity / Facility 5', type: 'string', required: false, sampleValue: 'Kids Play Area' },
+  { key: 'other_amenities', label: 'Other Amenities / Facilities', type: 'string', required: false, sampleValue: 'Sauna, Steam Room' },
   { key: 'completion_date', label: 'Completion Date', type: 'date', required: false, sampleValue: '2022-01-15' },
   { key: 'handover_date', label: 'Handover Date', type: 'date', required: false, sampleValue: '2022-03-01' },
   { key: 'property_status', label: 'Property Status', type: 'enum', required: false, allowedValues: referenceDropdowns.propertyStatuses.map(p => p.value), sampleValue: 'Active' },
-  { key: 'amenity_1', label: 'Amenity / Facility 1', type: 'string', required: false, sampleValue: 'Swimming Pool', description: 'At least one amenity/facility is required across Amenity 1-5 or Other Amenities' },
-  { key: 'amenity_2', label: 'Amenity / Facility 2', type: 'string', required: false, sampleValue: 'Gym / Fitness Center' },
-  { key: 'amenity_3', label: 'Amenity / Facility 3', type: 'string', required: false, sampleValue: '24/7 Security' },
-  { key: 'amenity_4', label: 'Amenity / Facility 4', type: 'string', required: false, sampleValue: 'Covered Parking' },
-  { key: 'amenity_5', label: 'Amenity / Facility 5', type: 'string', required: false, sampleValue: 'High Speed Elevators' },
-  { key: 'other_amenities', label: 'Other Amenities / Facilities', type: 'string', required: false, sampleValue: 'CCTV, Sauna, Children Play Area, Concierge' },
+  { key: 'documents_received', label: 'Documents Received?', type: 'boolean', required: false, sampleValue: 'Yes', description: 'Yes or No / True or False' },
   { key: 'remarks', label: 'Remarks', type: 'string', required: false, sampleValue: 'Standard residential property' },
 ];
 
@@ -55,7 +67,7 @@ export const propertyAdapter: EntityImportAdapter = {
   },
 
   resolveRecordKey(row: Record<string, any>): string {
-    const raw = row['Property Code'] ?? row['property_code'] ?? row['Property code'] ?? '';
+    const raw = getCellValue(row, 'Property Code', 'property_code', 'Property code', 'Property ID', 'property_id') ?? '';
     return String(raw).trim();
   },
 
@@ -149,7 +161,7 @@ export const propertyAdapter: EntityImportAdapter = {
 
     // Map input fields to columns
     for (const col of PROPERTY_COLUMNS) {
-      const cellValue = row[col.label] ?? row[col.label + ' *'] ?? row[col.key];
+      const cellValue = getCellValue(row, col.label, col.key, col.dbField);
 
       if (operation === 'DELETE') continue;
 
@@ -171,60 +183,54 @@ export const propertyAdapter: EntityImportAdapter = {
         
         if (strVal === '[NULL]') {
           normalized[col.key] = null;
+        } else if (col.type === 'date') {
+          const sanitized = sanitizeDateForPostgres(cellValue);
+          if (sanitized) {
+            normalized[col.key] = sanitized;
+          } else {
+            errors.push({
+              row: context.rowNumber,
+              field: col.label,
+              code: 'VAL_003',
+              message: `Invalid date format for "${col.label}". Expected YYYY-MM-DD, DD/MM/YYYY or standard Excel date.`,
+              severity: 'ERROR',
+            });
+          }
         } else if (col.type === 'number') {
-          const num = Number(strVal.replace(/,/g, ''));
+          // no_of_floors accepts expressions like "GF + 7" (= 8 floors)
+          const num = col.key === 'no_of_floors' ? parseFloors(strVal) : Number(strVal.replace(/,/g, ''));
           if (isNaN(num)) {
             errors.push({
               row: context.rowNumber,
               field: col.label,
               code: 'VAL_005',
-              message: `${col.label} must be a valid number.`,
+              message: col.key === 'no_of_floors'
+                ? `${col.label} must be a valid number or expression (e.g. "GF + 7", "B + GF + 5", or "8").`
+                : `${col.label} must be a valid number.`,
               severity: 'ERROR',
             });
           } else {
             normalized[col.key] = num;
           }
         } else if (col.type === 'enum' && col.allowedValues) {
-          const matched = col.allowedValues.find(v => v.toLowerCase() === strVal.toLowerCase());
-          if (!matched) {
+          const allowedArr = Array.isArray(col.allowedValues) ? col.allowedValues : [];
+          const matched = allowedArr.find((v: string) => v.toLowerCase() === strVal.toLowerCase());
+          if (!matched && allowedArr.length > 0) {
             warnings.push({
               row: context.rowNumber,
               field: col.label,
               code: 'VAL_002',
               message: `Value "${strVal}" for ${col.label} is not in standard options.`,
               severity: 'WARNING',
-              resolution: `Allowed: ${col.allowedValues.join(', ')}`,
+              resolution: `Allowed: ${allowedArr.join(', ')}`,
             });
             normalized[col.key] = strVal;
           } else {
-            normalized[col.key] = matched;
+            normalized[col.key] = matched || strVal;
           }
         } else {
           normalized[col.key] = strVal;
         }
-      }
-    }
-
-    // Validation: At least one Amenity / Facility is mandatory on CREATE
-    if (operation === 'CREATE') {
-      const amenitiesList = [
-        normalized.amenity_1,
-        normalized.amenity_2,
-        normalized.amenity_3,
-        normalized.amenity_4,
-        normalized.amenity_5,
-        normalized.other_amenities,
-      ].filter(a => a && String(a).trim() !== '' && String(a).trim() !== '[NULL]');
-
-      if (amenitiesList.length === 0) {
-        errors.push({
-          row: context.rowNumber,
-          field: 'Amenity / Facility 1',
-          code: 'VAL_001',
-          message: 'At least one Amenity / Facility is mandatory (provide Amenity / Facility 1-5 or Other Amenities).',
-          severity: 'ERROR',
-          resolution: 'Provide at least one property amenity (e.g. Swimming Pool, Gym, 24/7 Security, Parking).',
-        });
       }
     }
 
@@ -320,6 +326,14 @@ export const propertyAdapter: EntityImportAdapter = {
       const propCode = record.recordKey;
 
       if (operation === 'CREATE') {
+        const facilityAmenities = [
+          data.amenity_1,
+          data.amenity_2,
+          data.amenity_3,
+          data.amenity_4,
+          data.amenity_5,
+        ].filter(Boolean);
+
         const payload: Partial<Property> = {
           property_code: propCode,
           title: data.title || `Property ${propCode}`,
@@ -334,7 +348,8 @@ export const propertyAdapter: EntityImportAdapter = {
           bathrooms: 1,
           base_price_per_night: 0,
           cleaning_fee: 0,
-          is_active: true,
+          is_active: data.property_status ? data.property_status.toLowerCase() === 'active' : true,
+          property_status: data.property_status || 'Active',
           cost_center_code: data.cost_center_code,
           cost_center_name: data.cost_center_name,
           property_category: data.property_category,
@@ -347,29 +362,23 @@ export const propertyAdapter: EntityImportAdapter = {
           property_manager: data.property_manager,
           no_of_floors: data.no_of_floors,
           no_of_units: data.no_of_units,
+          total_units: data.no_of_units,
           total_built_up_area_sqm: data.total_built_up_area_sqm,
           common_area_sqm: data.common_area_sqm,
           parking_count: data.parking_count,
           no_of_elevators: data.no_of_elevators,
           completion_date: data.completion_date,
           handover_date: data.handover_date,
+          documents_received: typeof data.documents_received === 'boolean' ? data.documents_received : String(data.documents_received).toLowerCase() === 'yes' || String(data.documents_received).toLowerCase() === 'true',
           remarks: data.remarks,
-          amenities: [
-            data.amenity_1,
-            data.amenity_2,
-            data.amenity_3,
-            data.amenity_4,
-            data.amenity_5,
-            ...(data.other_amenities ? String(data.other_amenities).split(',').map((s: string) => s.trim()) : [])
-          ].filter((a: any) => Boolean(a) && a !== '[NULL]' && String(a).trim() !== ''),
           municipality_details: {
-            facility_amenities: [data.amenity_1, data.amenity_2, data.amenity_3, data.amenity_4, data.amenity_5].filter(Boolean),
+            owner_landlord: data.owner_landlord || undefined,
+            facility_amenities: facilityAmenities,
             other_amenities_facilities: data.other_amenities || undefined,
           },
         };
 
-        const { data: created, error } = await supabase.from('properties').insert(payload).select().single();
-        if (error) throw error;
+        const created = await createProperty(payload as any);
 
         return {
           success: true,
@@ -382,16 +391,13 @@ export const propertyAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Target record ID not found');
 
-        const updatePayload: Record<string, any> = {
-          updated_at: new Date().toISOString(),
-        };
+        const updatePayload: Record<string, any> = {};
 
         for (const change of record.changes) {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('properties').update(updatePayload).eq('id', existing.id);
-        if (error) throw error;
+        await updateProperty(existing.id, updatePayload);
 
         return {
           success: true,
@@ -404,8 +410,7 @@ export const propertyAdapter: EntityImportAdapter = {
         if (!existing?.id) throw new Error('Target record ID not found');
 
         // Soft delete / is_active flag preferred
-        const { error } = await supabase.from('properties').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', existing.id);
-        if (error) throw error;
+        await updateProperty(existing.id, { is_active: false });
 
         return {
           success: true,

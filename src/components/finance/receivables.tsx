@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Scale, Plus, CheckCircle2 } from "lucide-react";
+import { Scale, Plus, CheckCircle2, Receipt, Landmark, Banknote, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore } from "@/lib/finance/finance-store";
+import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 
 const PAGE_SIZE = 20;
 
@@ -19,6 +20,11 @@ export function ReceivablesLegal() {
   const { leases } = useAppData();
   const { legalReceivables, addLegalEscalation, recoverLegalReceivable } = useFinanceStore();
   const [page, setPage] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Receipt Modal State
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<TenantReceiptDetails | null>(null);
 
   // Escalate Modal State
   const [openEscalate, setOpenEscalate] = useState(false);
@@ -36,6 +42,12 @@ export function ReceivablesLegal() {
   const [openRecover, setOpenRecover] = useState(false);
   const [recoverTarget, setRecoverTarget] = useState<any | null>(null);
   const [recoverAmount, setRecoverAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"Bank Transfer" | "Cash" | "Cheque">("Bank Transfer");
+  const [recoveryDate, setRecoveryDate] = useState(new Date().toISOString().split("T")[0]);
+  const [transactionNo, setTransactionNo] = useState("");
+  const [chequeNo, setChequeNo] = useState("");
+  const [chequeBank, setChequeBank] = useState("Qatar National Bank (QNB)");
+  const [chequeMaturityDate, setChequeMaturityDate] = useState(new Date().toISOString().split("T")[0]);
   const [bankRef, setBankRef] = useState("BANK-REC-");
 
   function handleSelectLease(leaseId: string) {
@@ -51,36 +63,50 @@ export function ReceivablesLegal() {
     }
   }
 
-  function submitEscalate() {
+  async function submitEscalate() {
     if (!escalateForm.tenant_name || !escalateForm.amount) {
       toast.error("Please enter tenant name and amount");
       return;
     }
     const amt = parseFloat(escalateForm.amount) || 0;
-
-    addLegalEscalation({
-      legal_case_id: escalateForm.legal_case_id,
-      tenant_name: escalateForm.tenant_name,
-      property_name: escalateForm.property_name || "Old Salata - Residence No:23",
-      unit_ref: escalateForm.unit_ref || "Unit",
-      original_amount: amt,
-      outstanding_balance: amt,
-      escalation_date: new Date().toISOString().split("T")[0],
-      reason: escalateForm.reason,
-      status: escalateForm.status,
-    });
-
-    setOpenEscalate(false);
+    setIsSubmitting(true);
+    try {
+      addLegalEscalation({
+        legal_case_id: escalateForm.legal_case_id,
+        tenant_name: escalateForm.tenant_name,
+        property_name: escalateForm.property_name || "Old Salata - Residence No:23",
+        unit_ref: escalateForm.unit_ref || "Unit",
+        original_amount: amt,
+        outstanding_balance: amt,
+        escalation_date: new Date().toISOString().split("T")[0],
+        reason: escalateForm.reason,
+        status: escalateForm.status,
+      });
+      await new Promise(r => setTimeout(r, 300));
+      setOpenEscalate(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to escalate receivable");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function openRecoveryModal(rec: any) {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const generatedRef = `REC-${rec.legal_case_id || 'PAY'}-${Date.now().toString().slice(-4)}`;
     setRecoverTarget(rec);
     setRecoverAmount(String(rec.outstanding_balance));
-    setBankRef(`REC-${rec.legal_case_id || 'PAY'}-${Date.now().toString().slice(-4)}`);
+    setPaymentMethod("Bank Transfer");
+    setRecoveryDate(todayStr);
+    setTransactionNo(`TXN-${Date.now().toString().slice(-6)}`);
+    setChequeNo(`CHQ-${Math.floor(100000 + Math.random() * 900000)}`);
+    setChequeBank("Qatar National Bank (QNB)");
+    setChequeMaturityDate(todayStr);
+    setBankRef(generatedRef);
     setOpenRecover(true);
   }
 
-  function submitRecover() {
+  async function submitRecover() {
     if (!recoverTarget) return;
     const amt = parseFloat(recoverAmount) || 0;
     if (amt <= 0 || amt > recoverTarget.outstanding_balance) {
@@ -88,8 +114,123 @@ export function ReceivablesLegal() {
       return;
     }
 
-    recoverLegalReceivable(recoverTarget.legal_case_id || recoverTarget.id, amt, bankRef);
-    setOpenRecover(false);
+    const todayStr = recoveryDate || new Date().toISOString().split("T")[0];
+    const caseId = recoverTarget.legal_case_id || recoverTarget.id;
+    const propName = recoverTarget.property_name || "Old Salata - Residence No:23";
+    const unitName = recoverTarget.unit_ref || "Unit";
+    const tenantName = recoverTarget.tenant_name || "Valued Tenant";
+    const effectiveRef = paymentMethod === "Bank Transfer" ? (transactionNo || bankRef) : paymentMethod === "Cheque" ? (chequeNo || bankRef) : bankRef;
+
+    setIsSubmitting(true);
+    try {
+      // 1. Post to finance-store with complete mode of payment, custom dates, and GL/SL mapping
+      recoverLegalReceivable(
+        caseId,
+        amt,
+        effectiveRef,
+        paymentMethod,
+        propName,
+        unitName,
+        tenantName,
+        {
+          date: todayStr,
+          transactionNo: transactionNo || effectiveRef,
+          chequeNo: chequeNo || effectiveRef,
+          chequeBank,
+          maturityDate: chequeMaturityDate,
+        }
+      );
+
+      // 2. Generate Official Receipt for the tenant
+      const drCode = paymentMethod === "Cash" ? "12100" : "12000";
+      const drAccount = paymentMethod === "Cash"
+        ? "12100 - Cash in Hand / Till"
+        : paymentMethod === "Cheque"
+        ? `12000 - Bank Operating Account (${chequeBank})`
+        : "12000 - Bank Operating Account";
+
+      const legalReceipt: TenantReceiptDetails = {
+        receiptNo: effectiveRef || `REC-LGL-${Date.now().toString().slice(-4)}`,
+        acknowledgementNo: `ACK-LGL-${caseId}`,
+        date: todayStr,
+        tenantName: tenantName,
+        propertyName: propName,
+        unitRef: unitName,
+        leaseStartDate: todayStr,
+        leaseEndDate: todayStr,
+        monthlyRent: amt,
+        totalContractRent: recoverTarget.original_amount || amt,
+        depositAmount: 0,
+        depositMode: paymentMethod,
+        pdcCount: paymentMethod === "Cheque" ? 1 : 0,
+        pdcs: paymentMethod === "Cheque" ? [{
+          chequeNo: chequeNo || effectiveRef,
+          bank: chequeBank,
+          date: chequeMaturityDate,
+          amount: amt,
+        }] : [],
+        vouchers: [{
+          receiptNo: `RV-LGL-${Date.now().toString().slice(-4)}`,
+          name: `Legal Recovery Settlement — Case #${caseId} (${paymentMethod})`,
+          amount: amt,
+          method: paymentMethod,
+          debit: drAccount,
+          credit: "12411 - Legal Receivables (Defaulted)",
+        }],
+        totalCollected: amt,
+        cashierName: "Legal & Collections Department",
+        notes: `OFFICIAL SETTLEMENT & RECOVERY RECEIPT: Received QAR ${amt.toLocaleString()} via ${paymentMethod} (Ref/Tx: ${effectiveRef}${paymentMethod === 'Cheque' ? ` | Bank: ${chequeBank} | Maturity: ${chequeMaturityDate}` : ''}) against Legal Case #${caseId}. Status: ${amt >= recoverTarget.outstanding_balance ? 'Fully Recovered' : 'Partially Recovered'}. General Ledger & Receivables updated.`,
+      };
+
+      await new Promise(r => setTimeout(r, 350));
+      setReceiptData(legalReceipt);
+      setReceiptOpen(true);
+      setOpenRecover(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to post recovery");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleViewReceipt(rec: any) {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const caseId = rec.legal_case_id || rec.id;
+    const propName = rec.property_name || "Old Salata - Residence No:23";
+    const unitName = rec.unit_ref || "Unit";
+    const tenantName = rec.tenant_name || "Valued Tenant";
+    const recoveredAmt = (Number(rec.original_amount) || 0) - (Number(rec.outstanding_balance) || 0);
+
+    const legalReceipt: TenantReceiptDetails = {
+      receiptNo: `REC-LGL-${caseId}`,
+      acknowledgementNo: `ACK-LGL-${caseId}`,
+      date: rec.escalation_date || todayStr,
+      tenantName: tenantName,
+      propertyName: propName,
+      unitRef: unitName,
+      leaseStartDate: rec.escalation_date || todayStr,
+      leaseEndDate: rec.escalation_date || todayStr,
+      monthlyRent: recoveredAmt || Number(rec.original_amount) || 0,
+      totalContractRent: Number(rec.original_amount) || 0,
+      depositAmount: 0,
+      depositMode: "Bank Transfer",
+      pdcCount: 0,
+      pdcs: [],
+      vouchers: [{
+        receiptNo: `RV-LGL-${caseId}`,
+        name: `Legal Case #${caseId} — Settlement Record`,
+        amount: recoveredAmt || Number(rec.original_amount) || 0,
+        method: "Bank Transfer",
+        debit: "12000 - Bank Operating Account",
+        credit: "12411 - Legal Receivables (Defaulted)",
+      }],
+      totalCollected: recoveredAmt || Number(rec.original_amount) || 0,
+      cashierName: "Legal & Collections Department",
+      notes: `Legal Case #${caseId} record. Original Default: QAR ${Number(rec.original_amount).toLocaleString()} | Recovered: QAR ${recoveredAmt.toLocaleString()} | Outstanding: QAR ${Number(rec.outstanding_balance).toLocaleString()}. Reason: ${rec.reason}`,
+    };
+
+    setReceiptData(legalReceipt);
+    setReceiptOpen(true);
   }
 
   const sortedLegalReceivables = [...legalReceivables].sort((a, b) => new Date(b.escalation_date || "").getTime() - new Date(a.escalation_date || "").getTime());
@@ -168,18 +309,31 @@ export function ReceivablesLegal() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
-                      {rec.outstanding_balance > 0 ? (
+                      <div className="flex items-center justify-center gap-1.5">
+                        {rec.outstanding_balance > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                            onClick={() => openRecoveryModal(rec)}
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Recover Funds
+                          </Button>
+                        ) : (
+                          <span className="text-[10px] text-emerald-600 font-semibold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">
+                            Settled
+                          </span>
+                        )}
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-7 text-xs border-emerald-500 text-emerald-600 hover:bg-emerald-50"
-                          onClick={() => openRecoveryModal(rec)}
+                          variant="ghost"
+                          className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                          onClick={() => handleViewReceipt(rec)}
+                          title="View Official Receipt"
                         >
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Recover Funds
+                          <Receipt className="h-3.5 w-3.5" /> Receipt
                         </Button>
-                      ) : (
-                        <span className="text-[10px] text-emerald-600 font-semibold">Settled</span>
-                      )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -311,9 +465,10 @@ export function ReceivablesLegal() {
             </div>
           </div>
           <DialogFooter className="border-t pt-3">
-            <Button variant="outline" onClick={() => setOpenEscalate(false)}>Cancel</Button>
-            <Button onClick={submitEscalate} className="bg-orange-600 hover:bg-orange-700">
-              Confirm & Post Escalation
+            <Button variant="outline" onClick={() => setOpenEscalate(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button onClick={submitEscalate} disabled={isSubmitting} className="bg-orange-600 hover:bg-orange-700 gap-1.5">
+              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {isSubmitting ? "Syncing DB & Escalating..." : "Confirm & Post Escalation"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -327,7 +482,7 @@ export function ReceivablesLegal() {
               <CheckCircle2 className="h-5 w-5" /> Record Legal Settlement & Recovery
             </DialogTitle>
             <p className="text-xs text-muted-foreground">
-              Credits Legal Receivables (12411) and Debits Bank Operating Account (12000).
+              Credits Legal Receivables (12411) and Debits selected Account based on Payment Mode.
             </p>
           </DialogHeader>
           {recoverTarget && (
@@ -342,39 +497,180 @@ export function ReceivablesLegal() {
                   <span className="font-semibold">{recoverTarget.tenant_name}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-muted-foreground">Property / Unit:</span>
+                  <span className="font-semibold">{recoverTarget.property_name} — {recoverTarget.unit_ref}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Current Outstanding:</span>
                   <span className="font-bold text-rose-600 font-mono">QR {Number(recoverTarget.outstanding_balance).toLocaleString()}</span>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Recovery Amount (QAR) <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  className="text-xs font-mono font-bold bg-background"
-                  value={recoverAmount}
-                  onChange={e => setRecoverAmount(e.target.value)}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Recovery Amount (QAR) <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    className="text-xs font-mono font-bold bg-background"
+                    value={recoverAmount}
+                    onChange={e => setRecoverAmount(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Mode of Payment <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={paymentMethod}
+                    onValueChange={(val: any) => setPaymentMethod(val)}
+                  >
+                    <SelectTrigger className="text-xs bg-background font-medium">
+                      <SelectValue placeholder="Select Payment Mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Bank Transfer">
+                        <span className="flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5 text-blue-500" /> Bank Transfer (GL 12000)</span>
+                      </SelectItem>
+                      <SelectItem value="Cash">
+                        <span className="flex items-center gap-1.5"><Banknote className="h-3.5 w-3.5 text-emerald-500" /> Cash in Hand (GL 12100)</span>
+                      </SelectItem>
+                      <SelectItem value="Cheque">
+                        <span className="flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5 text-purple-500" /> Cheque / Manager Cheque</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Bank / Receipt Reference <span className="text-destructive">*</span></Label>
-                <Input
-                  className="text-xs font-mono bg-background"
-                  value={bankRef}
-                  onChange={e => setBankRef(e.target.value)}
-                />
+              {/* Bank Transfer Details */}
+              {paymentMethod === "Bank Transfer" && (
+                <div className="grid grid-cols-2 gap-3 p-2.5 rounded-md bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-blue-900 dark:text-blue-200">Transfer Date <span className="text-destructive">*</span></Label>
+                    <Input
+                      type="date"
+                      className="text-xs bg-background"
+                      value={recoveryDate}
+                      onChange={e => setRecoveryDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-blue-900 dark:text-blue-200">Transaction # / Wire Ref <span className="text-destructive">*</span></Label>
+                    <Input
+                      className="text-xs font-mono bg-background"
+                      placeholder="TXN-998822"
+                      value={transactionNo}
+                      onChange={e => {
+                        setTransactionNo(e.target.value);
+                        setBankRef(e.target.value);
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Cheque Details */}
+              {paymentMethod === "Cheque" && (
+                <div className="space-y-2.5 p-2.5 rounded-md bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/60">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-purple-900 dark:text-purple-200">Cheque Date <span className="text-destructive">*</span></Label>
+                      <Input
+                        type="date"
+                        className="text-xs bg-background"
+                        value={recoveryDate}
+                        onChange={e => setRecoveryDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-purple-900 dark:text-purple-200">Maturity Date <span className="text-destructive">*</span></Label>
+                      <Input
+                        type="date"
+                        className="text-xs bg-background"
+                        value={chequeMaturityDate}
+                        onChange={e => setChequeMaturityDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-purple-900 dark:text-purple-200">Drawee Bank <span className="text-destructive">*</span></Label>
+                      <Select value={chequeBank} onValueChange={setChequeBank}>
+                        <SelectTrigger className="text-xs bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Qatar National Bank (QNB)">Qatar National Bank (QNB)</SelectItem>
+                          <SelectItem value="Commercial Bank of Qatar (CBQ)">Commercial Bank of Qatar (CBQ)</SelectItem>
+                          <SelectItem value="Doha Bank">Doha Bank</SelectItem>
+                          <SelectItem value="Qatar Islamic Bank (QIB)">Qatar Islamic Bank (QIB)</SelectItem>
+                          <SelectItem value="Masraf Al Rayan">Masraf Al Rayan</SelectItem>
+                          <SelectItem value="Dukhan Bank">Dukhan Bank</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-purple-900 dark:text-purple-200">Cheque Number <span className="text-destructive">*</span></Label>
+                      <Input
+                        className="text-xs font-mono bg-background"
+                        placeholder="CHQ-001234"
+                        value={chequeNo}
+                        onChange={e => {
+                          setChequeNo(e.target.value);
+                          setBankRef(e.target.value);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cash Details */}
+              {paymentMethod === "Cash" && (
+                <div className="grid grid-cols-2 gap-3 p-2.5 rounded-md bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">Receipt Date <span className="text-destructive">*</span></Label>
+                    <Input
+                      type="date"
+                      className="text-xs bg-background"
+                      value={recoveryDate}
+                      onChange={e => setRecoveryDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">Cash Vault Receipt #</Label>
+                    <Input
+                      className="text-xs font-mono bg-background"
+                      value={bankRef}
+                      onChange={e => setBankRef(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* GL Posting Impact Preview */}
+              <div className="rounded bg-muted/40 p-2 border text-[11px] space-y-0.5">
+                <div className="text-muted-foreground font-semibold flex items-center justify-between">
+                  <span>General Ledger Impact:</span>
+                  <span className="font-mono text-[10px] text-primary">
+                    {paymentMethod === "Cash" ? "DR 12100 (Cash) / CR 12411 (Legal)" : "DR 12000 (Bank) / CR 12411 (Legal)"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Official Tenant Receipt will be auto-generated upon confirmation.
+                </p>
               </div>
             </div>
           )}
           <DialogFooter className="border-t pt-3">
-            <Button variant="outline" onClick={() => setOpenRecover(false)}>Cancel</Button>
-            <Button onClick={submitRecover} className="bg-emerald-600 hover:bg-emerald-700">
-              Confirm Receipt & Post Journal
+            <Button variant="outline" onClick={() => setOpenRecover(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button onClick={submitRecover} disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 gap-1.5">
+              {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {isSubmitting ? "Syncing DB & Recovering..." : "Confirm Receipt & Post Journal"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Official Receipt Modal */}
+      <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} data={receiptData} />
     </Card>
   );
 }

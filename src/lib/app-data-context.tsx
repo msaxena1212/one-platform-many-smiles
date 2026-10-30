@@ -773,56 +773,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      // Also merge any renewed PDCs from localStorage
-      try {
-        const rawRenewal = localStorage.getItem("pms_renewal_pdcs");
-        const renewalList: any[] = rawRenewal ? JSON.parse(rawRenewal) : [];
-        for (const r of renewalList) {
-          const chq = String(r.chequeNo || r.cheque_number || "").trim();
-          const uRef = String(r.unit || r.unit_ref || r.unit_name || "").trim();
-          if (!chq) continue;
-          const exists = allRawPdcs.some(existing => 
-            String(existing.cheque_number || existing.chequeNo).trim() === chq &&
-            (!uRef || String(existing.unit_name || existing.unit_ref || existing.unit || "").toLowerCase() === uRef.toLowerCase())
-          );
-          if (!exists) {
-            allRawPdcs.push({
-              id: r.id || `ren-${chq}`,
-              lease_id: r.leaseId || r.lease_id,
-              cheque_number: chq,
-              chequeNo: chq,
-              bank: r.bank || r.bank_name || "QNB",
-              maturity_date: r.date || r.cheque_date,
-              cheque_date: r.date || r.cheque_date,
-              amount: Number(r.amount || 0),
-              status: r.status || "received",
-              tenant_name: r.tenantName || r.payerName || "Tenant",
-              drawer_name: r.tenantName || r.payerName || "Tenant",
-              unit_name: uRef,
-              unit_ref: uRef,
-              property_name: r.property || r.property_name || "",
-            });
-          }
-        }
-      } catch (e) {
-        console.warn("Error merging local renewal PDCs in app-data-context:", e);
-      }
-
       const mappedPdcs: PmsPdc[] = allRawPdcs.map((p: any) => ({
         id: String(p.id),
-        leaseId: p.lease_id || (p as any).leaseId || "",
-        chequeNo: p.cheque_number || (p as any).chequeNo || "",
+        leaseId: p.lease_id || "",
+        chequeNo: p.cheque_number || "",
         bank: p.bank || p.bank_name || "QNB",
-        date: p.maturity_date || p.cheque_date || (p as any).date || "",
+        date: p.maturity_date || p.cheque_date || "",
         amount: Number(p.amount || 0),
         status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
-        payerName: p.tenant_name || p.drawer_name || (p as any).payerName || "Tenant",
-        tenantName: p.tenant_name || p.drawer_name || (p as any).tenantName || (p as any).payerName || "Tenant",
-        unit: p.unit_name || p.unit_ref || (p as any).unit || "",
-        property: p.property_name || p.property_code || (p as any).property || "",
-        period: p.period || (p as any).period || "",
-        tenureStart: p.rent_from_date || (p as any).tenureStart || "",
-        tenureEnd: p.rent_to_date || (p as any).tenureEnd || "",
+        payerName: p.tenant_name || p.drawer_name || "Tenant",
       }));
 
       // Map raw reservations or synthesize realistic reservations from available units and ALL active/expired leases

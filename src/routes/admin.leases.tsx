@@ -1,11 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LeasesModule } from "@/components/leases-module";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/leases")({
-  head: () => ({ meta: [{ title: "Leases - Admin" }] }),
-  component: AdminLeases,
+  component: AdminLeasesLayout,
 });
 
-function AdminLeases() {
-  return <LeasesModule role="admin" />;
+function AdminLeasesLayout() {
+  return <Outlet />;
 }

@@ -44,47 +44,22 @@ export const DEFAULT_COMPANY_BANK_ACCOUNTS: CompanyBankAccount[] = [
     status: "Active",
   },
   {
-    id: "qnb-main-03",
-    bankName: "Qatar National Bank (QNB)",
-    accountTitle: "QNB Main Operating Account",
-    accountNumber: "0013-128940-001",
-    iban: "QA42QNBA00000000123456",
-    glCode: "12000003",
-    glName: "Bank Operating Account (QNB)",
+    id: "9",
+    bankName: "Dukhan Bank",
+    accountTitle: "Al Ameen (Oryx)",
+    accountNumber: "100001011781",
+    iban: "QA88BARQ00000000100001011781",
+    glCode: "12000006",
+    glName: "Al Ameen (Oryx) - Dukhan Bank",
     currency: "QAR",
-    branch: "Grand Hamad Main Branch",
-    swiftCode: "QNBAQAQA",
-    status: "Active",
-  },
-  {
-    id: "doha-bank-04",
-    bankName: "Doha Bank",
-    accountTitle: "Doha Bank Operational Account",
-    accountNumber: "0078-439201-003",
-    iban: "QA33DHBK00000000987654",
-    glCode: "12000004",
-    glName: "Doha Bank Operating Account",
-    currency: "QAR",
-    branch: "Corniche Branch",
-    swiftCode: "DHBKQAQA",
-    status: "Active",
-  },
-  {
-    id: "qib-rental-05",
-    bankName: "Qatar Islamic Bank (QIB)",
-    accountTitle: "QIB Islamic Rental Account",
-    accountNumber: "0091-554210-004",
-    iban: "QA77QISB00000000456789",
-    glCode: "12000005",
-    glName: "QIB Islamic Rental Account",
-    currency: "QAR",
-    branch: "Salwa Road Branch",
-    swiftCode: "QISBQAQA",
+    branch: "Main Branch",
+    swiftCode: "BARQQAQA",
     status: "Active",
   },
 ];
 
 const BANK_ACCOUNTS_STORAGE_KEY = "zyno-company-bank-accounts-v2";
+const PMS_FIN_STORAGE_KEY = "pms_fin_bank_accounts_override_v2";
 
 /**
  * Retrieve custom/updated bank accounts from local storage.
@@ -96,7 +71,39 @@ export function getStoredCompanyBankAccounts(): CompanyBankAccount[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
+      }
+    }
+    // Also check PMS finance module override storage key
+    const rawPms = localStorage.getItem(PMS_FIN_STORAGE_KEY);
+    if (rawPms) {
+      const parsedPms = JSON.parse(rawPms);
+      if (Array.isArray(parsedPms) && parsedPms.length > 0) {
+        return parsedPms
+          .filter((a: any) => a.status !== 'Inactive' && a.status !== 'inactive')
+          .map((a: any, idx: number) => {
+            const accNum = String(a.account_number || '');
+            const rawTitle = String(a.account_title || '');
+            const isCbq = accNum.includes('4060692533001') || rawTitle.toLowerCase().includes('cbq');
+            const isOryx = accNum.includes('100001011781') || rawTitle.toLowerCase().includes('oryx');
+            const isDukhan = !isOryx && (accNum.includes('100001761798') || rawTitle.toLowerCase().includes('dukhan'));
+
+            const glCode = isCbq ? '12000001' : isOryx ? '12000006' : isDukhan ? '12000002' : (a.gl_code || `1200000${idx + 1}`);
+            const glName = isCbq ? 'Commercial Bank of Qatar (CBQ)' : isOryx ? 'Al Ameen (Oryx) - Dukhan Bank' : isDukhan ? 'Al Ameen Dukhan Bank' : (a.account_title || 'Operating Account');
+
+            return {
+              id: String(a.id || `pms-acc-${idx}`),
+              bankName: a.bank_name || (isCbq ? 'Commercial Bank of Qatar (CBQ)' : 'Dukhan Bank'),
+              accountTitle: isOryx ? 'Al Ameen (Oryx)' : (a.account_title || 'Operating Account'),
+              accountNumber: accNum,
+              iban: a.iban || accNum,
+              glCode,
+              glName,
+              currency: a.currency || 'QAR',
+              isDefault: idx === 0 || isCbq,
+              status: a.status || 'Active',
+            };
+          });
       }
     }
   } catch {
@@ -141,7 +148,7 @@ export async function saveCompanyBankAccount(acc: CompanyBankAccount): Promise<C
     // Non-blocking fallback
   }
 
-  return updated;
+  return updated.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
 }
 
 /**
@@ -169,15 +176,16 @@ export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> 
     }
 
     const dbMapped: CompanyBankAccount[] = activeData.map((item: any, idx: number) => {
-      const bName = item.fin_banks?.name || item.bank_name || 'Commercial Bank of Qatar (CBQ)';
+      const bName = item.fin_banks?.name || item.bank_name || (idx === 0 ? 'Commercial Bank of Qatar (CBQ)' : 'Dukhan Bank');
       const rawTitle = (item.account_title || item.name || bName).replace(/\bAccont\b/gi, 'Account');
       const accNum = String(item.account_number || '');
 
-      const isCbq = accNum.includes('4060692533001') || rawTitle.toLowerCase().includes('cbq') || bName.toLowerCase().includes('cbq') || idx === 0;
-      const isDukhan = accNum.includes('100001761798') || rawTitle.toLowerCase().includes('dukhan') || bName.toLowerCase().includes('dukhan') || idx === 1;
+      const isCbq = accNum.includes('4060692533001') || rawTitle.toLowerCase().includes('cbq') || bName.toLowerCase().includes('cbq');
+      const isOryx = accNum.includes('100001011781') || rawTitle.toLowerCase().includes('oryx');
+      const isDukhan = !isOryx && (accNum.includes('100001761798') || rawTitle.toLowerCase().includes('dukhan') || bName.toLowerCase().includes('dukhan'));
 
-      const glCode = isCbq ? '12000001' : isDukhan ? '12000002' : item.gl_code || `1200000${idx + 1}`;
-      const glName = isCbq ? 'Commercial Bank of Qatar (CBQ)' : isDukhan ? 'Al Ameen Dukhan Bank' : (item.gl_name || rawTitle);
+      const glCode = isCbq ? '12000001' : isOryx ? '12000006' : isDukhan ? '12000002' : item.gl_code || `1200000${idx + 1}`;
+      const glName = isCbq ? 'Commercial Bank of Qatar (CBQ)' : isOryx ? 'Al Ameen (Oryx) - Dukhan Bank' : isDukhan ? 'Al Ameen Dukhan Bank' : (item.gl_name || rawTitle);
 
       return {
         id: String(item.id || `bank-acc-${idx}`),
@@ -195,15 +203,8 @@ export async function fetchCompanyBankAccounts(): Promise<CompanyBankAccount[]> 
       };
     });
 
-    // Merge: Include any stored bank accounts that aren't already in DB accounts
-    const merged = [...dbMapped];
-    for (const s of stored) {
-      if (!merged.some(m => m.id === s.id || m.accountNumber === s.accountNumber)) {
-        merged.push(s);
-      }
-    }
-
-    return merged.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
+    // When active DB bank accounts are returned, strictly return DB accounts only
+    return dbMapped.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
   } catch {
     return stored.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');
   }
