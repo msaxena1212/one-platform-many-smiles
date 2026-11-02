@@ -6603,7 +6603,7 @@ function RevenueGenerationSubModule() {
   // ── Period-Based Recognition Engine State (Revenue As-Of) ─────────────────
   const todayStr = new Date().toISOString().split("T")[0];
   const [asOfDate, setAsOfDate] = useState<string>(todayStr);
-  const [prorationMethod, setProrationMethod] = useState<ProrationMethod>("CALENDAR_DAYS");
+  const [prorationMethod, setProrationMethod] = useState<ProrationMethod>("30_DAY_MONTH");
   const [asOfProperty, setAsOfProperty] = useState<string>("all");
   const [asOfUnit, setAsOfUnit] = useState<string>("all");
   const [asOfTenant, setAsOfTenant] = useState<string>("all");

@@ -111,6 +111,31 @@ export function getInclusiveDays(startDateStr: string, endDateStr: string): numb
   return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 }
 
+function get30DayMonthInclusiveDays(startDateStr: string, endDateStr: string): number {
+  const start = parseDateFlexible(startDateStr);
+  const end = parseDateFlexible(endDateStr);
+  if (!start || !end || end < start) return 0;
+
+  let totalDays = 0;
+  let monthStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+
+  while (monthStart <= end) {
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0));
+    const periodStart = start > monthStart ? start : monthStart;
+    const periodEnd = end < monthEnd ? end : monthEnd;
+    const calendarDaysInMonth = monthEnd.getUTCDate();
+    const toCommercialDay = (date: Date) => {
+      const day = date.getUTCDate();
+      return day === calendarDaysInMonth && calendarDaysInMonth < 30 ? 30 : Math.min(day, 30);
+    };
+
+    totalDays += Math.max(0, toCommercialDay(periodEnd) - toCommercialDay(periodStart) + 1);
+    monthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+  }
+
+  return totalDays;
+}
+
 function _unusedLegacyGetInclusiveDays(startDateStr: string, endDateStr: string): number {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
@@ -150,7 +175,7 @@ export function calculateLeaseRevenueSchedule(params: {
     actualVacateDate,
     effectiveRevenueEndDate,
     earlyVacate,
-    prorationMethod = 'CALENDAR_DAYS',
+    prorationMethod = '30_DAY_MONTH',
     pdcs = [],
   } = params;
 
@@ -159,19 +184,20 @@ export function calculateLeaseRevenueSchedule(params: {
 
   const leaseStart = parseDateFlexible(startDate);
   const leaseEnd = parseDateFlexible(endDate);
-  if (!leaseStart || !leaseEnd) return schedules;
+  const asOf = parseDateFlexible(asOfDate);
+  if (!leaseStart || !leaseEnd || !asOf) return schedules;
   const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? plannedVacateDate : undefined);
   const effectiveTermDate = approvedVacate ? parseDateFlexible(approvedVacate) || leaseEnd : leaseEnd;
 
-  let currentMonthCursor = new Date(leaseStart.getFullYear(), leaseStart.getMonth(), 1);
+  let currentMonthCursor = new Date(Date.UTC(leaseStart.getUTCFullYear(), leaseStart.getUTCMonth(), 1));
 
   while (currentMonthCursor <= leaseEnd) {
-    const year = currentMonthCursor.getFullYear();
-    const month = currentMonthCursor.getMonth();
+    const year = currentMonthCursor.getUTCFullYear();
+    const month = currentMonthCursor.getUTCMonth();
 
     // Natural start and end of this calendar month
-    const naturalMonthStart = new Date(year, month, 1);
-    const naturalMonthEnd = new Date(year, month + 1, 0);
+    const naturalMonthStart = new Date(Date.UTC(year, month, 1));
+    const naturalMonthEnd = new Date(Date.UTC(year, month + 1, 0));
 
     // Bounded period start and end for this lease
     const periodStart = naturalMonthStart < leaseStart ? leaseStart : naturalMonthStart;
@@ -189,8 +215,10 @@ export function calculateLeaseRevenueSchedule(params: {
     const effectivePeriodEndStr = effectivePeriodEnd.toISOString().split('T')[0];
 
     // Total days in the calendar month for daily rate determination
-    const daysInMonth = naturalMonthEnd.getDate();
-    const chargeableDaysInPeriod = getInclusiveDays(periodStartStr, periodEndStr);
+    const calendarDaysInMonth = naturalMonthEnd.getUTCDate();
+    const daysInMonth = prorationMethod === '30_DAY_MONTH' ? 30 : calendarDaysInMonth;
+    const getPeriodDays = prorationMethod === '30_DAY_MONTH' ? get30DayMonthInclusiveDays : getInclusiveDays;
+    const chargeableDaysInPeriod = getPeriodDays(periodStartStr, periodEndStr);
 
     // Is this period completed as of the As-Of Date?
     const isCompleted = effectivePeriodEnd <= asOf;
@@ -210,7 +238,7 @@ export function calculateLeaseRevenueSchedule(params: {
       isEarlyPeriod = true;
       reasonCode = 'EARLY_TERMINATION';
       if (effectivePeriodEnd <= asOf) {
-        recognizableDays = getInclusiveDays(periodStartStr, effectivePeriodEndStr);
+        recognizableDays = getPeriodDays(periodStartStr, effectivePeriodEndStr);
         status = 'RECOGNIZED';
       } else {
         recognizableDays = 0;
@@ -298,7 +326,7 @@ export function calculateLeaseRevenueSchedule(params: {
     });
 
     // Move to next month
-    currentMonthCursor = new Date(year, month + 1, 1);
+    currentMonthCursor = new Date(Date.UTC(year, month + 1, 1));
   }
 
   return schedules;
@@ -326,7 +354,7 @@ export function generatePortfolioRevenueBatch(params: {
   prorationMethod?: ProrationMethod;
   pdcs?: Array<{ leaseId?: string; chequeNo?: string; date?: string; amount?: number; status?: string; period?: string }>;
 }): RevenueGenerationBatchSummary {
-  const { leases, asOfDate, prorationMethod = 'CALENDAR_DAYS', pdcs = [] } = params;
+  const { leases, asOfDate, prorationMethod = '30_DAY_MONTH', pdcs = [] } = params;
 
   const allRecords: RevenuePeriodSchedule[] = [];
 
@@ -386,8 +414,8 @@ export interface MonthRevenueProration {
   monthName: string; // e.g. "October 2026"
   periodStart: string; // "2026-10-15"
   periodEnd: string; // "2026-10-31"
-  totalDaysInMonth: number; // e.g. 31
-  applicableDays: number; // e.g. 17
+  totalDaysInMonth: number; // 30 for commercial proration; calendar days otherwise
+  applicableDays: number; // Counted using the selected proration method
   isFullMonth: boolean;
   dailyRate: number;
   monthlyRent: number;
@@ -406,8 +434,8 @@ const MONTH_NAMES = [
  *
  * Implements authoritative accrual rules:
  * - Full month (e.g. 1 Oct to 31 Oct): 100% of monthly rent recognized in October.
- * - Prorated mid-month (e.g. 15 Oct to 14 Nov):
- *     15–31 October (17 days) recognized in October = 17 / 31 × monthlyRent.
+ * - Prorated mid-month (e.g. 15 Oct to 14 Nov) using a 30-day month:
+ *     15–31 October (16 commercial days) recognized in October = 16 / 30 × monthlyRent.
  *     1–14 November (14 days) recognized in November = 14 / 30 × monthlyRent.
  *
  * Irrespective of whether payment has been collected or cheques cleared.
@@ -421,16 +449,18 @@ export function calculateContractPeriodMonthlyRevenue(params: {
   effectiveRevenueEndDate?: string;
   actualVacateDate?: string;
   earlyVacate?: boolean;
-}): MonthRevenueProration | null {
+  plannedVacateDate?: string;
+} ): MonthRevenueProration | null {
   const {
     startDate,
     endDate,
     monthlyRent,
     targetMonth,
-    prorationMethod = 'CALENDAR_DAYS',
+    prorationMethod = '30_DAY_MONTH',
     effectiveRevenueEndDate,
     actualVacateDate,
     earlyVacate,
+    plannedVacateDate,
   } = params;
 
   if (!startDate || !endDate || monthlyRent <= 0 || !targetMonth) return null;
@@ -442,7 +472,8 @@ export function calculateContractPeriodMonthlyRevenue(params: {
 
   const monthStart = new Date(Date.UTC(year, monthIndex, 1));
   const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0)); // Last day of month
-  const totalDaysInMonth = monthEnd.getUTCDate();
+  const calendarDaysInMonth = monthEnd.getUTCDate();
+  const totalDaysInMonth = prorationMethod === '30_DAY_MONTH' ? 30 : calendarDaysInMonth;
 
   const leaseStart = parseDateFlexible(startDate);
   const leaseEnd = parseDateFlexible(endDate);
@@ -470,7 +501,8 @@ export function calculateContractPeriodMonthlyRevenue(params: {
 
   const periodStartStr = periodStart.toISOString().split('T')[0];
   const periodEndStr = periodEnd.toISOString().split('T')[0];
-  const applicableDays = getInclusiveDays(periodStartStr, periodEndStr);
+  const getPeriodDays = prorationMethod === '30_DAY_MONTH' ? get30DayMonthInclusiveDays : getInclusiveDays;
+  const applicableDays = getPeriodDays(periodStartStr, periodEndStr);
 
   if (applicableDays <= 0) return null;
 
@@ -548,7 +580,7 @@ export function calculatePropertyPortfolioRevenue(params: {
   totalRecognizedRevenue: number;
   records: MonthRevenueProration[];
 }> {
-  const { leases, targetMonth, prorationMethod = 'CALENDAR_DAYS' } = params;
+  const { leases, targetMonth, prorationMethod = '30_DAY_MONTH' } = params;
   const result: Record<string, any> = {};
 
   leases.forEach((lease) => {
