@@ -3388,11 +3388,26 @@ const EXPENSE_GL_ACCOUNTS = [
   "51102001 - Vehicles & Other Insurance Expenses",
 ];
 
+function supplierCreditDays(paymentTerms?: string): number | null {
+  if (!paymentTerms) return null;
+  const days = paymentTerms.match(/\b(\d+)\s*days?\b/i);
+  if (days) return Number(days[1]);
+  return /immediate|cash on delivery/i.test(paymentTerms) ? 0 : null;
+}
+
+function dateAfterDays(date: string, days: number): string {
+  const result = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(result.getTime())) return "";
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
 function PayableInvoiceSubModule() {
   const { addVoucher, payableInvoices: storePayableInvoices, addPayableInvoice } = useFinanceStore();
   const { leases, units } = useAppData();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
+  const [supplierMaster, setSupplierMaster] = useState<FinVendor[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<any | null>(null);
@@ -3445,6 +3460,15 @@ function PayableInvoiceSubModule() {
     };
   }, [loadInvoices]);
 
+  useEffect(() => {
+    FinVendorsApi.fetchAll()
+      .then(setSupplierMaster)
+      .catch(error => {
+        console.error("[PayableInvoice] Failed to load supplier payment terms:", error);
+        toast.error("Supplier master payment terms could not be loaded.");
+      });
+  }, []);
+
   // Merge Store AP invoices and Procurement AP invoices
   const displayedStoreInvoices = useMemo<any[]>(() => storePayableInvoices || [], [storePayableInvoices]);
   const allInvoices = useMemo(() => {
@@ -3495,6 +3519,7 @@ function PayableInvoiceSubModule() {
           vendor: inv.vendor,
           property: linesSummaryProp,
           date: inv.date,
+          voucher_date: inv.voucher_date || inv.date,
           due_date: inv.due_date,
           account: linesSummaryAcc,
           account_code: inv.account_code || "51004001",
@@ -3516,6 +3541,7 @@ function PayableInvoiceSubModule() {
     vendor: "Qatar Maintenance & HVAC Co.",
     property: "Al Ameen Real Estate Head Office",
     date: new Date().toISOString().split("T")[0],
+    voucher_date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
     account: "51004001 - Repair and Maintenance Cost",
     account_code: "51004001",
@@ -3544,6 +3570,19 @@ function PayableInvoiceSubModule() {
     () => expenseLines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
     [expenseLines]
   );
+  const matchedSupplier = useMemo(
+    () => supplierMaster.find(vendor => vendor.name.trim().toLowerCase() === form.vendor.trim().toLowerCase()),
+    [supplierMaster, form.vendor]
+  );
+  const matchedCreditDays = supplierCreditDays(matchedSupplier?.payment_terms);
+
+  useEffect(() => {
+    if (!matchedSupplier || matchedCreditDays === null) return;
+    const calculatedDueDate = dateAfterDays(form.date, matchedCreditDays);
+    setForm(current => current.due_date === calculatedDueDate
+      ? current
+      : { ...current, due_date: calculatedDueDate });
+  }, [matchedSupplier, matchedCreditDays, form.date]);
 
   async function handleAdd() {
     const validLines = expenseLines.filter(l => (parseFloat(l.amount) || 0) > 0);
@@ -3553,6 +3592,11 @@ function PayableInvoiceSubModule() {
     }
     if (!form.vendor.trim()) {
       toast.error("Please enter the Vendor name.");
+      return;
+    }
+    const closedPeriod = isDateInClosedPostingPeriod(form.voucher_date);
+    if (closedPeriod.closed) {
+      toast.error(`Posting rejected: Accounting period ${closedPeriod.periodName} is CLOSED.`);
       return;
     }
 
@@ -3573,6 +3617,7 @@ function PayableInvoiceSubModule() {
       invoice_no: form.invoice_no,
       vendor: form.vendor,
       date: form.date,
+      voucher_date: form.voucher_date,
       due_date: form.due_date,
       account: formattedLines.length > 1 ? `Multi-Line (${formattedLines.length} items)` : primaryLine.account,
       account_code: primaryLine.account_code,
@@ -3585,6 +3630,7 @@ function PayableInvoiceSubModule() {
       invoice_number: form.invoice_no,
       vendor_id: form.vendor,
       invoice_date: form.date,
+      voucher_date: form.voucher_date,
       due_date: form.due_date,
       amount: totalApAmount,
       tax_amount: 0,
@@ -3820,22 +3866,58 @@ function PayableInvoiceSubModule() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2 text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
                 <Label className="text-[11px] font-semibold">Invoice # *</Label>
                 <Input className="h-8 text-xs font-mono font-bold" value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} />
               </div>
               <div>
                 <Label className="text-[11px] font-semibold">Vendor / Supplier *</Label>
-                <Input className="h-8 text-xs" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} placeholder="Vendor / Supplier Name" />
+                <Input
+                  className="h-8 text-xs"
+                  list="ap-supplier-options"
+                  value={form.vendor}
+                  onChange={e => {
+                    const vendorName = e.target.value;
+                    const supplier = supplierMaster.find(v => v.name.trim().toLowerCase() === vendorName.trim().toLowerCase());
+                    const creditDays = supplierCreditDays(supplier?.payment_terms);
+                    setForm(current => ({
+                      ...current,
+                      vendor: vendorName,
+                      ...(creditDays !== null ? { due_date: dateAfterDays(current.date, creditDays) } : {}),
+                    }));
+                  }}
+                  placeholder="Vendor / Supplier Name"
+                />
+                <datalist id="ap-supplier-options">
+                  {supplierMaster.filter(v => v.status === "Active").map(v => <option key={v.id} value={v.name} />)}
+                </datalist>
               </div>
               <div>
-                <Label className="text-[11px] font-semibold">Bill Date *</Label>
-                <Input type="date" className="h-8 text-xs" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+                <Label className="text-[11px] font-semibold">Supplier Invoice Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs"
+                  value={form.date}
+                  onChange={e => setForm(current => ({
+                    ...current,
+                    date: e.target.value,
+                    ...(matchedCreditDays !== null ? { due_date: dateAfterDays(e.target.value, matchedCreditDays) } : {}),
+                  }))}
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Voucher / Posting Date *</Label>
+                <Input type="date" className="h-8 text-xs" value={form.voucher_date} onChange={e => setForm({ ...form, voucher_date: e.target.value })} />
               </div>
               <div>
                 <Label className="text-[11px] font-semibold">Due Date *</Label>
                 <Input type="date" className="h-8 text-xs" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+                {matchedSupplier && matchedCreditDays !== null && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    From supplier terms: {matchedSupplier.payment_terms || `${matchedCreditDays} days`}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -4182,11 +4264,21 @@ function PayableInvoiceSubModule() {
   );
 }
 
+const BANK_GL_ACCOUNTS = [
+  { code: "12000001", name: "12000001 - Commercial Bank of Qatar (CBQ)" },
+  { code: "12000002", name: "12000002 - Al Ameen Dukhan Bank" },
+  { code: "12000003", name: "12000003 - Bank Operating Account (QNB)" },
+  { code: "12000004", name: "12000004 - Doha Bank Operating Account" },
+  { code: "12000005", name: "12000005 - Qatar Islamic Bank (QIB)" },
+  { code: "12000006", name: "12000006 - Al Ameen (Oryx) - Dukhan Bank" },
+];
+
 const COMMON_GL_ACCOUNTS = [
   { code: "12000", name: "12000 - Bank Operating Account (QNB/CBQ)" },
   { code: "12100", name: "12100 - Cash In Hand (Office Vault)" },
   { code: "12411", name: "12411 - Legal Receivables (Defaulted Cases)" },
   { code: "12413", name: "12413 - Tenant Receivables (AR)" },
+  { code: "12413001", name: "12413001 - Tenant Receivables — Unit SL" },
   { code: "12900", name: "12900 - PDC In Hand / Undeposited Cheques" },
   { code: "22100001", name: "22100001 - Trade Payables - Vendors (Suppliers/Vendors)" },
   { code: "21100", name: "21100 - Tenant Security Deposits" },
@@ -4206,6 +4298,25 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
   const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases, units } = useAppData();
   const { addVoucher: addFinanceStoreVoucher } = useFinanceStore();
   const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
+    date: new Date().toISOString().split("T")[0],
+    name: type === "Payment Voucher" ? "Payment to Contractor" : type === "Receipt Voucher" ? "Direct Rent Collection" : "General Adjustment",
+    property: "All / Corporate",
+    leaseId: "",
+    debit: type === "Payment Voucher"
+      ? "22100001 - Trade Payables - Vendors (Suppliers/Vendors)"
+      : type === "Receipt Voucher"
+        ? "12000001 - Commercial Bank of Qatar (CBQ)"
+        : "51004001 - Repair and Maintenance Cost",
+    credit: type === "Payment Voucher"
+      ? "12000 - Bank Operating Account (QNB/CBQ)"
+      : type === "Receipt Voucher"
+        ? "12413001 - Tenant Receivables — Unit SL"
+        : "12100 - Cash In Hand (Office Vault)",
+    amount: "5000",
+    method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Bank Transfer" : "Batch",
+  });
 
   // Extract distinct properties
   const propertiesList = useMemo(() => {
@@ -4220,16 +4331,13 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     return Array.from(set).sort();
   }, [leases, units]);
 
-  const [form, setForm] = useState({
-    voucher_no: `VCH-${type.slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-    date: new Date().toISOString().split("T")[0],
-    name: type === "Payment Voucher" ? "Payment to Contractor" : type === "Receipt Voucher" ? "Direct Rent Collection" : "General Adjustment",
-    property: "All / Corporate",
-    debit: type === "Payment Voucher" ? "22100001 - Trade Payables - Vendors (Suppliers/Vendors)" : type === "Receipt Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : "51004001 - Repair and Maintenance Cost",
-    credit: type === "Payment Voucher" ? "12000 - Bank Operating Account (QNB/CBQ)" : type === "Receipt Voucher" ? "41100 - Rental Revenue" : "12100 - Cash In Hand (Office Vault)",
-    amount: "5000",
-    method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Cash" : "Batch",
-  });
+  const selectedReceiptLease = type === "Receipt Voucher"
+    ? leases.find(lease => lease.id === form.leaseId)
+    : undefined;
+  const debitAccountOptions = type === "Receipt Voucher"
+    ? [...BANK_GL_ACCOUNTS, { code: "12100001", name: "12100001 - Cash In Hand / Operating Cash" }]
+    : COMMON_GL_ACCOUNTS;
+  const creditAccountOptions = COMMON_GL_ACCOUNTS;
 
   // Multi-line state for Journal Voucher
   type JournalLine = {
@@ -4265,7 +4373,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
   const filtered = (sharedVouchers || []).filter(v => {
     if (type.includes("Journal")) return v.method === "Batch" || v.name.includes("Income") || v.name.includes("Doc") || v.name.includes("Journal") || (v as any).voucher_type === "Journal Voucher";
     if (type.includes("Payment")) return v.name.includes("Payment") || v.name.includes("Refund") || v.debit.includes("Payable");
-    if (type.includes("Receipt")) return v.name.includes("Receipt") || v.method === "PDC" || v.method === "Cash" || v.credit.includes("Income");
+    if (type.includes("Receipt")) return v.name.includes("Receipt") || v.name.includes("Direct Rent Collection") || v.method === "PDC" || v.method === "Cash" || v.credit.includes("Income") || v.credit.includes("Receivables");
     return true;
   });
 
@@ -4357,25 +4465,46 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
       toast.error("Amount must be greater than zero.");
       return;
     }
+    if (type === "Receipt Voucher" && form.credit.startsWith("12413001") && !selectedReceiptLease) {
+      toast.error("Select the tenant lease and unit before posting a receipt to Tenant Receivables — Unit SL.");
+      return;
+    }
 
     try {
+      const voucherName = selectedReceiptLease
+        ? `${form.name} — ${selectedReceiptLease.tenantName} (${selectedReceiptLease.unit})`
+        : form.name;
       const result = await postVoucher({
         voucher_date: form.date,
         voucher_type: type,
-        description: form.name,
+        description: voucherName,
         reference_no: form.voucher_no,
         source_type: "FINANCE_VOUCHER",
         property_id: form.property !== "All / Corporate" ? form.property : undefined,
         lines: [
-          { account_code: accountCode(form.debit), debit: amt, credit: 0, description: form.debit },
-          { account_code: accountCode(form.credit), debit: 0, credit: amt, description: form.credit },
+          {
+            account_code: accountCode(form.debit),
+            debit: amt,
+            credit: 0,
+            description: selectedReceiptLease
+              ? `${form.debit} — ${selectedReceiptLease.tenantName}, ${selectedReceiptLease.unit}`
+              : form.debit,
+          },
+          {
+            account_code: accountCode(form.credit),
+            debit: 0,
+            credit: amt,
+            description: selectedReceiptLease
+              ? `${form.credit} — ${selectedReceiptLease.tenantName}, ${selectedReceiptLease.unit}`
+              : form.credit,
+          },
         ],
       });
 
       setSharedVouchers(prev => [{
         id: result.voucher_id,
-        leaseId: "",
-        name: form.name,
+        leaseId: selectedReceiptLease?.id || "",
+        name: voucherName,
         receiptNo: result.receipt_number,
         method: form.method,
         period: form.date,
@@ -4384,13 +4513,15 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         amount: amt,
         status: "posted" as const,
         property_name: form.property !== "All / Corporate" ? form.property : undefined,
+        unit_name: selectedReceiptLease?.unit,
+        tenant_name: selectedReceiptLease?.tenantName,
       }, ...prev]);
 
       addFinanceStoreVoucher({
         voucher_no: form.voucher_no,
         voucher_type: type,
         date: form.date,
-        name: `${form.name}${form.property !== "All / Corporate" ? ` — ${form.property}` : ""}`,
+        name: `${voucherName}${form.property !== "All / Corporate" ? ` — ${form.property}` : ""}`,
         debit: form.debit,
         debit_code: accountCode(form.debit),
         credit: form.credit,
@@ -4398,6 +4529,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         amount: amt,
         method: form.method,
         property_name: form.property !== "All / Corporate" ? form.property : "Corporate / General",
+        unit_ref: selectedReceiptLease?.unit,
+        tenant_name: selectedReceiptLease?.tenantName,
       });
 
       toast.success(`${type} ${result.voucher_number} posted. Receipt ${result.receipt_number} generated.`);
@@ -4518,7 +4651,11 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 <Label className="text-[11px] font-semibold flex items-center gap-1">
                   <Building2 className="h-3.5 w-3.5 text-primary" /> Related Property
                 </Label>
-                <Select value={form.property} onValueChange={v => setForm({ ...form, property: v })}>
+                <Select
+                  value={form.property}
+                  onValueChange={v => setForm({ ...form, property: v })}
+                  disabled={type === "Receipt Voucher" && !!selectedReceiptLease}
+                >
                   <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Property" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
@@ -4529,6 +4666,36 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 </Select>
               </div>
             </div>
+
+            {type === "Receipt Voucher" && (
+              <div>
+                <Label className="text-[11px] font-semibold">Tenant / Lease / Unit *</Label>
+                <Select
+                  value={form.leaseId || "none"}
+                  onValueChange={value => {
+                    const lease = leases.find(item => item.id === value);
+                    setForm(current => ({
+                      ...current,
+                      leaseId: lease?.id || "",
+                      property: lease?.property || current.property,
+                      credit: lease ? "12413001 - Tenant Receivables — Unit SL" : current.credit,
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background">
+                    <SelectValue placeholder="Select tenant and unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select tenant and unit</SelectItem>
+                    {leases.map(lease => (
+                      <SelectItem key={lease.id} value={lease.id}>
+                        {lease.tenantName} — {lease.unit} ({lease.property})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Description */}
             <div>
@@ -4744,7 +4911,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                     <Select value={form.debit} onValueChange={v => setForm({ ...form, debit: v })}>
                       <SelectTrigger className="h-8 text-xs font-mono bg-background"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                        {debitAccountOptions.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -4753,7 +4920,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                     <Select value={form.credit} onValueChange={v => setForm({ ...form, credit: v })}>
                       <SelectTrigger className="h-8 text-xs font-mono bg-background"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                        {creditAccountOptions.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -4765,7 +4932,17 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                   </div>
                   <div>
                     <Label className="text-[11px] font-semibold">Payment Method</Label>
-                    <Select value={form.method} onValueChange={v => setForm({ ...form, method: v })}>
+                    <Select value={form.method} onValueChange={v => setForm(current => ({
+                      ...current,
+                      method: v,
+                      ...(type === "Receipt Voucher" ? {
+                        debit: v === "Cash"
+                          ? "12100001 - Cash In Hand / Operating Cash"
+                          : current.debit.startsWith("12100001")
+                            ? BANK_GL_ACCOUNTS[0].name
+                            : current.debit,
+                      } : {}),
+                    }))}>
                       <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
@@ -6433,8 +6610,86 @@ function BankReconciliationStatementListSubModule() {
 // 5. FINANCE REPORTS SUB-MODULES — Live FinanceStore Driven
 // ─────────────────────────────────────────────────────────────────────────────
 
+type TrialBalanceAccount = {
+  code: string;
+  name: string;
+  type: "Assets" | "Liabilities" | "Capital" | "Revenue" | "Expenses";
+  debit: number;
+  credit: number;
+  balance: number;
+};
+
+function getTrialBalanceForPeriod(
+  chartAccounts: TrialBalanceAccount[],
+  transactions: Array<{
+    date: string;
+    account_code: string;
+    account_name: string;
+    account_type: TrialBalanceAccount["type"];
+    debit: number;
+    credit: number;
+  }>,
+  fromDate: string,
+  toDate: string,
+): TrialBalanceAccount[] {
+  const accounts = new Map<string, TrialBalanceAccount>();
+  chartAccounts.forEach(account => {
+    accounts.set(account.code, { ...account, debit: 0, credit: 0, balance: 0 });
+  });
+  transactions.forEach(tx => {
+    const date = String(tx.date || "").slice(0, 10);
+    if ((fromDate && date < fromDate) || (toDate && date > toDate)) return;
+    const account = accounts.get(tx.account_code) || {
+      code: tx.account_code,
+      name: tx.account_name,
+      type: tx.account_type,
+      debit: 0,
+      credit: 0,
+      balance: 0,
+    };
+    account.debit += tx.debit || 0;
+    account.credit += tx.credit || 0;
+    account.balance = account.debit - account.credit;
+    accounts.set(tx.account_code, account);
+  });
+  return Array.from(accounts.values());
+}
+
+function summarizeTrialBalance(accounts: TrialBalanceAccount[]) {
+  const summary = { assets: 0, liabilities: 0, capital: 0, revenue: 0, expenses: 0 };
+  accounts.forEach(account => {
+    const net = account.debit - account.credit;
+    if (account.type === "Assets") summary.assets += net;
+    else if (account.type === "Liabilities") summary.liabilities -= net;
+    else if (account.type === "Capital") summary.capital -= net;
+    else if (account.type === "Revenue") summary.revenue -= net;
+    else if (account.type === "Expenses") summary.expenses += net;
+  });
+  const totalDebit = Math.max(0, summary.assets) + Math.max(0, summary.expenses)
+    + Math.max(0, -summary.liabilities) + Math.max(0, -summary.capital) + Math.max(0, -summary.revenue);
+  const totalCredit = Math.max(0, summary.liabilities) + Math.max(0, summary.capital) + Math.max(0, summary.revenue)
+    + Math.max(0, -summary.assets) + Math.max(0, -summary.expenses);
+  return {
+    ...summary,
+    totalDebit,
+    totalCredit,
+    isBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
+  };
+}
+
 function TrialBalanceSimpleSubModule() {
-  const { trialBalanceSummary } = useFinanceStore();
+  const { trialBalanceDetailed, allLedgerTransactions } = useFinanceStore();
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const trialBalanceSummary = useMemo(
+    () => summarizeTrialBalance(getTrialBalanceForPeriod(
+      trialBalanceDetailed,
+      allLedgerTransactions,
+      fromDate,
+      toDate,
+    )),
+    [trialBalanceDetailed, allLedgerTransactions, fromDate, toDate]
+  );
   const { assets, liabilities, capital, revenue, expenses, totalDebit, totalCredit, isBalanced } = trialBalanceSummary;
 
   return (
@@ -6442,9 +6697,22 @@ function TrialBalanceSimpleSubModule() {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Trial Balance (Simple Summary)</h3>
-          <p className="text-xs text-muted-foreground">Live summary totals across Asset, Liability, Equity, Revenue, and Expense classes — updated in real-time.</p>
+          <p className="text-xs text-muted-foreground">Summary totals across Asset, Liability, Equity, Revenue, and Expense classes for the selected posting period.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">From</Label>
+            <Input type="date" className="h-8 w-36 text-xs" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">To</Label>
+            <Input type="date" className="h-8 w-36 text-xs" value={toDate} onChange={e => setToDate(e.target.value)} />
+          </div>
+          {(fromDate || toDate) && (
+            <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setFromDate(""); setToDate(""); }}>
+              All Dates
+            </Button>
+          )}
           <Badge variant="outline" className={`font-mono ${isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-rose-50 text-rose-700 border-rose-300'}`}>
             {isBalanced ? '✓ Balanced (Dr = Cr)' : '⚠ Out of Balance'}
           </Badge>
@@ -6499,12 +6767,19 @@ function TrialBalanceSimpleSubModule() {
 }
 
 function TrialBalanceFullSubModule() {
-  const { trialBalanceDetailed } = useFinanceStore();
+  const { trialBalanceDetailed, allLedgerTransactions } = useFinanceStore();
   const [viewMode, setViewMode] = useState<"net" | "gross">("net");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
-  // Net Closing Balances mode: compute net Dr / Cr per account
+  const periodTrialBalance = useMemo(
+    () => getTrialBalanceForPeriod(trialBalanceDetailed, allLedgerTransactions, fromDate, toDate),
+    [trialBalanceDetailed, allLedgerTransactions, fromDate, toDate]
+  );
+
+  // Net Period Balances mode: compute net Dr / Cr per account
   const netAccounts = useMemo(() => {
-    return trialBalanceDetailed.map(acc => {
+    return periodTrialBalance.map(acc => {
       const netDr = Math.max(0, acc.debit - acc.credit);
       const netCr = Math.max(0, acc.credit - acc.debit);
       return {
@@ -6513,7 +6788,7 @@ function TrialBalanceFullSubModule() {
         displayCr: viewMode === "net" ? netCr : acc.credit,
       };
     });
-  }, [trialBalanceDetailed, viewMode]);
+  }, [periodTrialBalance, viewMode]);
 
   const totalDr = netAccounts.reduce((s, a) => s + (a.displayDr || 0), 0);
   const totalCr = netAccounts.reduce((s, a) => s + (a.displayCr || 0), 0);
@@ -6525,11 +6800,24 @@ function TrialBalanceFullSubModule() {
           <h3 className="text-sm font-semibold">Detailed General Ledger Trial Balance</h3>
           <p className="text-xs text-muted-foreground">
             {viewMode === "net"
-              ? "Net closing balances per operational GL account — matches Trial Balance (Simple) summary."
-              : "Gross turnover movements across all historical debit and credit postings."}
+              ? "Net debit and credit movements per account for the selected posting period."
+              : "Gross debit and credit turnover for the selected posting period."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">From</Label>
+            <Input type="date" className="h-8 w-36 text-xs" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">To</Label>
+            <Input type="date" className="h-8 w-36 text-xs" value={toDate} onChange={e => setToDate(e.target.value)} />
+          </div>
+          {(fromDate || toDate) && (
+            <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setFromDate(""); setToDate(""); }}>
+              All Dates
+            </Button>
+          )}
           {/* Mode Switcher */}
           <div className="flex bg-muted/60 p-0.5 rounded-lg text-xs border">
             <button
@@ -6537,7 +6825,7 @@ function TrialBalanceFullSubModule() {
               className={`px-2.5 py-1 rounded-md font-semibold transition-all ${viewMode === "net" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => setViewMode("net")}
             >
-              Net Closing Balances
+              Net Period Balances
             </button>
             <button
               type="button"
@@ -6547,7 +6835,7 @@ function TrialBalanceFullSubModule() {
               Gross Turnover Movements
             </button>
           </div>
-          <Badge variant="outline" className="font-mono">{trialBalanceDetailed.length} Accounts</Badge>
+          <Badge variant="outline" className="font-mono">{periodTrialBalance.length} Accounts</Badge>
         </div>
       </div>
 
@@ -6577,7 +6865,7 @@ function TrialBalanceFullSubModule() {
               </TableRow>
             ))}
             <TableRow className="font-bold border-t-2 bg-muted/20">
-              <TableCell colSpan={3}>Grand Total ({viewMode === "net" ? "Net Balances" : "Gross Movements"})</TableCell>
+              <TableCell colSpan={3}>Grand Total ({viewMode === "net" ? "Net Period Balances" : "Gross Movements"})</TableCell>
               <TableCell className="text-right font-mono font-bold text-primary">{totalDr.toLocaleString()} QAR</TableCell>
               <TableCell className="text-right font-mono font-bold text-primary">{totalCr.toLocaleString()} QAR</TableCell>
             </TableRow>
@@ -8371,6 +8659,7 @@ function GeneralLedgerReportSubModule() {
   const [selectedProperty, setSelectedProperty] = useState("all");
   const [selectedUnit, setSelectedUnit] = useState("all");
   const [selectedCustomer, setSelectedCustomer] = useState("all");
+  const [selectedAccount, setSelectedAccount] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
   const [sortField, setSortField] = useState<"date" | "account_code" | "debit" | "credit">("date");
   const [sortAsc, setSortAsc] = useState<boolean>(false);
@@ -8415,6 +8704,29 @@ function GeneralLedgerReportSubModule() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [txList]);
 
+  const accountOptions = useMemo(() => {
+    const accounts = new Map<string, Set<string>>();
+    txList.forEach(tx => {
+      if (!tx.account_code) return;
+      const names = accounts.get(tx.account_code) || new Set<string>();
+      names.add(tx.account_name || tx.account_code);
+      accounts.set(tx.account_code, names);
+    });
+    return Array.from(accounts, ([code, names]) => ({ code, name: Array.from(names).join(" / ") }))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  }, [txList]);
+  const accountSearchCodes = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return new Set<string>();
+    const matchingBanks = BANK_GL_ACCOUNTS.filter(account =>
+      account.code.toLowerCase().includes(query) || account.name.toLowerCase().includes(query)
+    );
+    if (matchingBanks.length > 0) return new Set(matchingBanks.map(account => account.code));
+    return new Set(accountOptions
+      .filter(account => account.code.toLowerCase().includes(query) || account.name.toLowerCase().includes(query))
+      .map(account => account.code));
+  }, [accountOptions, search]);
+
   // ── Filtered + Sorted list ────────────────────────────────────────────────
   const filtered = useMemo(() => {
     let list = txList.filter(tx => {
@@ -8424,6 +8736,8 @@ function GeneralLedgerReportSubModule() {
       if (selectedUnit !== "all" && tx.unit_ref !== selectedUnit) return false;
       // Customer
       if (selectedCustomer !== "all" && tx.tenant_name !== selectedCustomer) return false;
+      // Account — selecting a GL account isolates its postings for a proper ledger view.
+      if (selectedAccount !== "all" && tx.account_code !== selectedAccount) return false;
       // Source
       if (selectedSource !== "all" && tx.source !== selectedSource) return false;
       // Month
@@ -8434,7 +8748,9 @@ function GeneralLedgerReportSubModule() {
       // Text search
       if (search.trim()) {
         const q = search.toLowerCase();
-        if (!(
+        if (accountSearchCodes.size > 0) {
+          if (!accountSearchCodes.has(tx.account_code)) return false;
+        } else if (!(
           (tx.account_name || "").toLowerCase().includes(q) ||
           (tx.account_code || "").includes(q) ||
           (tx.reference || "").toLowerCase().includes(q) ||
@@ -8464,7 +8780,7 @@ function GeneralLedgerReportSubModule() {
     });
 
     return list;
-  }, [txList, selectedProperty, selectedUnit, selectedCustomer, selectedSource, selectedMonth, startDate, endDate, search, sortField, sortAsc]);
+  }, [txList, selectedProperty, selectedUnit, selectedCustomer, selectedAccount, selectedSource, selectedMonth, startDate, endDate, search, accountSearchCodes, sortField, sortAsc]);
 
   const effectivePageSize = pageSize === 0 ? Math.max(1, filtered.length) : pageSize;
   const totalPages = Math.max(1, Math.ceil(filtered.length / effectivePageSize));
@@ -8479,7 +8795,7 @@ function GeneralLedgerReportSubModule() {
   function resetFilters() {
     setSearch(""); setStartDate(""); setEndDate("");
     setSelectedMonth("all"); setSelectedProperty("all");
-    setSelectedUnit("all"); setSelectedCustomer("all");
+    setSelectedUnit("all"); setSelectedCustomer("all"); setSelectedAccount("all");
     setSelectedSource("all"); setSortField("date"); setSortAsc(false); setPage(1);
   }
 
@@ -8602,7 +8918,7 @@ function GeneralLedgerReportSubModule() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {/* 1. Property Filter — Searchable */}
           <div className="space-y-1">
             <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
@@ -8650,6 +8966,23 @@ function GeneralLedgerReportSubModule() {
               options={[
                 { label: `All Customers (${customerOptions.length})`, value: "all" },
                 ...customerOptions.map(c => ({ label: c, value: c }))
+              ]}
+            />
+          </div>
+
+          {/* Account Filter — exact account postings for ledger/SOA views */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+              <Landmark className="h-3 w-3" /> GL Account / Bank
+            </Label>
+            <SearchableSelect
+              value={selectedAccount}
+              onValueChange={v => { setSelectedAccount(v); setPage(1); }}
+              placeholder={`All Accounts (${accountOptions.length})`}
+              emptyText="No accounts found"
+              options={[
+                { label: `All Accounts (${accountOptions.length})`, value: "all" },
+                ...accountOptions.map(account => ({ label: `${account.code} - ${account.name}`, value: account.code }))
               ]}
             />
           </div>

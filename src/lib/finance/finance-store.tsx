@@ -93,6 +93,7 @@ export interface PayableInvoice {
   invoice_no: string;
   vendor: string;
   date: string;
+  voucher_date?: string;
   due_date: string;
   account: string;
   account_code: string;
@@ -1672,7 +1673,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addPayableInvoice(inv: Omit<PayableInvoice, "id" | "status">) {
-    const periodCheck = isPostingPeriodClosed(inv.date);
+    const periodCheck = isPostingPeriodClosed(inv.voucher_date || inv.date);
     if (periodCheck.closed) {
       toast.error(`Posting rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
       return;
@@ -2353,7 +2354,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           const code = line.account_code || ap.account_code || "51004001";
           list.push({
             id: `tx-ap-dr-${ap.id}-${idx}`,
-            date: ap.date,
+            date: ap.voucher_date || ap.date,
             account_code: code,
             account_name: getCoaName(line.account || ap.account, code, "Repairs & Maintenance"),
             account_type: code.startsWith("1") ? "Assets" : "Expenses",
@@ -2370,7 +2371,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       } else {
         list.push({
           id: `tx-ap-dr-${ap.id}`,
-          date: ap.date,
+          date: ap.voucher_date || ap.date,
           account_code: ap.account_code || "51004001",
           account_name: getCoaName(ap.account, ap.account_code, "Repairs & Maintenance"),
           account_type: "Expenses",
@@ -2386,7 +2387,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
       list.push({
         id: `tx-ap-cr-${ap.id}`,
-        date: ap.date,
+        date: ap.voucher_date || ap.date,
         account_code: "22100001",
         account_name: "Accounts Payable",
         account_type: "Liabilities",

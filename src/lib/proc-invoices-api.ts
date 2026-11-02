@@ -8,6 +8,7 @@ export type ProcApInvoice = {
   po_number?: string;
   grn_number?: string;
   invoice_date: string;
+  voucher_date?: string;
   due_date?: string;
   amount: number;
   tax_amount: number;
