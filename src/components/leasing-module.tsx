@@ -140,6 +140,7 @@ type Unit = {
 type Customer = {
   id: string;
   customerId?: string;
+  customer_code?: string;
   tax_identification_no?: string;
   name: string;
   type: "individual" | "company";
@@ -1523,12 +1524,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             c.last_name || "";
           if (!name || name.toLowerCase().includes("abc trading")) continue;
           const normKey = normalizeCustKey(name);
-          const customerId = c.tax_identification_no ||
+          const customerId = c.customer_code || c.tax_identification_no ||
             (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') ||
             c.customer_id || '';
           dbCustomerMap.set(String(c.id), {
             id: c.id,
             customerId,
+            customer_code: c.customer_code || customerId,
             name,
             displayName: c.display_name || name,
             firstName: c.first_name || name,
@@ -3354,7 +3356,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     return null;
   }
 
-  function createCustomer() {
+  async function createCustomer() {
     const finalDisplayName = (customerForm.displayName || customerForm.name || (customerForm.type === "individual" ? `${customerForm.firstName || ""} ${customerForm.lastName || ""}`.trim() : customerForm.companyLegalName) || "").trim();
 
     if (!finalDisplayName) {
@@ -3388,17 +3390,56 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const primaryMob = customerForm.primaryMobile || customerForm.mobile || "";
     const primaryMail = customerForm.primaryEmail || customerForm.email || "";
 
-    const numericIds = (customers || [])
-      .map((c) => (c as any).customerId || (c as any).tax_identification_no)
-      .filter((id) => id && /^\d{13}$/.test(id))
-      .map((id) => BigInt(id));
-    const maxId = numericIds.length > 0 ? numericIds.reduce((m, x) => x > m ? x : m, 1000000000000n) : 1000000000000n;
-    const generatedCustomerId = String(maxId + 1n);
+    const dbPayload = {
+      full_name: finalDisplayName,
+      display_name: finalDisplayName,
+      first_name: customerForm.firstName || finalDisplayName,
+      middle_name: customerForm.middleName || null,
+      last_name: customerForm.lastName || null,
+      customer_type: customerForm.type === "company" ? "Company" : "Individual",
+      qatar_id: customerForm.qatarId || null,
+      passport_number: customerForm.passport || null,
+      commercial_registration: customerForm.crNumber || null,
+      nationality: (customerForm as any).nationality || null,
+      mobile_number: primaryMob || null,
+      primary_mobile: primaryMob || null,
+      email_address: primaryMail || null,
+      primary_email: primaryMail || null,
+      tax_identification_no: customerForm.taxIdentificationNo || null,
+      customer_status: "Active",
+      approval_status: "Approved",
+      verification_status: "Verified",
+      gender: customerForm.gender || "Male",
+      company_legal_name: customerForm.companyLegalName || null,
+      trade_name: customerForm.tradeName || null,
+      trade_licence_no: customerForm.tradeLicenceNo || null,
+      computer_card_no: customerForm.computerCardNo || null,
+    };
+
+    let savedCustomer: { id: string; customer_code: string } | null = null;
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .insert([dbPayload])
+        .select("id, customer_code")
+        .single();
+
+      if (error) throw error;
+      savedCustomer = data;
+    } catch (err: any) {
+      toast.error(`Unable to save customer: ${err?.message || "Unknown error"}`);
+      return;
+    }
+
+    if (!savedCustomer?.customer_code) {
+      toast.error("Customer was saved without a Customer ID. Please refresh and verify the customer record.");
+      return;
+    }
 
     const customer: Customer = {
-      id: `c${customers.length + 1}`,
-      customerId: generatedCustomerId,
-      tax_identification_no: generatedCustomerId,
+      id: savedCustomer.id,
+      customerId: savedCustomer.customer_code,
+      customer_code: savedCustomer.customer_code,
       ...customerForm,
       name: finalDisplayName,
       displayName: finalDisplayName,
@@ -3412,46 +3453,6 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     };
     setCustomers((items) => [customer, ...items]);
     setDirectCustomers((items) => [customer, ...items]);
-
-    // Persist to Supabase Database
-    try {
-      const dbPayload = {
-        full_name: finalDisplayName,
-        display_name: finalDisplayName,
-        first_name: customerForm.firstName || finalDisplayName,
-        middle_name: customerForm.middleName || null,
-        last_name: customerForm.lastName || null,
-        customer_type: customerForm.type === "company" ? "Company" : "Individual",
-        qatar_id: customerForm.qatarId || null,
-        passport_number: customerForm.passport || null,
-        commercial_registration: customerForm.crNumber || null,
-        nationality: (customerForm as any).nationality || null,
-        mobile_number: primaryMob || null,
-        primary_mobile: primaryMob || null,
-        email_address: primaryMail || null,
-        primary_email: primaryMail || null,
-        tax_identification_no: generatedCustomerId,
-        remarks: `CUSTOMER_ID:${generatedCustomerId}`,
-        customer_status: "Active",
-        approval_status: "Approved",
-        verification_status: "Verified",
-        gender: customerForm.gender || "Male",
-        company_legal_name: customerForm.companyLegalName || null,
-        trade_name: customerForm.tradeName || null,
-        trade_licence_no: customerForm.tradeLicenceNo || null,
-        computer_card_no: customerForm.computerCardNo || null,
-      };
-
-      supabase.from("customers").insert([dbPayload]).then(({ data, error }) => {
-        if (error) {
-          console.warn("[createCustomer] Supabase insert warning:", error.message);
-        } else {
-          console.log("[createCustomer] Supabase insert successful:", data);
-        }
-      });
-    } catch (err: any) {
-      console.warn("[createCustomer] Supabase persistence error:", err?.message || err);
-    }
 
     const createdDocs: TenantDocument[] = [];
     if (customer.type === "company") {
@@ -14206,7 +14207,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     onClick={() => {
                       exportToExcel(
                         allCustomers.map((c) => ({
-                          "Customer ID": c.customerId || c.tax_identification_no || c.id,
+                          "Customer ID": c.customer_code || c.customerId || c.tax_identification_no || c.id,
                           "Customer Name": c.name || c.tenantName || "",
                           "Customer Type": c.type || "individual",
                           "National ID / QID": c.qid || c.nationalId || "",
@@ -14334,7 +14335,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   columns={["Customer ID", "Name", "Type", "Nationality", "Primary ID", "Contact", "Status", "Actions"]}
                   rows={filteredCustomers.map((customer) => [
                     <span key="cust-id" className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50">
-                      {customer?.customerId || customer?.tax_identification_no || "-"}
+                      {customer?.customer_code || customer?.customerId || customer?.tax_identification_no || "-"}
                     </span>,
                     <span key="name" className="flex items-center gap-1.5 font-medium">
                       {customer?.name || "-"}

@@ -99,6 +99,7 @@ type Unit = {
 type Customer = {
   id: string;
   customerId?: string;
+  customer_code?: string;
   name: string;
   type: "individual" | "company";
   qatarId: string;
@@ -1318,6 +1319,7 @@ function LeasingPage() {
     const customer: Customer = {
       id: `c${customers.length + 1}`,
       customerId: generatedCustomerId,
+      customer_code: generatedCustomerId,
       ...customerForm,
       status: "active",
     };

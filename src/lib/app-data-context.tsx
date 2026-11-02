@@ -43,6 +43,7 @@ export interface PmsUnit {
 export interface PmsCustomer {
   id: string;
   customerId?: string;
+  customer_code?: string;
   name: string;
   type: "individual" | "company";
   qatarId: string;
@@ -457,12 +458,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (seenCustIds.has(id) || (normKey && seenCustNames.has(normKey))) continue;
         seenCustIds.add(id);
         if (normKey) seenCustNames.add(normKey);
-        const customerId = c.tax_identification_no || 
-          (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') || 
+        const customerId = c.customer_code || c.tax_identification_no ||
+          (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') ||
           c.customer_id || '';
         mergedCustomers.push({
           id,
           customerId,
+          customer_code: c.customer_code || customerId,
           name,
           displayName: c.display_name || name,
           firstName: c.first_name || name,

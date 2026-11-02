@@ -109,6 +109,7 @@ export type Profile = {
 
 export type Customer = {
   id: string;
+  customer_code?: string;
   customer_type: 'Individual' | 'Company';
   display_name?: string;
   full_name: string;
@@ -1669,4 +1670,3 @@ export async function fetchPropertyManagerEmployees(): Promise<{ id: string; nam
     ];
   }
 }
-
