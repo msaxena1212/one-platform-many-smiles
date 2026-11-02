@@ -59,6 +59,14 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December"
 ];
 
+function normalizePropertyName(name?: string): string {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function matchesPropertyName(candidate: string, property: string): boolean {
+  return normalizePropertyName(candidate) === normalizePropertyName(property);
+}
+
 export function PropertyWiseProfitAndLossSubModule() {
   const { allLedgerTransactions, receivableInvoices, isSyncing, refreshFinanceData } = useFinanceStore();
   const { leases, units } = useAppData();
@@ -103,21 +111,15 @@ export function PropertyWiseProfitAndLossSubModule() {
 
   // Master property list
   const propertiesList = useMemo(() => {
-    const set = new Set<string>();
-    units.forEach(u => { if (u.property) set.add(u.property); });
-    leases.forEach(l => { if (l.property) set.add(l.property); });
-    allLedgerTransactions.forEach(tx => {
-      if (tx.property_name && tx.property_name !== "Unassigned" && tx.property_name !== "Corporate / Admin") {
-        set.add(tx.property_name);
-      }
+    const properties = new Map<string, string>();
+    units.forEach((unit) => {
+      if (unit.property?.trim()) properties.set(normalizePropertyName(unit.property), unit.property.trim());
     });
-    if (set.size === 0) {
-      set.add("Old Salata - Residence No:23");
-      set.add("MANSOURA - BLDG06");
-      set.add("Neeman's New Building");
-    }
-    return Array.from(set).sort();
-  }, [units, leases, allLedgerTransactions]);
+    leases.forEach((lease) => {
+      if (lease.property?.trim()) properties.set(normalizePropertyName(lease.property), lease.property.trim());
+    });
+    return Array.from(properties.values()).sort((a, b) => a.localeCompare(b));
+  }, [units, leases]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // COMPUTE PROPERTY-WISE P&L (STRICTLY INVOICED / LEDGER-POSTED REVENUE + EXPENSES)
@@ -125,11 +127,11 @@ export function PropertyWiseProfitAndLossSubModule() {
   // ──────────────────────────────────────────────────────────────────────────
   const propertyMetricsList: PropertyPnlMetrics[] = useMemo(() => {
     return propertiesList.map((propName) => {
-      const propUnits = units.filter(u => u.property === propName);
-      const propLeases = leases.filter(l => l.property === propName && String(l.status) !== "cancelled" && String(l.status) !== "draft");
+      const propUnits = units.filter(u => normalizePropertyName(u.property) === normalizePropertyName(propName));
+      const propLeases = leases.filter(l => normalizePropertyName(l.property) === normalizePropertyName(propName) && String(l.status) !== "cancelled" && String(l.status) !== "draft");
 
       let totalUnits = propUnits.length;
-      if (totalUnits === 0) totalUnits = propLeases.length || 10;
+      if (totalUnits === 0) totalUnits = propLeases.length;
 
       const activeTenantsSet = new Set<string>();
       let contractRentMonth = 0;
@@ -143,11 +145,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         // 1. Check receivableInvoices in FinanceStore
         const matchingArInvoices = receivableInvoices.filter((inv) => {
           const invProp = (inv.property || "").trim();
-          const propMatches =
-            invProp === propName ||
-            (propName.includes("Old Salata") && invProp.includes("Salata")) ||
-            (propName.includes("MANSOURA") && invProp.includes("MANSOURA"));
-          if (!propMatches) return false;
+          if (!matchesPropertyName(invProp, propName)) return false;
 
           if (selectedPeriod !== "all") {
             const invMonth = inv.billingPeriod || (inv.date ? inv.date.slice(0, 7) : "");
@@ -171,11 +169,7 @@ export function PropertyWiseProfitAndLossSubModule() {
           if (tx.account_type !== "Revenue" || !tx.account_code.startsWith("411")) return false;
           if (tx.source === "Receivable Invoice") return false; // already checked above
           const txProp = (tx.property_name || "").trim();
-          const propMatches =
-            txProp === propName ||
-            (propName.includes("Old Salata") && txProp.includes("Salata")) ||
-            (propName.includes("MANSOURA") && txProp.includes("MANSOURA"));
-          if (!propMatches) return false;
+          if (!matchesPropertyName(txProp, propName)) return false;
 
           if (selectedPeriod !== "all" && tx.date && !tx.date.startsWith(selectedPeriod)) return false;
 
@@ -257,11 +251,7 @@ export function PropertyWiseProfitAndLossSubModule() {
       allLedgerTransactions.forEach((tx) => {
         // Match by property name
         const txProp = (tx.property_name || "").trim();
-        const matchesProp =
-          txProp === propName ||
-          (propName.includes("Old Salata") && txProp.includes("Salata")) ||
-          (propName.includes("MANSOURA") && txProp.includes("MANSOURA"));
-        if (!matchesProp) return;
+        if (!matchesPropertyName(txProp, propName)) return;
 
         // Date period filtering
         if (selectedPeriod !== "all" && tx.date) {
@@ -328,6 +318,12 @@ export function PropertyWiseProfitAndLossSubModule() {
   // Filtered view by property dropdown or search
   const filteredMetricsList = useMemo(() => {
     return propertyMetricsList.filter(m => {
+      if (
+        m.totalRevenue === 0 &&
+        m.totalExpenses === 0 &&
+        m.contractRentMonth === 0 &&
+        m.uninvoicedContractRent === 0
+      ) return false;
       if (selectedPropertyFilter !== "all" && m.property !== selectedPropertyFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -1046,4 +1042,3 @@ export function PropertyWiseProfitAndLossSubModule() {
     </div>
   );
 }
-

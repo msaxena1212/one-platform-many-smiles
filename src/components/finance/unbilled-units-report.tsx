@@ -19,7 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Building2,
   Calendar,
@@ -30,10 +29,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileText,
-  Sparkles,
   Filter,
-  CheckSquare,
-  Square,
   Eye,
   Home,
   Users,
@@ -194,8 +190,6 @@ export function UnbilledUnitsReportSubModule() {
   const {
     receivableInvoices,
     allLedgerTransactions,
-    addReceivableInvoice,
-    addBulkReceivableInvoices,
     isSyncing,
     refreshFinanceData,
   } = useFinanceStore();
@@ -231,8 +225,6 @@ export function UnbilledUnitsReportSubModule() {
   >("not_generated");
   const [searchTerm, setSearchTerm] = useState<string>("");
 
-  // Selection for quick invoice generation
-  const [selectedUnitKeys, setSelectedUnitKeys] = useState<Set<string>>(new Set());
   const [viewingInvoice, setViewingInvoice] = useState<ReceivableInvoice | null>(null);
 
   // ── Available Months List ─────────────────────────────────────────────────
@@ -657,106 +649,6 @@ export function UnbilledUnitsReportSubModule() {
     };
   }, [allUnitRows, propertyFilter, unitScopeFilter]);
 
-  // ── Selection Handlers ────────────────────────────────────────────────────
-  const unbilledFilteredRows = useMemo(
-    () => filteredRows.filter((r) => !r.isInvoiced),
-    [filteredRows],
-  );
-
-  const toggleSelectRow = (key: string) => {
-    setSelectedUnitKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const toggleSelectAllUnbilled = (checked: boolean) => {
-    if (checked) {
-      setSelectedUnitKeys(new Set(unbilledFilteredRows.map((r) => r.key)));
-    } else {
-      setSelectedUnitKeys(new Set());
-    }
-  };
-
-  // ── Generate Single or Bulk Missing Invoices ──────────────────────────────
-  const handleGenerateSingleInvoice = (row: UnbilledUnitRow) => {
-    const issueDateStr = periodMode === "month" ? effectivePeriod.start : fromDate;
-    const dueDateObj = new Date(issueDateStr);
-    dueDateObj.setDate(dueDateObj.getDate() + 30);
-    const dueDateStr = dueDateObj.toISOString().split("T")[0];
-
-    const propCode = row.property.slice(0, 4).toUpperCase().replace(/\s/g, "");
-    const unitClean = row.unit.replace(/[^\w]/g, "").slice(-5).toUpperCase();
-    const ymClean = effectivePeriod.monthKey.replace("-", "");
-    const invNo = `INV-${ymClean}-${propCode}-${unitClean}`;
-
-    const stream = row.isRentFree
-      ? `41100 - Rental Revenue (Rent-Free Concession: ${row.concessionNote || "QR 0"})`
-      : "41100 - Rental Revenue (Residential/Commercial)";
-
-    addReceivableInvoice({
-      invoice_no: invNo,
-      tenant: row.tenantName,
-      property: row.property,
-      unit: row.unit,
-      date: issueDateStr,
-      due_date: dueDateStr,
-      stream,
-      account_code: "41100",
-      amount: row.expectedBillingAmount,
-      customerId: row.customerId,
-      billingPeriod: effectivePeriod.label,
-    });
-
-    setSelectedUnitKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(row.key);
-      return next;
-    });
-  };
-
-  const handleGenerateSelectedInvoices = () => {
-    const targets = unbilledFilteredRows.filter((r) => selectedUnitKeys.has(r.key));
-    if (targets.length === 0) {
-      toast.error("Please select at least one unbilled unit to generate invoices.");
-      return;
-    }
-
-    const issueDateStr = periodMode === "month" ? effectivePeriod.start : fromDate;
-    const dueDateObj = new Date(issueDateStr);
-    dueDateObj.setDate(dueDateObj.getDate() + 30);
-    const dueDateStr = dueDateObj.toISOString().split("T")[0];
-    const ymClean = effectivePeriod.monthKey.replace("-", "");
-
-    const payload: Omit<ReceivableInvoice, "id" | "status">[] = targets.map((row, idx) => {
-      const propCode = row.property.slice(0, 4).toUpperCase().replace(/\s/g, "");
-      const unitClean = row.unit.replace(/[^\w]/g, "").slice(-5).toUpperCase();
-      const invNo = `INV-${ymClean}-${propCode}-${unitClean || idx + 101}`;
-      const stream = row.isRentFree
-        ? `41100 - Rental Revenue (Rent-Free Concession: ${row.concessionNote || "QR 0"})`
-        : "41100 - Rental Revenue (Residential/Commercial)";
-
-      return {
-        invoice_no: invNo,
-        tenant: row.tenantName,
-        property: row.property,
-        unit: row.unit,
-        date: issueDateStr,
-        due_date: dueDateStr,
-        stream,
-        account_code: "41100",
-        amount: row.expectedBillingAmount,
-        customerId: row.customerId,
-        billingPeriod: effectivePeriod.label,
-      };
-    });
-
-    addBulkReceivableInvoices(payload);
-    setSelectedUnitKeys(new Set());
-  };
-
   // ── Export to Excel ───────────────────────────────────────────────────────
   const handleExportExcel = () => {
     if (filteredRows.length === 0) {
@@ -853,22 +745,11 @@ export function UnbilledUnitsReportSubModule() {
           <p className="text-xs text-muted-foreground mt-0.5">
             Identify units across <strong className="text-foreground">All Properties</strong> or{" "}
             <strong className="text-foreground">Property-Wise</strong> for which rental invoices
-            have not been generated for the selected billing period.
+            have not been generated for the selected billing period. Generate invoices from Receivable Invoices &amp; Bulk Billing.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {selectedUnitKeys.size > 0 && (
-            <Button
-              size="sm"
-              onClick={handleGenerateSelectedInvoices}
-              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Generate Invoices for Selected ({selectedUnitKeys.size})
-            </Button>
-          )}
-
           <Button
             size="sm"
             variant="outline"
@@ -1239,60 +1120,20 @@ export function UnbilledUnitsReportSubModule() {
           </div>
         </div>
 
-        {/* Selection Toolbar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-1 no-print">
-          <div className="flex items-center gap-2 text-xs">
-            {unbilledFilteredRows.length > 0 && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => toggleSelectAllUnbilled(true)}
-                  className="h-7 text-xs gap-1.5"
-                >
-                  <CheckSquare className="h-3.5 w-3.5" />
-                  Select All Unbilled ({unbilledFilteredRows.length})
-                </Button>
-                {selectedUnitKeys.size > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleSelectAllUnbilled(false)}
-                    className="h-7 text-xs gap-1"
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                    Clear Selection
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-
-          <div className="text-xs text-muted-foreground">
+        <div className="flex justify-end px-1 text-xs text-muted-foreground">
             Showing <strong className="text-foreground">{filteredRows.length}</strong> unit records
             for{" "}
             <strong className="text-foreground">
               {propertyFilter === "ALL" ? "All Properties" : propertyFilter}
             </strong>{" "}
             ({effectivePeriod.label})
-          </div>
         </div>
 
         {/* Report Table */}
-        <div className="border rounded-lg overflow-hidden bg-card shadow-xs">
-          <Table>
+        <div className="min-w-0 border rounded-lg overflow-x-auto bg-card shadow-xs">
+          <Table className="min-w-[1100px]">
             <TableHeader>
               <TableRow className="bg-muted/50 text-xs">
-                <TableHead className="w-10 text-center no-print">
-                  <Checkbox
-                    checked={
-                      unbilledFilteredRows.length > 0 &&
-                      selectedUnitKeys.size === unbilledFilteredRows.length
-                    }
-                    onCheckedChange={(checked) => toggleSelectAllUnbilled(Boolean(checked))}
-                    aria-label="Select all unbilled units"
-                  />
-                </TableHead>
                 <TableHead className="w-10 text-center font-bold">#</TableHead>
                 <TableHead className="font-bold">Property</TableHead>
                 <TableHead className="font-bold">Unit Ref</TableHead>
@@ -1310,7 +1151,7 @@ export function UnbilledUnitsReportSubModule() {
               {filteredRows.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={12}
+                    colSpan={11}
                     className="text-center py-10 text-xs text-muted-foreground"
                   >
                     <div className="flex flex-col items-center justify-center gap-2">
@@ -1329,28 +1170,11 @@ export function UnbilledUnitsReportSubModule() {
                 </TableRow>
               ) : (
                 filteredRows.map((row, idx) => {
-                  const isSelected = selectedUnitKeys.has(row.key);
                   return (
                     <TableRow
                       key={row.key}
-                      className={`text-xs transition-colors ${
-                        row.isInvoiced
-                          ? "bg-emerald-500/5 hover:bg-emerald-500/10"
-                          : isSelected
-                            ? "bg-primary/5 hover:bg-primary/10"
-                            : "hover:bg-muted/30"
-                      }`}
+                      className={`text-xs transition-colors ${row.isInvoiced ? "bg-emerald-500/5 hover:bg-emerald-500/10" : "hover:bg-muted/30"}`}
                     >
-                      <TableCell className="text-center no-print">
-                        {!row.isInvoiced ? (
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleSelectRow(row.key)}
-                          />
-                        ) : (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mx-auto" />
-                        )}
-                      </TableCell>
                       <TableCell className="text-center font-mono text-muted-foreground">
                         {idx + 1}
                       </TableCell>
@@ -1430,17 +1254,7 @@ export function UnbilledUnitsReportSubModule() {
                             <Eye className="h-3.5 w-3.5" />
                             View
                           </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleGenerateSingleInvoice(row)}
-                            className="h-7 px-2.5 text-[11px] font-semibold border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground gap-1"
-                          >
-                            <Sparkles className="h-3 w-3" />
-                            Generate Invoice
-                          </Button>
-                        )}
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                     </TableRow>
                   );
@@ -1450,7 +1264,6 @@ export function UnbilledUnitsReportSubModule() {
               {/* Footer Totals Row */}
               {filteredRows.length > 0 && (
                 <TableRow className="bg-muted/60 font-bold text-xs border-t-2">
-                  <TableCell className="no-print"></TableCell>
                   <TableCell
                     colSpan={6}
                     className="text-right uppercase text-[11px] text-muted-foreground"

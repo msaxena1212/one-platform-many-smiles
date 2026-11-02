@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import {
   Building2,
   Calendar,
@@ -31,6 +32,8 @@ export function LeaseExpiryVacancyReportSubModule() {
   const [propertyFilter, setPropertyFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [referenceDate, setReferenceDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   const propertiesList = useMemo(() => {
     const set = new Set<string>();
@@ -198,6 +201,48 @@ export function LeaseExpiryVacancyReportSubModule() {
         };
       });
   }, [propertiesList, units, leases, propertyFilter, referenceDate, propertyAvgRentMap]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, expiryWindowDays, propertyFilter, searchQuery, referenceDate]);
+
+  const activeRows = activeTab === "expiring" ? expiringLeases : activeTab === "vacant" ? vacantUnits : propertySummaries;
+  const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
+  const visibleExpiringLeases = expiringLeases.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleVacantUnits = vacantUnits.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visiblePropertySummaries = propertySummaries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const renderPagination = (rowCount: number) => rowCount > 0 ? (
+    <div className="flex flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-xs text-muted-foreground">
+        Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, rowCount)} of {rowCount}
+      </span>
+      <Pagination className="mx-0 w-auto justify-end">
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              href="#"
+              onClick={(event) => {
+                event.preventDefault();
+                setCurrentPage((page) => Math.max(1, page - 1));
+              }}
+              className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+            />
+          </PaginationItem>
+          <PaginationItem><span className="px-3 text-xs">Page {currentPage} of {totalPages}</span></PaginationItem>
+          <PaginationItem>
+            <PaginationNext
+              href="#"
+              onClick={(event) => {
+                event.preventDefault();
+                setCurrentPage((page) => Math.min(totalPages, page + 1));
+              }}
+              className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
+  ) : null;
 
   const handleExportCsv = () => {
     if (activeTab === "expiring") {
@@ -417,7 +462,7 @@ export function LeaseExpiryVacancyReportSubModule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {expiringLeases.map((l) => (
+                {visibleExpiringLeases.map((l) => (
                   <TableRow key={l.id} className="hover:bg-muted/30">
                     <TableCell className="text-xs font-medium">
                       <span className="inline-flex items-center gap-1">
@@ -469,6 +514,7 @@ export function LeaseExpiryVacancyReportSubModule() {
               </TableBody>
             </Table>
           </div>
+          {renderPagination(expiringLeases.length)}
         </Card>
       )}
 
@@ -487,7 +533,7 @@ export function LeaseExpiryVacancyReportSubModule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vacantUnits.map((u) => (
+                {visibleVacantUnits.map((u) => (
                   <TableRow key={u.id} className="hover:bg-muted/30">
                     <TableCell className="text-xs font-medium">{u.property}</TableCell>
                     <TableCell className="text-xs font-mono font-bold text-primary">
@@ -516,6 +562,7 @@ export function LeaseExpiryVacancyReportSubModule() {
               </TableBody>
             </Table>
           </div>
+          {renderPagination(vacantUnits.length)}
         </Card>
       )}
 
@@ -537,7 +584,7 @@ export function LeaseExpiryVacancyReportSubModule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {propertySummaries.map((p) => (
+                {visiblePropertySummaries.map((p) => (
                   <TableRow key={p.property} className="hover:bg-muted/30">
                     <TableCell className="text-xs font-semibold">{p.property}</TableCell>
                     <TableCell className="text-center font-mono text-xs">{p.totalUnits}</TableCell>
@@ -567,6 +614,7 @@ export function LeaseExpiryVacancyReportSubModule() {
               </TableBody>
             </Table>
           </div>
+          {renderPagination(propertySummaries.length)}
         </Card>
       )}
     </div>

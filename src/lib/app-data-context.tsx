@@ -34,6 +34,7 @@ export interface PmsUnit {
   id: string;
   property: string;
   unit: string;
+  type?: string;
   status: UnitStatus;
   rent: number;
   contractEndDate?: string;
@@ -101,6 +102,9 @@ export interface PmsPdc {
   leaseId: string;
   chequeNo: string;
   bank: string;
+  propertyName?: string;
+  unitName?: string;
+  tenantName?: string;
   date: string;
   amount: number;
   paid_amount?: number;
@@ -382,6 +386,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           id: u.id,
           property: propTitle,
           unit: unitName,
+          type: u.unit_type || u.type || u.layout || "",
           status: isVacatedTestUnit ? ("Available" as UnitStatus) : (() => {
             const ls = (u.lease_status || "").toUpperCase();
             const st = (u.status || "").toLowerCase();
@@ -756,7 +761,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           property_name: p.property_code || p.property_name || "",
           unit_name: p.unit_name || p.unit_ref || "",
           tenant_name: p.tenant_name || p.drawer_name || "",
-          bank: p.bank || matchedFin?.bank_name || matchedFin?.bank || "QNB",
+          bank: p.bank || matchedFin?.bank_name || matchedFin?.bank || "",
           status: finalStatus,
         });
       });
@@ -770,7 +775,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             property_name: f.property_name || f.property_code || "",
             unit_name: f.unit_name || f.unit_ref || "",
             tenant_name: f.tenant_name || "",
-            bank: f.bank_name || f.bank || "QNB",
+            bank: f.bank_name || f.bank || "",
           });
         }
       });
@@ -779,7 +784,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         id: String(p.id),
         leaseId: p.lease_id || "",
         chequeNo: p.cheque_number || "",
-        bank: p.bank || p.bank_name || "QNB",
+        bank: p.bank || p.bank_name || "",
+        propertyName: p.property_name || p.property_code || "",
+        unitName: p.unit_name || p.unit_ref || "",
+        tenantName: p.tenant_name || p.drawer_name || "",
         date: p.maturity_date || p.cheque_date || "",
         amount: Number(p.amount || 0),
         status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",

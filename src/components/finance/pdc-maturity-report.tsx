@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import {
   FileCheck,
   Download,
@@ -31,15 +32,17 @@ export function PdcMaturityForecastReportSubModule() {
   const [bankFilter, setBankFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [referenceDate, setReferenceDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   const enrichedPdcs = useMemo(() => {
     const refMs = new Date(referenceDate).getTime();
 
     return pdcs.map((pdc) => {
-      const lease = leases.find((l) => l.id === pdc.leaseId);
-      const prop = (lease?.property || (pdc as any).property || "Unassigned Property").trim();
-      const unit = (lease?.unit || (pdc as any).unit || "—").trim();
-      const tenant = (lease?.tenantName || (pdc as any).tenantName || (pdc as any).drawer || "Unassigned Tenant").trim();
+      const lease = leases.find((l) => String(l.id) === String(pdc.leaseId));
+      const prop = (lease?.property || pdc.propertyName || (pdc as any).property_name || (pdc as any).property || "Unassigned Property").trim();
+      const unit = (lease?.unit || pdc.unitName || (pdc as any).unit_name || (pdc as any).unit || "—").trim();
+      const tenant = (lease?.tenantName || pdc.tenantName || pdc.payerName || (pdc as any).tenant_name || (pdc as any).drawer || "Unassigned Tenant").trim();
       const matDateStr = pdc.date || (pdc as any).dueDate || referenceDate;
       const matMs = new Date(matDateStr).getTime();
       const daysToMaturity =
@@ -79,10 +82,10 @@ export function PdcMaturityForecastReportSubModule() {
   const banksList = useMemo(() => {
     const set = new Set<string>();
     enrichedPdcs.forEach((p) => {
-      if (p.bank) set.add(p.bank);
+      if (p.bank && (propertyFilter === "ALL" || p.property === propertyFilter)) set.add(p.bank);
     });
     return Array.from(set).sort();
-  }, [enrichedPdcs]);
+  }, [enrichedPdcs, propertyFilter]);
 
   const filteredPdcs = useMemo(() => {
     const maxDays = Number(horizonDays);
@@ -94,7 +97,7 @@ export function PdcMaturityForecastReportSubModule() {
         const st = String(p.status || "").toLowerCase();
         if (activeView === "upcoming") {
           if (st !== "received" && st !== "deposited") return false;
-          if (maxDays > 0 && (p.daysToMaturity < -30 || p.daysToMaturity > maxDays)) return false;
+          if (p.daysToMaturity < 0 || (maxDays > 0 && p.daysToMaturity > maxDays)) return false;
         } else if (activeView === "bounced") {
           if (st !== "bounced" && st !== "returned") return false;
         }
@@ -113,6 +116,13 @@ export function PdcMaturityForecastReportSubModule() {
       })
       .sort((a, b) => a.maturityDate.localeCompare(b.maturityDate));
   }, [enrichedPdcs, activeView, horizonDays, propertyFilter, bankFilter, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeView, horizonDays, propertyFilter, bankFilter, searchQuery, referenceDate]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPdcs.length / pageSize));
+  const visiblePdcs = filteredPdcs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // Property-filtered KPI Summary (zero cross-property leakage when a property filter is selected!)
   const summary = useMemo(() => {
@@ -370,7 +380,7 @@ export function PdcMaturityForecastReportSubModule() {
 
       {/* PDC Schedule Table */}
       <Card>
-        <div className="rounded-xl overflow-hidden">
+        <div className="rounded-xl overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
@@ -386,7 +396,7 @@ export function PdcMaturityForecastReportSubModule() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPdcs.map((pdc) => {
+              {visiblePdcs.map((pdc) => {
                 const isBounced = String(pdc.status) === "bounced" || String(pdc.status) === "returned";
                 return (
                   <TableRow key={pdc.id} className="hover:bg-muted/30">
@@ -462,6 +472,38 @@ export function PdcMaturityForecastReportSubModule() {
             </TableBody>
           </Table>
         </div>
+        {filteredPdcs.length > 0 && (
+          <div className="flex flex-col gap-2 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs text-muted-foreground">
+              Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredPdcs.length)} of {filteredPdcs.length} cheques
+            </span>
+            <Pagination className="mx-0 w-auto justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setCurrentPage((page) => Math.max(1, page - 1));
+                    }}
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                <PaginationItem><span className="px-3 text-xs">Page {currentPage} of {totalPages}</span></PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setCurrentPage((page) => Math.min(totalPages, page + 1));
+                    }}
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
       </Card>
     </div>
   );

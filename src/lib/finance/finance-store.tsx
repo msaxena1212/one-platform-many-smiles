@@ -556,8 +556,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               ...v,
               debit: v.debit && !v.debit.includes("Revenue") ? v.debit : "Bank Operating Account",
               debit_code: v.debit_code && v.debit_code !== "41100" ? v.debit_code : "12000001",
-              credit: "Tenant Receivables",
-              credit_code: "12413",
+              credit: "Tenant Receivables — Unit SL",
+              credit_code: "12413001",
             };
           }
           return v;
@@ -1816,7 +1816,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           debit: "Bank Operating Account",
           debit_code: "12000001",
           credit: "Tenant Receivables",
-          credit_code: "12413",
+          credit_code: "12413001",
           amount: inv.amount,
           method: "Bank Transfer",
           status: "Posted"
@@ -2036,7 +2036,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       "12300001": "Advance to Vendors",
       "12400": "Receivables Control",
       "12411001": "Legal Receivables (Defaulted / Escalated)",
-      "12413001": "Tenant Receivables",
+      "12413001": "Tenant Receivables — Unit SL",
       "12900001": "Rent PDC In Hand",
       "12900002": "Guarantee Cheque In Hand",
       "13000": "Fixed Assets Portfolio",
@@ -2578,8 +2578,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       list.push({
         id: `tx-ar-dr-${ar.id}`,
         date: ar.date,
-        account_code: "12413",
-        account_name: "Tenant Receivables",
+        account_code: "12413001",
+        account_name: "Tenant Receivables — Unit SL",
         account_type: "Assets",
         reference: ar.invoice_no,
         debit: ar.amount,
