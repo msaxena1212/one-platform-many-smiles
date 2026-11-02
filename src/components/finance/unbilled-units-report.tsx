@@ -910,43 +910,8 @@ export function UnbilledUnitsReportSubModule() {
             </div>
           </div>
 
-          {/* Quick Property Pills + Search Bar */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-2 border-t border-border/60">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-              <span className="text-[11px] font-semibold text-muted-foreground mr-1 shrink-0">
-                Quick Property Filter:
-              </span>
-              <button
-                type="button"
-                onClick={() => setPropertyFilter("ALL")}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                  propertyFilter === "ALL"
-                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                    : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                All Properties ({propertiesList.length})
-              </button>
-              {propertiesList.map((prop) => {
-                const isSelected = propertyFilter === prop;
-                return (
-                  <button
-                    key={prop}
-                    type="button"
-                    onClick={() => setPropertyFilter(prop)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                      isSelected
-                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                        : "bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted"
-                    }`}
-                  >
-                    {prop}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="relative w-full md:w-72 shrink-0">
+          <div className="pt-2 border-t border-border/60">
+            <div className="relative w-full max-w-xl">
               <Search className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
               <Input
                 className="h-8 pl-8 text-xs bg-background"
@@ -1131,7 +1096,7 @@ export function UnbilledUnitsReportSubModule() {
 
         {/* Report Table */}
         <div className="min-w-0 border rounded-lg overflow-x-auto bg-card shadow-xs">
-          <Table className="min-w-[1100px]">
+          <Table className="min-w-[1400px]">
             <TableHeader>
               <TableRow className="bg-muted/50 text-xs">
                 <TableHead className="w-10 text-center font-bold">#</TableHead>

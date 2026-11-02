@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fetchJournalEntries, type JournalEntry } from "@/lib/supabase";
 import { useFinanceStore } from "@/lib/finance/finance-store";
-import { Loader2, Search, FileText, ArrowUpDown, Filter, Download } from "lucide-react";
+import { Loader2, Search, Download } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/finance/ledger")({
@@ -19,6 +19,7 @@ function GeneralLedger() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
 
   useEffect(() => {
     fetchJournalEntries()
@@ -33,9 +34,28 @@ function GeneralLedger() {
       });
   }, []);
 
+  const accountOptions = useMemo(() => {
+    const accounts = new Map<string, string>();
+    (allLedgerTransactions || []).forEach(transaction => {
+      if (transaction.account_code && !accounts.has(transaction.account_code)) {
+        accounts.set(transaction.account_code, transaction.account_name || transaction.account_code);
+      }
+    });
+    if (!accounts.has("12000001")) {
+      accounts.set("12000001", "Commercial Bank of Qatar (CBQ)");
+    }
+
+    return Array.from(accounts, ([code, name]) => ({ code, name }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code));
+  }, [allLedgerTransactions]);
+
   const combinedTransactions = useMemo(() => {
     // Combine all ledger transactions from the single source of truth Finance Store
     let list = allLedgerTransactions || [];
+
+    if (accountFilter !== "all") {
+      list = list.filter(t => t.account_code === accountFilter);
+    }
 
     if (sourceFilter !== "all") {
       list = list.filter(t => t.source === sourceFilter);
@@ -44,8 +64,6 @@ function GeneralLedger() {
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(t =>
-        (t.account_code || "").includes(q) ||
-        (t.account_name || "").toLowerCase().includes(q) ||
         (t.reference || "").toLowerCase().includes(q) ||
         (t.description || "").toLowerCase().includes(q) ||
         (t.property_name || "").toLowerCase().includes(q) ||
@@ -55,7 +73,49 @@ function GeneralLedger() {
     }
 
     return list;
-  }, [allLedgerTransactions, search, sourceFilter]);
+  }, [allLedgerTransactions, accountFilter, search, sourceFilter]);
+
+  const exportLedger = () => {
+    if (combinedTransactions.length === 0) {
+      toast.error("There are no ledger postings to export.");
+      return;
+    }
+
+    const headers = [
+      "Date", "GL / SL Code", "Account Name", "Account Type", "Reference",
+      "Description", "Source", "Property", "Unit", "Tenant", "Debit (QAR)", "Credit (QAR)",
+    ];
+    const escapeCsv = (value: string | number | undefined) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = combinedTransactions.map(tx => [
+      tx.date,
+      tx.account_code,
+      tx.account_name,
+      tx.account_type,
+      tx.reference,
+      tx.description,
+      tx.source,
+      tx.property_name,
+      tx.unit_ref,
+      tx.tenant_name,
+      tx.debit.toFixed(2),
+      tx.credit.toFixed(2),
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map(row => row.map(escapeCsv).join(",")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const link = document.createElement("a");
+    const selectedAccount = accountOptions.find(account => account.code === accountFilter);
+    const filenamePart = selectedAccount
+      ? `${selectedAccount.name}-${selectedAccount.code}`
+      : "general-ledger";
+    link.href = url;
+    link.download = `${filenamePart.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast.success(`Exported ${combinedTransactions.length} ledger postings.`);
+  };
 
   const totalDebit = useMemo(() => combinedTransactions.reduce((s, t) => s + (t.debit || 0), 0), [combinedTransactions]);
   const totalCredit = useMemo(() => combinedTransactions.reduce((s, t) => s + (t.credit || 0), 0), [combinedTransactions]);
@@ -84,25 +144,48 @@ function GeneralLedger() {
             size="sm"
             variant="outline"
             className="gap-1.5 h-8 text-xs"
-            onClick={() => toast.success("Exporting General Ledger to Excel/PDF...")}
+            onClick={exportLedger}
+            disabled={combinedTransactions.length === 0}
           >
-            <Download className="h-3.5 w-3.5" /> Export GL
+            <Download className="h-3.5 w-3.5" /> Export Ledger CSV
           </Button>
         </div>
       </div>
 
       {/* Filter & Search Toolbar */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-muted/20 p-3.5 rounded-lg border">
-        <div className="sm:col-span-8 relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="sm:col-span-4">
+          <label htmlFor="ledger-account-filter" className="mb-1 block text-xs text-muted-foreground">
+            Ledger account
+          </label>
+          <select
+            id="ledger-account-filter"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm"
+            value={accountFilter}
+            onChange={e => setAccountFilter(e.target.value)}
+          >
+            <option value="all">All accounts</option>
+            {accountOptions.map(account => (
+              <option key={account.code} value={account.code}>
+                {account.code} — {account.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="sm:col-span-5 relative">
+          <label htmlFor="ledger-search" className="mb-1 block text-xs text-muted-foreground">
+            Search within account
+          </label>
+          <Search className="absolute left-3 top-8 h-4 w-4 text-muted-foreground" />
           <Input
+            id="ledger-search"
             className="pl-9 h-9 text-xs bg-background"
-            placeholder="Search account code, account name, reference, property, unit, tenant..."
+            placeholder="Search reference, description, property, unit, tenant..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <div className="sm:col-span-4 flex items-center gap-2">
+        <div className="sm:col-span-3 flex items-end gap-2">
           <span className="text-xs text-muted-foreground whitespace-nowrap">Source:</span>
           <select
             className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm"
@@ -226,4 +309,3 @@ function GeneralLedger() {
     </div>
   );
 }
-

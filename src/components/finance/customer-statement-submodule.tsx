@@ -125,7 +125,7 @@ export function CustomerStatementSubModule({
     if (!currentCustomer) return [];
     return pdcs.filter(p =>
       p.tenantName?.toLowerCase() === currentCustomer.name?.toLowerCase() ||
-      p.drawer?.toLowerCase() === currentCustomer.name?.toLowerCase() ||
+      p.payerName?.toLowerCase() === currentCustomer.name?.toLowerCase() ||
       customerLeases.some(l => l.id === p.leaseId)
     );
   }, [currentCustomer, pdcs, customerLeases]);
@@ -206,10 +206,10 @@ export function CustomerStatementSubModule({
       if (p.status === "cleared") {
         const lease = customerLeases.find(l => l.id === p.leaseId);
         rows.push({
-          date: p.depositDate || p.dueDate,
+          date: p.date,
           docType: "PDC_CLEARED",
-          refNo: `CHQ-${p.chequeNumber}`,
-          description: `PDC Realization - ${p.bank || 'Bank'} Cheque #${p.chequeNumber}`,
+          refNo: `CHQ-${p.chequeNo}`,
+          description: `PDC Realization - ${p.bank || 'Bank'} Cheque #${p.chequeNo}`,
           property: lease?.property || currentCustomer.property || "Property",
           unit: lease?.unit || "Unit",
           debit: 0,
@@ -656,9 +656,9 @@ export function CustomerStatementSubModule({
       summary,
       ledgerRows,
       upcomingPdcs: upcomingPdcs.map(p => ({
-        chequeNumber: p.chequeNumber,
+        chequeNumber: p.chequeNo,
         bank: p.bank,
-        dueDate: p.dueDate,
+        dueDate: p.date,
         amount: Number(p.amount) || 0,
       })),
       branding,
@@ -1625,9 +1625,9 @@ export function CustomerStatementSubModule({
                 <TableBody>
                   {upcomingPdcs.map(p => (
                     <TableRow key={p.id} className="text-xs">
-                      <TableCell className="font-mono font-bold">{p.chequeNumber}</TableCell>
+                      <TableCell className="font-mono font-bold">{p.chequeNo}</TableCell>
                       <TableCell>{p.bank || "QNB"}</TableCell>
-                      <TableCell className="font-mono">{p.dueDate}</TableCell>
+                      <TableCell className="font-mono">{p.date}</TableCell>
                       <TableCell className="text-right font-mono font-bold">
                         {Number(p.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
