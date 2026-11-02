@@ -5,7 +5,7 @@ import {
   Receipt, ShieldCheck, LogOut, Megaphone, HelpCircle, Plus, Search,
   Filter, Download, CheckCircle2, XCircle, AlertTriangle, Eye, RefreshCw,
   FileText, ArrowRight, UserCheck, ChevronRight, Settings, Trash2, Edit3, Send,
-  GitBranch, MapPin, Printer, FileSpreadsheet, Loader2
+  GitBranch, MapPin, Printer, FileSpreadsheet, Loader2, Landmark
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,10 +36,14 @@ import {
   HrmsResignation,
   HrmsAnnouncement,
   HrmsHelpdeskTicket,
-  HrmsFnfSettlement
+  HrmsFnfSettlement,
+  calculateEmployeeLeaveEntitlement,
+  enrichEmployeeWithLeaveMeta
 } from "@/lib/hrmsService";
 import { REAL_EMPLOYEES_SEED } from "@/lib/hrmsSeedData";
 import { syncPayrollRun } from "@/lib/finance/payrollIntegrationService";
+import { QatarWpsSifDialog } from "@/components/hrms/qatar-wps-sif-dialog";
+import { openPrintableEosbClearance } from "@/lib/qatar-eosb-clearance";
 import {
   HrmsMastersApi,
   MASTER_CATEGORIES_CONFIG,
@@ -123,6 +127,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
   const [showAddAnnouncementModal, setShowAddAnnouncementModal] = useState<boolean>(false);
   const [showCreatePayrollModal, setShowCreatePayrollModal] = useState<boolean>(false);
+  const [showWpsSifModal, setShowWpsSifModal] = useState<boolean>(false);
   const [showAddShiftModal, setShowAddShiftModal] = useState<boolean>(false);
   const [showAddResignationModal, setShowAddResignationModal] = useState<boolean>(false);
   const [showRecordAttendanceModal, setShowRecordAttendanceModal] = useState<boolean>(false);
@@ -165,6 +170,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     start_date: new Date().toISOString().split("T")[0],
     end_date: new Date().toISOString().split("T")[0],
     days_count: 1,
+    include_air_ticket: false,
     reason: ""
   });
 
@@ -262,7 +268,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
         HrmsApi.getHelpdeskTickets()
       ]);
 
-      const effectiveEmployees = (emps && emps.length > 0) ? emps : REAL_EMPLOYEES_SEED;
+      const rawEmployees = (emps && emps.length > 0) ? emps : REAL_EMPLOYEES_SEED;
+      const effectiveEmployees = rawEmployees.map((emp: any) => enrichEmployeeWithLeaveMeta(emp));
       setEmployees(effectiveEmployees);
       setDepartments(depts);
       setDesignations(desigs);
@@ -270,7 +277,15 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
       setBranches(brs);
       setShifts(shs);
       setAttendance(atts);
-      setLeaveTypes(lTypes);
+      const effectiveLeaveTypes: HrmsLeaveType[] = (lTypes && lTypes.length > 0)
+        ? lTypes
+        : [
+            { id: "lt-annual", code: "AL", name: "Annual Leave", annual_allowance: 30, is_paid: true, is_encashable: true, carry_forward_limit: 15 },
+            { id: "lt-sick", code: "SL", name: "Sick Leave", annual_allowance: 14, is_paid: true, is_encashable: false, carry_forward_limit: 0 },
+            { id: "lt-emergency", code: "EL", name: "Emergency / Casual Leave", annual_allowance: 7, is_paid: true, is_encashable: false, carry_forward_limit: 0 },
+            { id: "lt-unpaid", code: "UL", name: "Unpaid Leave", annual_allowance: 30, is_paid: false, is_encashable: false, carry_forward_limit: 0 }
+          ];
+      setLeaveTypes(effectiveLeaveTypes);
       setLeaveApps(lApps);
       setPayrollCycles(pCycles);
       if (pCycles.length > 0 && !selectedCycleId) {
@@ -386,10 +401,14 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   };
 
   const downloadEmployeeCsvTemplate = () => {
-    const headers = ["FirstName", "LastName", "Email", "Mobile", "EmpCode", "Department", "Designation", "BasicSalary", "HRA", "TRA", "Gender", "Nationality", "BankName", "IBAN", "JoiningDate"];
+    const headers = [
+      "FirstName", "LastName", "Email", "Mobile", "EmpCode", "Department", "Designation",
+      "BasicSalary", "HRA", "TRA", "Gender", "Nationality", "BankName", "IBAN",
+      "JoiningDate", "LastLeaveStartDate", "LastLeaveEndDate", "LastRejoiningDate"
+    ];
     const rows = [
-      ["Ahmad", "Al-Thani", "ahmad@example.com", "+97455112233", "EMP-101", departments[0]?.name || "Operations", designations[0]?.title || "Property Manager", "12000", "3000", "1000", "Male", "Qatari", "QNB", "QA55QNBA00000000123456", "2026-01-01"],
-      ["Fatima", "Mansoor", "fatima@example.com", "+97455223344", "EMP-102", departments[0]?.name || "Finance", designations[0]?.title || "Senior Accountant", "10500", "2500", "800", "Female", "Qatari", "CBQ", "QA55CBQA00000000987654", "2026-02-15"]
+      ["Ahmad", "Al-Thani", "ahmad@example.com", "+97455112233", "EMP-101", departments[0]?.name || "Operations", designations[0]?.title || "Property Manager", "12000", "3000", "1000", "Male", "Qatari", "QNB", "QA55QNBA00000000123456", "2024-01-01", "2025-07-01", "2025-07-30", "2025-07-31"],
+      ["Fatima", "Mansoor", "fatima@example.com", "+97455223344", "EMP-102", departments[0]?.name || "Finance", designations[0]?.title || "Senior Accountant", "10500", "2500", "800", "Female", "Qatari", "CBQ", "QA55CBQA00000000987654", "2024-02-15", "2025-08-01", "2025-08-30", "2025-08-31"]
     ];
     const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -428,7 +447,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
         }
         const [
           firstName, lastName, email, mobile, empCode, deptName, desigName,
-          basicSalary, hra, tra, gender, nationality, bankName, iban, joiningDate
+          basicSalary, hra, tra, gender, nationality, bankName, iban,
+          joiningDate, lastLeaveStartDate, lastLeaveEndDate, lastRejoiningDate
         ] = parts;
 
         const matchedDept = departments.find(d => d.name.toLowerCase() === (deptName || "").toLowerCase()) || departments[0];
@@ -450,7 +470,10 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
           employee_status: "Active",
           bank_name: bankName || "Qatar National Bank",
           iban: iban || "",
-          date_of_joining: joiningDate || new Date().toISOString().split("T")[0]
+          date_of_joining: joiningDate || new Date().toISOString().split("T")[0],
+          last_leave_start_date: lastLeaveStartDate || null,
+          last_leave_end_date: lastLeaveEndDate || null,
+          last_leave_rejoining_date: lastRejoiningDate || null,
         };
 
         const { error } = await HrmsApi.createEmployee(payload);
@@ -479,11 +502,46 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
       toast.error("Please select employee and leave type");
       return;
     }
-    const { error } = await HrmsApi.applyLeaveWithValidation(newLeave);
+    const empObj = employees.find((emp) => emp.id === newLeave.employee_id);
+    const lTypeObj = leaveTypes.find((lt) => lt.id === newLeave.leave_type_id);
+    const calc = calculateEmployeeLeaveEntitlement(
+      empObj,
+      newLeave.start_date,
+      Number(newLeave.days_count) || 1,
+      newLeave.end_date,
+      newLeave.include_air_ticket
+    );
+
+    const { error } = await HrmsApi.applyLeaveWithValidation({
+      ...newLeave,
+      eligible_leave_days: calc.eligibleLeaveDays,
+      leave_salary_amount: calc.totalLeavePayout,
+      reason: newLeave.include_air_ticket && calc.airTicketAllowance > 0
+        ? `${newLeave.reason} [Includes Air Ticket Encashment: QAR ${calc.airTicketAllowance.toLocaleString()}]`
+        : newLeave.reason,
+      expected_rejoining_date: calc.expectedRejoiningDate,
+      last_rejoining_reference_date: calc.serviceReferenceDate,
+      employees: empObj
+        ? {
+            first_name: empObj.first_name,
+            last_name: empObj.last_name || "",
+            employee_id_code: empObj.employee_id_code,
+            basic_salary: empObj.basic_salary,
+            hra: empObj.hra,
+            tra: empObj.tra,
+            other_allowances: empObj.other_allowances,
+            date_of_joining: empObj.date_of_joining,
+            last_leave_rejoining_date: empObj.last_leave_rejoining_date,
+          }
+        : undefined,
+      hrms_leave_types: lTypeObj,
+    });
     if (error) {
       toast.error(error.message || "Failed to submit leave application");
     } else {
-      toast.success("Leave application validated & submitted for approval!");
+      toast.success(
+        `Leave application submitted! Eligible Days: ${calc.eligibleLeaveDays} • Calculated Leave Salary: ${calc.requestedLeaveSalary.toLocaleString()} QAR`
+      );
       setShowAddLeaveModal(false);
       loadAllHRMSData();
     }
@@ -535,9 +593,17 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   };
 
   const handleLeaveStatusUpdate = async (id: string, status: "Approved" | "Rejected") => {
-    const { error } = await HrmsApi.updateLeaveStatus(id, status);
+    const targetApp = leaveApps.find((l) => l.id === id);
+    const empObj = employees.find((e) => e.id === targetApp?.employee_id);
+    const { data, error } = await HrmsApi.updateLeaveStatus(id, status, undefined, empObj);
     if (!error) {
-      toast.success(`Leave request ${status.toLowerCase()} successfully`);
+      if (status === "Approved" && data) {
+        toast.success(
+          `Leave Approved! Leave Salary: ${Number(data.leave_salary_amount || 0).toLocaleString()} QAR • Rejoining Date updated to ${data.expected_rejoining_date || "—"}`
+        );
+      } else {
+        toast.success(`Leave request ${status.toLowerCase()} successfully`);
+      }
       loadAllHRMSData();
     }
   };
@@ -577,7 +643,10 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     } else {
       toast.success("Payroll cycle created! Generating payslips...");
       if (data?.id) {
-        await HrmsApi.generatePayrollForCycle(data.id);
+        setSelectedCycleId(data.id);
+        await HrmsApi.generatePayrollForCycle(data.id, employees);
+        const p = await HrmsApi.getPayslipsByCycle(data.id);
+        setPayslips(p);
       }
       setShowCreatePayrollModal(false);
       loadAllHRMSData();
@@ -592,12 +661,19 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     }
 
     if (!targetCycleId) {
-      toast.error("Please select or create a payroll cycle first");
-      return;
+      // Auto-create current month payroll cycle if none exists
+      const created = await HrmsApi.createPayrollCycle(newCycle);
+      if (created.data?.id) {
+        targetCycleId = created.data.id;
+        setSelectedCycleId(targetCycleId);
+      } else {
+        toast.error("Please select or create a payroll cycle first");
+        return;
+      }
     }
 
-    toast.loading("Calculating salaries & generating payslips...", { id: "payroll-calc" });
-    const res = await HrmsApi.generatePayrollForCycle(targetCycleId);
+    toast.loading("Calculating salaries, leave salary & generating payslips...", { id: "payroll-calc" });
+    const res = await HrmsApi.generatePayrollForCycle(targetCycleId, employees);
     toast.dismiss("payroll-calc");
 
     if (res.error) {
@@ -609,6 +685,66 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
       setPayslips(p);
       loadAllHRMSData();
     }
+  };
+
+  const handleExportPayrollWpsCsv = () => {
+    if (payslips.length === 0) {
+      toast.error("No payslips generated yet. Click 'Calculate Salary' first.");
+      return;
+    }
+    const cycle = payrollCycles.find((c) => c.id === selectedCycleId);
+    const headers = [
+      "Employee ID",
+      "Employee Name",
+      "Department",
+      "Designation",
+      "Working Days",
+      "Present Days",
+      "Paid Leave Days",
+      "Unpaid Leave Days",
+      "Basic Salary (QAR)",
+      "Allowances (QAR)",
+      "Overtime Pay (QAR)",
+      "Approved Leave Salary (QAR)",
+      "Gross Earnings (QAR)",
+      "Deductions (QAR)",
+      "Net Salary Payable (QAR)",
+      "Bank Name",
+      "IBAN"
+    ];
+    const rows = payslips.map((ps) => {
+      const emp = employees.find((e) => e.id === ps.employee_id) || ps.employees || {};
+      const fullName = ps.employees ? `${ps.employees.first_name} ${ps.employees.last_name || ""}`.trim() : `${emp.first_name || ""} ${emp.last_name || ""}`.trim();
+      return [
+        ps.employees?.employee_id_code || emp.employee_id_code || "",
+        `"${fullName}"`,
+        `"${ps.employees?.departments?.name || emp.departments?.name || "General"}"`,
+        `"${ps.employees?.designations?.title || emp.designations?.title || "Staff"}"`,
+        ps.working_days || 30,
+        ps.present_days || 30,
+        ps.paid_leaves || 0,
+        ps.unpaid_leaves || 0,
+        Number(ps.basic_pay || 0),
+        Number(ps.allowances || 0),
+        Number(ps.overtime_pay || 0),
+        Number(ps.leave_salary || 0),
+        Number(ps.gross_earnings || 0),
+        Number(ps.total_deductions || 0),
+        Number(ps.net_salary || 0),
+        `"${emp.bank_name || "Commercial Bank"}"`,
+        emp.iban || ""
+      ];
+    });
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `WPS_Payroll_Register_${(cycle?.name || "Monthly").replace(/\s+/g, "_")}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("WPS / Payroll Register CSV exported!");
   };
 
   const handleCreateShift = async (e: React.FormEvent) => {
@@ -627,6 +763,51 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     }
   };
 
+  const handlePostMonthlyAccrualProvisions = async () => {
+    if (employees.length === 0) {
+      toast.error("No active employees found to calculate monthly Leave & Gratuity accruals.");
+      return;
+    }
+    const cycle = payrollCycles.find(c => c.id === selectedCycleId);
+    const periodStr = cycle ? `${cycle.cycle_month}/${cycle.cycle_year}` : new Date().toISOString().slice(0, 7);
+    const activeStaff = employees.filter(e => e.employee_status !== "Inactive" && e.employee_status !== "Terminated");
+
+    // Qatar Labor Law Monthly Accrual:
+    // 1. Gratuity (EOSB) Provision = (Basic Salary / 30) * (21 / 12) = Basic * 1.75 days/month
+    // 2. Leave Salary Provision = (Gross Salary / 30) * ((AnnualQuota || 30) / 12) = Gross * 2.5 days/month
+    let totalGratuityProvision = 0;
+    let totalLeaveProvision = 0;
+
+    const lines = activeStaff.flatMap((emp) => {
+      const basic = Number(emp.basic_salary) || 5000;
+      const gross = basic + (Number(emp.hra) || 0) + (Number(emp.tra) || 0) + (Number(emp.other_allowances) || 0);
+      const quota = Number(emp.annual_leave_quota) || 30;
+      const monthlyGratuity = Math.round(((basic / 30) * (21 / 12)) * 100) / 100;
+      const monthlyLeave = Math.round(((gross / 30) * (quota / 12)) * 100) / 100;
+      totalGratuityProvision += monthlyGratuity;
+      totalLeaveProvision += monthlyLeave;
+      const dept = emp.departments?.name || "General Operations";
+      return [
+        { employee_id: emp.id, department: dept, account_code: "50120", debit: monthlyGratuity, credit: 0 }, // EOSB Expense
+        { employee_id: emp.id, department: dept, account_code: "21210", debit: 0, credit: monthlyGratuity }, // Accrued EOSB Liability
+        { employee_id: emp.id, department: dept, account_code: "50130", debit: monthlyLeave, credit: 0 },    // Leave Salary Provision Expense
+        { employee_id: emp.id, department: dept, account_code: "21220", debit: 0, credit: monthlyLeave },    // Accrued Leave Salary Liability
+      ];
+    });
+
+    try {
+      await syncPayrollRun({
+        payroll_run_id: `HR-ACCRUAL-${periodStr.replace(/\W/g, "")}`,
+        period: periodStr,
+        lines,
+      });
+      toast.success(
+        `Monthly EOSB & Leave Salary Accrual Posted to GL (${periodStr}): Gratuity QR ${Math.round(totalGratuityProvision).toLocaleString()} + Leave Provision QR ${Math.round(totalLeaveProvision).toLocaleString()} across ${activeStaff.length} staff.`
+      );
+    } catch (err: any) {
+      toast.error("Failed to post accrual provision: " + (err?.message || String(err)));
+    }
+  };
   const handleApprovePayroll = async () => {
     if (!selectedCycleId) return;
     const { error } = await HrmsApi.approvePayrollCycle(selectedCycleId);
@@ -791,6 +972,50 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   }, [cleanEmployees, searchTerm]);
 
   const totalEmployeePages = Math.max(1, Math.ceil(filteredEmployees.length / EMPLOYEES_PER_PAGE));
+  // Employee Document Expiry Compliance Watch (QID, Passport, Visa, Health Card within 90 days)
+  const expiringDocuments = useMemo(() => {
+    const list: Array<{
+      employeeId: string;
+      employeeName: string;
+      empCode: string;
+      department: string;
+      docType: string;
+      docNumber: string;
+      expiryDate: string;
+      daysRemaining: number;
+      urgency: "expired" | "critical" | "warning";
+    }> = [];
+    const now = Date.now();
+    cleanEmployees.forEach((emp: any) => {
+      const docs = [
+        { type: "Qatar ID (QID)", num: emp.qid_passport_no || emp.id_number || "—", date: emp.id_expiry_date },
+        { type: "Passport", num: emp.passport_no || "—", date: emp.passport_expiry_date },
+        { type: "Residence Visa", num: emp.visa_no || "—", date: emp.visa_expiry_date },
+        { type: "Health Card", num: emp.health_card_no || "—", date: emp.health_card_expiry_date },
+      ];
+      docs.forEach(d => {
+        if (!d.date) return;
+        const expMs = new Date(d.date).getTime();
+        if (isNaN(expMs)) return;
+        const days = Math.round((expMs - now) / 86400000);
+        if (days <= 90) {
+          list.push({
+            employeeId: emp.id,
+            employeeName: `${emp.first_name} ${emp.last_name || ""}`.trim(),
+            empCode: emp.employee_id_code || `EMP-${emp.id}`,
+            department: emp.departments?.name || "General Operations",
+            docType: d.type,
+            docNumber: d.num,
+            expiryDate: d.date,
+            daysRemaining: days,
+            urgency: days < 0 ? "expired" : days <= 30 ? "critical" : "warning",
+          });
+        }
+      });
+    });
+    return list.sort((a, b) => a.daysRemaining - b.daysRemaining);
+  }, [cleanEmployees]);
+
   const paginatedEmployees = useMemo(() => {
     const startIndex = (employeeCurrentPage - 1) * EMPLOYEES_PER_PAGE;
     return filteredEmployees.slice(startIndex, startIndex + EMPLOYEES_PER_PAGE);
@@ -991,6 +1216,40 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             <div>
               <CardTitle className="text-base font-semibold">Employee Directory</CardTitle>
               <CardDescription>Comprehensive personnel roster, organizational hierarchy and profiles</CardDescription>
+              {/* Document Expiry Compliance Alert Watch */}
+              {expiringDocuments.length > 0 && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-50 dark:bg-amber-950/30 text-[11px] gap-1.5 py-1 px-2.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <span className="font-semibold">{expiringDocuments.length} Staff Documents Expiring within 90 Days</span>
+                  </Badge>
+                  <Badge variant="outline" className="border-red-500/40 text-red-600 bg-red-50 dark:bg-red-950/30 text-[10px]">
+                    {expiringDocuments.filter(d => d.urgency === "expired" || d.urgency === "critical").length} Critical / Expired
+                  </Badge>
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-600 bg-amber-50 dark:bg-amber-950/30 text-[10px]">
+                    {expiringDocuments.filter(d => d.urgency === "warning").length} Upcoming (31–90d)
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] px-2 text-primary gap-1"
+                    onClick={() => {
+                      const csv = ["Employee,Code,Department,Document,DocNumber,ExpiryDate,DaysRemaining,Status"]
+                        .concat(expiringDocuments.map(d => `"${d.employeeName}","${d.empCode}","${d.department}","${d.docType}","${d.docNumber}","${d.expiryDate}",${d.daysRemaining},"${d.urgency}"`))
+                        .join("\n");
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `hrms_document_expiry_watch_${new Date().toISOString().slice(0, 10)}.csv`;
+                      a.click();
+                      toast.success("Document compliance report exported to CSV");
+                    }}
+                  >
+                    <Download className="h-3 w-3" /> Export Compliance CSV
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <div className="relative w-full sm:w-64">
@@ -1017,77 +1276,115 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Emp Code</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Designation</TableHead>
-                    <TableHead>Nationality</TableHead>
+                    <TableHead>Department / Role</TableHead>
+                    <TableHead>Last Leave & Rejoining</TableHead>
+                    <TableHead>Eligible Leave & Salary</TableHead>
                     <TableHead>Salary (QAR)</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedEmployees.map((emp) => (
-                    <TableRow key={emp.id} className="hover:bg-muted/40 transition-colors">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                            {emp.first_name[0]}
-                            {emp.last_name ? emp.last_name[0] : ""}
-                          </div>
-                          <div>
-                            <div className="font-medium text-sm">
-                              {emp.first_name} {emp.last_name || ""}
+                  {paginatedEmployees.map((emp) => {
+                    const leaveCalc = calculateEmployeeLeaveEntitlement(emp);
+                    return (
+                      <TableRow key={emp.id} className="hover:bg-muted/40 transition-colors">
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                              {emp.first_name[0]}
+                              {emp.last_name ? emp.last_name[0] : ""}
                             </div>
-                            <div className="text-xs text-muted-foreground">{emp.email}</div>
+                            <div>
+                              <div className="font-medium text-sm flex items-center gap-1.5 flex-wrap">
+                                <span>{emp.first_name} {emp.last_name || ""}</span>
+                                {expiringDocuments.filter(d => d.employeeId === emp.id).map((d, i) => (
+                                  <Badge key={i} variant={d.urgency === "expired" ? "destructive" : "outline"} className={`text-[9px] px-1.5 py-0 ${d.urgency === "expired" ? "bg-red-600 text-white" : d.urgency === "critical" ? "border-red-500 text-red-600 bg-red-50 dark:bg-red-950/30" : "border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30"}`}>
+                                    {d.docType}: {d.daysRemaining < 0 ? `Expired` : `${d.daysRemaining}d`}
+                                  </Badge>
+                                ))}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{emp.email}</div>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs font-semibold">{emp.employee_id_code}</TableCell>
-                      <TableCell className="text-sm">{emp.departments?.name || "General"}</TableCell>
-                      <TableCell className="text-sm">{emp.designations?.title || "Staff"}</TableCell>
-                      <TableCell className="text-sm">{emp.nationality || "Qatari"}</TableCell>
-                      <TableCell className="text-sm font-semibold">
-                        {(Number(emp.basic_salary) + Number(emp.hra || 0) + Number(emp.tra || 0)).toLocaleString()}{" "}
-                        QAR
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            emp.employee_status === "Active"
-                              ? "default"
-                              : emp.employee_status === "On Notice"
-                              ? "outline"
-                              : "secondary"
-                          }
-                        >
-                          {emp.employee_status || "Active"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEmployeeToEdit(emp);
-                              setShowAddEmployeeModal(true);
-                            }}
-                            className="gap-1 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-semibold">{emp.employee_id_code}</TableCell>
+                        <TableCell>
+                          <div className="text-sm font-medium">{emp.departments?.name || "General"}</div>
+                          <div className="text-xs text-muted-foreground">{emp.designations?.title || "Staff"}</div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {emp.last_leave_rejoining_date ? (
+                            <div className="space-y-0.5">
+                              <div className="font-semibold text-indigo-700 dark:text-indigo-300">
+                                Rejoined: {String(emp.last_leave_rejoining_date).slice(0, 10)}
+                              </div>
+                              {emp.last_leave_start_date && (
+                                <div className="text-[11px] text-muted-foreground">
+                                  Last: {String(emp.last_leave_start_date).slice(0, 10)} → {String(emp.last_leave_end_date || "").slice(0, 10)}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5">
+                              <div className="text-muted-foreground">No prior leave</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                Joined: {emp.date_of_joining ? String(emp.date_of_joining).slice(0, 10) : "—"}
+                              </div>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-bold text-emerald-700 dark:text-emerald-400">
+                            {leaveCalc.eligibleLeaveDays} Days Eligible
+                          </div>
+                          <div className="text-[11px] font-mono text-muted-foreground">
+                            Leave Pay: {leaveCalc.eligibleLeaveSalary.toLocaleString()} QAR
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm font-semibold">
+                          {(Number(emp.basic_salary) + Number(emp.hra || 0) + Number(emp.tra || 0) + Number(emp.other_allowances || 0)).toLocaleString()}{" "}
+                          QAR
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              emp.employee_status === "Active"
+                                ? "default"
+                                : emp.employee_status === "On Notice"
+                                ? "outline"
+                                : "secondary"
+                            }
                           >
-                            <Edit3 className="h-3.5 w-3.5" /> Edit Profile
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedEmployeeProfile(emp)}
-                            className="gap-1 text-xs"
-                          >
-                            <Eye className="h-3.5 w-3.5" /> View Profile
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {emp.employee_status || "Active"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEmployeeToEdit(emp);
+                                setShowAddEmployeeModal(true);
+                              }}
+                              className="gap-1 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" /> Edit Profile
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedEmployeeProfile(emp)}
+                              className="gap-1 text-xs"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> View Profile
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {paginatedEmployees.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
@@ -1239,8 +1536,10 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
         <Card>
           <CardHeader className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
             <div>
-              <CardTitle className="text-base font-semibold">Leave Applications & Balances</CardTitle>
-              <CardDescription>Review employee leave requests and entitlement quotas</CardDescription>
+              <CardTitle className="text-base font-semibold">Leave Applications, Eligible Leave Days & Leave Salary</CardTitle>
+              <CardDescription>
+                Automatic calculation of accrued eligible leave days and leave salary based on employee rejoining dates as leaves are applied and approved
+              </CardDescription>
             </div>
             <Button onClick={() => setShowAddLeaveModal(true)} className="gap-2">
               <Plus className="h-4 w-4" /> Apply Leave
@@ -1253,68 +1552,120 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Leave Type</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead>Last Rejoining Ref</TableHead>
+                    <TableHead>Eligible Accrued</TableHead>
+                    <TableHead>Applied Duration & Rejoin</TableHead>
+                    <TableHead>Calculated Leave Salary</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Approval Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {leaveApps.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell className="font-medium text-sm">
-                        {l.employees ? `${l.employees.first_name} ${l.employees.last_name}` : "Employee"}
-                      </TableCell>
-                      <TableCell className="text-sm font-semibold">{l.hrms_leave_types?.name || "Annual Leave"}</TableCell>
-                      <TableCell className="text-xs">
-                        {l.start_date} to {l.end_date}
-                      </TableCell>
-                      <TableCell className="text-xs font-bold">{l.days_count} Days</TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{l.reason}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            l.status === "Approved"
-                              ? "default"
-                              : l.status === "Pending"
-                              ? "outline"
-                              : "destructive"
-                          }
-                        >
-                          {l.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {l.status === "Pending" ? (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                              onClick={() => handleLeaveStatusUpdate(l.id, "Approved")}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              className="h-8 text-xs"
-                              onClick={() => handleLeaveStatusUpdate(l.id, "Rejected")}
-                            >
-                              Reject
-                            </Button>
+                  {leaveApps.map((l) => {
+                    const empObj = employees.find((e) => e.id === l.employee_id) || l.employees || {};
+                    const calc = calculateEmployeeLeaveEntitlement(
+                      empObj,
+                      l.start_date,
+                      Number(l.days_count) || 1,
+                      l.end_date
+                    );
+                    const eligibleDays = l.eligible_leave_days ?? calc.eligibleLeaveDays;
+                    const leaveSalary = l.leave_salary_amount ?? calc.requestedLeaveSalary;
+                    const expectedRejoin = l.expected_rejoining_date || calc.expectedRejoiningDate;
+                    const refDate = l.last_rejoining_reference_date || calc.serviceReferenceDate;
+
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell className="font-medium text-sm">
+                          <div>
+                            {l.employees
+                              ? `${l.employees.first_name} ${l.employees.last_name || ""}`
+                              : empObj.first_name
+                              ? `${empObj.first_name} ${empObj.last_name || ""}`
+                              : "Employee"}
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Reviewed</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          <div className="text-xs font-mono text-muted-foreground">
+                            {l.employees?.employee_id_code || empObj.employee_id_code || ""}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm font-semibold">
+                          {l.hrms_leave_types?.name || "Annual Leave"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-mono font-medium">{refDate || "—"}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {calc.serviceDaysSinceReference} service days
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant="outline" className="font-mono border-indigo-500/30 text-indigo-700 dark:text-indigo-300 bg-indigo-500/5">
+                            {eligibleDays} Days Eligible
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-semibold">
+                            {l.start_date} → {l.end_date} ({l.days_count} Days)
+                          </div>
+                          {expectedRejoin && (
+                            <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                              Expected Rejoin: {expectedRejoin}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-bold font-mono text-emerald-700 dark:text-emerald-400 text-sm">
+                            {Number(leaveSalary || 0).toLocaleString()} QAR
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            @ {calc.dailyBasicPay.toLocaleString()} QAR/day
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              l.status === "Approved"
+                                ? "default"
+                                : l.status === "Pending"
+                                ? "outline"
+                                : "destructive"
+                            }
+                          >
+                            {l.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {l.status === "Pending" ? (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleLeaveStatusUpdate(l.id, "Approved")}
+                              >
+                                Approve & Lock Leave Salary
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-8 text-xs"
+                                onClick={() => handleLeaveStatusUpdate(l.id, "Rejected")}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-medium">
+                              {l.status === "Approved" ? "Approved & Synced to Payroll" : "Reviewed"}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {leaveApps.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        No active leave applications found.
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        No active leave applications found. Click "Apply Leave" to calculate eligible leave days and leave salary.
                       </TableCell>
                     </TableRow>
                   )}
@@ -1349,21 +1700,64 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
               </Button>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={handleRunPayrollCalculation} className="gap-1.5">
-                <RefreshCw className="h-4 w-4" /> Calculate Salary
+                <RefreshCw className="h-4 w-4" /> Calculate Salary & Leave Pay
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowWpsSifModal(true)} className="gap-1.5 border-teal-500/40 text-teal-700 dark:text-teal-300 hover:bg-teal-500/10 shadow-sm font-semibold">
+                <Landmark className="h-4 w-4 text-teal-600" /> Export Qatar WPS (SIF File)
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPayrollWpsCsv} className="gap-1.5">
+                <Download className="h-4 w-4" /> Export WPS / CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePostMonthlyAccrualProvisions} className="gap-1.5 border-indigo-500/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10">
+                <ShieldCheck className="h-4 w-4" /> Post EOSB & Leave Accrual to GL
               </Button>
               <Button size="sm" onClick={handleApprovePayroll} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
-                <CheckCircle2 className="h-4 w-4" /> Approve & Finalize
+                <CheckCircle2 className="h-4 w-4" /> Approve & Post to GL
               </Button>
             </div>
           </div>
+
+          {/* Payroll Summary Metrics Strip */}
+          {payslips.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="p-3.5 rounded-xl border bg-card">
+                <span className="text-[11px] uppercase text-muted-foreground font-semibold block">Employees Processed</span>
+                <span className="text-lg font-bold font-mono">{payslips.length}</span>
+              </div>
+              <div className="p-3.5 rounded-xl border bg-card">
+                <span className="text-[11px] uppercase text-muted-foreground font-semibold block">Total Basic + Allowances</span>
+                <span className="text-lg font-bold font-mono">
+                  {payslips.reduce((s, p) => s + Number(p.basic_pay || 0) + Number(p.allowances || 0), 0).toLocaleString()} QAR
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl border bg-indigo-500/5 border-indigo-500/20">
+                <span className="text-[11px] uppercase text-indigo-700 dark:text-indigo-300 font-semibold block">Approved Leave Salary</span>
+                <span className="text-lg font-bold font-mono text-indigo-700 dark:text-indigo-300">
+                  +{payslips.reduce((s, p) => s + Number(p.leave_salary || 0), 0).toLocaleString()} QAR
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl border bg-rose-500/5 border-rose-500/20">
+                <span className="text-[11px] uppercase text-rose-700 dark:text-rose-300 font-semibold block">Total Deductions</span>
+                <span className="text-lg font-bold font-mono text-rose-600">
+                  -{payslips.reduce((s, p) => s + Number(p.total_deductions || 0), 0).toLocaleString()} QAR
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl border bg-emerald-500/10 border-emerald-500/20">
+                <span className="text-[11px] uppercase text-emerald-800 dark:text-emerald-300 font-semibold block">Net Payroll Payable</span>
+                <span className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                  {payslips.reduce((s, p) => s + Number(p.net_salary || 0), 0).toLocaleString()} QAR
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Payslip Items Table */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base font-semibold">Monthly Payslips Roster</CardTitle>
-              <CardDescription>Calculated gross, statutory deductions, allowances, and net salaries</CardDescription>
+              <CardDescription>Calculated basic pay, allowances, approved leave salary, statutory/loan deductions, and net salaries</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-lg border overflow-hidden">
@@ -1374,6 +1768,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       <TableHead>Code</TableHead>
                       <TableHead>Basic (QAR)</TableHead>
                       <TableHead>Allowances</TableHead>
+                      <TableHead>Leave Salary</TableHead>
                       <TableHead>Gross</TableHead>
                       <TableHead>Deductions</TableHead>
                       <TableHead>Net Salary</TableHead>
@@ -1388,11 +1783,14 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                           {ps.employees ? `${ps.employees.first_name} ${ps.employees.last_name}` : "Employee"}
                         </TableCell>
                         <TableCell className="font-mono text-xs">{ps.employees?.employee_id_code || "—"}</TableCell>
-                        <TableCell className="text-xs">{Number(ps.basic_pay).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs text-emerald-600">+{Number(ps.allowances).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs font-semibold">{Number(ps.gross_earnings).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs text-rose-600">-{Number(ps.total_deductions).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-sm font-bold text-primary">{Number(ps.net_salary).toLocaleString()} QAR</TableCell>
+                        <TableCell className="text-xs font-mono">{Number(ps.basic_pay).toLocaleString()} QAR</TableCell>
+                        <TableCell className="text-xs font-mono text-emerald-600">+{Number(ps.allowances).toLocaleString()} QAR</TableCell>
+                        <TableCell className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400">
+                          {Number(ps.leave_salary || 0) > 0 ? `+${Number(ps.leave_salary).toLocaleString()} QAR` : "0 QAR"}
+                        </TableCell>
+                        <TableCell className="text-xs font-mono font-semibold">{Number(ps.gross_earnings).toLocaleString()} QAR</TableCell>
+                        <TableCell className="text-xs font-mono text-rose-600">-{Number(ps.total_deductions).toLocaleString()} QAR</TableCell>
+                        <TableCell className="text-sm font-mono font-bold text-primary">{Number(ps.net_salary).toLocaleString()} QAR</TableCell>
                         <TableCell>
                           <Badge variant="outline">{ps.status}</Badge>
                         </TableCell>
@@ -1713,7 +2111,61 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                             {fnf.status || "Draft"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
+                            title="Print Bilingual Statutory Clearance Voucher (براءة ذمة ومخالصة نهاية الخدمة)"
+                            onClick={() => {
+                              const emp = employees.find((e: any) => e.id === fnf.employee_id) || fnf.employees || {};
+                              const doj = emp.date_of_joining || '2022-01-01';
+                              const lwd = fnf.last_working_date || fnf.settlement_date || new Date().toISOString().split('T')[0];
+                              const start = new Date(doj);
+                              const end = new Date(lwd);
+                              const diffMs = Math.max(0, end.getTime() - start.getTime());
+                              const totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                              const years = Math.floor(totalDays / 365);
+                              const months = Math.floor((totalDays % 365) / 30);
+                              const days = (totalDays % 365) % 30;
+                              openPrintableEosbClearance({
+                                voucherNo: `EOSB-${emp.employee_id_code || 'EMP'}-${fnf.id.slice(0, 6)}`,
+                                settlementDate: fnf.settlement_date || lwd,
+                                employeeIdCode: emp.employee_id_code || 'EMP-N/A',
+                                employeeName: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee',
+                                employeeNameAr: emp.first_name_ar ? `${emp.first_name_ar} ${emp.last_name_ar || ''}` : undefined,
+                                qid: emp.qid_passport_no || '28800000000',
+                                nationality: emp.nationality || 'Qatar / Expat',
+                                designation: emp.designations?.title || emp.designation || 'Specialist',
+                                department: emp.departments?.name || emp.department || 'Operations',
+                                dateOfJoining: doj,
+                                lastWorkingDate: lwd,
+                                serviceYears: years,
+                                serviceMonths: months,
+                                serviceDays: days,
+                                basicSalary: Number(emp.basic_salary || 0),
+                                hra: Number(emp.hra || 0),
+                                tra: Number(emp.tra || 0),
+                                grossSalary: Number(emp.basic_salary || 0) + Number(emp.hra || 0) + Number(emp.tra || 0) + Number(emp.other_allowances || 0),
+                                gratuityAmount: Number(fnf.gratuity_amount || 0),
+                                gratuityCalculationText: `${years} Years, ${months} Months @ 21 Days Basic/Yr (Qatar Labour Law Art. 54)`,
+                                unpaidSalaryAmount: Number(fnf.unpaid_salary || 0),
+                                leaveEncashmentDays: Math.round(Number(fnf.leave_encashment || 0) / Math.max(1, (Number(emp.basic_salary || 3000) / 30))),
+                                leaveEncashmentAmount: Number(fnf.leave_encashment || 0),
+                                airTicketAllowance: Number(emp.air_ticket_fare_cap || 0),
+                                totalGrossPayable: Number(fnf.total_gross_settlement || 0),
+                                loanDeduction: Number(fnf.loan_deduction || 0),
+                                assetRecoveryDeduction: Number(fnf.asset_recovery_deduction || 0),
+                                otherDeductions: Math.max(0, Number(fnf.total_deductions || 0) - Number(fnf.loan_deduction || 0) - Number(fnf.asset_recovery_deduction || 0)),
+                                totalDeductions: Number(fnf.total_deductions || 0),
+                                netSettlementPayable: Number(fnf.net_payable || 0),
+                                paymentMethod: fnf.status === 'Disbursed' ? 'Bank Transfer via QCB WPS' : 'Pending Disbursal',
+                                bankTxRef: fnf.id
+                              });
+                            }}
+                          >
+                            <Printer className="h-3.5 w-3.5" /> سند مخالصة
+                          </Button>
                           {fnf.status !== "Disbursed" && (
                             <Button
                               size="sm"
@@ -2476,6 +2928,80 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
               <span className="font-bold text-blue-600 font-mono text-sm">{newLeave.days_count || 1} Calendar Days</span>
             </div>
 
+            {/* Live Leave Eligibility & Leave Salary Calculation Breakdown */}
+            {newLeave.employee_id && (() => {
+              const empObj = employees.find((e) => e.id === newLeave.employee_id);
+              if (!empObj) return null;
+              const calc = calculateEmployeeLeaveEntitlement(
+                empObj,
+                newLeave.start_date,
+                Number(newLeave.days_count) || 1,
+                newLeave.end_date,
+      newLeave.include_air_ticket
+              );
+              return (
+                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between border-b border-emerald-500/15 pb-1.5">
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                      Leave Eligibility & Leave Salary Calculation
+                    </span>
+                    <Badge variant="outline" className="font-mono text-[10px] border-emerald-500/30 text-emerald-700 dark:text-emerald-300">
+                      {calc.annualLeaveQuota} Days/Year Quota
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">{calc.serviceReferenceType}</span>
+                      <span className="font-mono font-semibold">{calc.serviceReferenceDate || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Service Since Last Rejoin</span>
+                      <span className="font-semibold">{calc.serviceDaysSinceReference} Days ({calc.serviceMonthsSinceReference} mos)</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Eligible Leave Accrued</span>
+                      <span className="font-bold text-indigo-700 dark:text-indigo-300 font-mono">
+                        {calc.eligibleLeaveDays} Days ({calc.eligibleLeaveSalary.toLocaleString()} QAR)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Expected Rejoining Date</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400 font-mono">
+                        {calc.expectedRejoiningDate || "—"}
+                      </span>
+                    </div>
+                  </div>
+                  {calc.airTicketAllowance > 0 && (
+                    <div className="flex items-center justify-between pt-2 border-t border-emerald-500/15">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="inc-air-ticket"
+                          className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                          checked={newLeave.include_air_ticket}
+                          onChange={(e) => setNewLeave({ ...newLeave, include_air_ticket: e.target.checked })}
+                        />
+                        <label htmlFor="inc-air-ticket" className="text-xs font-medium cursor-pointer">
+                          Include Air Ticket Allowance (QAR {calc.airTicketAllowance.toLocaleString()})
+                        </label>
+                      </div>
+                      <span className="font-mono font-bold text-xs text-blue-600">
+                        +QAR {calc.airTicketAllowance.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-2 border-t border-emerald-500/15">
+                    <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                      Total Leave Payout ({newLeave.days_count || 1} Days{newLeave.include_air_ticket && calc.airTicketAllowance > 0 ? " + Ticket" : ""}):
+                    </span>
+                    <span className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                      {calc.totalLeavePayout.toLocaleString()} QAR
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div>
               <Label className="text-xs font-semibold">Reason for Leave *</Label>
               <Textarea
@@ -2589,6 +3115,19 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Qatar Central Bank & MoL Wages Protection System (WPS) SIF Dialog */}
+      <QatarWpsSifDialog
+        open={showWpsSifModal}
+        onOpenChange={setShowWpsSifModal}
+        payslips={payslips}
+        employees={employees}
+        cycleMonthYear={(() => {
+          const cyc = payrollCycles.find(c => c.id === selectedCycleId);
+          return cyc ? `${cyc.cycle_year}-${String(cyc.cycle_month).padStart(2, '0')}` : new Date().toISOString().slice(0, 7);
+        })()}
+        cycleName={payrollCycles.find(c => c.id === selectedCycleId)?.name}
+      />
 
       {/* Submit Expense Modal */}
       <Dialog open={showAddExpenseModal} onOpenChange={setShowAddExpenseModal}>
@@ -3163,6 +3702,46 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       </div>
                     </div>
 
+                    {/* Leave History, Rejoining & Leave Salary Entitlement */}
+                    {(() => {
+                      const leaveCalc = calculateEmployeeLeaveEntitlement(selectedEmployeeProfile);
+                      return (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 border-b pb-1">
+                            Leave History, Rejoining Date & Accrued Leave Salary
+                          </h4>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                            <div className="p-2.5 rounded-lg border bg-card/60">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Last Leave Start Date</span>
+                              <span className="font-semibold font-mono">{selectedEmployeeProfile.last_leave_start_date || extraNotes.last_leave_start_date || "—"}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg border bg-card/60">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Last Leave End Date</span>
+                              <span className="font-semibold font-mono">{selectedEmployeeProfile.last_leave_end_date || extraNotes.last_leave_end_date || "—"}</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg border bg-indigo-500/5 border-indigo-500/20">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Last Rejoining Date</span>
+                              <span className="font-bold font-mono text-indigo-700 dark:text-indigo-300">
+                                {selectedEmployeeProfile.last_leave_rejoining_date || extraNotes.last_leave_rejoining_date || "—"}
+                              </span>
+                            </div>
+                            <div className="p-2.5 rounded-lg border bg-card/60">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Service Since Rejoin / Join</span>
+                              <span className="font-semibold">{leaveCalc.serviceDaysSinceReference} Days ({leaveCalc.serviceMonthsSinceReference} mos)</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg border bg-emerald-500/5 border-emerald-500/20">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Accrued Eligible Leave Days</span>
+                              <span className="font-bold text-emerald-700 dark:text-emerald-400">{leaveCalc.eligibleLeaveDays} Days</span>
+                            </div>
+                            <div className="p-2.5 rounded-lg border bg-emerald-500/5 border-emerald-500/20">
+                              <span className="text-[10px] text-muted-foreground block font-medium">Accrued Leave Salary (QAR)</span>
+                              <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">{leaveCalc.eligibleLeaveSalary.toLocaleString()} QAR</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Benefits & Emergency Contacts */}
                     <div className="space-y-2">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground border-b pb-1">
@@ -3367,6 +3946,18 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                   <div className="flex justify-between text-xs py-1">
                     <span>Allowances:</span>
                     <span className="font-mono text-emerald-600">+{Number(selectedPayslipForView.allowances || 0).toLocaleString()} QAR</span>
+                  </div>
+                  {Number(selectedPayslipForView.overtime_pay || 0) > 0 && (
+                    <div className="flex justify-between text-xs py-1">
+                      <span>Overtime Pay:</span>
+                      <span className="font-mono text-emerald-600">+{Number(selectedPayslipForView.overtime_pay || 0).toLocaleString()} QAR</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs py-1">
+                    <span>Approved Leave Salary:</span>
+                    <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
+                      +{Number(selectedPayslipForView.leave_salary || 0).toLocaleString()} QAR
+                    </span>
                   </div>
                   <div className="flex justify-between text-xs py-1 border-t font-semibold">
                     <span>Gross Earnings:</span>

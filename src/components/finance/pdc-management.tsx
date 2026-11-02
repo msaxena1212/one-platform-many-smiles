@@ -31,9 +31,10 @@ import {
   User,
   ArrowUpDown,
   ArrowRightLeft,
-  Check,
+  Check, Scale, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
+import { openPrintable7DayLegalNotice, openPrintableRdcFilingPack } from "@/lib/qatar-legal-engine";
 import { supabase } from "@/lib/supabase";
 import {
   depositPdc,
@@ -167,6 +168,8 @@ interface GlConfirmModalProps {
   onDepositSlipNoChange?: (slip: string) => void;
   depositDate?: string;
   onDepositDateChange?: (date: string) => void;
+  dishonorReason?: string;
+  onDishonorReasonChange?: (val: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -185,6 +188,8 @@ function GlConfirmModal({
   onDepositSlipNoChange,
   depositDate,
   onDepositDateChange,
+  dishonorReason,
+  onDishonorReasonChange,
   onConfirm,
   onCancel,
 }: GlConfirmModalProps) {
@@ -237,6 +242,33 @@ function GlConfirmModal({
               onChange={(e) => onCancelReasonChange?.(e.target.value)}
               className="text-xs"
             />
+          </div>
+        )}
+
+        {config.action === "return" && (
+          <div className="space-y-2 py-1 bg-rose-50/70 dark:bg-rose-950/20 p-3.5 rounded-lg border border-rose-200 dark:border-rose-800">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold text-xs text-rose-950 dark:text-rose-100 flex items-center gap-1.5">
+                <Scale className="h-3.5 w-3.5 text-rose-600" />
+                سبب الارتجاع المصرفي (Bank Dishonor Memo Reason) <span className="text-destructive">*</span>
+              </Label>
+              <Badge variant="outline" className="text-[9px] font-mono border-rose-300 text-rose-700 bg-background">
+                Article 357 Penal Code
+              </Badge>
+            </div>
+            <select
+              value={dishonorReason || "عدم كفاية الرصيد (Insufficient Funds)"}
+              onChange={(e) => onDishonorReasonChange?.(e.target.value)}
+              className="w-full h-8 text-xs border rounded-md px-2 bg-background font-medium"
+            >
+              <option value="عدم كفاية الرصيد (Insufficient Funds)">عدم كفاية الرصيد (Insufficient Funds - QCB Code 01)</option>
+              <option value="اختلاف التوقيع (Signature Mismatch)">اختلاف التوقيع (Signature Mismatch - QCB Code 02)</option>
+              <option value="الحساب مغلق (Account Closed)">الحساب مغلق (Account Closed - QCB Code 03)</option>
+              <option value="أمر إيقاف صرف (Stop Payment Order)">أمر إيقاف صرف (Stop Payment Order - QCB Code 04)</option>
+            </select>
+            <p className="text-[10px] text-rose-700 dark:text-rose-300">
+              * Categorized return memo enables automated 7-Day Legal Notice (Article 357) and Rental Dispute Committee (RDC) dossier filing.
+            </p>
           </div>
         )}
 
@@ -409,6 +441,7 @@ export function PdcManagement() {
   const [pendingActionPdc, setPendingActionPdc] = useState<any | null>(null);
   const [pendingAction, setPendingAction] = useState<"deposit" | "clear" | "return" | "cancel" | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [dishonorReason, setDishonorReason] = useState("عدم كفاية الرصيد (Insufficient Funds)");
 
   // Cash Replacement Modal state
   const [cashModalOpen, setCashModalOpen] = useState(false);
@@ -2234,6 +2267,48 @@ export function PdcManagement() {
                                       <Button size="sm" variant="outline" className="h-6 text-xs border-blue-500 text-blue-600 hover:bg-blue-50 px-2" disabled={actionLoading} onClick={() => openGlConfirm(pdc, "deposit")}>
                                         Re-Deposit
                                       </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 text-xs border-rose-400 text-rose-700 dark:text-rose-400 hover:bg-rose-50 px-2 font-semibold"
+                                        onClick={() => {
+                                          openPrintable7DayLegalNotice({
+                                            chequeNo: String(pdc.cheque_number),
+                                            chequeDate: String(pdc.cheque_date),
+                                            bankName: pdc.bank_name || "Drawee Bank",
+                                            amount: Number(pdc.amount) || 0,
+                                            returnReason: pdc.return_reason || pdc.returnReason || dishonorReason || "عدم كفاية الرصيد (Insufficient Funds)",
+                                            tenantName: pdc.tenant_name || "Tenant",
+                                            tenantQid: (pdc as any).tenant_qid || (linkedLease as any)?.tenantQid,
+                                            propertyName: pdc.property_name || "Portfolio",
+                                            unitRef: pdc.unit_ref || "Unit",
+                                          });
+                                        }}
+                                        title="Generate official 7-Day Legal Notice (Article 357 Penal Code)"
+                                      >
+                                        <Scale className="h-3 w-3 mr-1 text-rose-600" /> 7-Day Notice
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 text-xs border-blue-400 text-blue-700 dark:text-blue-400 hover:bg-blue-50 px-2 font-semibold"
+                                        onClick={() => {
+                                          openPrintableRdcFilingPack({
+                                            chequeNo: String(pdc.cheque_number),
+                                            chequeDate: String(pdc.cheque_date),
+                                            bankName: pdc.bank_name || "Drawee Bank",
+                                            amount: Number(pdc.amount) || 0,
+                                            returnReason: pdc.return_reason || pdc.returnReason || dishonorReason || "عدم كفاية الرصيد (Insufficient Funds)",
+                                            tenantName: pdc.tenant_name || "Tenant",
+                                            tenantQid: (pdc as any).tenant_qid || (linkedLease as any)?.tenantQid,
+                                            propertyName: pdc.property_name || "Portfolio",
+                                            unitRef: pdc.unit_ref || "Unit",
+                                          });
+                                        }}
+                                        title="Generate Rental Dispute Committee (RDC) Case Dossier"
+                                      >
+                                        <FileText className="h-3 w-3 mr-1 text-blue-600" /> RDC Pack
+                                      </Button>
                                       <Button size="sm" variant="outline" className="h-6 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 px-2" disabled={actionLoading} onClick={() => openCashModal(pdc)}>
                                         <Banknote className="h-3 w-3 mr-1" /> Cash
                                       </Button>
@@ -3975,6 +4050,8 @@ export function PdcManagement() {
         loading={actionLoading}
         cancelReason={cancelReason}
         onCancelReasonChange={setCancelReason}
+        dishonorReason={dishonorReason}
+        onDishonorReasonChange={setDishonorReason}
         bankAccounts={bankAccounts}
         selectedBankAccountId={selectedBankAccountId}
         onBankAccountIdChange={setSelectedBankAccountId}

@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
-import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
+import { useFinanceStore, isPostingPeriodClosed, type ReceivableInvoice } from "@/lib/finance/finance-store";
+import { calculateContractPeriodMonthlyRevenue, parseDateFlexible } from "@/lib/finance/revenue-engine";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 
@@ -59,7 +60,24 @@ function getConcessionBillingStatus(
       const uKey = (l?.unit || "").toString().toUpperCase().trim();
       override = stored[l?.id] || (l?.contractNumber ? stored[l?.contractNumber] : null) || (uKey ? stored[uKey] : null);
     }
-  } catch (e) {}
+  } catch (e) { }
+
+  const graceDays = Number(override?.grace_period_days ?? l?.gracePeriodDays ?? l?.grace_period_days ?? 0);
+  const startStr = override?.commencement_date || l?.startDate || l?.commencement_date;
+  const endStr = override?.expiry_date || l?.endDate || l?.expiry_date;
+
+  if (graceDays > 0 && startStr) {
+    const sDate = new Date(startStr);
+    const bDate = new Date(issueDateStr || new Date().toISOString());
+    const graceEnd = new Date(sDate.getTime() + graceDays * 86400000);
+    if (bDate >= sDate && bDate <= graceEnd) {
+      return {
+        isFree: true,
+        note: `Grace Period Concession (${graceDays} Days Fit-Out / Move-In: QR 0.00)`,
+        overrideAmt: 0,
+      };
+    }
+  }
 
   const hasRentFree = Boolean(
     override?.has_rent_free ??
@@ -72,8 +90,6 @@ function getConcessionBillingStatus(
   if (!hasRentFree) return { isFree: false };
 
   const rfPosition = override?.rent_free_position ?? l?.rentFreePosition ?? l?.rent_free_position ?? "FIRST_MONTH";
-  const startStr = override?.commencement_date || l?.startDate || l?.commencement_date;
-  const endStr = override?.expiry_date || l?.endDate || l?.expiry_date;
 
   if (!startStr) {
     return { isFree: true, note: "Rent-Free Concession (QR 0.00)", overrideAmt: 0 };
@@ -117,6 +133,35 @@ const REVENUE_STREAMS = [
   { code: "41600", label: "41600 - Late Fee & Penalties" },
 ];
 
+function extractTargetMonthKey(billingPeriodStr?: string, issueDateStr?: string): string {
+  if (billingPeriodStr) {
+    const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    const parts = billingPeriodStr.toLowerCase().split(/\s+/);
+    let y: number | null = null;
+    let m: number | null = null;
+    for (const p of parts) {
+      const yr = parseInt(p, 10);
+      if (yr >= 2000 && yr <= 2099) y = yr;
+      const mIdx = months.findIndex(name => p.startsWith(name));
+      if (mIdx !== -1) m = mIdx + 1;
+    }
+    if (y && m) {
+      return `${y}-${String(m).padStart(2, "0")}`;
+    }
+    const match = billingPeriodStr.match(/(\d{4})[-/](\d{1,2})/);
+    if (match) return `${match[1]}-${match[2].padStart(2, "0")}`;
+  }
+  if (issueDateStr) {
+    const d = parseDateFlexible(issueDateStr);
+    if (d) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+    const clean = issueDateStr.slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(clean)) return clean;
+  }
+  return new Date().toISOString().slice(0, 7);
+}
+
 export function BulkInvoiceDialog({
   open,
   onOpenChange,
@@ -126,7 +171,7 @@ export function BulkInvoiceDialog({
   onSuccess,
 }: BulkInvoiceDialogProps) {
   const { leases, units, customers } = useAppData();
-  const { addReceivableInvoice, addBulkReceivableInvoices } = useFinanceStore();
+  const { receivableInvoices, addReceivableInvoice, addBulkReceivableInvoices } = useFinanceStore();
   const branding = useMemo(() => getDocumentBranding(), []);
   const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
 
@@ -214,11 +259,39 @@ export function BulkInvoiceDialog({
       const baseRent = Number(l.monthlyRent) || 0;
       const concession = getConcessionBillingStatus(l, issueDate);
       const isConcession = concession.isFree && propertyPricingMode === "lease";
-      const amt = isConcession ? 0 : (propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent));
+      const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
+      const proration = calculateContractPeriodMonthlyRevenue({
+        startDate: l.startDate,
+        endDate: l.endDate,
+        monthlyRent: baseRent,
+        targetMonth: targetMonthKey,
+      });
+
+      let prorationNote: string | undefined = undefined;
+      let effectiveRent = baseRent;
+
+      if (propertyPricingMode === "lease") {
+        if (isConcession) {
+          effectiveRent = 0;
+        } else if (proration) {
+          effectiveRent = proration.recognizedRevenue;
+          if (!proration.isFullMonth && proration.applicableDays > 0) {
+            prorationNote = `Prorated: ${proration.applicableDays}/${proration.totalDaysInMonth} days (${proration.periodStart} to ${proration.periodEnd})`;
+          }
+        }
+      } else {
+        effectiveRent = parseFloat(propertyFixedAmount) || baseRent;
+      }
+      const amt = effectiveRent;
       const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : propertyStream;
       const unitClean = l.unit.replace(/[^\w]/g, "").slice(-4);
       const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
       const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 101}`;
+      const alreadyBilled = receivableInvoices.some(inv =>
+        inv.property.trim().toLowerCase() === selectedProperty.trim().toLowerCase() &&
+        inv.unit.trim().toLowerCase() === l.unit.trim().toLowerCase() &&
+        inv.date.startsWith(issueDate.slice(0, 7))
+      );
 
       items.push({
         id: `prop-batch-${l.id || idx}`,
@@ -235,7 +308,7 @@ export function BulkInvoiceDialog({
         invoiceNo: invNo,
         status: "ready",
         isRentFree: isConcession,
-        concessionNote: concession.note,
+        concessionNote: alreadyBilled ? `Already Invoiced for ${targetMonthKey}` : (prorationNote || concession.note),
       });
     });
 
@@ -264,8 +337,8 @@ export function BulkInvoiceDialog({
       }
     });
 
-    // Fallback demo items if property has 0 loaded units
-    if (items.length === 0) {
+    // Strict: No fake demo units to prevent data leakage
+    if (false) {
       for (let i = 1; i <= 5; i++) {
         const unitName = `Unit ${100 + i}`;
         const baseRent = 4500 + i * 500;
@@ -288,7 +361,7 @@ export function BulkInvoiceDialog({
     }
 
     setPropertyBatchItems(items);
-  }, [selectedProperty, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount]);
+  }, [selectedProperty, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount, billingPeriod, issueDate, receivableInvoices]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // BUILD CUSTOMER ITEMS
@@ -303,11 +376,39 @@ export function BulkInvoiceDialog({
 
       const items: BatchItem[] = [];
       if (custLeases.length > 0) {
+        const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
         custLeases.forEach((l, idx) => {
           const baseRent = Number(l.monthlyRent) || 0;
           const concession = getConcessionBillingStatus(l, issueDate);
           const isConcession = concession.isFree && customerPricingMode === "lease";
-          const amt = isConcession ? 0 : (customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent));
+          const proration = calculateContractPeriodMonthlyRevenue({
+            startDate: l.startDate,
+            endDate: l.endDate,
+            monthlyRent: baseRent,
+            targetMonth: targetMonthKey,
+          });
+
+          let prorationNote: string | undefined = undefined;
+          let effectiveRent = baseRent;
+
+          if (customerPricingMode === "lease") {
+            if (isConcession) {
+              effectiveRent = 0;
+            } else if (proration) {
+              effectiveRent = proration.recognizedRevenue;
+              if (!proration.isFullMonth && proration.applicableDays > 0) {
+                prorationNote = `Prorated: ${proration.applicableDays}/${proration.totalDaysInMonth} days (${proration.periodStart} to ${proration.periodEnd})`;
+              }
+            }
+          } else {
+            effectiveRent = parseFloat(customerFixedAmount) || baseRent;
+          }
+          const amt = effectiveRent;
+          const alreadyBilled = receivableInvoices.some(inv =>
+            inv.property.trim().toLowerCase() === (l.property || "").trim().toLowerCase() &&
+            inv.unit.trim().toLowerCase() === l.unit.trim().toLowerCase() &&
+            inv.date.startsWith(targetMonthKey)
+          );
           const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : customerStream;
           const custCode = (cust?.customerId || cust?.id || idx).toString().slice(-4).toUpperCase();
           const invNo = `INV-CUST-${custCode}-${idx + 101}`;
@@ -327,56 +428,78 @@ export function BulkInvoiceDialog({
             invoiceNo: invNo,
             status: "ready",
             isRentFree: isConcession,
-            concessionNote: concession.note,
+            concessionNote: alreadyBilled ? `Already Invoiced for ${targetMonthKey}` : (prorationNote || concession.note),
           });
         });
       } else {
-        // Fallback for customer without explicit lease record
-        const baseRent = 6500;
-        const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
-        items.push({
-          id: `cust-default-${Date.now()}`,
-          selected: true,
-          unit: "Flat 16",
-          tenant: custName,
-          customerId: cust?.customerId || cust?.id,
-          property: "Old Salata - Residence No:23",
-          baseRent,
-          amount: amt,
-          stream: customerStream,
-          accountCode: customerStream.split(/\s+/)[0] || "41100",
-          invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
-          status: "ready",
-        });
+        // Strict: Only include if customer record itself has real property & unit (no fake fallbacks)
+        const custProp = (cust as any)?.property;
+        const custUnit = (cust as any)?.unit;
+        if (custProp && custUnit) {
+          const baseRent = Number((cust as any)?.rent) || 0;
+          const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
+          items.push({
+            id: `cust-default-${Date.now()}`,
+            selected: true,
+            unit: custUnit,
+            tenant: custName,
+            customerId: cust?.customerId || cust?.id,
+            property: custProp,
+            baseRent,
+            amount: amt,
+            stream: customerStream,
+            accountCode: customerStream.split(/\s+/)[0] || "41100",
+            invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+            status: "ready",
+          });
+        }
+        if (false) {
+          const baseRent = 6500;
+          const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
+          items.push({
+            id: `cust-default-${Date.now()}`,
+            selected: true,
+            unit: "Flat 16",
+            tenant: custName,
+            customerId: cust?.customerId || cust?.id,
+            property: "Old Salata - Residence No:23",
+            baseRent,
+            amount: amt,
+            stream: customerStream,
+            accountCode: customerStream.split(/\s+/)[0] || "41100",
+            invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+            status: "ready",
+          });
       }
-      setCustomerBatchItems(items);
-    } else {
-      // All customers batch (multi-customer billing)
-      const activeCustomers = customers.slice(0, 15);
-      const items: BatchItem[] = activeCustomers.map((c, idx) => {
-        const lease = leases.find(l => l.customerId === c.id || l.tenantName === c.name);
-        const baseRent = lease ? Number(lease.monthlyRent) : 5500;
-        const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
-        const custCode = (c.customerId || c.id || idx).toString().slice(-4).toUpperCase();
-        return {
-          id: `cust-multi-${c.id || idx}`,
-          selected: true,
-          unit: lease?.unit || "Unit A",
-          tenant: c.name,
-          customerId: c.customerId || c.id,
-          property: lease?.property || "MANSOURA - BLDG06",
-          leaseNumber: lease?.contractNumber || `LS-${idx + 101}`,
-          baseRent,
-          amount: amt,
-          stream: customerStream,
-          accountCode: customerStream.split(/\s+/)[0] || "41100",
-          invoiceNo: `INV-CUST-${custCode}-${idx + 101}`,
-          status: "ready",
-        };
-      });
-      setCustomerBatchItems(items);
-    }
-  }, [selectedCustomerId, customers, leases, customerStream, customerPricingMode, customerFixedAmount]);
+        }
+        setCustomerBatchItems(items);
+      } else {
+        // All customers batch (multi-customer billing)
+        const activeCustomers = customers.filter(c => leases.some(l => l.customerId === c.id || l.tenantName === c.name) || Boolean((c as any).property && (c as any).unit)).slice(0, 15);
+        const items: BatchItem[] = activeCustomers.map((c, idx) => {
+          const lease = leases.find(l => l.customerId === c.id || l.tenantName === c.name);
+          const baseRent = lease ? Number(lease.monthlyRent) : 5500;
+          const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
+          const custCode = (c.customerId || c.id || idx).toString().slice(-4).toUpperCase();
+          return {
+            id: `cust-multi-${c.id || idx}`,
+            selected: true,
+            unit: lease?.unit || (c as any).unit || "Unit 1",
+            tenant: c.name,
+            customerId: c.customerId || c.id,
+            property: lease?.property || (c as any).property || "",
+            leaseNumber: lease?.contractNumber || `LS-${idx + 101}`,
+            baseRent,
+            amount: amt,
+            stream: customerStream,
+            accountCode: customerStream.split(/\s+/)[0] || "41100",
+            invoiceNo: `INV-CUST-${custCode}-${idx + 101}`,
+            status: "ready",
+          };
+        });
+        setCustomerBatchItems(items);
+      }
+    }, [selectedCustomerId, customers, leases, customerStream, customerPricingMode, customerFixedAmount, billingPeriod, issueDate, receivableInvoices]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // TOGGLES & AMOUNTS
@@ -416,6 +539,11 @@ export function BulkInvoiceDialog({
   // GENERATE BULK INVOICES
   // ──────────────────────────────────────────────────────────────────────────
   const handleGenerateBulk = () => {
+    const periodCheck = isPostingPeriodClosed(issueDate);
+    if (periodCheck.closed) {
+      toast.error(`Cannot generate invoices: Accounting period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     if (selectedItems.length === 0) {
       toast.error("Please select at least one unit/customer to generate invoices.");
       return;
@@ -917,7 +1045,8 @@ export function BulkInvoiceDialog({
               </div>
 
               {/* Printable Bulk Invoice Batch Register for Print / PDF */}
-              <style dangerouslySetInnerHTML={{ __html: `
+              <style dangerouslySetInnerHTML={{
+                __html: `
                 @media print {
                   @page {
                     size: A4 landscape;

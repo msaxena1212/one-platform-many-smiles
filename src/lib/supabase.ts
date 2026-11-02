@@ -168,6 +168,12 @@ export type Customer = {
   verification_status: 'Pending' | 'Verified' | 'Rejected' | 'Additional Info Required';
   verified_by?: string;
   verified_at?: string;
+
+  // Qatar Credit Bureau / CBNet & Compliance (Article 357 & Default Tracking)
+  cbnet_status?: 'Clean' | 'Notice' | 'Blacklisted' | 'Defaulted';
+  cbnet_rating?: string;
+  cbnet_defaulter_reason?: string;
+
   created_at: string;
   updated_at: string;
 };
@@ -187,6 +193,7 @@ export type Lease = {
   security_deposit: number;
   security_deposit_status: 'Pending' | 'Received' | 'Refunded' | 'Adjusted';
   grace_period_days: number;
+  fit_out_period_days?: number; // Fit-Out / Grace Period for Commercial Fitment & Permits
   late_penalty_percentage: number;
   late_penalty_fixed: number;
   renewal_terms?: string;
@@ -205,6 +212,16 @@ export type Lease = {
   check_in_report_id?: string;
   check_out_report_id?: string;
   previous_lease_id?: string;
+
+  // Municipal Tenancy Registration (Tawtheeq / توثيق عقود الإيجار) - Law No. 4/2008 & Law No. 6/2022
+  tawtheeq_registration_no?: string;
+  baladiya_registration_status?: 'Not Submitted' | 'Under Review' | 'Registered' | 'Expired' | 'Exempt';
+  tawtheeq_fee_amount?: number;
+  tawtheeq_fee_borne_by?: 'Landlord' | 'Tenant' | 'Shared';
+  tawtheeq_issue_date?: string;
+  tawtheeq_expiry_date?: string;
+  tawtheeq_certificate_url?: string;
+
   created_by?: string;
   created_at: string;
   updated_at: string;

@@ -31,6 +31,10 @@ export interface SeedEmployee {
   emergency_contact_name?: string;
   relation_with_employee?: string;
   emergency_contact_no?: string;
+  last_leave_start_date?: string;
+  last_leave_end_date?: string;
+  last_leave_rejoining_date?: string;
+  annual_leave_quota?: number;
   remarks?: string;
 }
 
@@ -71,6 +75,7 @@ export const REAL_EMPLOYEES_SEED: any[] = [
     "emergency_contact_name": "",
     "relation_with_employee": "",
     "emergency_contact_no": "",
+    "annual_leave_quota": 30,
     "remarks": ""
   },
   {
@@ -98,6 +103,7 @@ export const REAL_EMPLOYEES_SEED: any[] = [
     "hra": 0.0,
     "tra": 2500.0,
     "other_allowances": 1300.0,
+    "annual_leave_quota": 30,
     "benefit_telephone": "Provided By Company",
     "benefit_accommodation": "Provided By Company",
     "benefit_vehicle": "",

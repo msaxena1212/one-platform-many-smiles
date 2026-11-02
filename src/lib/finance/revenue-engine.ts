@@ -82,7 +82,36 @@ export interface RevenueGenerationBatchSummary {
 /**
  * Calculates calendar days between two ISO date strings (inclusive).
  */
+export function parseDateFlexible(dateStr?: string | null): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const clean = dateStr.trim();
+  if (!clean) return null;
+  const isoMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10);
+    const d = parseInt(isoMatch[3], 10);
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  const dmyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (dmyMatch) {
+    const d = parseInt(dmyMatch[1], 10);
+    const m = parseInt(dmyMatch[2], 10);
+    const y = parseInt(dmyMatch[3], 10);
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  const d = new Date(clean);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function getInclusiveDays(startDateStr: string, endDateStr: string): number {
+  const start = parseDateFlexible(startDateStr);
+  const end = parseDateFlexible(endDateStr);
+  if (!start || !end || end < start) return 0;
+  return Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+}
+
+function _unusedLegacyGetInclusiveDays(startDateStr: string, endDateStr: string): number {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 0;
@@ -128,13 +157,11 @@ export function calculateLeaseRevenueSchedule(params: {
   const schedules: RevenuePeriodSchedule[] = [];
   if (!startDate || !endDate || monthlyRent <= 0) return schedules;
 
-  const leaseStart = new Date(startDate);
-  const leaseEnd = new Date(endDate);
-  const asOf = new Date(asOfDate || new Date().toISOString().split('T')[0]);
-
-  // Determine effective revenue termination date: explicit override > actualVacateDate > plannedVacateDate > leaseEnd
+  const leaseStart = parseDateFlexible(startDate);
+  const leaseEnd = parseDateFlexible(endDate);
+  if (!leaseStart || !leaseEnd) return schedules;
   const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? plannedVacateDate : undefined);
-  const effectiveTermDate = approvedVacate ? new Date(approvedVacate) : leaseEnd;
+  const effectiveTermDate = approvedVacate ? parseDateFlexible(approvedVacate) || leaseEnd : leaseEnd;
 
   let currentMonthCursor = new Date(leaseStart.getFullYear(), leaseStart.getMonth(), 1);
 
@@ -417,12 +444,20 @@ export function calculateContractPeriodMonthlyRevenue(params: {
   const monthEnd = new Date(Date.UTC(year, monthIndex + 1, 0)); // Last day of month
   const totalDaysInMonth = monthEnd.getUTCDate();
 
-  const leaseStart = new Date(startDate);
-  const leaseEnd = new Date(endDate);
+  const leaseStart = parseDateFlexible(startDate);
+  const leaseEnd = parseDateFlexible(endDate);
+  if (!leaseStart || !leaseEnd) return null;
+  // parameters mapped
+  const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? plannedVacateDate : undefined);
+  const effectiveTermDate = approvedVacate ? parseDateFlexible(approvedVacate) || leaseEnd : leaseEnd;
+
+
+
+
 
   // Determine effective termination if early vacated
-  const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? actualVacateDate : undefined);
-  const effectiveTermDate = approvedVacate ? new Date(approvedVacate) : leaseEnd;
+  // actual vacate checked
+  // effective term ready
 
   // Bounded start and end within the target calendar month
   const periodStart = leaseStart > monthStart ? leaseStart : monthStart;

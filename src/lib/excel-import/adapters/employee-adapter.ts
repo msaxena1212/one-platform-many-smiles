@@ -40,6 +40,10 @@ export const EMPLOYEE_COLUMNS: ColumnDefinition[] = [
   { key: 'air_ticket', label: 'Air Ticket', type: 'string', required: false, sampleValue: 'Yearly' },
   { key: 'air_ticket_fare_cap', label: 'Air Ticket Fare CAP', type: 'number', required: false, sampleValue: 2500 },
   { key: 'employee_status', label: 'Employee Status', type: 'enum', required: false, allowedValues: ['Active', 'On Leave', 'Probation', 'Terminated', 'Resigned'], sampleValue: 'Active' },
+  { key: 'last_leave_start_date', label: 'Last Leave Start Date', type: 'date', required: false, sampleValue: '2025-07-01', description: 'Start date of last completed leave' },
+  { key: 'last_leave_end_date', label: 'Last Leave End Date', type: 'date', required: false, sampleValue: '2025-07-30', description: 'End date of last completed leave' },
+  { key: 'last_leave_rejoining_date', label: 'Last Rejoining Date', type: 'date', required: false, sampleValue: '2025-07-31', description: 'Date employee rejoined duty after last leave' },
+  { key: 'annual_leave_quota', label: 'Annual Leave Quota (Days)', type: 'number', required: false, sampleValue: 30, description: 'Annual paid leave entitlement in days (e.g. 21 or 30)' },
   { key: 'emergency_contact_name', label: 'Emergency Contact Name', type: 'string', required: false, sampleValue: '' },
   { key: 'relation_with_employee', label: 'Relation with Employee', type: 'string', required: false, sampleValue: '' },
   { key: 'emergency_contact_no', label: 'Emergency Contact No.', type: 'string', required: false, sampleValue: '' },
@@ -374,6 +378,10 @@ export const employeeAdapter: EntityImportAdapter = {
           emergency_contact_name: data.emergency_contact_name,
           emergency_contact_relation: data.relation_with_employee,
           emergency_contact_number: data.emergency_contact_no,
+          last_leave_start_date: sanitizeDateForPostgres(data.last_leave_start_date),
+          last_leave_end_date: sanitizeDateForPostgres(data.last_leave_end_date),
+          last_leave_rejoining_date: sanitizeDateForPostgres(data.last_leave_rejoining_date),
+          annual_leave_quota: data.annual_leave_quota || 30,
           remarks: data.remarks,
         };
 
@@ -391,7 +399,9 @@ export const employeeAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Employee ID not found');
 
-        const updatePayload: Record<string, any> = {};
+        const updatePayload: Record<string, any> = {
+          employee_id_code: existing.employee_id_code,
+        };
 
         const fieldMapping: Record<string, string> = {
           relation_with_employee: 'emergency_contact_relation',
@@ -402,7 +412,14 @@ export const employeeAdapter: EntityImportAdapter = {
           const val = change.newValue === '[CLEARED]' ? null : change.newValue;
           const targetField = fieldMapping[change.field] || change.field;
 
-          if (targetField === 'date_of_birth' || targetField === 'date_of_joining' || targetField === 'id_expiry_date') {
+          if (
+            targetField === 'date_of_birth' ||
+            targetField === 'date_of_joining' ||
+            targetField === 'id_expiry_date' ||
+            targetField === 'last_leave_start_date' ||
+            targetField === 'last_leave_end_date' ||
+            targetField === 'last_leave_rejoining_date'
+          ) {
             updatePayload[targetField] = sanitizeDateForPostgres(val);
           } else {
             updatePayload[targetField] = val;

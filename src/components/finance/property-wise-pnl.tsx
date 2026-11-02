@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,8 @@ interface PropertyPnlMetrics {
   rentalRevenue: number;
   otherRevenue: number;
   totalRevenue: number;
+  contractRentMonth: number;
+  uninvoicedContractRent: number;
   maintenanceExpense: number;
   payrollExpense: number;
   utilitiesExpense: number;
@@ -46,6 +48,8 @@ interface PropertyPnlMetrics {
     totalDays: number;
     monthlyRent: number;
     recognizedRevenue: number;
+    postedBy: string;
+    isInvoiced: boolean;
     reason: string;
   }>;
 }
@@ -56,7 +60,7 @@ const MONTH_NAMES = [
 ];
 
 export function PropertyWiseProfitAndLossSubModule() {
-  const { allLedgerTransactions, isSyncing, refreshFinanceData } = useFinanceStore();
+  const { allLedgerTransactions, receivableInvoices, isSyncing, refreshFinanceData } = useFinanceStore();
   const { leases, units } = useAppData();
   const branding = useMemo(() => getDocumentBranding(), []);
   const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
@@ -116,27 +120,87 @@ export function PropertyWiseProfitAndLossSubModule() {
   }, [units, leases, allLedgerTransactions]);
 
   // ──────────────────────────────────────────────────────────────────────────
-  // COMPUTE PROPERTY-WISE P&L (CONTRACT-PERIOD ACCRUAL REVENUE + EXPENSES)
+  // COMPUTE PROPERTY-WISE P&L (STRICTLY INVOICED / LEDGER-POSTED REVENUE + EXPENSES)
+  // Reconciles 100% with Trial Balance & General Ledger
   // ──────────────────────────────────────────────────────────────────────────
   const propertyMetricsList: PropertyPnlMetrics[] = useMemo(() => {
     return propertiesList.map((propName) => {
       const propUnits = units.filter(u => u.property === propName);
-      const propLeases = leases.filter(l => l.property === propName && l.status !== "cancelled" && l.status !== "draft");
+      const propLeases = leases.filter(l => l.property === propName && String(l.status) !== "cancelled" && String(l.status) !== "draft");
 
       let totalUnits = propUnits.length;
       if (totalUnits === 0) totalUnits = propLeases.length || 10;
 
       const activeTenantsSet = new Set<string>();
-      let rentalRevenue = 0;
+      let contractRentMonth = 0;
       const tenancySchedules: PropertyPnlMetrics["tenancySchedules"] = [];
 
-      // 1. Accrual Rental Revenue calculation based on contract period
+      // Helper to find matching generated invoice(s) or posted revenue transactions for a lease/unit in the selected period
+      const findInvoicedRevenueForUnit = (lease: typeof propLeases[number]) => {
+        const unitNorm = (lease.unit || "").trim().toLowerCase();
+        const tenantNorm = (lease.tenantName || "").trim().toLowerCase();
+
+        // 1. Check receivableInvoices in FinanceStore
+        const matchingArInvoices = receivableInvoices.filter((inv) => {
+          const invProp = (inv.property || "").trim();
+          const propMatches =
+            invProp === propName ||
+            (propName.includes("Old Salata") && invProp.includes("Salata")) ||
+            (propName.includes("MANSOURA") && invProp.includes("MANSOURA"));
+          if (!propMatches) return false;
+
+          if (selectedPeriod !== "all") {
+            const invMonth = inv.billingPeriod || (inv.date ? inv.date.slice(0, 7) : "");
+            if (invMonth !== selectedPeriod) return false;
+          }
+
+          if (lease.id && inv.leaseId && inv.leaseId === lease.id) return true;
+          if (unitNorm && (inv.unit || "").trim().toLowerCase() === unitNorm) return true;
+          if (!unitNorm && tenantNorm && (inv.tenant || "").trim().toLowerCase() === tenantNorm) return true;
+          return false;
+        });
+
+        if (matchingArInvoices.length > 0) {
+          const sum = matchingArInvoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+          const refs = matchingArInvoices.map((i) => i.invoice_no).join(", ");
+          return { amount: sum, postedBy: refs, isInvoiced: true };
+        }
+
+        // 2. Also check direct Revenue GL postings (e.g., Journal Vouchers / Revenue Batch postings) for this unit
+        const matchingTx = allLedgerTransactions.filter((tx) => {
+          if (tx.account_type !== "Revenue" || !tx.account_code.startsWith("411")) return false;
+          if (tx.source === "Receivable Invoice") return false; // already checked above
+          const txProp = (tx.property_name || "").trim();
+          const propMatches =
+            txProp === propName ||
+            (propName.includes("Old Salata") && txProp.includes("Salata")) ||
+            (propName.includes("MANSOURA") && txProp.includes("MANSOURA"));
+          if (!propMatches) return false;
+
+          if (selectedPeriod !== "all" && tx.date && !tx.date.startsWith(selectedPeriod)) return false;
+
+          const txUnit = (tx.unit_ref || "").trim().toLowerCase();
+          return Boolean(unitNorm && txUnit === unitNorm);
+        });
+
+        if (matchingTx.length > 0) {
+          const sum = matchingTx.reduce((s, tx) => s + ((tx.credit || 0) - (tx.debit || 0)), 0);
+          const refs = Array.from(new Set(matchingTx.map((tx) => tx.reference))).join(", ");
+          if (sum > 0) {
+            return { amount: sum, postedBy: refs, isInvoiced: true };
+          }
+        }
+
+        return { amount: 0, postedBy: "Not yet invoiced", isInvoiced: false };
+      };
+
+      // 1. Evaluate unit tenancy schedule and check whether each unit is actually invoiced
       propLeases.forEach((l) => {
         const baseMonthlyRent = Number(l.monthlyRent) || 0;
+        const invoicedInfo = findInvoicedRevenueForUnit(l);
 
         if (selectedPeriod === "all") {
-          // If All Periods, sum ledger revenue tagged to this lease or evaluate default month
-          rentalRevenue += baseMonthlyRent;
+          contractRentMonth += baseMonthlyRent;
           activeTenantsSet.add(l.unit);
           tenancySchedules.push({
             unit: l.unit,
@@ -146,11 +210,13 @@ export function PropertyWiseProfitAndLossSubModule() {
             applicableDays: 30,
             totalDays: 30,
             monthlyRent: baseMonthlyRent,
-            recognizedRevenue: baseMonthlyRent,
-            reason: "Contract Tenancy (Consolidated)",
+            recognizedRevenue: invoicedInfo.amount,
+            postedBy: invoicedInfo.postedBy,
+            isInvoiced: invoicedInfo.isInvoiced,
+            reason: invoicedInfo.isInvoiced ? `Invoiced (${invoicedInfo.postedBy})` : "Not yet invoiced",
           });
         } else {
-          // Calculate exact contract period overlap for selected month (e.g. 2026-10)
+          // Calculate contract period overlap for selected month (e.g. 2026-10)
           const proration = calculateContractPeriodMonthlyRevenue({
             startDate: l.startDate,
             endDate: l.endDate,
@@ -159,7 +225,7 @@ export function PropertyWiseProfitAndLossSubModule() {
           });
 
           if (proration && proration.applicableDays > 0) {
-            rentalRevenue += proration.recognizedRevenue;
+            contractRentMonth += proration.recognizedRevenue;
             activeTenantsSet.add(l.unit);
             tenancySchedules.push({
               unit: l.unit,
@@ -169,14 +235,17 @@ export function PropertyWiseProfitAndLossSubModule() {
               applicableDays: proration.applicableDays,
               totalDays: proration.totalDaysInMonth,
               monthlyRent: baseMonthlyRent,
-              recognizedRevenue: proration.recognizedRevenue,
-              reason: proration.explanation,
+              recognizedRevenue: invoicedInfo.amount,
+              postedBy: invoicedInfo.postedBy,
+              isInvoiced: invoicedInfo.isInvoiced,
+              reason: invoicedInfo.isInvoiced ? `Invoiced (${invoicedInfo.postedBy})` : "Not yet invoiced",
             });
           }
         }
       });
 
-      // Also incorporate any ledger rental transactions if they exist and exceed computed
+      // 2. Compute authoritative Revenue & Expenses strictly from posted General Ledger transactions
+      // This guarantees 100% alignment with the Trial Balance and General Ledger!
       let ledgerRentalRev = 0;
       let otherRevenue = 0;
       let maintenanceExpense = 0;
@@ -187,8 +256,11 @@ export function PropertyWiseProfitAndLossSubModule() {
 
       allLedgerTransactions.forEach((tx) => {
         // Match by property name
-        const txProp = tx.property_name || "";
-        const matchesProp = txProp === propName || (propName.includes("Old Salata") && txProp.includes("Salata")) || (propName.includes("MANSOURA") && txProp.includes("MANSOURA"));
+        const txProp = (tx.property_name || "").trim();
+        const matchesProp =
+          txProp === propName ||
+          (propName.includes("Old Salata") && txProp.includes("Salata")) ||
+          (propName.includes("MANSOURA") && txProp.includes("MANSOURA"));
         if (!matchesProp) return;
 
         // Date period filtering
@@ -205,13 +277,13 @@ export function PropertyWiseProfitAndLossSubModule() {
           }
         } else if (tx.account_type === "Expenses") {
           const net = (tx.debit || 0) - (tx.credit || 0);
-          if (tx.account_code.startsWith("51004") || tx.account_code.startsWith("502")) {
+          if (tx.account_code.startsWith("51004") || tx.account_code.startsWith("502") || tx.account_code.startsWith("521")) {
             maintenanceExpense += net;
-          } else if (tx.account_code.startsWith("51101") || tx.account_code.startsWith("501")) {
+          } else if (tx.account_code.startsWith("51101") || tx.account_code.startsWith("501") || tx.account_code.startsWith("523")) {
             payrollExpense += net;
-          } else if (tx.account_code.startsWith("51003") || tx.account_code.startsWith("505")) {
+          } else if (tx.account_code.startsWith("51003") || tx.account_code.startsWith("505") || tx.account_code.startsWith("522")) {
             utilitiesExpense += net;
-          } else if (tx.account_code === "51004007" || tx.account_code === "51001002" || tx.account_code === "51002002" || tx.account_code.startsWith("503")) {
+          } else if (tx.account_code === "51004007" || tx.account_code === "51001002" || tx.account_code === "51002002" || tx.account_code.startsWith("503") || tx.account_code === "52100007") {
             cleaningExpense += net;
           } else {
             otherExpense += net;
@@ -219,9 +291,10 @@ export function PropertyWiseProfitAndLossSubModule() {
         }
       });
 
-      // In accrual mode, prefer the contract-period calculated rental revenue when leases exist
-      const finalRentalRevenue = rentalRevenue > 0 ? rentalRevenue : ledgerRentalRev;
+      // ONLY recognize revenue that has actually been invoiced / posted to the ledger (matching Trial Balance)
+      const finalRentalRevenue = ledgerRentalRev;
       const totalRevenue = finalRentalRevenue + otherRevenue;
+      const uninvoicedContractRent = Math.max(0, contractRentMonth - finalRentalRevenue);
       const totalExpenses = maintenanceExpense + payrollExpense + utilitiesExpense + cleaningExpense + otherExpense;
       const netProfit = totalRevenue - totalExpenses;
       const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
@@ -237,6 +310,8 @@ export function PropertyWiseProfitAndLossSubModule() {
         rentalRevenue: finalRentalRevenue,
         otherRevenue,
         totalRevenue,
+        contractRentMonth,
+        uninvoicedContractRent,
         maintenanceExpense,
         payrollExpense,
         utilitiesExpense,
@@ -248,7 +323,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         tenancySchedules,
       };
     });
-  }, [propertiesList, units, leases, allLedgerTransactions, selectedPeriod]);
+  }, [propertiesList, units, leases, receivableInvoices, allLedgerTransactions, selectedPeriod]);
 
   // Filtered view by property dropdown or search
   const filteredMetricsList = useMemo(() => {
@@ -268,6 +343,8 @@ export function PropertyWiseProfitAndLossSubModule() {
     const totalRental = filteredMetricsList.reduce((acc, m) => acc + m.rentalRevenue, 0);
     const totalOther = filteredMetricsList.reduce((acc, m) => acc + m.otherRevenue, 0);
     const totalExp = filteredMetricsList.reduce((acc, m) => acc + m.totalExpenses, 0);
+    const totalContractRent = filteredMetricsList.reduce((acc, m) => acc + m.contractRentMonth, 0);
+    const totalUninvoicedRent = filteredMetricsList.reduce((acc, m) => acc + m.uninvoicedContractRent, 0);
     const totalNet = totalRev - totalExp;
     const avgMargin = totalRev > 0 ? (totalNet / totalRev) * 100 : 0;
 
@@ -281,6 +358,8 @@ export function PropertyWiseProfitAndLossSubModule() {
       totalRental,
       totalOther,
       totalExpenses: totalExp,
+      totalContractRent,
+      totalUninvoicedRent,
       netProfit: totalNet,
       margin: avgMargin,
       topProperty,
@@ -432,7 +511,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         <div className="flex items-center gap-2.5 text-emerald-950 dark:text-emerald-100">
           <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
           <span>
-            <strong>Revenue Recognition Standard:</strong> Rental income is recognized based on the active contract period falling within the accounting month (e.g. 15–31 October recognized in October, 1–14 November in November), independent of cheque clearance or cash collection.
+            <strong>Revenue Recognition Standard (Trial Balance Aligned):</strong> Only <strong>invoiced / ledger-posted revenue</strong> is recognized as Rental Revenue in this P&amp;L report, ensuring 100% reconciliation with the Trial Balance and General Ledger. Unbilled contract rent is tracked separately and excluded from recognized revenue until invoiced.
           </span>
         </div>
         <div className="text-right shrink-0">
@@ -440,6 +519,14 @@ export function PropertyWiseProfitAndLossSubModule() {
           <span className="font-bold text-xs text-foreground font-mono">{selectedPeriod === "all" ? "Consolidated" : selectedPeriod}</span>
         </div>
       </div>
+
+      {portfolioSummary.totalUninvoicedRent > 0 && (
+        <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs flex items-center justify-between gap-3 text-amber-950 dark:text-amber-100">
+          <span>
+            <strong>Unbilled Contract Rent Notice:</strong> QR {portfolioSummary.totalUninvoicedRent.toLocaleString()} of active contract rent for {selectedPeriod === "all" ? "the portfolio" : selectedPeriod} has <strong>not yet been invoiced</strong> and is <strong>not included</strong> in recognized revenue above. Run <strong>Bulk Invoice (Property-Wise)</strong> or check the <strong>Unbilled Units Report</strong> to generate invoices for those properties.
+          </span>
+        </div>
+      )}
 
       {/* ── KPI METRICS CARDS ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -584,13 +671,15 @@ export function PropertyWiseProfitAndLossSubModule() {
                 <TableHead className="text-right font-bold text-rose-600">Total Expenses</TableHead>
                 <TableHead className="text-right font-bold">Net Profit / (Loss)</TableHead>
                 <TableHead className="text-center font-bold">Margin</TableHead>
+                <TableHead className="text-right font-bold text-muted-foreground">Contract Rent (Month)</TableHead>
+                <TableHead className="text-right font-bold text-amber-700">Unbilled Rent</TableHead>
                 <TableHead className="text-center font-bold w-16">Drill-Down</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredMetricsList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-8 text-xs text-muted-foreground">
+                  <TableCell colSpan={14} className="text-center py-8 text-xs text-muted-foreground">
                     No properties match the selected criteria.
                   </TableCell>
                 </TableRow>
@@ -610,14 +699,14 @@ export function PropertyWiseProfitAndLossSubModule() {
                           {m.occupiedUnits}/{m.totalUnits} ({m.occupancyRate}%)
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium text-emerald-600">
-                        {m.rentalRevenue.toLocaleString()}
+                      <TableCell className={`text-right font-mono font-medium ${m.rentalRevenue > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                        QR {m.rentalRevenue.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {m.otherRevenue > 0 ? m.otherRevenue.toLocaleString() : "—"}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-bold text-foreground">
-                        {m.totalRevenue.toLocaleString()}
+                      <TableCell className={`text-right font-mono font-bold ${m.totalRevenue > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                        QR {m.totalRevenue.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {m.maintenanceExpense > 0 ? m.maintenanceExpense.toLocaleString() : "—"}
@@ -631,13 +720,19 @@ export function PropertyWiseProfitAndLossSubModule() {
                       <TableCell className="text-right font-mono font-bold text-rose-600">
                         {m.totalExpenses > 0 ? `-${m.totalExpenses.toLocaleString()}` : "0"}
                       </TableCell>
-                      <TableCell className={`text-right font-mono font-bold ${isProfitable ? "text-emerald-600" : "text-rose-600"}`}>
+                      <TableCell className={`text-right font-mono font-bold ${m.netProfit > 0 ? "text-emerald-600" : m.netProfit < 0 ? "text-rose-600" : "text-muted-foreground"}`}>
                         QR {Math.abs(m.netProfit).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className={`text-[10px] font-mono ${isProfitable ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-rose-50 text-rose-700 border-rose-300"}`}>
                           {isProfitable ? "+" : ""}{m.profitMargin.toFixed(1)}%
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-muted-foreground">
+                        QR {m.contractRentMonth.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-amber-600 font-medium">
+                        {m.uninvoicedContractRent > 0 ? `QR ${m.uninvoicedContractRent.toLocaleString()}` : "—"}
                       </TableCell>
                       <TableCell className="text-center">
                         <Button
@@ -740,10 +835,10 @@ export function PropertyWiseProfitAndLossSubModule() {
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-xs flex items-center gap-1.5 text-foreground">
                     <FileText className="h-4 w-4 text-primary" />
-                    <span>Unit Tenancy Accrual Schedule ({activePropertyData.tenancySchedules.length} Active Leases)</span>
+                    <span>Unit Tenancy Schedule &amp; Invoicing Status ({activePropertyData.tenancySchedules.length} Active Leases)</span>
                   </h4>
                   <span className="text-[11px] text-muted-foreground font-mono">
-                    Recognized based on contract active days in {selectedPeriod}
+                    Only invoiced units are recognized in P&amp;L ({selectedPeriod})
                   </span>
                 </div>
 
@@ -756,13 +851,14 @@ export function PropertyWiseProfitAndLossSubModule() {
                         <TableHead className="font-bold">Contract Term</TableHead>
                         <TableHead className="text-center font-bold">Days in Month</TableHead>
                         <TableHead className="text-right font-bold">Monthly Rent</TableHead>
-                        <TableHead className="text-right font-bold text-emerald-600">Recognized Income (QAR)</TableHead>
+                        <TableHead className="text-right font-bold text-emerald-600">Recognized (QAR)</TableHead>
+                        <TableHead className="font-bold">Posted By</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {activePropertyData.tenancySchedules.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">
+                          <TableCell colSpan={7} className="text-center py-6 text-xs text-muted-foreground">
                             No active tenancy schedules found for this property in this period.
                           </TableCell>
                         </TableRow>
@@ -780,10 +876,19 @@ export function PropertyWiseProfitAndLossSubModule() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right font-mono text-muted-foreground">
-                              {ts.monthlyRent.toLocaleString()}
+                              QR {ts.monthlyRent.toLocaleString()}
                             </TableCell>
-                            <TableCell className="text-right font-mono font-bold text-emerald-600">
-                              {ts.recognizedRevenue.toLocaleString()}
+                            <TableCell className={`text-right font-mono font-bold ${ts.isInvoiced ? "text-emerald-600" : "text-muted-foreground"}`}>
+                              QR {ts.recognizedRevenue.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="font-mono text-[11px]">
+                              {ts.isInvoiced ? (
+                                <Badge variant="outline" className="text-[10px] font-mono bg-emerald-50 text-emerald-700 border-emerald-300">
+                                  {ts.postedBy}
+                                </Badge>
+                              ) : (
+                                <span className="italic text-amber-600 font-medium">{ts.postedBy}</span>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))

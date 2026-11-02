@@ -17,7 +17,7 @@ import {
   Clock, BookOpen, FileText, PlusCircle, MinusCircle, ArrowDownLeft, ArrowUpRight, Receipt as ReceiptIcon,
   Building, Building2, CreditCard, FileCheck, FileSpreadsheet, PieChart, Landmark, Scale,
   DollarSign, Activity, FileCode, CheckCircle, Search, Plus, Trash2, Pencil,
-  ChevronRight, ChevronDown, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2,
+  ChevronRight, ChevronDown, Loader2, Filter, Download, FilePlus, ArrowRight, CheckCircle2, XCircle,
   AlertTriangle, RefreshCw, Eye, Printer, ShieldCheck, TrendingUp, ArrowUpDown,
   Home as HomeIcon, User as UserIcon, FolderTree, Folder, FolderOpen, Network
 } from "lucide-react";
@@ -60,7 +60,28 @@ import { BulkInvoiceDialog } from "@/components/finance/bulk-invoice-dialog";
 import { CustomerStatementSubModule } from "@/components/finance/customer-statement-submodule";
 import { InvoiceViewDialog } from "@/components/finance/invoice-view-dialog";
 import { PropertyWiseProfitAndLossSubModule } from "@/components/finance/property-wise-pnl";
+import { UnbilledUnitsReportSubModule } from "@/components/finance/unbilled-units-report";
+import { ArApAgingReportSubModule } from "@/components/finance/ar-ap-aging-report";
+import { VendorStatementSubModule } from "@/components/finance/vendor-statement-submodule";
+import { PdcMaturityForecastReportSubModule } from "@/components/finance/pdc-maturity-report";
+import { LeaseExpiryVacancyReportSubModule } from "@/components/finance/lease-expiry-vacancy-report";
+import { UtilityRechargeRecoverySubModule } from "@/components/finance/utility-recharge-report";
+import { SecurityDepositReconciliationSubModule } from "@/components/finance/security-deposit-reconciliation-report";
 
+export function isDateInClosedPostingPeriod(dateStr?: string): { closed: boolean; periodName?: string } {
+  if (!dateStr || typeof window === "undefined") return { closed: false };
+  try {
+    const ym = dateStr.split("T")[0].slice(0, 7);
+    const raw = localStorage.getItem("pms_posting_periods_cache");
+    if (!raw) return { closed: false };
+    const list = JSON.parse(raw) as Array<{ period_name: string; status: string }>;
+    const found = list.find(p => p.period_name === ym);
+    if (found && found.status === "Closed") {
+      return { closed: true, periodName: ym };
+    }
+  } catch {}
+  return { closed: false };
+}
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
   collectionContext?: {
@@ -151,7 +172,14 @@ const FINANCE_NAV = [
     bg: "bg-rose-500/10",
     activeBg: "bg-rose-500",
     items: [
+      { key: "unbilled_units_report", label: "Unbilled Units Report", icon: AlertTriangle },
+      { key: "ar_ap_aging", label: "AR & AP Aging Report", icon: Clock },
       { key: "customer_statement", label: "Customer Statement of Account", icon: FileText },
+      { key: "vendor_statement", label: "Vendor Statement of Account", icon: Users },
+      { key: "pdc_maturity_report", label: "PDC Maturity & Bounce Forecast", icon: FileCheck },
+      { key: "lease_expiry_report", label: "Lease Expiry & Vacancy Loss", icon: Calendar },
+      { key: "utility_recharge_report", label: "Utility Recharge & Recovery", icon: Activity },
+      { key: "deposit_reconciliation_report", label: "Deposit & Snagging Reconciliation", icon: ShieldCheck },
       { key: "revenue_generation", label: "Revenue Generation", icon: TrendingUp },
       { key: "trial_balance_simple", label: "Trial Balance (Simple)", icon: Scale },
       { key: "trial_balance", label: "Trial Balance", icon: Scale },
@@ -293,7 +321,14 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "bank_reconciliation_statement_list": return <BankReconciliationStatementListSubModule />;
 
     // Reports
+    case "unbilled_units_report": return <UnbilledUnitsReportSubModule />;
+    case "ar_ap_aging": return <ArApAgingReportSubModule />;
     case "customer_statement": return <CustomerStatementSubModule />;
+    case "vendor_statement": return <VendorStatementSubModule />;
+    case "pdc_maturity_report": return <PdcMaturityForecastReportSubModule />;
+    case "lease_expiry_report": return <LeaseExpiryVacancyReportSubModule />;
+    case "utility_recharge_report": return <UtilityRechargeRecoverySubModule />;
+    case "deposit_reconciliation_report": return <SecurityDepositReconciliationSubModule />;
     case "revenue_generation": return <RevenueGenerationSubModule />;
     case "trial_balance_simple": return <TrialBalanceSimpleSubModule />;
     case "trial_balance": return <TrialBalanceFullSubModule />;
@@ -325,6 +360,11 @@ function FinancialYearSubModule() {
   const [form, setForm] = useState({ name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" as const });
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined" && data.length > 0) {
+      try { localStorage.setItem("pms_posting_periods_cache", JSON.stringify(data)); } catch {}
+    }
+  }, [data]);
   async function load() {
     setLoading(true);
     try {
@@ -974,6 +1014,11 @@ function BudgetHeadSubModule() {
   }
 
   function handleSave() {
+    const periodCheck = isDateInClosedPostingPeriod(form.date);
+    if (periodCheck.closed) {
+      toast.error(`Posting Blocked: Accounting Period ${periodCheck.periodName} is CLOSED / LOCKED. Re-open the period in Finance > Posting Period to post backdated entries.`);
+      return;
+    }
     if (!form.name.trim() || !form.code.trim()) {
       toast.error("Please provide both Budget Head Code and Name.");
       return;
@@ -2314,36 +2359,73 @@ function ChartOfAccountsSubModule() {
 }
 
 function JournalLedgerSubModule() {
-  const { vouchers: sharedVouchers } = useAppData();
+  const { leases, units } = useAppData();
+  const { journalEntries: storeJournalEntries, addJournalEntry } = useFinanceStore();
   const [open, setOpen] = useState(false);
-  const [entries, setEntries] = useState<{ id: string; posting_date: string; reference: string; narration: string; dr_account: string; cr_account: string; amount: number; status: string }[]>([]);
+  const [entries, setEntries] = useState<{ id: string; posting_date: string; reference: string; narration: string; dr_account: string; cr_account: string; amount: number; status: string; property_name?: string }[]>([]);
+
+  const propertiesList = useMemo(() => {
+    const set = new Set<string>();
+    leases.forEach(l => { if (l.property) set.add(l.property); });
+    units.forEach(u => { if (u.property) set.add(u.property); });
+    if (set.size === 0) {
+      set.add("Old Salata - Residence No:23");
+      set.add("MANSOURA - BLDG06");
+      set.add("Neeman's New Building");
+    }
+    return Array.from(set).sort();
+  }, [leases, units]);
 
   const [form, setForm] = useState({
     je_no: `JE-2026-${Math.floor(100 + Math.random() * 900)}`,
     posting_date: new Date().toISOString().split("T")[0],
     reference: "MANUAL-JE",
     narration: "",
-    dr_account: "12000 - Bank Operating Account",
-    cr_account: "41100 - Rental Revenue",
-    amount: "5000",
+    property: "All / Corporate",
   });
 
+  type JeLine = {
+    id: string;
+    type: "DR" | "CR";
+    account: string;
+    property: string;
+    amount: string;
+    description: string;
+  };
+
+  const [jeLines, setJeLines] = useState<JeLine[]>([
+    { id: "1", type: "DR", account: "51004001 - Repair and Maintenance Cost", property: propertiesList[0] || "All / Corporate", amount: "5000", description: "Expense allocation" },
+    { id: "2", type: "CR", account: "12000 - Bank Operating Account (QNB/CBQ)", property: propertiesList[0] || "All / Corporate", amount: "5000", description: "Payment / adjustment" },
+  ]);
+
+  const totalDr = useMemo(() => jeLines.filter(l => l.type === "DR").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [jeLines]);
+  const totalCr = useMemo(() => jeLines.filter(l => l.type === "CR").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0), [jeLines]);
+  const hasDrAndCr = useMemo(() => jeLines.some(l => l.type === "DR" && (parseFloat(l.amount) || 0) > 0) && jeLines.some(l => l.type === "CR" && (parseFloat(l.amount) || 0) > 0), [jeLines]);
+  const isBalanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0 && hasDrAndCr;
+
   async function handleAddEntry() {
-    if (!form.narration || !form.amount) {
-      toast.error("Please fill in narration and amount");
+    if (!form.narration.trim()) {
+      toast.error("Please fill in the journal narration / description.");
       return;
     }
-    const amt = parseFloat(form.amount) || 0;
+    if (!isBalanced) {
+      toast.error(`Journal Rejected: Total Debit (QAR ${totalDr.toLocaleString()}) and Total Credit (QAR ${totalCr.toLocaleString()}) must be tallied and greater than zero!`);
+      return;
+    }
+
+    const accountCode = (label: string) => label.trim().split(/\s+/)[0];
     try {
       await postVoucher({
         voucher_date: form.posting_date,
         voucher_type: 'Journal',
         description: form.narration,
         reference_no: form.reference,
-        lines: [
-          { account_code: form.dr_account.split(' ')[0], debit: amt, credit: 0, description: form.narration },
-          { account_code: form.cr_account.split(' ')[0], debit: 0, credit: amt, description: form.narration }
-        ]
+        lines: jeLines.map(l => ({
+          account_code: accountCode(l.account),
+          debit: l.type === "DR" ? (parseFloat(l.amount) || 0) : 0,
+          credit: l.type === "CR" ? (parseFloat(l.amount) || 0) : 0,
+          description: `${l.description || form.narration} [${l.property}]`,
+        }))
       });
     } catch (error: any) {
       console.error(error);
@@ -2351,20 +2433,50 @@ function JournalLedgerSubModule() {
       return;
     }
 
+    const drSummary = jeLines.filter(l => l.type === "DR").map(l => `${l.account} [${l.property}] (${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+    const crSummary = jeLines.filter(l => l.type === "CR").map(l => `${l.account} [${l.property}] (${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+    const firstDr = jeLines.find(l => l.type === "DR");
+    const firstCr = jeLines.find(l => l.type === "CR");
+    const uniqueProps = Array.from(new Set(jeLines.map(l => l.property).filter(Boolean))).join(", ");
+
+    addJournalEntry({
+      je_no: form.je_no,
+      posting_date: form.posting_date,
+      reference: form.reference,
+      narration: form.narration,
+      dr_account: drSummary,
+      dr_code: firstDr ? accountCode(firstDr.account) : "12000",
+      cr_account: crSummary,
+      cr_code: firstCr ? accountCode(firstCr.account) : "41100",
+      amount: totalDr,
+      property_name: uniqueProps || form.property,
+      lines: jeLines.map(l => ({
+        id: l.id,
+        type: l.type,
+        account: l.account,
+        account_code: accountCode(l.account),
+        amount: parseFloat(l.amount) || 0,
+        property_name: l.property,
+        description: l.description || form.narration,
+      })),
+    });
+
     const newJE = {
       id: form.je_no,
       posting_date: form.posting_date,
       reference: form.reference,
       narration: form.narration,
-      dr_account: form.dr_account,
-      cr_account: form.cr_account,
-      amount: amt,
-      status: "Posted"
+      dr_account: drSummary,
+      cr_account: crSummary,
+      amount: totalDr,
+      status: "Posted",
+      property_name: uniqueProps,
     };
 
     setEntries(prev => [newJE, ...prev]);
-    toast.success(`Journal Entry ${form.je_no} successfully posted to Ledger!`);
+    toast.success(`Journal Entry ${form.je_no} (QAR ${totalDr.toLocaleString()}) posted to Ledger!`);
     setOpen(false);
+    setForm(f => ({ ...f, je_no: `JE-2026-${Math.floor(100 + Math.random() * 900)}`, narration: "" }));
   }
 
   const [startMonth, setStartMonth] = useState("");
@@ -2372,8 +2484,30 @@ function JournalLedgerSubModule() {
   const [quickFilter, setQuickFilter] = useState("all");
   const [search, setSearch] = useState("");
 
+  const combinedEntries = useMemo(() => {
+    const map = new Map<string, any>();
+    entries.forEach(e => map.set(e.id, e));
+    (storeJournalEntries || []).forEach(je => {
+      const key = je.je_no || je.id;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          posting_date: je.posting_date,
+          reference: je.reference,
+          narration: je.narration,
+          dr_account: je.dr_account,
+          cr_account: je.cr_account,
+          amount: je.amount,
+          status: je.status || "Posted",
+          property_name: je.property_name,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [entries, storeJournalEntries]);
+
   const filteredEntries = useMemo(() => {
-    let list = entries;
+    let list = combinedEntries;
     if (quickFilter === "current") {
       const cur = new Date().toISOString().slice(0, 7);
       list = list.filter(je => (je.posting_date || "").startsWith(cur));
@@ -2402,7 +2536,7 @@ function JournalLedgerSubModule() {
       );
     }
     return list;
-  }, [entries, startMonth, endMonth, quickFilter, search]);
+  }, [combinedEntries, startMonth, endMonth, quickFilter, search]);
 
   const totalAmount = useMemo(() => filteredEntries.reduce((s, je) => s + (je.amount || 0), 0), [filteredEntries]);
 
@@ -2411,7 +2545,7 @@ function JournalLedgerSubModule() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">Journal Ledger Postings</h3>
-          <p className="text-xs text-muted-foreground">General Journal entries with dual-entry audit trail and month-wise range filtering.</p>
+          <p className="text-xs text-muted-foreground">General Journal entries with multi-line property allocation, dual-entry audit trail, and strict Debit/Credit tallying.</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200">
@@ -2488,10 +2622,10 @@ function JournalLedgerSubModule() {
             <TableRow className="bg-muted/50 text-xs">
               <TableHead className="font-bold">Entry Date</TableHead>
               <TableHead className="font-bold">JE #</TableHead>
-              <TableHead className="font-bold">Posting Date</TableHead>
+              <TableHead className="font-bold">Property</TableHead>
               <TableHead className="font-bold">Reference</TableHead>
-              <TableHead className="font-bold">Debit Account</TableHead>
-              <TableHead className="font-bold">Credit Account</TableHead>
+              <TableHead className="font-bold">Debit Account(s)</TableHead>
+              <TableHead className="font-bold">Credit Account(s)</TableHead>
               <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
               <TableHead className="font-bold">Status</TableHead>
             </TableRow>
@@ -2508,10 +2642,10 @@ function JournalLedgerSubModule() {
                 <TableRow key={je.id} className="hover:bg-muted/30 text-xs">
                   <TableCell className="font-mono text-muted-foreground">{je.posting_date || '2026-08-01'}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">{je.id}</TableCell>
-                  <TableCell className="font-medium">{je.posting_date}</TableCell>
+                  <TableCell className="font-medium text-muted-foreground">{je.property_name || "Corporate"}</TableCell>
                   <TableCell className="font-mono text-muted-foreground">{je.reference}</TableCell>
-                  <TableCell className="text-blue-600 font-medium">{je.dr_account}</TableCell>
-                  <TableCell className="text-emerald-600 font-medium">{je.cr_account}</TableCell>
+                  <TableCell className="text-blue-600 font-medium max-w-[220px] truncate" title={je.dr_account}>{je.dr_account}</TableCell>
+                  <TableCell className="text-emerald-600 font-medium max-w-[220px] truncate" title={je.cr_account}>{je.cr_account}</TableCell>
                   <TableCell className="text-right font-mono font-bold">{je.amount.toLocaleString()}</TableCell>
                   <TableCell><Badge variant="default" className="text-[10px]">{je.status}</Badge></TableCell>
                 </TableRow>
@@ -2522,79 +2656,134 @@ function JournalLedgerSubModule() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Journal Ledger Entry</DialogTitle>
-            <p className="text-xs text-muted-foreground">Posts double-entry lines into General Ledger with real-time balance enforcement.</p>
+            <DialogTitle>Create Multi-Line Journal Ledger Entry</DialogTitle>
+            <p className="text-xs text-muted-foreground">Posts multiple debit &amp; credit lines with line-by-line property selection and strict balance enforcement.</p>
           </DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>JE Number</Label><Input value={form.je_no} onChange={e => setForm({ ...form, je_no: e.target.value })} /></div>
-              <div><Label>Posting Date</Label><Input type="date" value={form.posting_date} onChange={e => setForm({ ...form, posting_date: e.target.value })} /></div>
-            </div>
-            <div><Label>Reference / Document No</Label><Input value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Debit Account (Dr)</Label>
-                <Select value={form.dr_account} onValueChange={v => setForm({ ...form, dr_account: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="12000 - Bank Operating Account">12000 - Bank Operating Account</SelectItem>
-                    <SelectItem value="10100 - Cash In Hand">10100 - Cash In Hand</SelectItem>
-                    <SelectItem value="12413 - Tenant Receivables">12413 - Tenant Receivables</SelectItem>
-                    <SelectItem value="5020 - Repairs & Maintenance">5020 - Repairs & Maintenance</SelectItem>
-                    <SelectItem value="5010 - Basic Salaries">5010 - Basic Salaries</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Credit Account (Cr)</Label>
-                <Select value={form.cr_account} onValueChange={v => setForm({ ...form, cr_account: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="41100 - Rental Revenue">41100 - Rental Revenue</SelectItem>
-                    <SelectItem value="21500 - Security Deposit Liability">21500 - Security Deposit Liability</SelectItem>
-                    <SelectItem value="2010 - Accounts Payable">2010 - Accounts Payable</SelectItem>
-                    <SelectItem value="12900 - PDC In Hand">12900 - PDC In Hand</SelectItem>
-                    <SelectItem value="12000 - Bank Operating Account">12000 - Bank Operating Account</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="space-y-4 py-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div><Label className="text-[11px] font-semibold">JE Number *</Label><Input className="h-8 text-xs font-mono font-bold" value={form.je_no} onChange={e => setForm({ ...form, je_no: e.target.value })} /></div>
+              <div><Label className="text-[11px] font-semibold">Posting Date *</Label><Input type="date" className="h-8 text-xs" value={form.posting_date} onChange={e => setForm({ ...form, posting_date: e.target.value })} /></div>
+              <div><Label className="text-[11px] font-semibold">Reference / Document No</Label><Input className="h-8 text-xs" value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} /></div>
             </div>
             <div>
-              <Label>Amount (QAR)</Label>
-              <Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
-            </div>
-            <div>
-              <Label>Narration / Description</Label>
-              <Textarea rows={2} placeholder="Explain the business transaction..." value={form.narration} onChange={e => setForm({ ...form, narration: e.target.value })} />
+              <Label className="text-[11px] font-semibold">Narration / Description *</Label>
+              <Input className="h-8 text-xs" placeholder="Explain the business transaction..." value={form.narration} onChange={e => setForm({ ...form, narration: e.target.value })} />
             </div>
 
-            {/* Live GL / COA Impact Preview */}
-            {parseFloat(form.amount) > 0 && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-semibold">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Ledgers / Accounts Updated by this Entry</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="bg-background p-2 rounded border border-emerald-200">
-                    <span className="text-emerald-700 dark:text-emerald-400 font-bold block">Debit (DR):</span>
-                    <span>{form.dr_account}</span>
-                    <span className="block font-bold text-emerald-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
-                  </div>
-                  <div className="bg-background p-2 rounded border border-rose-200">
-                    <span className="text-rose-600 dark:text-rose-400 font-bold block">Credit (CR):</span>
-                    <span>{form.cr_account}</span>
-                    <span className="block font-bold text-rose-600 mt-1">QR {parseFloat(form.amount || '0').toLocaleString()}</span>
-                  </div>
+            <div className="space-y-2.5 border rounded-lg p-3 bg-muted/20">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-xs uppercase tracking-wide">Journal Lines (Multi Debit / Credit &amp; Property)</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 border-blue-500/40 text-blue-600"
+                    onClick={() => setJeLines(lines => [...lines, { id: String(Date.now() + Math.random()), type: "DR", account: COMMON_GL_ACCOUNTS[0].name, property: propertiesList[0] || "All / Corporate", amount: "0", description: form.narration }])}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Debit (Dr) Line
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 border-emerald-500/40 text-emerald-600"
+                    onClick={() => setJeLines(lines => [...lines, { id: String(Date.now() + Math.random()), type: "CR", account: COMMON_GL_ACCOUNTS[1].name, property: propertiesList[0] || "All / Corporate", amount: "0", description: form.narration }])}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Credit (Cr) Line
+                  </Button>
                 </div>
               </div>
-            )}
+
+              <div className="border rounded-lg overflow-x-auto bg-background">
+                <table className="w-full min-w-[850px] text-xs">
+                  <thead className="bg-muted/60 text-muted-foreground font-semibold border-b">
+                    <tr>
+                      <th className="py-2 px-2 text-center w-20">Dr / Cr</th>
+                      <th className="py-2 px-2 text-left w-60">GL Account</th>
+                      <th className="py-2 px-2 text-left w-52">Property</th>
+                      <th className="py-2 px-2 text-left">Line Memo</th>
+                      <th className="py-2 px-2 text-right w-28">Debit (QAR)</th>
+                      <th className="py-2 px-2 text-right w-28">Credit (QAR)</th>
+                      <th className="py-2 px-1 text-center w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {jeLines.map((line, idx) => (
+                      <tr key={line.id}>
+                        <td className="py-2 px-2">
+                          <Select value={line.type} onValueChange={(v: "DR" | "CR") => setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, type: v } : l))}>
+                            <SelectTrigger className={`h-8 text-xs font-bold ${line.type === "DR" ? "text-blue-600 border-blue-300" : "text-emerald-600 border-emerald-300"}`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="DR" className="text-blue-600 font-bold">DR</SelectItem>
+                              <SelectItem value="CR" className="text-emerald-600 font-bold">CR</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Select value={line.account} onValueChange={v => setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, account: v } : l))}>
+                            <SelectTrigger className="h-8 text-xs font-mono"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Select value={line.property} onValueChange={v => setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, property: v } : l))}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
+                              {propertiesList.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Input className="h-8 text-xs" placeholder="Line description" value={line.description} onChange={e => { const v = e.target.value; setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, description: v } : l)); }} />
+                        </td>
+                        <td className="py-2 px-2 text-right">
+                          {line.type === "DR" ? (
+                            <Input type="number" step="0.01" className="h-8 text-xs font-mono font-bold text-right text-blue-700" value={line.amount} onChange={e => { const v = e.target.value; setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, amount: v } : l)); }} />
+                          ) : <span className="text-muted-foreground font-mono text-center block">—</span>}
+                        </td>
+                        <td className="py-2 px-2 text-right">
+                          {line.type === "CR" ? (
+                            <Input type="number" step="0.01" className="h-8 text-xs font-mono font-bold text-right text-emerald-700" value={line.amount} onChange={e => { const v = e.target.value; setJeLines(lines => lines.map((l, i) => i === idx ? { ...l, amount: v } : l)); }} />
+                          ) : <span className="text-muted-foreground font-mono text-center block">—</span>}
+                        </td>
+                        <td className="py-2 px-1 text-center">
+                          {jeLines.length > 2 && (
+                            <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => setJeLines(lines => lines.filter((_, i) => i !== idx))}>
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/40 font-bold border-t">
+                    <tr>
+                      <td colSpan={4} className="py-2 px-3 text-right uppercase text-[11px]">Totals:</td>
+                      <td className="py-2 px-2 text-right font-mono text-blue-700">QR {totalDr.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="py-2 px-2 text-right font-mono text-emerald-700">QR {totalCr.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="text-center">{isBalanced ? "✓" : "✗"}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {!isBalanced && (
+                <div className="rounded p-2 bg-destructive/10 border border-destructive/30 text-destructive text-[11px] flex justify-between items-center">
+                  <span>⚠️ Journal Blocked: Total Debit (QR {totalDr.toLocaleString()}) and Total Credit (QR {totalCr.toLocaleString()}) do not tally!</span>
+                  <span className="font-semibold">System requires Debit === Credit</span>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddEntry}>Confirm & Post Journal</Button>
+            <Button onClick={handleAddEntry} disabled={!isBalanced}>Confirm &amp; Post Journal</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2603,28 +2792,50 @@ function JournalLedgerSubModule() {
 }
 
 function CreditDebitBuilderSubModule() {
-  const [lines, setLines] = useState([{ account: "", debit: 0, credit: 0 }]);
+  const { leases, units } = useAppData();
+  const { addJournalEntry } = useFinanceStore();
+  const propertiesList = useMemo(() => {
+    const set = new Set<string>();
+    leases.forEach(l => { if (l.property) set.add(l.property); });
+    units.forEach(u => { if (u.property) set.add(u.property); });
+    if (set.size === 0) {
+      set.add("Old Salata - Residence No:23");
+      set.add("MANSOURA - BLDG06");
+      set.add("Neeman's New Building");
+    }
+    return Array.from(set).sort();
+  }, [leases, units]);
+
+  const [lines, setLines] = useState([
+    { account: COMMON_GL_ACCOUNTS[0].name, property: propertiesList[0] || "All / Corporate", debit: 0, credit: 0, description: "" },
+    { account: COMMON_GL_ACCOUNTS[6].name, property: propertiesList[0] || "All / Corporate", debit: 0, credit: 0, description: "" },
+  ]);
   const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
 
-  function addLine() { setLines([...lines, { account: "", debit: 0, credit: 0 }]); }
+  function addLine() {
+    setLines([...lines, { account: COMMON_GL_ACCOUNTS[0].name, property: propertiesList[0] || "All / Corporate", debit: 0, credit: 0, description: "" }]);
+  }
   function removeLine(idx: number) { setLines(lines.filter((_, i) => i !== idx)); }
 
   async function submit() {
-    if (totalDebit !== totalCredit || totalDebit === 0) {
-      toast.error("Debits and credits must balance and be greater than 0!");
+    if (!isBalanced) {
+      toast.error(`Journal Rejected: Total Debit (QAR ${totalDebit.toLocaleString()}) and Total Credit (QAR ${totalCredit.toLocaleString()}) must be tallied and greater than 0!`);
       return;
     }
+    const today = new Date().toISOString().split("T")[0];
+    const jeNo = `JVB-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     try {
       await postVoucher({
-        voucher_date: new Date().toISOString().split("T")[0],
+        voucher_date: today,
         voucher_type: 'Journal',
         description: 'Multi-line Credit Debit Builder Voucher',
         lines: lines.map(l => ({
           account_code: l.account.split(' ')[0] || '1000',
           debit: Number(l.debit) || 0,
           credit: Number(l.credit) || 0,
-          description: l.account,
+          description: `${l.description || l.account} [${l.property}]`,
         }))
       });
     } catch (error: any) {
@@ -2633,10 +2844,35 @@ function CreditDebitBuilderSubModule() {
       return;
     }
 
-    toast.success("Journal voucher built & posted successfully!");
+    const drLines = lines.filter(l => (Number(l.debit) || 0) > 0);
+    const crLines = lines.filter(l => (Number(l.credit) || 0) > 0);
+    addJournalEntry({
+      je_no: jeNo,
+      posting_date: today,
+      reference: "BUILDER-JV",
+      narration: "Multi-leg Credit/Debit Builder Journal",
+      dr_account: drLines.map(l => `${l.account} [${l.property}]`).join("; "),
+      dr_code: drLines[0]?.account.split(" ")[0] || "12000",
+      cr_account: crLines.map(l => `${l.account} [${l.property}]`).join("; "),
+      cr_code: crLines[0]?.account.split(" ")[0] || "41100",
+      amount: totalDebit,
+      property_name: Array.from(new Set(lines.map(l => l.property))).join(", "),
+      lines: lines.flatMap((l, i) => {
+        const res: any[] = [];
+        if ((Number(l.debit) || 0) > 0) {
+          res.push({ id: `${i}-dr`, type: "DR", account: l.account, account_code: l.account.split(" ")[0], amount: Number(l.debit), property_name: l.property, description: l.description });
+        }
+        if ((Number(l.credit) || 0) > 0) {
+          res.push({ id: `${i}-cr`, type: "CR", account: l.account, account_code: l.account.split(" ")[0], amount: Number(l.credit), property_name: l.property, description: l.description });
+        }
+        return res;
+      }),
+    });
+
+    toast.success(`Journal voucher ${jeNo} (QAR ${totalDebit.toLocaleString()}) built & posted successfully!`);
     setLines([
-      { account: "12000 - Bank Operating Account", debit: 0, credit: 0 },
-      { account: "41100 - Rental Income", debit: 0, credit: 0 }
+      { account: COMMON_GL_ACCOUNTS[0].name, property: propertiesList[0] || "All / Corporate", debit: 0, credit: 0, description: "" },
+      { account: COMMON_GL_ACCOUNTS[6].name, property: propertiesList[0] || "All / Corporate", debit: 0, credit: 0, description: "" }
     ]);
   }
 
@@ -2645,40 +2881,72 @@ function CreditDebitBuilderSubModule() {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-sm font-semibold">Multi-Leg Debit / Credit Voucher Builder</h3>
-          <p className="text-xs text-muted-foreground">Construct complex split-leg journal entries with real-time balancing.</p>
+          <p className="text-xs text-muted-foreground">Construct complex split-leg journal entries with line-by-line property selection and strict Debit/Credit balancing.</p>
         </div>
       </div>
 
       <div className="bg-card p-4 rounded-lg border shadow-sm space-y-3">
         {lines.map((l, idx) => (
-          <div key={idx} className="flex gap-2 items-center text-xs">
-            <Input
-              placeholder="Account Code & Name (e.g. 12000 Bank)"
-              className="flex-1 text-xs"
-              value={l.account}
-              onChange={e => { const next = [...lines]; next[idx].account = e.target.value; setLines(next); }}
-            />
-            <Input
-              type="number"
-              placeholder="Debit"
-              className="w-32 text-xs"
-              value={l.debit || ""}
-              onChange={e => { const next = [...lines]; next[idx].debit = parseFloat(e.target.value) || 0; setLines(next); }}
-            />
-            <Input
-              type="number"
-              placeholder="Credit"
-              className="w-32 text-xs"
-              value={l.credit || ""}
-              onChange={e => { const next = [...lines]; next[idx].credit = parseFloat(e.target.value) || 0; setLines(next); }}
-            />
-            {lines.length > 2 && (
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLine(idx)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
+          <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center text-xs">
+            <div className="sm:col-span-4">
+              <Select value={l.account} onValueChange={v => { const next = [...lines]; next[idx].account = v; setLines(next); }}>
+                <SelectTrigger className="h-8 text-xs font-mono"><SelectValue placeholder="Select GL Account" /></SelectTrigger>
+                <SelectContent>
+                  {COMMON_GL_ACCOUNTS.map(a => <SelectItem key={a.code} value={a.name} className="text-xs font-mono">{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-3">
+              <Select value={l.property} onValueChange={v => { const next = [...lines]; next[idx].property = v; setLines(next); }}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select Property" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
+                  {propertiesList.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Input
+                placeholder="Line memo..."
+                className="h-8 text-xs"
+                value={l.description || ""}
+                onChange={e => { const next = [...lines]; next[idx].description = e.target.value; setLines(next); }}
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <Input
+                type="number"
+                placeholder="Debit"
+                className="h-8 text-xs font-mono text-blue-700"
+                value={l.debit || ""}
+                onChange={e => { const next = [...lines]; next[idx].debit = parseFloat(e.target.value) || 0; setLines(next); }}
+              />
+            </div>
+            <div className="sm:col-span-1">
+              <Input
+                type="number"
+                placeholder="Credit"
+                className="h-8 text-xs font-mono text-emerald-700"
+                value={l.credit || ""}
+                onChange={e => { const next = [...lines]; next[idx].credit = parseFloat(e.target.value) || 0; setLines(next); }}
+              />
+            </div>
+            <div className="sm:col-span-1 flex justify-end">
+              {lines.length > 2 && (
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLine(idx)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         ))}
+
+        {!isBalanced && (totalDebit > 0 || totalCredit > 0) && (
+          <div className="rounded p-2 bg-destructive/10 border border-destructive/30 text-destructive text-[11px] flex justify-between items-center">
+            <span>⚠️ Out of balance by QAR {Math.abs(totalDebit - totalCredit).toLocaleString()} — Journal cannot be accepted until Total Debit equals Total Credit.</span>
+            <span className="font-semibold">Debit === Credit Required</span>
+          </div>
+        )}
 
         <div className="flex justify-between items-center pt-3 border-t border-border mt-2">
           <Button variant="outline" size="sm" onClick={addLine} className="gap-1 text-xs">
@@ -2687,10 +2955,10 @@ function CreditDebitBuilderSubModule() {
           <div className="flex items-center gap-4 text-xs">
             <span>Total Dr: <strong className="font-mono text-blue-600 font-bold">{totalDebit.toLocaleString()} QAR</strong></span>
             <span>Total Cr: <strong className="font-mono text-emerald-600 font-bold">{totalCredit.toLocaleString()} QAR</strong></span>
-            <Badge variant={totalDebit === totalCredit && totalDebit > 0 ? "default" : "destructive"}>
-              {totalDebit === totalCredit && totalDebit > 0 ? "Balanced" : `Diff: ${(totalDebit - totalCredit).toLocaleString()} QAR`}
+            <Badge variant={isBalanced ? "default" : "destructive"}>
+              {isBalanced ? "Balanced ✓" : `Diff: ${(totalDebit - totalCredit).toLocaleString()} QAR`}
             </Badge>
-            <Button size="sm" onClick={submit} disabled={totalDebit !== totalCredit || totalDebit === 0}>
+            <Button size="sm" onClick={submit} disabled={!isBalanced}>
               Post Voucher
             </Button>
           </div>
@@ -2705,6 +2973,7 @@ function CreditDebitBuilderSubModule() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function GrnCostMappingSubModule() {
+  const { grnMappings, addGrnMapping, payableInvoices, addPayableInvoice } = useFinanceStore();
   const [open, setOpen] = useState(false);
   const [grnList, setGrnList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2739,8 +3008,25 @@ function GrnCostMappingSubModule() {
         try { localMappings = JSON.parse(stored); } catch {}
       }
 
-      localStorage.removeItem("grn_cost_mappings_v2");
-      localMappings = [];
+      // Keep localMappings intact and also include store grnMappings
+      grnMappings.forEach(g => {
+        if (!localMappings.some(m => m.grn_no === g.grn_no)) {
+          localMappings.push({
+            id: g.id,
+            grn_no: g.grn_no,
+            po_ref: g.po_ref,
+            date: new Date().toISOString().slice(0, 10),
+            vendor: g.vendor,
+            description: g.description,
+            amount: g.amount,
+            mapped_gl: g.mapped_gl,
+            property: g.property,
+            status: "Posted to GL",
+            source: "Finance Store"
+          });
+        }
+      });
+      // localMappings preserved
 
       // 3. Integrate DB GRNs
       const mergedList = [...localMappings];
@@ -2770,7 +3056,7 @@ function GrnCostMappingSubModule() {
         });
       }
 
-      setGrnList([]);
+      setGrnList(mergedList);
     } catch (e) {
       console.error("Failed loading GRN cost mappings:", e);
     } finally {
@@ -2830,6 +3116,39 @@ function GrnCostMappingSubModule() {
       status: grn.status || "Posted to GL",
     });
     setOpen(true);
+  }
+
+  function handleConvertToApInvoice(row: any) {
+    const invNo = `AP-${row.grn_no}`;
+    const alreadyExists = payableInvoices.some(ap => ap.invoice_no === invNo || ap.invoice_no === `INV-${row.grn_no}`);
+    if (alreadyExists) {
+      toast.info(`AP Invoice for ${row.grn_no} already exists in Accounts Payable.`);
+      return;
+    }
+    const cleanGl = row.mapped_gl.replace(/^\d+\s*[-–—]\s*/, "");
+    const glCode = row.mapped_gl.split(/\s+/)[0] || "51004001";
+    addPayableInvoice({
+      invoice_no: invNo,
+      vendor: row.vendor,
+      property: row.property || "Main Portfolio",
+      amount: Number(row.amount),
+      date: row.date || new Date().toISOString().slice(0, 10),
+      due_date: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      stream: row.mapped_gl,
+      account: cleanGl,
+      account_code: glCode,
+      lines: [
+        {
+          id: `line-${Date.now()}`,
+          description: row.description || `GRN Cost Allocation (${row.grn_no})`,
+          account: cleanGl,
+          account_code: glCode,
+          property: row.property || "Main Portfolio",
+          amount: Number(row.amount),
+        }
+      ]
+    });
+    toast.success(`AP Payable Invoice ${invNo} booked successfully and posted to GL!`);
   }
 
   const totalCostAllocated = grnList.reduce((acc, g) => acc + (Number(g.amount) || 0), 0);
@@ -2928,6 +3247,15 @@ function GrnCostMappingSubModule() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
+                  {payableInvoices.some(ap => ap.invoice_no === `AP-${row.grn_no}` || ap.invoice_no === `INV-${row.grn_no}`) ? (
+                    <Badge variant="secondary" className="bg-blue-600/10 text-blue-600 border-blue-200 text-[10px] gap-1 font-medium mr-1.5">
+                      <CheckCircle2 className="h-2.5 w-2.5 text-blue-600" /> AP Invoiced
+                    </Badge>
+                  ) : (
+                    <Button size="sm" variant="default" className="h-6 text-[10px] px-2 gap-1 bg-emerald-600 text-white hover:bg-emerald-700 mr-1.5" onClick={() => handleConvertToApInvoice(row)}>
+                      <ArrowUpRight className="h-2.5 w-2.5" /> Book AP Bill
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 text-primary" onClick={() => openEditMapping(row)}>
                     <Pencil className="h-2.5 w-2.5" /> Edit GL Mapping
                   </Button>
@@ -3048,14 +3376,38 @@ function GrnCostMappingSubModule() {
   );
 }
 
+const EXPENSE_GL_ACCOUNTS = [
+  "51004001 - Repair and Maintenance Cost",
+  "51004006 - Cost of CMEP Materials",
+  "51002001 - CMEP-Facilities Mgt AMC",
+  "51001001 - CMEP-Labor Cost-Facilities Mgt",
+  "51003001 - Electricity & Water-Common Area",
+  "51004007 - Cleaning & Sanitation Services",
+  "51101001 - Staff Basic Salary",
+  "51102014 - IT Expenses",
+  "51102001 - Vehicles & Other Insurance Expenses",
+];
+
 function PayableInvoiceSubModule() {
-  const { addVoucher } = useFinanceStore();
+  const { addVoucher, payableInvoices: storePayableInvoices, addPayableInvoice } = useFinanceStore();
   const { leases, units } = useAppData();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<any | null>(null);
+
+  const propertiesList = useMemo(() => {
+    const set = new Set<string>();
+    leases.forEach(l => { if (l.property) set.add(l.property); });
+    units.forEach(u => { if (u.property) set.add(u.property); });
+    if (set.size === 0) {
+      set.add("Old Salata - Residence No:23");
+      set.add("MANSOURA - BLDG06");
+      set.add("Neeman's New Building");
+    }
+    return Array.from(set).sort();
+  }, [leases, units]);
 
   // Payment Settlement Dialog state
   const [payTarget, setPayTarget] = useState<any | null>(null);
@@ -3094,7 +3446,7 @@ function PayableInvoiceSubModule() {
   }, [loadInvoices]);
 
   // Merge Store AP invoices and Procurement AP invoices
-  const displayedStoreInvoices = useMemo<any[]>(() => [], []);
+  const displayedStoreInvoices = useMemo<any[]>(() => storePayableInvoices || [], [storePayableInvoices]);
   const allInvoices = useMemo(() => {
     const list: any[] = [];
     const seen = new Set<string>();
@@ -3131,19 +3483,26 @@ function PayableInvoiceSubModule() {
         const totalAmt = Number(inv.amount || 0);
         const taxAmt = Number((inv as any).tax_amount || 0);
         const baseAmt = Number((inv as any).base_amount || (totalAmt - taxAmt));
+        const linesSummaryProp = inv.lines && inv.lines.length > 0
+          ? Array.from(new Set(inv.lines.map((l: any) => l.property))).join(", ")
+          : (inv.property || "Al Ameen Real Estate Head Office");
+        const linesSummaryAcc = inv.lines && inv.lines.length > 1
+          ? `${inv.lines.length} Expense Lines (${inv.lines.map((l: any) => l.account_code).join(", ")})`
+          : (inv.account || "51004001 - Repair and Maintenance Cost");
         list.push({
           id: inv.id,
           invoice_no: inv.invoice_no,
           vendor: inv.vendor,
-          property: inv.property || "Al Ameen Real Estate Head Office",
+          property: linesSummaryProp,
           date: inv.date,
           due_date: inv.due_date,
-          account: inv.account || "51004001 - Repair and Maintenance Cost",
+          account: linesSummaryAcc,
           account_code: inv.account_code || "51004001",
           base_amount: baseAmt,
           tax_amount: taxAmt,
           amount: totalAmt,
           status: inv.status || "Unpaid",
+          lines: inv.lines,
           raw: inv
         });
       }
@@ -3163,21 +3522,80 @@ function PayableInvoiceSubModule() {
     amount: "4275",
   });
 
+  type ApExpenseLine = {
+    id: string;
+    account: string;
+    property: string;
+    description: string;
+    amount: string;
+  };
+
+  const [expenseLines, setExpenseLines] = useState<ApExpenseLine[]>([
+    {
+      id: "1",
+      account: "51004001 - Repair and Maintenance Cost",
+      property: propertiesList[0] || "Al Ameen Real Estate Head Office",
+      description: "Site maintenance & repair work",
+      amount: "4275",
+    },
+  ]);
+
+  const totalApAmount = useMemo(
+    () => expenseLines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0),
+    [expenseLines]
+  );
+
   async function handleAdd() {
-    const amt = parseFloat(form.amount) || 0;
+    const validLines = expenseLines.filter(l => (parseFloat(l.amount) || 0) > 0);
+    if (validLines.length === 0 || totalApAmount <= 0) {
+      toast.error("Please enter at least one expense line with an amount greater than 0.");
+      return;
+    }
+    if (!form.vendor.trim()) {
+      toast.error("Please enter the Vendor name.");
+      return;
+    }
+
+    const formattedLines = validLines.map(l => ({
+      id: l.id,
+      account: l.account,
+      account_code: l.account.split(" - ")[0].trim(),
+      property: l.property || "Al Ameen Real Estate Head Office",
+      description: l.description || `Invoice from ${form.vendor}`,
+      amount: parseFloat(l.amount) || 0,
+    }));
+
+    const primaryLine = formattedLines[0];
+    const uniqueProps = Array.from(new Set(formattedLines.map(l => l.property)));
+    const propSummary = uniqueProps.join(", ");
+
+    addPayableInvoice({
+      invoice_no: form.invoice_no,
+      vendor: form.vendor,
+      date: form.date,
+      due_date: form.due_date,
+      account: formattedLines.length > 1 ? `Multi-Line (${formattedLines.length} items)` : primaryLine.account,
+      account_code: primaryLine.account_code,
+      amount: totalApAmount,
+      property: propSummary,
+      lines: formattedLines,
+    });
+
     await ApInvoicesApi.create({
       invoice_number: form.invoice_no,
       vendor_id: form.vendor,
       invoice_date: form.date,
       due_date: form.due_date,
-      amount: amt,
+      amount: totalApAmount,
       tax_amount: 0,
-      total_amount: amt,
+      total_amount: totalApAmount,
       status: "DRAFT",
-      remarks: `Direct AP Invoice booked to ${form.account} • Property: ${form.property}`
+      remarks: `AP Invoice (${formattedLines.length} lines) • Properties: ${propSummary}`
     } as any);
-    toast.success(`Payable Invoice ${form.invoice_no} booked for ${form.property}.`);
+
+    toast.success(`Payable Invoice ${form.invoice_no} (QAR ${totalApAmount.toLocaleString()}) booked across ${formattedLines.length} expense line(s).`);
     setOpen(false);
+    setForm(f => ({ ...f, invoice_no: `APINV-${Math.floor(10000 + Math.random() * 90000)}` }));
     await loadInvoices();
   }
 
@@ -3391,71 +3809,195 @@ function PayableInvoiceSubModule() {
 
       {/* Modal: Create AP Invoice */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Create Accounts Payable Invoice</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Entry Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Invoice #</Label><Input value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} /></div>
+        <DialogContent className="sm:max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <CreditCard className="h-5 w-5 text-primary" />
+              <span>Create Accounts Payable Invoice (Multi-Line Expense &amp; Property Booking)</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Add one or more expense lines and select the target property / cost center for each expense item.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <Label className="text-[11px] font-semibold">Invoice # *</Label>
+                <Input className="h-8 text-xs font-mono font-bold" value={form.invoice_no} onChange={e => setForm({ ...form, invoice_no: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Vendor / Supplier *</Label>
+                <Input className="h-8 text-xs" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} placeholder="Vendor / Supplier Name" />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Bill Date *</Label>
+                <Input type="date" className="h-8 text-xs" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Due Date *</Label>
+                <Input type="date" className="h-8 text-xs" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Vendor</Label><Input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div>
-              <div><Label>Amount (QAR)</Label><Input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-            </div>
-            <div>
-              <Label className="flex items-center gap-1 font-semibold">
-                <Building2 className="h-3.5 w-3.5 text-primary" /> Property / Corporate Cost Center
-              </Label>
-              <Select value={form.property} onValueChange={v => setForm({ ...form, property: v })}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select Property or Corporate Head Office" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700 dark:text-purple-300">
-                    🏢 Al Ameen Real Estate Head Office (Corporate Overhead / Staff Salary)
-                  </SelectItem>
-                  {Array.from(new Set([...leases.map(l => l.property), ...units.map(u => u.property)].filter(Boolean))).map((propName: string) => (
-                    <SelectItem key={propName} value={propName}>
-                      {propName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Bill Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-              <div><Label>Due Date</Label><Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
-            </div>
-            <div>
-              <Label>Expense GL Account (Official COA)</Label>
-              <Select value={form.account} onValueChange={v => setForm({ ...form, account: v, account_code: v.split(" - ")[0] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="51004001 - Repair and Maintenance Cost">51004001 - Repair and Maintenance Cost</SelectItem>
-                  <SelectItem value="51004006 - Cost of CMEP Materials">51004006 - Cost of CMEP Materials</SelectItem>
-                  <SelectItem value="51002001 - CMEP-Facilities Mgt AMC">51002001 - CMEP-Facilities Mgt AMC</SelectItem>
-                  <SelectItem value="51001001 - CMEP-Labor Cost-Facilities Mgt">51001001 - CMEP-Labor Cost-Facilities Mgt</SelectItem>
-                  <SelectItem value="51003001 - Electricity & Water-Common Area">51003001 - Electricity & Water-Common Area</SelectItem>
-                  <SelectItem value="51101001 - Staff Basic Salary">51101001 - Staff Basic Salary</SelectItem>
-                  <SelectItem value="51102014 - IT Expenses">51102014 - IT Expenses</SelectItem>
-                  <SelectItem value="51102001 - Vehicles & Other Insurance Expenses">51102001 - Vehicles & Other Insurance Expenses</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* Multi-Line Expense Allocation Table */}
+            <div className="space-y-2.5 border rounded-lg p-3 bg-muted/20">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-xs uppercase tracking-wide text-foreground">
+                  Expense Lines &amp; Property Allocation ({expenseLines.length} Line{expenseLines.length > 1 ? "s" : ""})
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() =>
+                    setExpenseLines(lines => [
+                      ...lines,
+                      {
+                        id: String(Date.now() + Math.random()),
+                        account: EXPENSE_GL_ACCOUNTS[0],
+                        property: propertiesList[0] || "Al Ameen Real Estate Head Office",
+                        description: "",
+                        amount: "0",
+                      },
+                    ])
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Expense Line
+                </Button>
+              </div>
+
+              <div className="border rounded-lg overflow-x-auto bg-background">
+                <table className="w-full min-w-[740px] text-xs">
+                  <thead className="bg-muted/60 text-muted-foreground font-semibold border-b">
+                    <tr>
+                      <th className="py-2 px-2.5 text-left w-64">Expense GL Account (COA)</th>
+                      <th className="py-2 px-2.5 text-left w-60">Property / Cost Center</th>
+                      <th className="py-2 px-2.5 text-left">Line Description / Work Details</th>
+                      <th className="py-2 px-2.5 text-right w-32">Amount (QAR)</th>
+                      <th className="py-2 px-1 text-center w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {expenseLines.map((line, idx) => (
+                      <tr key={line.id} className="hover:bg-muted/20">
+                        <td className="py-2 px-2">
+                          <Select
+                            value={line.account}
+                            onValueChange={val =>
+                              setExpenseLines(lines => lines.map((l, i) => (i === idx ? { ...l, account: val } : l)))
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs font-mono w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {EXPENSE_GL_ACCOUNTS.map(acc => (
+                                <SelectItem key={acc} value={acc} className="text-xs font-mono">
+                                  {acc}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Select
+                            value={line.property}
+                            onValueChange={val =>
+                              setExpenseLines(lines => lines.map((l, i) => (i === idx ? { ...l, property: val } : l)))
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs w-full">
+                              <SelectValue placeholder="Select Property" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700">
+                                🏢 Al Ameen Real Estate Head Office
+                              </SelectItem>
+                              {propertiesList.map(propName => (
+                                <SelectItem key={propName} value={propName} className="text-xs">
+                                  {propName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Input
+                            className="h-8 text-xs w-full"
+                            placeholder="Description of work / materials..."
+                            value={line.description}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setExpenseLines(lines => lines.map((l, i) => (i === idx ? { ...l, description: val } : l)));
+                            }}
+                          />
+                        </td>
+                        <td className="py-2 px-2 text-right">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="h-8 text-xs font-mono font-bold text-right w-full"
+                            value={line.amount}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setExpenseLines(lines => lines.map((l, i) => (i === idx ? { ...l, amount: val } : l)));
+                            }}
+                          />
+                        </td>
+                        <td className="py-2 px-1 text-center">
+                          {expenseLines.length > 1 && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => setExpenseLines(lines => lines.filter((_, i) => i !== idx))}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/40 font-bold border-t">
+                    <tr>
+                      <td colSpan={3} className="py-2 px-3 text-right uppercase text-[11px]">
+                        Total Payable Invoice Amount:
+                      </td>
+                      <td className="py-2 px-2.5 text-right font-mono text-primary text-xs">
+                        QAR {totalApAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
 
             {/* Live GL / COA Impact Preview */}
-            {parseFloat(form.amount) > 0 && (
+            {totalApAmount > 0 && (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 space-y-1.5 text-xs">
                 <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-semibold">
                   <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   <span>Ledgers / Accounts Updated by this AP Invoice</span>
                 </div>
                 <div className="space-y-1 font-mono text-[11px]">
-                  <div className="flex justify-between text-blue-700 dark:text-blue-300">
-                    <span>Dr. {form.account_code} - {form.account.split(" - ")[1]}</span>
-                    <span>QAR {parseFloat(form.amount).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
-                    <span>Cr. 22100001 - Trade Payables - Vendors ({form.vendor || 'Vendor'})</span>
-                    <span>QAR {parseFloat(form.amount).toLocaleString()}</span>
+                  {expenseLines.map((line, i) => {
+                    const amt = parseFloat(line.amount) || 0;
+                    if (amt <= 0) return null;
+                    return (
+                      <div key={i} className="flex justify-between text-blue-700 dark:text-blue-300">
+                        <span>Dr. {line.account} ({line.property})</span>
+                        <span>QAR {amt.toLocaleString()}</span>
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-between text-emerald-700 dark:text-emerald-300 border-t border-emerald-500/20 pt-1 font-bold">
+                    <span>Cr. 22100001 - Trade Payables - Vendors ({form.vendor || "Vendor"})</span>
+                    <span>QAR {totalApAmount.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -3463,7 +4005,7 @@ function PayableInvoiceSubModule() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save AP Invoice</Button>
+            <Button onClick={handleAdd} disabled={totalApAmount <= 0}>Save AP Invoice</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3694,13 +4236,14 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     id: string;
     type: "DR" | "CR";
     account: string;
+    property: string;
     amount: string;
     description: string;
   };
 
   const [journalLines, setJournalLines] = useState<JournalLine[]>([
-    { id: "1", type: "DR", account: "51004001 - Repair and Maintenance Cost", amount: "5000", description: "Repair expenses" },
-    { id: "2", type: "CR", account: "12100 - Cash In Hand (Office Vault)", amount: "5000", description: "Cash disbursement" },
+    { id: "1", type: "DR", account: "51004001 - Repair and Maintenance Cost", property: propertiesList[0] || "All / Corporate", amount: "5000", description: "Repair expenses" },
+    { id: "2", type: "CR", account: "12100 - Cash In Hand (Office Vault)", property: propertiesList[0] || "All / Corporate", amount: "5000", description: "Cash disbursement" },
   ]);
 
   const totalDr = useMemo(() => {
@@ -3711,7 +4254,13 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     return journalLines.filter(l => l.type === "CR").reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   }, [journalLines]);
 
-  const isBalanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0;
+  const hasValidDrAndCr = useMemo(() => {
+    const hasDr = journalLines.some(l => l.type === "DR" && (parseFloat(l.amount) || 0) > 0);
+    const hasCr = journalLines.some(l => l.type === "CR" && (parseFloat(l.amount) || 0) > 0);
+    return hasDr && hasCr;
+  }, [journalLines]);
+
+  const isBalanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0 && hasValidDrAndCr;
 
   const filtered = (sharedVouchers || []).filter(v => {
     if (type.includes("Journal")) return v.method === "Batch" || v.name.includes("Income") || v.name.includes("Doc") || v.name.includes("Journal") || (v as any).voucher_type === "Journal Voucher";
@@ -3748,8 +4297,10 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         });
 
         // Add to shared vouchers
-        const drSummary = journalLines.filter(l => l.type === "DR").map(l => `${l.account} (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
-        const crSummary = journalLines.filter(l => l.type === "CR").map(l => `${l.account} (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+        const drSummary = journalLines.filter(l => l.type === "DR").map(l => `${l.account} [${l.property || form.property}] (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+        const crSummary = journalLines.filter(l => l.type === "CR").map(l => `${l.account} [${l.property || form.property}] (QR ${parseFloat(l.amount || '0').toLocaleString()})`).join("; ");
+        const uniqueLineProps = Array.from(new Set(journalLines.map(l => l.property || form.property).filter(Boolean)));
+        const propDisplay = uniqueLineProps.join(", ");
 
         setSharedVouchers(prev => [{
           id: result.voucher_id,
@@ -3762,24 +4313,33 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
           credit: crSummary,
           amount: totalDr,
           status: "posted" as const,
-          property_name: form.property !== "All / Corporate" ? form.property : undefined,
+          property_name: propDisplay,
         }, ...prev]);
 
-        // Mirror to Central Finance Store so General Ledger reflects it immediately
+        // Mirror to Central Finance Store so General Ledger reflects each line and its property immediately
         const firstDr = journalLines.find(l => l.type === "DR");
         const firstCr = journalLines.find(l => l.type === "CR");
         addFinanceStoreVoucher({
           voucher_no: form.voucher_no,
           voucher_type: "Journal Voucher",
           date: form.date,
-          name: `${form.name}${form.property !== "All / Corporate" ? ` — ${form.property}` : ""}`,
+          name: `${form.name}${propDisplay ? ` — ${propDisplay}` : ""}`,
           debit: firstDr?.account || "General Ledger",
           debit_code: firstDr ? accountCode(firstDr.account) : "51004001",
           credit: firstCr?.account || "General Ledger",
           credit_code: firstCr ? accountCode(firstCr.account) : "12100001",
           amount: totalDr,
           method: "Journal Voucher",
-          property_name: form.property !== "All / Corporate" ? form.property : "Corporate / General",
+          property_name: propDisplay || "Corporate / General",
+          lines: journalLines.map(l => ({
+            id: l.id,
+            type: l.type,
+            account: l.account,
+            account_code: accountCode(l.account),
+            amount: parseFloat(l.amount) || 0,
+            property_name: l.property || form.property,
+            description: l.description || form.name,
+          })),
         });
 
         toast.success(`Journal Voucher ${result.voucher_number || form.voucher_no} posted successfully!`);
@@ -3986,7 +4546,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
               <div className="space-y-2.5 border rounded-lg p-3 bg-muted/20">
                 <div className="flex justify-between items-center">
                   <span className="font-semibold text-xs uppercase tracking-wide text-foreground">
-                    Journal Lines (Multi Debit / Credit)
+                    Journal Lines (Multi Debit / Credit &amp; Line-by-Line Property)
                   </span>
                   <div className="flex items-center gap-2">
                     <Button
@@ -3996,7 +4556,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                       className="h-7 text-xs gap-1 border-blue-500/40 text-blue-600 hover:bg-blue-50"
                       onClick={() => setJournalLines(lines => [
                         ...lines,
-                        { id: String(Date.now()), type: "DR", account: COMMON_GL_ACCOUNTS[0].name, amount: "0", description: form.name }
+                        { id: String(Date.now() + Math.random()), type: "DR", account: COMMON_GL_ACCOUNTS[0].name, property: form.property || propertiesList[0] || "All / Corporate", amount: "0", description: form.name }
                       ])}
                     >
                       <Plus className="h-3.5 w-3.5" /> Add Debit (Dr) Line
@@ -4008,7 +4568,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                       className="h-7 text-xs gap-1 border-emerald-500/40 text-emerald-600 hover:bg-emerald-50"
                       onClick={() => setJournalLines(lines => [
                         ...lines,
-                        { id: String(Date.now()), type: "CR", account: COMMON_GL_ACCOUNTS[1].name, amount: "0", description: form.name }
+                        { id: String(Date.now() + Math.random()), type: "CR", account: COMMON_GL_ACCOUNTS[1].name, property: form.property || propertiesList[0] || "All / Corporate", amount: "0", description: form.name }
                       ])}
                     >
                       <Plus className="h-3.5 w-3.5" /> Add Credit (Cr) Line
@@ -4017,14 +4577,15 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 </div>
 
                 <div className="border rounded-lg overflow-x-auto bg-background">
-                  <table className="w-full min-w-[760px] text-xs">
+                  <table className="w-full min-w-[880px] text-xs">
                     <thead className="bg-muted/60 text-muted-foreground font-semibold border-b">
                       <tr>
-                        <th className="py-2.5 px-2.5 text-center w-20 whitespace-nowrap">Dr / Cr</th>
-                        <th className="py-2.5 px-2.5 text-left w-64 whitespace-nowrap">GL Account</th>
-                        <th className="py-2.5 px-2.5 text-left min-w-[220px] whitespace-nowrap">Line Description / Memo</th>
-                        <th className="py-2.5 px-2.5 text-right w-28 whitespace-nowrap">Debit (QAR)</th>
-                        <th className="py-2.5 px-2.5 text-right w-28 whitespace-nowrap">Credit (QAR)</th>
+                        <th className="py-2.5 px-2 text-center w-20 whitespace-nowrap">Dr / Cr</th>
+                        <th className="py-2.5 px-2 text-left w-60 whitespace-nowrap">GL Account</th>
+                        <th className="py-2.5 px-2 text-left w-52 whitespace-nowrap">Property / Cost Center</th>
+                        <th className="py-2.5 px-2 text-left min-w-[180px] whitespace-nowrap">Line Description / Memo</th>
+                        <th className="py-2.5 px-2 text-right w-28 whitespace-nowrap">Debit (QAR)</th>
+                        <th className="py-2.5 px-2 text-right w-28 whitespace-nowrap">Credit (QAR)</th>
                         <th className="py-2.5 px-1 text-center w-10"></th>
                       </tr>
                     </thead>
@@ -4062,6 +4623,24 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                                   <SelectItem key={a.code} value={a.name} className="text-xs font-mono">
                                     {a.name}
                                   </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="py-2 px-2">
+                            <Select
+                              value={line.property || form.property || "All / Corporate"}
+                              onValueChange={(val) => {
+                                setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, property: val } : l));
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs w-full">
+                                <SelectValue placeholder="Select Property" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
+                                {propertiesList.map(p => (
+                                  <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -4127,7 +4706,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                     </tbody>
                     <tfoot className="bg-muted/40 font-bold border-t">
                       <tr>
-                        <td colSpan={3} className="py-2.5 px-3 text-right uppercase text-[11px]">
+                        <td colSpan={4} className="py-2.5 px-3 text-right uppercase text-[11px]">
                           Totals &amp; Trial Balance:
                         </td>
                         <td className="py-2.5 px-2 text-right font-mono text-blue-700 text-xs">
@@ -4151,8 +4730,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                 {/* Balance validation alert */}
                 {!isBalanced && (
                   <div className="rounded p-2 bg-destructive/10 border border-destructive/30 text-destructive text-[11px] flex justify-between items-center">
-                    <span>⚠️ Voucher out of balance! Difference: QR {Math.abs(totalDr - totalCr).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                    <span className="font-semibold">Debits must equal Credits</span>
+                    <span>⚠️ Journal Blocked: Total Debit (QR {totalDr.toLocaleString(undefined, { minimumFractionDigits: 2 })}) and Total Credit (QR {totalCr.toLocaleString(undefined, { minimumFractionDigits: 2 })}) are not tallied! Difference: QR {Math.abs(totalDr - totalCr).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    <span className="font-semibold">System requires Debit === Credit to accept Journal</span>
                   </div>
                 )}
               </div>
@@ -4239,6 +4818,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
 }
 
 function ReceivableInvoiceSubModule() {
+  const navigate = useNavigate();
   const { leases, units, customers } = useAppData();
   const { addReceivableInvoice, receivableInvoices: storeReceivables, markReceivableInvoicePaid } = useFinanceStore();
   const [open, setOpen] = useState(false);
@@ -4398,6 +4978,17 @@ function ReceivableInvoiceSubModule() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Unbilled Units Report Shortcut */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate({ search: (prev: any) => ({ ...prev, tab: "unbilled_units_report" }) as any })}
+            className="gap-1.5 border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 font-semibold text-xs shadow-xs"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Unbilled Units Report
+          </Button>
+
           {/* Bulk Invoices - Property-Wise */}
           <Button
             size="sm"

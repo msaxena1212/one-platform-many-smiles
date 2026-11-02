@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { HrmsApi, type HrmsLeaveType } from "@/lib/hrmsService";
+import { HrmsApi, calculateEmployeeLeaveEntitlement, type HrmsLeaveType } from "@/lib/hrmsService";
 import { HrmsMastersApi, type MasterItem } from "@/lib/hrmsMastersService";
 
 export interface HrmsEssPortalProps {
@@ -2280,6 +2280,47 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
               <span className="text-muted-foreground font-medium">Requested Duration:</span>
               <span className="font-bold text-blue-600 font-mono text-sm">{leaveForm.days_count || 1} Calendar Days</span>
             </div>
+
+            {(() => {
+              const calc = calculateEmployeeLeaveEntitlement(
+                employee,
+                leaveForm.start_date,
+                Number(leaveForm.days_count) || 1,
+                leaveForm.end_date
+              );
+              return (
+                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2 text-xs">
+                  <div className="flex items-center justify-between border-b border-emerald-500/15 pb-1.5">
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                      Eligible Leave & Leave Salary Preview
+                    </span>
+                    <span className="font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      Ref: {calc.serviceReferenceDate}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Eligible Accrued Days</span>
+                      <span className="font-bold font-mono text-indigo-700 dark:text-indigo-300">
+                        {calc.eligibleLeaveDays} Days ({calc.eligibleLeaveSalary.toLocaleString()} QAR)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground block">Expected Rejoining Date</span>
+                      <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                        {calc.expectedRejoiningDate || "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-emerald-500/15">
+                    <span className="font-semibold">Leave Salary for {leaveForm.days_count || 1} Days:</span>
+                    <span className="font-bold font-mono text-sm text-emerald-700 dark:text-emerald-400">
+                      {calc.requestedLeaveSalary.toLocaleString()} QAR
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div>
               <Label className="text-xs font-semibold">Reason for Leave & Travel Destination *</Label>

@@ -10,7 +10,7 @@ import {
   FileText, Printer, Download, Search, Building2, Calendar,
   CreditCard, UserCheck, ShieldCheck, ArrowDownLeft, ArrowUpRight,
   Clock, AlertTriangle, CheckCircle2, ChevronRight, Hash, Phone,
-  Mail, Landmark, FileSpreadsheet, Plus, RefreshCw, Filter
+  Mail, Landmark, FileSpreadsheet, Plus, RefreshCw, Filter, Scale
 } from "lucide-react";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
@@ -20,6 +20,8 @@ import { toast } from "sonner";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 import { printBilingualCustomerStatement } from "@/lib/customer-statement-pdf";
+import { QatarNationalAddressPill } from "@/components/common/qatar-national-address-badge";
+import { openPrintable7DayLegalNotice, openPrintableRdcFilingPack } from "@/lib/qatar-legal-engine";
 
 export interface StatementLedgerRow {
   id: string;
@@ -71,6 +73,7 @@ export function CustomerStatementSubModule({
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [unitFilter, setUnitFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [statementMode, setStatementMode] = useState<"receivables" | "deposit" | "pdc">("receivables");
 
   // Dialog states
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<ReceivableInvoice | null>(null);
@@ -219,17 +222,21 @@ export function CustomerStatementSubModule({
     // 3. Receipt Vouchers from FinanceStore matching this customer
     vouchers.forEach(v => {
       if (v.voucher_type === "Receipt Voucher" && (v.tenant_name?.toLowerCase() === custNameLower || v.name.toLowerCase().includes(custNameLower))) {
-        rows.push({
-          date: v.date,
-          docType: "RECEIPT",
-          refNo: v.voucher_no,
-          description: v.name || "Customer Receipt Voucher",
-          property: v.property_name || "Portfolio",
-          unit: v.unit_ref || "Unit",
-          debit: 0,
-          credit: v.amount,
-          status: "Settled",
-        });
+        const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && v.name.toLowerCase().includes("security deposit")) || v.account_code === "21500001";
+        const isPdcCustody = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-DEP-") || (v.name && v.name.toLowerCase().includes("pdc received"));
+        if (!isSecurityDeposit && !isPdcCustody) {
+          rows.push({
+            date: v.date,
+            docType: "RECEIPT",
+            refNo: v.voucher_no,
+            description: v.name || "Customer Receipt Voucher",
+            property: v.property_name || "Portfolio",
+            unit: v.unit_ref || "Unit",
+            debit: 0,
+            credit: v.amount,
+            status: "Settled",
+          });
+        }
       }
     });
 
@@ -354,6 +361,251 @@ export function CustomerStatementSubModule({
     };
   }, [currentCustomer, receivableInvoices, customerLeases, customerPdcs, vouchers, fromDate, toDate, unitFilter, typeFilter]);
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // SECURITY DEPOSIT LEDGER & RECONCILIATION (CUSTOMER-WISE)
+  // ──────────────────────────────────────────────────────────────────────────
+  const { depositRows, depositSummary } = useMemo(() => {
+    if (!currentCustomer) {
+      return {
+        depositRows: [],
+        depositSummary: { totalReceived: 0, totalDeducted: 0, totalRefunded: 0, netHeld: 0 },
+      };
+    }
+    const custNameLower = currentCustomer.name.toLowerCase();
+    const rows: Array<{
+      id: string;
+      date: string;
+      voucherNo: string;
+      description: string;
+      property: string;
+      unit: string;
+      depositReceived: number;
+      deductions: number;
+      refundPaid: number;
+      runningBalance: number;
+      paymentMode: string;
+      status: string;
+    }> = [];
+
+    let totalReceived = 0;
+    let totalDeducted = 0;
+    let totalRefunded = 0;
+    let balance = 0;
+
+    vouchers.forEach((v) => {
+      const vTenant = (v.tenant_name || "").trim().toLowerCase();
+      const matchesCust = vTenant === custNameLower || (currentCustomer.customerId && vTenant.includes(currentCustomer.customerId.toLowerCase()));
+      if (!matchesCust) return;
+
+      const isDepositReceipt = v.voucher_type === "Receipt Voucher" && (
+        v.voucher_no.startsWith("VCH-SD-") ||
+        (v.name && v.name.toLowerCase().includes("security deposit")) ||
+        v.account_code === "21500001"
+      );
+
+      const isDepositRefund = v.voucher_type === "Payment Voucher" && (
+        v.voucher_no.startsWith("PV-REF-SD") ||
+        v.voucher_no.startsWith("PV-REF-TOK") ||
+        (v.name && v.name.toLowerCase().includes("deposit refund")) ||
+        v.account_code === "21500001"
+      );
+
+      const isDepositDeduction = v.voucher_type === "Journal Voucher" && (
+        (v.name && v.name.toLowerCase().includes("deposit deduction")) ||
+        (v.name && v.name.toLowerCase().includes("move-out claim"))
+      );
+
+      if (isDepositReceipt) {
+        totalReceived += v.amount;
+        balance += v.amount;
+        rows.push({
+          id: `dep-${v.id || v.voucher_no}`,
+          date: v.date,
+          voucherNo: v.voucher_no,
+          description: v.name || "Security Deposit Receipt",
+          property: v.property_name || "Portfolio",
+          unit: v.unit_ref || "Unit",
+          depositReceived: v.amount,
+          deductions: 0,
+          refundPaid: 0,
+          runningBalance: balance,
+          paymentMode: v.payment_mode || "Bank Transfer",
+          status: "Held in Escrow",
+        });
+      } else if (isDepositRefund) {
+        totalRefunded += v.amount;
+        balance -= v.amount;
+        rows.push({
+          id: `dep-${v.id || v.voucher_no}`,
+          date: v.date,
+          voucherNo: v.voucher_no,
+          description: v.name || "Security Deposit Refund to Tenant",
+          property: v.property_name || "Portfolio",
+          unit: v.unit_ref || "Unit",
+          depositReceived: 0,
+          deductions: 0,
+          refundPaid: v.amount,
+          runningBalance: balance,
+          paymentMode: v.payment_mode || "Bank Transfer",
+          status: "Refunded",
+        });
+      } else if (isDepositDeduction) {
+        totalDeducted += v.amount;
+        balance -= v.amount;
+        rows.push({
+          id: `dep-${v.id || v.voucher_no}`,
+          date: v.date,
+          voucherNo: v.voucher_no,
+          description: v.name || "Deposit Deduction for Unit Damages/Overdue",
+          property: v.property_name || "Portfolio",
+          unit: v.unit_ref || "Unit",
+          depositReceived: 0,
+          deductions: v.amount,
+          refundPaid: 0,
+          runningBalance: balance,
+          paymentMode: "Journal Offset",
+          status: "Deducted",
+        });
+      }
+    });
+
+    if (rows.length === 0 && customerLeases.length > 0) {
+      customerLeases.forEach((l, idx) => {
+        const secDep = Number(l.securityDeposit) || 0;
+        if (secDep > 0) {
+          totalReceived += secDep;
+          balance += secDep;
+          rows.push({
+            id: `dep-lease-${l.id || idx}`,
+            date: l.startDate || "2026-01-01",
+            voucherNo: `VCH-SD-${l.id || idx + 101}`,
+            description: `Security Deposit pursuant to Tenancy Contract #${l.contractNumber || l.id}`,
+            property: l.property || "Property",
+            unit: l.unit || "Unit",
+            depositReceived: secDep,
+            deductions: 0,
+            refundPaid: 0,
+            runningBalance: balance,
+            paymentMode: "Cheque / Transfer",
+            status: "Held in Custody",
+          });
+        }
+      });
+    }
+
+    rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    return {
+      depositRows: rows,
+      depositSummary: {
+        totalReceived,
+        totalDeducted,
+        totalRefunded,
+        netHeld: balance,
+      },
+    };
+  }, [currentCustomer, vouchers, customerLeases]);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PDC IN HAND & CUSTODY REGISTER (CUSTOMER-WISE)
+  // ──────────────────────────────────────────────────────────────────────────
+  const { pdcRegisterRows, pdcSummary } = useMemo(() => {
+    if (!currentCustomer) {
+      return {
+        pdcRegisterRows: [],
+        pdcSummary: { totalInHand: 0, totalDeposited: 0, totalCleared: 0, totalBounced: 0, grandTotal: 0 },
+      };
+    }
+    const rows: Array<{
+      id: string;
+      chequeNo: string;
+      bank: string;
+      dueDate: string;
+      property: string;
+      unit: string;
+      amount: number;
+      status: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled";
+      notes?: string;
+    }> = [];
+
+    let totalInHand = 0;
+    let totalDeposited = 0;
+    let totalCleared = 0;
+    let totalBounced = 0;
+    let grandTotal = 0;
+
+    customerPdcs.forEach((p, idx) => {
+      const amt = Number(p.amount) || 0;
+      grandTotal += amt;
+      const lease = customerLeases.find((l) => l.id === p.leaseId);
+      const st = (p.status || "in_hand").toLowerCase();
+
+      let normalizedStatus: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled" = "in_hand";
+      if (st === "cleared") {
+        normalizedStatus = "cleared";
+        totalCleared += amt;
+      } else if (st === "deposited") {
+        normalizedStatus = "deposited";
+        totalDeposited += amt;
+      } else if (st === "bounced" || st === "dishonored") {
+        normalizedStatus = "bounced";
+        totalBounced += amt;
+      } else {
+        normalizedStatus = "in_hand";
+        totalInHand += amt;
+      }
+
+      rows.push({
+        id: p.id || `pdc-${idx}`,
+        chequeNo: p.chequeNumber || (p as any).chequeNo || `CHQ-${1000 + idx}`,
+        bank: p.bank || "Qatar National Bank (QNB)",
+        dueDate: p.dueDate || p.depositDate || (p as any).date || "2026-12-01",
+        property: lease?.property || currentCustomer.property || "Property",
+        unit: lease?.unit || currentCustomer.unit || "Unit",
+        amount: amt,
+        status: normalizedStatus,
+        notes: (p as any).period || `Cheque for ${lease?.unit || "Unit"}`,
+      });
+    });
+
+    vouchers.forEach((v) => {
+      const vTenant = (v.tenant_name || "").trim().toLowerCase();
+      const matchesCust = vTenant === currentCustomer.name.toLowerCase();
+      if (!matchesCust) return;
+      if (v.voucher_no.startsWith("VCH-PDC-RCV-")) {
+        const alreadyExists = rows.some((r) => r.chequeNo.includes(v.voucher_no.slice(-6)));
+        if (!alreadyExists) {
+          totalInHand += v.amount;
+          grandTotal += v.amount;
+          rows.push({
+            id: v.id || v.voucher_no,
+            chequeNo: v.reference_number || `PDC-${v.voucher_no.slice(-6)}`,
+            bank: v.payment_mode || "Bank Cheque",
+            dueDate: v.date,
+            property: v.property_name || "Portfolio",
+            unit: v.unit_ref || "Unit",
+            amount: v.amount,
+            status: "in_hand",
+            notes: v.name || "PDC in Hand",
+          });
+        }
+      }
+    });
+
+    rows.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+    return {
+      pdcRegisterRows: rows,
+      pdcSummary: {
+        totalInHand,
+        totalDeposited,
+        totalCleared,
+        totalBounced,
+        grandTotal,
+      },
+    };
+  }, [currentCustomer, customerPdcs, customerLeases, vouchers]);
+
   // Date range presets
   const handleDatePreset = (preset: "all" | "year" | "6m" | "quarter" | "month") => {
     const today = new Date();
@@ -416,41 +668,101 @@ export function CustomerStatementSubModule({
   const handleExportCSV = () => {
     if (!currentCustomer) return;
 
-    const rows = [
-      ["STATEMENT OF ACCOUNT - Al Ameen Real Estate"],
-      [`Customer: ${currentCustomer.name} (${currentCustomer.customerId || currentCustomer.id})`],
-      [`Period: ${fromDate} to ${toDate}`],
-      [`Generated: ${new Date().toLocaleString()}`],
-      [],
-      ["Date", "Document Type", "Reference #", "Description", "Property & Unit", "Debit (QAR)", "Credit (QAR)", "Running Balance (QAR)", "Status"],
-      [`${fromDate}`, "OPENING_BALANCE", "—", "Balance Brought Forward", "—", "—", "—", summary.openingBalance.toFixed(2), "—"],
-      ...ledgerRows.map(r => [
-        r.date,
-        r.docType,
-        r.refNo,
-        `"${r.description}"`,
-        `"${r.property} - ${r.unit}"`,
-        r.debit > 0 ? r.debit.toFixed(2) : "0.00",
-        r.credit > 0 ? r.credit.toFixed(2) : "0.00",
-        r.runningBalance.toFixed(2),
-        r.status,
-      ]),
-      [],
-      ["SUMMARY"],
-      ["Opening Balance", summary.openingBalance.toFixed(2)],
-      ["Total Debits (Billed)", summary.totalDebits.toFixed(2)],
-      ["Total Credits (Paid)", summary.totalCredits.toFixed(2)],
-      ["Net Closing Balance", summary.closingBalance.toFixed(2)],
-      ["Unrealized In-Hand PDCs", totalUpcomingPdcAmount.toFixed(2)],
-      ["Effective Balance After PDCs", (summary.closingBalance - totalUpcomingPdcAmount).toFixed(2)],
-    ];
+    let rows: any[] = [];
+    let filename = "";
+
+    if (statementMode === "deposit") {
+      filename = `security-deposit-statement-${currentCustomer.name.replace(/\s+/g, "_")}.csv`;
+      rows = [
+        ["SECURITY DEPOSIT STATEMENT - Al Ameen Real Estate"],
+        [`Customer: ${currentCustomer.name} (${currentCustomer.customerId || currentCustomer.id})`],
+        [`Period: ${fromDate} to ${toDate}`],
+        [`Generated: ${new Date().toLocaleString()}`],
+        [],
+        ["Date", "Doc Type", "Voucher #", "Particulars / Description", "Property & Unit", "Payment Mode", "Deposit Received (Cr)", "Deductions (Dr)", "Refund Paid (Dr)", "Held Balance (QAR)", "Status"],
+        ...depositRows.map(r => [
+          r.date,
+          r.depositReceived > 0 ? "DEP-RCV" : r.refundPaid > 0 ? "DEP-REF" : "DEP-CLM",
+          r.voucherNo,
+          `"${r.description}"`,
+          `"${r.property} - ${r.unit}"`,
+          r.paymentMode,
+          r.depositReceived > 0 ? r.depositReceived.toFixed(2) : "0.00",
+          r.deductions > 0 ? r.deductions.toFixed(2) : "0.00",
+          r.refundPaid > 0 ? r.refundPaid.toFixed(2) : "0.00",
+          r.runningBalance.toFixed(2),
+          r.status,
+        ]),
+        [],
+        ["SUMMARY"],
+        ["Total Deposit Collected", depositSummary.totalReceived.toFixed(2)],
+        ["Claims & Deductions", depositSummary.totalDeducted.toFixed(2)],
+        ["Refunds Paid", depositSummary.totalRefunded.toFixed(2)],
+        ["Net Security Deposit Held", depositSummary.netHeld.toFixed(2)],
+      ];
+    } else if (statementMode === "pdc") {
+      filename = `pdc-custody-register-${currentCustomer.name.replace(/\s+/g, "_")}.csv`;
+      rows = [
+        ["POST-DATED CHEQUES (PDC) REGISTER - Al Ameen Real Estate"],
+        [`Customer: ${currentCustomer.name} (${currentCustomer.customerId || currentCustomer.id})`],
+        [`Generated: ${new Date().toLocaleString()}`],
+        [],
+        ["Cheque #", "Bank Name", "Maturity / Due Date", "Property & Unit", "Particulars / Period", "Amount (QAR)", "Custody Status"],
+        ...pdcRegisterRows.map(r => [
+          r.chequeNo,
+          `"${r.bank}"`,
+          r.dueDate,
+          `"${r.property} - ${r.unit}"`,
+          `"${r.notes || ''}"`,
+          r.amount.toFixed(2),
+          r.status,
+        ]),
+        [],
+        ["SUMMARY"],
+        ["PDCs In Hand (Vault)", pdcSummary.totalInHand.toFixed(2)],
+        ["Deposited (Under Clearing)", pdcSummary.totalDeposited.toFixed(2)],
+        ["Cleared (Realized)", pdcSummary.totalCleared.toFixed(2)],
+        ["Bounced / Dishonored", pdcSummary.totalBounced.toFixed(2)],
+        ["Total Cheques Portfolio", pdcSummary.grandTotal.toFixed(2)],
+      ];
+    } else {
+      filename = `statement-of-account-receivables-${currentCustomer.name.replace(/\s+/g, "_")}.csv`;
+      rows = [
+        ["STATEMENT OF ACCOUNT (RECEIVABLES) - Al Ameen Real Estate"],
+        [`Customer: ${currentCustomer.name} (${currentCustomer.customerId || currentCustomer.id})`],
+        [`Period: ${fromDate} to ${toDate}`],
+        [`Generated: ${new Date().toLocaleString()}`],
+        [],
+        ["Date", "Document Type", "Reference #", "Description", "Property & Unit", "Debit (QAR)", "Credit (QAR)", "Running Balance (QAR)", "Status"],
+        [`${fromDate}`, "OPENING_BALANCE", "—", "Balance Brought Forward", "—", "—", "—", summary.openingBalance.toFixed(2), "—"],
+        ...ledgerRows.map(r => [
+          r.date,
+          r.docType,
+          r.refNo,
+          `"${r.description}"`,
+          `"${r.property} - ${r.unit}"`,
+          r.debit > 0 ? r.debit.toFixed(2) : "0.00",
+          r.credit > 0 ? r.credit.toFixed(2) : "0.00",
+          r.runningBalance.toFixed(2),
+          r.status,
+        ]),
+        [],
+        ["SUMMARY"],
+        ["Opening Balance", summary.openingBalance.toFixed(2)],
+        ["Total Debits (Billed)", summary.totalDebits.toFixed(2)],
+        ["Total Credits (Paid)", summary.totalCredits.toFixed(2)],
+        ["Net Closing Balance", summary.closingBalance.toFixed(2)],
+        ["Unrealized In-Hand PDCs", totalUpcomingPdcAmount.toFixed(2)],
+        ["Effective Balance After PDCs", (summary.closingBalance - totalUpcomingPdcAmount).toFixed(2)],
+      ];
+    }
 
     const csvContent = rows.map(r => r.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `statement-of-account-${currentCustomer.name.replace(/\s+/g, "_")}.csv`);
+    link.setAttribute("download", filename || `statement-of-account-${currentCustomer.name.replace(/\s+/g, "_")}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -572,7 +884,58 @@ export function CustomerStatementSubModule({
         </div>
       </div>
 
-      {/* ── Main Printable Container ── */}
+      {/* 3-Way Statement Type Switcher */}
+      <div className="no-print flex items-center justify-between p-2 rounded-xl border bg-muted/30 shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 w-full gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={statementMode === "receivables" ? "default" : "outline"}
+            className={`h-9 text-xs font-semibold gap-2 ${statementMode === "receivables" ? "bg-primary text-primary-foreground shadow-xs font-bold" : "bg-background text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setStatementMode("receivables")}
+          >
+            <CreditCard className="h-4 w-4" />
+            <span>1. Customer Receivables (Rent SOA)</span>
+            {ledgerRows.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                {ledgerRows.length}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={statementMode === "deposit" ? "default" : "outline"}
+            className={`h-9 text-xs font-semibold gap-2 ${statementMode === "deposit" ? "bg-primary text-primary-foreground shadow-xs font-bold" : "bg-background text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setStatementMode("deposit")}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>2. Security Deposit Statement</span>
+            {depositRows.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                {depositRows.length}
+              </Badge>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant={statementMode === "pdc" ? "default" : "outline"}
+            className={`h-9 text-xs font-semibold gap-2 ${statementMode === "pdc" ? "bg-primary text-primary-foreground shadow-xs font-bold" : "bg-background text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setStatementMode("pdc")}
+          >
+            <Landmark className="h-4 w-4" />
+            <span>3. PDC In Hand & Custody Register</span>
+            {pdcRegisterRows.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
+                {pdcRegisterRows.length}
+              </Badge>
+            )}
+          </Button>
+        </div>
+      </div>
       <div id="printable-soa" className="space-y-5 bg-card p-6 rounded-xl border shadow-sm">
         {/* Official Header Banner as available on Receipts & Lease Contracts (Uncropped, Full Width) */}
         <div className="w-full rounded-lg overflow-hidden border border-border/40 shadow-xs mb-4 bg-white">
@@ -621,11 +984,19 @@ export function CustomerStatementSubModule({
         <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-center">
           <div className="flex items-center justify-center gap-3">
             <span className="font-black text-sm uppercase tracking-wider text-primary">
-              STATEMENT OF ACCOUNT
+              {statementMode === "receivables"
+                ? "CUSTOMER STATEMENT OF ACCOUNT (RENT & RECEIVABLES)"
+                : statementMode === "deposit"
+                ? "SECURITY DEPOSIT STATEMENT OF ACCOUNT"
+                : "POST-DATED CHEQUES (PDC) IN-HAND & CUSTODY REGISTER"}
             </span>
             <span className="text-muted-foreground">&bull;</span>
             <span className="font-black text-base tracking-wider text-primary font-serif" dir="rtl">
-              كـــشــــف حـــســــاب الــعــمــيـــل
+              {statementMode === "receivables"
+                ? "كشف حساب العميل والذمم المدينة (الإيجارات)"
+                : statementMode === "deposit"
+                ? "كشف حساب تأمين الضمان والودائع المستردة"
+                : "سجل الشيكات الآجلة في العهدة والتحصيل"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
@@ -687,11 +1058,20 @@ export function CustomerStatementSubModule({
           <div className="flex flex-wrap gap-2">
             {customerLeases.length > 0 ? (
               customerLeases.map(l => (
-                <div key={l.id} className="bg-background border rounded px-2.5 py-1 text-xs">
-                  <span className="font-semibold text-foreground">{l.property}</span> &bull; Unit: <strong className="font-mono text-primary">{l.unit}</strong>
-                  <span className="text-[10px] text-muted-foreground ml-1.5">
-                    (Contract #{l.contractNumber || l.id.slice(-4)} &bull; Rent: QAR {Number(l.monthlyRent).toLocaleString()}/mo)
-                  </span>
+                <div key={l.id} className="bg-background border rounded px-3 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="font-semibold text-foreground">{l.property}</span> &bull; Unit: <strong className="font-mono text-primary">{l.unit}</strong>
+                    <span className="text-[10px] text-muted-foreground ml-1.5">
+                      (Contract #{l.contractNumber || l.id.slice(-4)} &bull; Rent: QAR {Number(l.monthlyRent).toLocaleString()}/mo)
+                    </span>
+                  </div>
+                  <QatarNationalAddressPill
+                    zone={(l as any).zone || (l as any).zoneEn || "60"}
+                    street={(l as any).street || (l as any).streetNumber || "840"}
+                    building={(l as any).building || (l as any).buildingNumber || "42"}
+                    unit={l.unit}
+                    pin={(l as any).electricityNumber || (l as any).kahramaaNumber || "41020304"}
+                  />
                 </div>
               ))
             ) : (
@@ -749,6 +1129,8 @@ export function CustomerStatementSubModule({
         </div>
 
         {/* Financial KPI Summary Cards */}
+        {statementMode === "receivables" && (
+          <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card className="border bg-card">
             <CardContent className="p-4 space-y-1">
@@ -825,7 +1207,126 @@ export function CustomerStatementSubModule({
           </div>
         </div>
 
+          </>
+        )}
+
+        {/* ── Security Deposit KPI Summary Cards ── */}
+        {statementMode === "deposit" && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="border bg-card">
+              <CardContent className="p-4 space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Deposits Received</span>
+                <p className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                  + QAR {depositSummary.totalReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Tenant security deposits collected</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-card">
+              <CardContent className="p-4 space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Claims &amp; Deductions</span>
+                <p className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400">
+                  - QAR {depositSummary.totalDeducted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Damages, repairs &amp; utility offsets</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-card">
+              <CardContent className="p-4 space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Refunds Returned</span>
+                <p className="text-lg font-bold font-mono text-amber-600 dark:text-amber-400">
+                  - QAR {depositSummary.totalRefunded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Returned upon lease expiry</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-primary/5 border-primary/30">
+              <CardContent className="p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">Net Deposit in Custody</span>
+                  <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/40 px-1.5 py-0 font-bold">
+                    Escrow Held
+                  </Badge>
+                </div>
+                <p className="text-xl font-black font-mono text-primary">
+                  QAR {depositSummary.netHeld.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Current active security held</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ── PDC In Hand KPI Summary Cards ── */}
+        {statementMode === "pdc" && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="border bg-blue-50/40 dark:bg-blue-950/20 border-blue-200 dark:border-blue-900">
+              <CardContent className="p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider block">PDCs In Hand (Vault)</span>
+                  <Badge variant="outline" className="text-[9px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300">
+                    In Custody
+                  </Badge>
+                </div>
+                <p className="text-lg font-bold font-mono text-blue-700 dark:text-blue-400">
+                  QAR {pdcSummary.totalInHand.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Awaiting presentation date</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900">
+              <CardContent className="p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">Deposited (Clearing)</span>
+                  <Badge variant="outline" className="text-[9px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border-amber-300">
+                    Bank Pending
+                  </Badge>
+                </div>
+                <p className="text-lg font-bold font-mono text-amber-700 dark:text-amber-400">
+                  QAR {pdcSummary.totalDeposited.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Presented, clearance awaited</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900">
+              <CardContent className="p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">Cleared (Realized)</span>
+                  <Badge variant="outline" className="text-[9px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border-emerald-300">
+                    Realized
+                  </Badge>
+                </div>
+                <p className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                  QAR {pdcSummary.totalCleared.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Credited to operating account</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-rose-50/40 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900">
+              <CardContent className="p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider block">Bounced / Dishonored</span>
+                  <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                    Action Req.
+                  </Badge>
+                </div>
+                <p className="text-lg font-bold font-mono text-rose-700 dark:text-rose-400">
+                  QAR {pdcSummary.totalBounced.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-muted-foreground">Returned by clearing bank</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Chronological Statement Ledger Table */}
+        {statementMode === "receivables" && (
         <div className="border rounded-lg overflow-hidden bg-card">
           <Table>
             <TableHeader>
@@ -918,8 +1419,180 @@ export function CustomerStatementSubModule({
           </Table>
         </div>
 
+        )}
+
+        {/* ── Security Deposit Ledger Table ── */}
+        {statementMode === "deposit" && (
+          <div className="border rounded-lg overflow-hidden bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted text-xs font-bold text-muted-foreground">
+                  <TableHead className="font-bold">Date</TableHead>
+                  <TableHead className="font-bold">Doc Type</TableHead>
+                  <TableHead className="font-bold">Voucher #</TableHead>
+                  <TableHead className="font-bold">Particulars / Description</TableHead>
+                  <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                  <TableHead className="font-bold">Payment Mode</TableHead>
+                  <TableHead className="text-right font-bold">Deposit Received (Cr)</TableHead>
+                  <TableHead className="text-right font-bold">Deductions (Dr)</TableHead>
+                  <TableHead className="text-right font-bold">Refund Paid (Dr)</TableHead>
+                  <TableHead className="text-right font-bold">Held Balance (QAR)</TableHead>
+                  <TableHead className="text-center font-bold">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {depositRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-6 text-xs text-muted-foreground">
+                      No security deposit transactions recorded for this customer.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  depositRows.map((row) => (
+                    <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
+                      <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-[9px] ${row.depositReceived > 0 ? "border-emerald-400 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40" : row.refundPaid > 0 ? "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-950/40" : "border-rose-400 text-rose-700 bg-rose-50 dark:bg-rose-950/40"}`}>
+                          {row.depositReceived > 0 ? "DEP-RCV" : row.refundPaid > 0 ? "DEP-REF" : "DEP-CLM"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono font-bold text-foreground">{row.voucherNo}</TableCell>
+                      <TableCell className="font-medium max-w-[260px] truncate" title={row.description}>{row.description}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.property} &bull; <strong className="font-mono text-foreground">{row.unit}</strong></TableCell>
+                      <TableCell className="text-muted-foreground">{row.paymentMode}</TableCell>
+                      <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                        {row.depositReceived > 0 ? row.depositReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-rose-600 dark:text-rose-400 font-semibold">
+                        {row.deductions > 0 ? row.deductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                        {row.refundPaid > 0 ? row.refundPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-bold text-foreground">
+                        {row.runningBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/30">
+                          {row.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* ── PDC In Hand & Custody Register Table ── */}
+        {statementMode === "pdc" && (
+          <div className="border rounded-lg overflow-hidden bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted text-xs font-bold text-muted-foreground">
+                  <TableHead className="font-bold">Cheque #</TableHead>
+                  <TableHead className="font-bold">Bank Name</TableHead>
+                  <TableHead className="font-bold">Maturity / Due Date</TableHead>
+                  <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                  <TableHead className="font-bold">Particulars / Period</TableHead>
+                  <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
+                  <TableHead className="text-center font-bold">Custody Status</TableHead>
+                  <TableHead className="text-center font-bold">Qatar Legal Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pdcRegisterRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-6 text-xs text-muted-foreground">
+                      No post-dated cheques found for this customer.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pdcRegisterRows.map((row) => (
+                    <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
+                      <TableCell className="font-mono font-bold text-foreground">{row.chequeNo}</TableCell>
+                      <TableCell className="font-medium">{row.bank}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{row.dueDate}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.property} &bull; <strong className="font-mono text-foreground">{row.unit}</strong></TableCell>
+                      <TableCell className="text-muted-foreground">{row.notes || "—"}</TableCell>
+                      <TableCell className="text-right font-mono font-bold text-foreground">
+                        {row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          variant={row.status === "cleared" ? "default" : row.status === "deposited" ? "secondary" : row.status === "bounced" ? "destructive" : "outline"}
+                          className={`text-[9px] capitalize ${row.status === "in_hand" ? "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-950/40" : row.status === "cleared" ? "bg-emerald-600 text-white" : ""}`}
+                        >
+                          {row.status.replace("_", " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {row.status === "bounced" ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                openPrintable7DayLegalNotice({
+                                  chequeNo: row.chequeNo,
+                                  chequeDate: row.dueDate,
+                                  bankName: row.bank,
+                                  amount: row.amount,
+                                  returnReason: "عدم كفاية الرصيد (Insufficient Funds)",
+                                  tenantName: currentCustomer.name,
+                                  tenantQid: currentCustomer.qatarId,
+                                  tenantMobile: currentCustomer.mobile || currentCustomer.phone,
+                                  tenantEmail: currentCustomer.email,
+                                  propertyName: row.property,
+                                  unitRef: row.unit,
+                                  totalOutstandingArrears: summary.closingBalance,
+                                });
+                              }}
+                              className="h-6 text-[10px] px-2 border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 gap-1 font-semibold"
+                              title="Generate official 7-Day Legal Notice (Article 357 Penal Code)"
+                            >
+                              <Scale className="h-3 w-3 text-rose-600" /> 7-Day Notice
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                openPrintableRdcFilingPack({
+                                  chequeNo: row.chequeNo,
+                                  chequeDate: row.dueDate,
+                                  bankName: row.bank,
+                                  amount: row.amount,
+                                  returnReason: "عدم كفاية الرصيد (Insufficient Funds)",
+                                  tenantName: currentCustomer.name,
+                                  tenantQid: currentCustomer.qatarId,
+                                  tenantMobile: currentCustomer.mobile || currentCustomer.phone,
+                                  tenantEmail: currentCustomer.email,
+                                  propertyName: row.property,
+                                  unitRef: row.unit,
+                                  totalOutstandingArrears: summary.closingBalance,
+                                });
+                              }}
+                              className="h-6 text-[10px] px-2 border-blue-500/40 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10 gap-1 font-semibold"
+                              title="Generate RDC (Rental Dispute Settlement Committee) Filing Pack"
+                            >
+                              <FileText className="h-3 w-3 text-blue-600" /> RDC Pack
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
         {/* In-Hand Upcoming PDCs Section */}
-        {upcomingPdcs.length > 0 && (
+        {statementMode === "receivables" && upcomingPdcs.length > 0 && (
           <div className="p-4 rounded-lg border bg-muted/15 space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

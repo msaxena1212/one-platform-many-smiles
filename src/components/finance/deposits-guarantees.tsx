@@ -85,6 +85,8 @@ function SettleRefundModal({
   const deductionAmt = parseFloat(deductions) || 0;
   const refund = Math.max(0, grossDeposit - deductionAmt);
   const isOverDeduction = deductionAmt > grossDeposit;
+  const [kahramaaGate, setKahramaaGate] = useState<"verified" | "deduct" | "pending">("pending");
+  const [kahramaaCertNo, setKahramaaCertNo] = useState<string>("");
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
@@ -201,6 +203,60 @@ function SettleRefundModal({
           </div>
         </div>
 
+            {/* Official Qatar Kahramaa Clearance Certificate Gate */}
+            <div className="rounded-lg border p-2.5 bg-amber-500/5 border-amber-500/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                  Kahramaa Final Clearance Gate (شهادة براءة ذمة)
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] font-bold ${
+                    kahramaaGate === "verified"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                      : kahramaaGate === "deduct"
+                      ? "bg-blue-50 text-blue-700 border-blue-300"
+                      : "bg-red-50 text-red-700 border-red-300"
+                  }`}
+                >
+                  {kahramaaGate === "verified" ? "Gate Passed" : kahramaaGate === "deduct" ? "Direct Utility Deduction" : "Gate Blocked (Pending)"}
+                </Badge>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">Clearance Compliance Status</Label>
+                <Select value={kahramaaGate} onValueChange={(v: any) => setKahramaaGate(v)}>
+                  <SelectTrigger className="h-7 text-xs bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="verified">Verified: Final Clearance Certificate Attached</SelectItem>
+                    <SelectItem value="deduct">Deduct: Landlord Settles Kahramaa Bill from Deposit</SelectItem>
+                    <SelectItem value="pending">Pending: Awaiting Certificate from Tenant (Refund Blocked)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {kahramaaGate === "verified" && (
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Kahramaa Clearance Certificate #</Label>
+                  <Input
+                    className="h-7 text-xs font-mono bg-background"
+                    placeholder="e.g. KHM-CLR-2026-9021"
+                    value={kahramaaCertNo}
+                    onChange={(e) => setKahramaaCertNo(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {kahramaaGate === "pending" && (
+                <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] text-red-700 dark:text-red-400 flex items-start gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>Mandatory Gate: Security deposit cannot be disbursed until tenant provides official Kahramaa Final Clearance Certificate or agrees to bill deduction.</span>
+                </div>
+              )}
+            </div>
         <DialogFooter className="pt-2 border-t flex-row justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={loading}>
             Cancel
@@ -208,7 +264,7 @@ function SettleRefundModal({
           <Button
             size="sm"
             onClick={onConfirm}
-            disabled={loading || isOverDeduction}
+            disabled={loading || isOverDeduction || kahramaaGate === "pending"}
             className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}

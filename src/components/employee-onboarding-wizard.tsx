@@ -29,7 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { HrmsMastersApi, MasterItem } from "@/lib/hrmsMastersService";
-import { HrmsApi } from "@/lib/hrmsService";
+import { HrmsApi, calculateEmployeeLeaveEntitlement } from "@/lib/hrmsService";
 
 export interface EmployeeOnboardingWizardProps {
   open: boolean;
@@ -91,7 +91,13 @@ export function EmployeeOnboardingWizard({
     air_ticket: "Yearly",
     air_ticket_fare_cap: 0,
 
-    // Section 6: Emergency & Remarks
+    // Section 6: Leave History & Rejoining Details
+    last_leave_start_date: "",
+    last_leave_end_date: "",
+    last_leave_rejoining_date: "",
+    annual_leave_quota: 30,
+
+    // Section 7: Emergency & Remarks
     emergency_contact_name: "",
     relation_with_employee: "",
     emergency_contact_no: "",
@@ -170,6 +176,10 @@ export function EmployeeOnboardingWizard({
         emergency_contact_name: employeeToEdit.emergency_contact_name || extra.emergency_contact_name || "",
         relation_with_employee: employeeToEdit.emergency_contact_relation || extra.relation_with_employee || "",
         emergency_contact_no: employeeToEdit.emergency_contact_number || extra.emergency_contact_no || "",
+        last_leave_start_date: employeeToEdit.last_leave_start_date ? String(employeeToEdit.last_leave_start_date).slice(0, 10) : (extra.last_leave_start_date || ""),
+        last_leave_end_date: employeeToEdit.last_leave_end_date ? String(employeeToEdit.last_leave_end_date).slice(0, 10) : (extra.last_leave_end_date || ""),
+        last_leave_rejoining_date: employeeToEdit.last_leave_rejoining_date ? String(employeeToEdit.last_leave_rejoining_date).slice(0, 10) : (extra.last_leave_rejoining_date || ""),
+        annual_leave_quota: Number(employeeToEdit.annual_leave_quota || extra.annual_leave_quota || 30),
         remarks: employeeToEdit.remarks || extra.remarks || ""
       });
     } else if (!employeeToEdit && open) {
@@ -202,6 +212,10 @@ export function EmployeeOnboardingWizard({
         benefit_vehicle: "Provided By Company",
         air_ticket: "Yearly",
         air_ticket_fare_cap: 0,
+        last_leave_start_date: "",
+        last_leave_end_date: "",
+        last_leave_rejoining_date: "",
+        annual_leave_quota: 30,
         emergency_contact_name: "",
         relation_with_employee: "",
         emergency_contact_no: "",
@@ -210,8 +224,9 @@ export function EmployeeOnboardingWizard({
     }
   }, [employeeToEdit, open]);
 
-  // Computed Total Salary
+  // Computed Total Salary & Live Leave Entitlement Preview
   const totalSalary = Number(form.basic_salary || 0) + Number(form.hra || 0) + Number(form.tra || 0) + Number(form.other_allowances || 0);
+  const liveLeaveEntitlement = calculateEmployeeLeaveEntitlement(form);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,6 +267,10 @@ export function EmployeeOnboardingWizard({
         emergency_contact_name: form.emergency_contact_name,
         emergency_contact_relation: form.relation_with_employee,
         emergency_contact_number: form.emergency_contact_no,
+        last_leave_start_date: form.last_leave_start_date || null,
+        last_leave_end_date: form.last_leave_end_date || null,
+        last_leave_rejoining_date: form.last_leave_rejoining_date || null,
+        annual_leave_quota: Number(form.annual_leave_quota || 30),
         remarks: form.remarks,
         notes: JSON.stringify({
           reporting_manager: form.reporting_manager,
@@ -260,6 +279,10 @@ export function EmployeeOnboardingWizard({
           benefit_vehicle: form.benefit_vehicle,
           air_ticket: form.air_ticket,
           air_ticket_fare_cap: form.air_ticket_fare_cap,
+          last_leave_start_date: form.last_leave_start_date || null,
+          last_leave_end_date: form.last_leave_end_date || null,
+          last_leave_rejoining_date: form.last_leave_rejoining_date || null,
+          annual_leave_quota: Number(form.annual_leave_quota || 30),
           total_salary: totalSalary
         })
       };
@@ -510,6 +533,69 @@ export function EmployeeOnboardingWizard({
                       <SelectItem value="Resigned">Resigned</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Leave History & Rejoining Details */}
+              <div className="p-3 bg-indigo-500/5 rounded-xl border border-indigo-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase text-indigo-700 dark:text-indigo-300 tracking-wider flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" /> Last Leave & Rejoining History (For Leave Salary Accrual)
+                  </h4>
+                  <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                    Accrued Eligible Leave: {liveLeaveEntitlement.eligibleLeaveDays} Days ({liveLeaveEntitlement.eligibleLeaveSalary.toLocaleString()} QAR)
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs font-semibold">Last Leave Start Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 text-xs bg-background"
+                      value={form.last_leave_start_date}
+                      onChange={(e) => setForm({ ...form, last_leave_start_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Last Leave End Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 text-xs bg-background"
+                      value={form.last_leave_end_date}
+                      onChange={(e) => {
+                        const endVal = e.target.value;
+                        let nextRejoin = form.last_leave_rejoining_date;
+                        if (endVal && !nextRejoin) {
+                          const dt = new Date(endVal);
+                          if (!isNaN(dt.getTime())) {
+                            dt.setDate(dt.getDate() + 1);
+                            nextRejoin = dt.toISOString().split("T")[0];
+                          }
+                        }
+                        setForm({ ...form, last_leave_end_date: endVal, last_leave_rejoining_date: nextRejoin });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Last Rejoining Date</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 text-xs bg-background"
+                      value={form.last_leave_rejoining_date}
+                      onChange={(e) => setForm({ ...form, last_leave_rejoining_date: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-semibold">Annual Leave Quota (Days)</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={60}
+                      className="mt-1 text-xs bg-background"
+                      value={form.annual_leave_quota}
+                      onChange={(e) => setForm({ ...form, annual_leave_quota: Number(e.target.value) || 30 })}
+                    />
+                  </div>
                 </div>
               </div>
             </TabsContent>

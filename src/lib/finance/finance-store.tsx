@@ -4,6 +4,21 @@ import { supabase } from "@/lib/supabase";
 import { resolveAccountingAccounts } from "./account-resolver";
 import { postVoucher } from "./posting-engine";
 
+export function isPostingPeriodClosed(dateStr?: string): { closed: boolean; periodName?: string } {
+  if (!dateStr || typeof window === "undefined") return { closed: false };
+  try {
+    const ym = dateStr.split("T")[0].slice(0, 7);
+    const raw = localStorage.getItem("pms_posting_periods_cache");
+    if (!raw) return { closed: false };
+    const list = JSON.parse(raw) as Array<{ period_name: string; status: string }>;
+    const found = list.find(p => p.period_name === ym);
+    if (found && (found.status === "Closed" || (found as any).is_closed)) {
+      return { closed: true, periodName: ym };
+    }
+  } catch {}
+  return { closed: false };
+}
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface LedgerTransaction {
@@ -23,6 +38,16 @@ export interface LedgerTransaction {
   tenant_name?: string;
 }
 
+export interface JournalLedgerLine {
+  id?: string;
+  type: "DR" | "CR";
+  account: string;
+  account_code: string;
+  amount: number;
+  property_name?: string;
+  description?: string;
+}
+
 export interface JournalLedgerEntry {
   id: string;
   je_no: string;
@@ -38,6 +63,7 @@ export interface JournalLedgerEntry {
   property_name?: string;
   unit_ref?: string;
   tenant_name?: string;
+  lines?: JournalLedgerLine[];
 }
 
 export interface GrnCostMapping {
@@ -53,6 +79,15 @@ export interface GrnCostMapping {
   status: "Mapped" | "Pending" | "Approved";
 }
 
+export interface PayableInvoiceLine {
+  id?: string;
+  account: string;
+  account_code: string;
+  property: string;
+  description?: string;
+  amount: number;
+}
+
 export interface PayableInvoice {
   id: string;
   invoice_no: string;
@@ -63,6 +98,8 @@ export interface PayableInvoice {
   account_code: string;
   amount: number;
   status: "Unpaid" | "Paid" | "Partially Paid";
+  property?: string;
+  lines?: PayableInvoiceLine[];
 }
 
 export interface FinanceVoucher {
@@ -81,6 +118,7 @@ export interface FinanceVoucher {
   property_name?: string;
   unit_ref?: string;
   tenant_name?: string;
+  lines?: JournalLedgerLine[];
 }
 
 export interface ReceivableInvoice {
@@ -1595,6 +1633,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   // ── Actions ───────────────────────────────────────────────────────────────
 
   function addJournalEntry(entry: Omit<JournalLedgerEntry, "id" | "status">) {
+    const periodCheck = isPostingPeriodClosed(entry.posting_date);
+    if (periodCheck.closed) {
+      toast.error(`Posting rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     const newEntry: JournalLedgerEntry = {
       ...entry,
       id: `je-${Date.now()}`,
@@ -1629,6 +1672,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addPayableInvoice(inv: Omit<PayableInvoice, "id" | "status">) {
+    const periodCheck = isPostingPeriodClosed(inv.date);
+    if (periodCheck.closed) {
+      toast.error(`Posting rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     const newInv: PayableInvoice = {
       ...inv,
       id: `ap-${Date.now()}`,
@@ -1639,17 +1687,25 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function markPayableInvoicePaid(invoiceNo: string) {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const periodCheck = isPostingPeriodClosed(todayStr);
+    if (periodCheck.closed) {
+      toast.error(`Cannot generate Payment Voucher: Current period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     setPayableInvoices(prev => prev.map(inv => {
       if (inv.invoice_no === invoiceNo) {
         // Also auto-record a Payment Voucher
         const pv: FinanceVoucher = {
           id: `vch-pay-${Date.now()}`,
           voucher_no: `VCH-PAY-${Math.floor(1000 + Math.random() * 9000)}`,
+          property_name: inv.property,
+          tenant_name: inv.vendor,
           voucher_type: "Payment Voucher",
           date: new Date().toISOString().split("T")[0],
-          name: `Settlement for Invoice ${invoiceNo}`,
-          debit: inv.account,
-          debit_code: inv.account_code || "22100001",
+          name: `${inv.vendor} — Settlement for Invoice ${invoiceNo}`,
+          debit: "Trade Payables - Vendors",
+          debit_code: "22100001",
           credit: "Bank Operating Account",
           credit_code: "12000001",
           amount: inv.amount,
@@ -1665,6 +1721,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addVoucher(vch: Omit<FinanceVoucher, "id" | "status">) {
+    const periodCheck = isPostingPeriodClosed(vch.date);
+    if (periodCheck.closed) {
+      toast.error(`Posting rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     const newVch: FinanceVoucher = {
       ...vch,
       id: `vch-${Date.now()}`,
@@ -1701,6 +1762,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addReceivableInvoice(inv: Omit<ReceivableInvoice, "id" | "status">) {
+    const periodCheck = isPostingPeriodClosed(inv.date);
+    if (periodCheck.closed) {
+      toast.error(`Posting rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     const newInv: ReceivableInvoice = {
       ...inv,
       id: `ar-${Date.now()}`,
@@ -1711,6 +1777,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function addBulkReceivableInvoices(invoices: Omit<ReceivableInvoice, "id" | "status">[]) {
+    if (invoices.length > 0) {
+      const periodCheck = isPostingPeriodClosed(invoices[0].date);
+      if (periodCheck.closed) {
+        toast.error(`Bulk billing rejected: Accounting period ${periodCheck.periodName} is CLOSED.`);
+        return;
+      }
+    }
     const timestamp = Date.now();
     const newItems: ReceivableInvoice[] = invoices.map((inv, idx) => ({
       ...inv,
@@ -1722,6 +1795,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }
 
   function markReceivableInvoicePaid(invoiceNo: string) {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const periodCheck = isPostingPeriodClosed(todayStr);
+    if (periodCheck.closed) {
+      toast.error(`Cannot generate Receipt Voucher: Current period ${periodCheck.periodName} is CLOSED.`);
+      return;
+    }
     setReceivableInvoices(prev => prev.map(inv => {
       if (inv.invoice_no === invoiceNo) {
         // Also record a Receipt Voucher
@@ -1730,11 +1809,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           voucher_no: `VCH-REC-${Math.floor(1000 + Math.random() * 9000)}`,
           voucher_type: "Receipt Voucher",
           date: new Date().toISOString().split("T")[0],
-          name: `Receipt for Rent Invoice ${invoiceNo}`,
+          name: `${inv.tenant} — Receipt for Rent Invoice ${invoiceNo}`,
+          property_name: inv.property,
+          unit_ref: inv.unit,
+          tenant_name: inv.tenant,
           debit: "Bank Operating Account",
           debit_code: "12000001",
-          credit: "Rental Revenue",
-          credit_code: inv.account_code || "41100",
+          credit: "Tenant Receivables",
+          credit_code: "12413",
           amount: inv.amount,
           method: "Bank Transfer",
           status: "Posted"
@@ -2160,6 +2242,36 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const finalUnit = derivedUnit && derivedUnit !== "General" ? derivedUnit : "Unassigned";
       const finalTenant = derivedTenant && derivedTenant !== "Corporate / Admin" ? derivedTenant : "Unassigned";
 
+      if (je.lines && je.lines.length > 0) {
+        je.lines.forEach((line, idx) => {
+          const code = line.account_code || (line.type === "DR" ? je.dr_code : je.cr_code) || "12000001";
+          const isL_Exp = code.startsWith("5");
+          const isL_Asset = code.startsWith("1");
+          const isL_Liab = code.startsWith("2");
+          const isL_Rev = code.startsWith("4");
+          const lineProp = line.property_name && line.property_name !== "Main Portfolio" && line.property_name !== "All / Corporate"
+            ? line.property_name
+            : finalProperty;
+
+          list.push({
+            id: `tx-je-line-${je.id}-${idx}`,
+            date: je.posting_date,
+            account_code: code,
+            account_name: getCoaName(line.account, code, "Operating Account"),
+            account_type: isL_Exp ? "Expenses" : isL_Rev ? "Revenue" : isL_Liab ? "Liabilities" : isL_Asset ? "Assets" : "Capital",
+            reference: je.je_no,
+            debit: line.type === "DR" ? Number(line.amount) || 0 : 0,
+            credit: line.type === "CR" ? Number(line.amount) || 0 : 0,
+            source: "Journal Ledger",
+            description: line.description || je.narration,
+            property_name: lineProp,
+            unit_ref: finalUnit,
+            tenant_name: finalTenant,
+          });
+        });
+        return;
+      }
+
       list.push({
         id: `tx-je-dr-${je.id}`,
         date: je.posting_date,
@@ -2234,21 +2346,44 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // 3. Payable Invoices (Expense Dr, AP Cr)
     payableInvoices.forEach(ap => {
-      list.push({
-        id: `tx-ap-dr-${ap.id}`,
-        date: ap.date,
-        account_code: ap.account_code || "51004001",
-        account_name: getCoaName(ap.account, ap.account_code, "Repairs & Maintenance"),
-        account_type: "Expenses",
-        reference: ap.invoice_no,
-        debit: ap.amount,
-        credit: 0,
-        source: "Payable Invoice",
-        description: `Invoice from ${ap.vendor}`,
-        property_name: "Unassigned",
-        unit_ref: "Building Maintenance",
-        tenant_name: ap.vendor,
-      });
+      const defaultProp = ap.property && ap.property !== "All / Corporate" ? ap.property : "Unassigned";
+      if (ap.lines && ap.lines.length > 0) {
+        ap.lines.forEach((line, idx) => {
+          const lineProp = line.property && line.property !== "All / Corporate" ? line.property : defaultProp;
+          const code = line.account_code || ap.account_code || "51004001";
+          list.push({
+            id: `tx-ap-dr-${ap.id}-${idx}`,
+            date: ap.date,
+            account_code: code,
+            account_name: getCoaName(line.account || ap.account, code, "Repairs & Maintenance"),
+            account_type: code.startsWith("1") ? "Assets" : "Expenses",
+            reference: ap.invoice_no,
+            debit: Number(line.amount) || 0,
+            credit: 0,
+            source: "Payable Invoice",
+            description: line.description ? `${ap.vendor} — ${line.description}` : `Invoice from ${ap.vendor}`,
+            property_name: lineProp,
+            unit_ref: "Building Maintenance",
+            tenant_name: ap.vendor,
+          });
+        });
+      } else {
+        list.push({
+          id: `tx-ap-dr-${ap.id}`,
+          date: ap.date,
+          account_code: ap.account_code || "51004001",
+          account_name: getCoaName(ap.account, ap.account_code, "Repairs & Maintenance"),
+          account_type: "Expenses",
+          reference: ap.invoice_no,
+          debit: ap.amount,
+          credit: 0,
+          source: "Payable Invoice",
+          description: `Invoice from ${ap.vendor}`,
+          property_name: defaultProp,
+          unit_ref: "Building Maintenance",
+          tenant_name: ap.vendor,
+        });
+      }
       list.push({
         id: `tx-ap-cr-${ap.id}`,
         date: ap.date,
@@ -2260,7 +2395,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         credit: ap.amount,
         source: "Payable Invoice",
         description: `Payable to ${ap.vendor}`,
-        property_name: "Unassigned",
+        property_name: defaultProp,
         unit_ref: "Building Maintenance",
         tenant_name: ap.vendor,
       });
@@ -2371,6 +2506,36 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const finalUnit   = unitName   || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr"       : "");
       const finalTenant = tenantName || (vch.name.includes("Depreciation") ? "Internal Assets Desk"       : "");
 
+      if (vch.lines && vch.lines.length > 0) {
+        vch.lines.forEach((line, idx) => {
+          const code = line.account_code || (line.type === "DR" ? debitCode : creditCode) || "12000001";
+          const isL_Exp = code.startsWith("5");
+          const isL_Asset = code.startsWith("1");
+          const isL_Liab = code.startsWith("2");
+          const isL_Rev = code.startsWith("4");
+          const lineProp = line.property_name && line.property_name !== "All / Corporate" && line.property_name !== "Main Portfolio"
+            ? line.property_name
+            : finalProp;
+
+          list.push({
+            id: `tx-vch-line-${vch.id}-${idx}`,
+            date: vch.date,
+            account_code: code,
+            account_name: getCoaName(line.account, code, "Operating Account"),
+            account_type: isL_Exp ? "Expenses" : isL_Rev ? "Revenue" : isL_Liab ? "Liabilities" : isL_Asset ? "Assets" : "Capital",
+            reference: vch.voucher_no,
+            debit: line.type === "DR" ? Number(line.amount) || 0 : 0,
+            credit: line.type === "CR" ? Number(line.amount) || 0 : 0,
+            source: vch.voucher_type,
+            description: line.description || vch.name,
+            property_name: lineProp,
+            unit_ref: finalUnit,
+            tenant_name: finalTenant,
+          });
+        });
+        return;
+      }
+
       list.push({
         id: `tx-vch-dr-${vch.id}`,
         date: vch.date,
@@ -2429,7 +2594,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         id: `tx-ar-cr-${ar.id}`,
         date: ar.date,
         account_code: ar.account_code || "41100",
-        account_name: "Rental Revenue",
+        account_name: getCoaName(ar.stream, ar.account_code, "Rental Revenue"),
         account_type: "Revenue",
         reference: ar.invoice_no,
         debit: 0,

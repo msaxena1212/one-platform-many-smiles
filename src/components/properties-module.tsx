@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { QatarBluePlate, QatarNationalAddressPill } from "@/components/common/qatar-national-address-badge";
 import { buildPropertyPayload } from "@/lib/property-master";
 import { getDemoSession } from "@/lib/demo-auth";
 import {
@@ -787,7 +788,14 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                         <td className="px-6 py-4 text-muted-foreground">
                           <div>{prop.city}, {prop.country}</div>
                           {prop.area_zone && (
-                            <div className="text-[11px] text-muted-foreground/70">{prop.area_zone}</div>
+                            <div className="mt-1">
+                              <QatarNationalAddressPill
+                                zone={prop.area_zone}
+                                street={prop.street_building_name}
+                                building={prop.plot_building_no}
+                                pin={prop.kahramaa_number}
+                              />
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 text-muted-foreground">
@@ -1172,11 +1180,11 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs font-semibold">Municipality / Bldg Ref No.</Label>
+                        <Label className="text-xs font-semibold">PIN / Municipality / Kahramaa Ref No.</Label>
                         <Input
                           value={form.municipality_ref_no}
                           onChange={(e) => setForm((prev) => ({ ...prev, municipality_ref_no: e.target.value }))}
-                          placeholder="e.g. MUN-44012"
+                          placeholder="e.g. PIN 41020304 / MUN-44012"
                           className="bg-background font-mono"
                         />
                       </div>
