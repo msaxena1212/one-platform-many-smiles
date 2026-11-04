@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, isPostingPeriodClosed, type ReceivableInvoice } from "@/lib/finance/finance-store";
-import { calculateContractPeriodMonthlyRevenue, parseDateFlexible } from "@/lib/finance/revenue-engine";
+import { getDayBasedRentFreeDays, calculateContractPeriodMonthlyRevenue, parseDateFlexible } from "@/lib/finance/revenue-engine";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
 
@@ -87,6 +87,11 @@ function getConcessionBillingStatus(
     l?.rent_free_period_days ??
     l?.rentFreeDays
   );
+
+  // Day-based free period (< 1 month): handled by proration from the rent start date.
+  if (getDayBasedRentFreeDays({ ...l, ...(override || {}), rentFreeDays: override?.rent_free_days ?? l?.rentFreeDays, hasRentFree: override?.has_rent_free ?? l?.hasRentFree })) {
+    return { isFree: false };
+  }
 
   if (!hasRentFree) return { isFree: false };
 
@@ -268,6 +273,7 @@ export function BulkInvoiceDialog({
       const isConcession = concession.isFree && propertyPricingMode === "lease";
       const proration = calculateContractPeriodMonthlyRevenue({
         startDate: l.startDate,
+        rentFreeDays: getDayBasedRentFreeDays(l),
         endDate: l.endDate,
         monthlyRent: baseRent,
         targetMonth: targetMonthKey,
@@ -389,6 +395,7 @@ export function BulkInvoiceDialog({
           const baseRent = Number(l.monthlyRent) || 0;
           const proration = calculateContractPeriodMonthlyRevenue({
             startDate: l.startDate,
+            rentFreeDays: getDayBasedRentFreeDays(l),
             endDate: l.endDate,
             monthlyRent: baseRent,
             targetMonth: targetMonthKey,
@@ -492,6 +499,7 @@ export function BulkInvoiceDialog({
           const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
           const proration = lease ? calculateContractPeriodMonthlyRevenue({
             startDate: lease.startDate,
+            rentFreeDays: getDayBasedRentFreeDays(lease),
             endDate: lease.endDate,
             monthlyRent: baseRent,
             targetMonth: targetMonthKey,

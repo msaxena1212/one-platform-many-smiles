@@ -831,6 +831,61 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
     active: true,
   });
 
+  // ── Trade categories (admin-managed, stored in proc_trade_categories) ──
+  const DEFAULT_TRADE_CATEGORIES = [
+    "HVAC", "HVAC Spare", "Electrical", "Plumbing", "Civil Works", "Elevator", "Fire Safety",
+    "CCTV / Security", "Landscaping", "Furnishing", "IT Equipment", "Pool Equipment",
+    "Cleaning Supplies", "Staff", "Other",
+  ];
+  const [tradeCategories, setTradeCategories] = useState<Array<{ id?: string; name: string }>>(
+    DEFAULT_TRADE_CATEGORIES.map(name => ({ name })),
+  );
+  const [tradeCatTableReady, setTradeCatTableReady] = useState(false);
+  const [showTradeCatModal, setShowTradeCatModal] = useState(false);
+  const [newTradeCat, setNewTradeCat] = useState("");
+
+  const loadTradeCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("proc_trade_categories")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    if (error) { setTradeCatTableReady(false); return; }
+    setTradeCatTableReady(true);
+    setTradeCategories((data || []).map((r: any) => ({ id: r.id, name: r.name })));
+  }, []);
+  useEffect(() => { void loadTradeCategories(); }, [loadTradeCategories]);
+
+  async function addTradeCategory() {
+    const name = newTradeCat.trim();
+    if (!name) return;
+    if (tradeCategories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      toast.error(`Trade category "${name}" already exists.`);
+      return;
+    }
+    const { error } = await supabase.from("proc_trade_categories").insert({
+      name, sort_order: (tradeCategories.length + 1) * 10,
+    });
+    if (error) { toast.error(`Could not add category: ${error.message}`); return; }
+    setNewTradeCat("");
+    toast.success(`Trade category "${name}" added.`);
+    await loadTradeCategories();
+  }
+
+  async function removeTradeCategory(cat: { id?: string; name: string }) {
+    if (!cat.id) return;
+    const inUse = catalog.filter(c => c.category === cat.name).length;
+    if (inUse > 0) {
+      toast.error(`"${cat.name}" is used by ${inUse} catalog item(s). Re-categorise them before deleting.`);
+      return;
+    }
+    const { error } = await supabase.from("proc_trade_categories").delete().eq("id", cat.id);
+    if (error) { toast.error(`Could not delete category: ${error.message}`); return; }
+    toast.success(`Trade category "${cat.name}" deleted.`);
+    await loadTradeCategories();
+  }
+
   const [shipmentForm, setShipmentForm] = useState({
     purchaseOrderId: "",
     carrierName: "DHL Global Forwarding",
@@ -4880,6 +4935,45 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         </DialogContent>
       </Dialog>
 
+      {/* Trade Category Manager (admin) */}
+      <Dialog open={showTradeCatModal} onOpenChange={setShowTradeCatModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Trade Categories</DialogTitle>
+            <DialogDescription>
+              Add or delete trade categories used by the Item Catalog. A category in use by catalog items cannot be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          {!tradeCatTableReady && (
+            <p className="text-xs text-amber-600">
+              The trade category table is not available yet (run migration 20261104090000_proc_trade_categories.sql). Showing defaults, read-only.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Input value={newTradeCat} onChange={e => setNewTradeCat(e.target.value)} placeholder="New trade category name"
+              onKeyDown={e => { if (e.key === "Enter") void addTradeCategory(); }} disabled={!tradeCatTableReady} />
+            <Button onClick={() => void addTradeCategory()} disabled={!tradeCatTableReady || !newTradeCat.trim()}>Add</Button>
+          </div>
+          <ScrollArea className="h-64 border rounded-md">
+            <div className="divide-y text-xs">
+              {tradeCategories.map(cat => {
+                const used = catalog.filter(c => c.category === cat.name).length;
+                return (
+                  <div key={cat.id || cat.name} className="flex items-center justify-between px-3 py-2">
+                    <span>{cat.name} {used > 0 && <span className="text-muted-foreground">({used} item{used > 1 ? "s" : ""})</span>}</span>
+                    <Button variant="ghost" size="sm" className="h-7 text-red-600" disabled={!tradeCatTableReady || used > 0}
+                      onClick={() => void removeTradeCategory(cat)}>Delete</Button>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTradeCatModal(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Catalog Item Modal */}
       <Dialog open={showCatalogModal} onOpenChange={setShowCatalogModal}>
         <DialogContent className="max-w-2xl">
@@ -4907,24 +5001,17 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Trade Category *">
+                  {role === "admin" && (
+                    <button type="button" className="text-[10px] text-emerald-700 underline mb-1 block" onClick={() => setShowTradeCatModal(true)}>
+                      Manage categories
+                    </button>
+                  )}
                   <Select value={catalogForm.category} onValueChange={v => setCatalogForm({ ...catalogForm, category: v })}>
                     <SelectTrigger><SelectValue placeholder="Select category…" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="HVAC">HVAC</SelectItem>
-                      <SelectItem value="HVAC Spare">HVAC Spare</SelectItem>
-                      <SelectItem value="Electrical">Electrical</SelectItem>
-                      <SelectItem value="Plumbing">Plumbing</SelectItem>
-                      <SelectItem value="Civil Works">Civil Works</SelectItem>
-                      <SelectItem value="Elevator">Elevator</SelectItem>
-                      <SelectItem value="Fire Safety">Fire Safety</SelectItem>
-                      <SelectItem value="CCTV / Security">CCTV / Security</SelectItem>
-                      <SelectItem value="Landscaping">Landscaping</SelectItem>
-                      <SelectItem value="Furnishing">Furnishing</SelectItem>
-                      <SelectItem value="IT Equipment">IT Equipment</SelectItem>
-                      <SelectItem value="Pool Equipment">Pool Equipment</SelectItem>
-                      <SelectItem value="Cleaning Supplies">Cleaning Supplies</SelectItem>
-                      <SelectItem value="Staff">Staff</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      {[...tradeCategories.map(c => c.name), ...(catalogForm.category && !tradeCategories.some(c => c.name === catalogForm.category) ? [catalogForm.category] : [])].map(name => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>

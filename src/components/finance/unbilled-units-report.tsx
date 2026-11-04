@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getDayBasedRentFreeDays } from "@/lib/finance/revenue-engine";
 import {
   Table,
   TableBody,
@@ -123,6 +124,11 @@ function getConcessionStatusForPeriod(
     l?.rent_free_period_days ??
     l?.rentFreeDays,
   );
+
+  // Day-based free period (< 1 month): handled by proration from the rent start date.
+  if (getDayBasedRentFreeDays({ ...l, ...(override || {}), rentFreeDays: override?.rent_free_days ?? l?.rentFreeDays, hasRentFree: override?.has_rent_free ?? l?.hasRentFree })) {
+    return { isFree: false };
+  }
 
   if (!hasRentFree) return { isFree: false };
 

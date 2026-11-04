@@ -19,7 +19,7 @@ import { useFinanceStore } from "@/lib/finance/finance-store";
 import { useAppData } from "@/lib/app-data-context";
 import { getDocumentBranding } from "@/lib/document-branding";
 import { AL_AMEEN_PAGE1_HEADER_BASE64 } from "@/lib/header-banner-base64";
-import { calculateContractPeriodMonthlyRevenue, calculatePropertyPortfolioRevenue } from "@/lib/finance/revenue-engine";
+import { getDayBasedRentFreeDays, calculateContractPeriodMonthlyRevenue, calculatePropertyPortfolioRevenue } from "@/lib/finance/revenue-engine";
 
 interface PropertyPnlMetrics {
   property: string;
@@ -213,6 +213,7 @@ export function PropertyWiseProfitAndLossSubModule() {
           // Calculate contract period overlap for selected month (e.g. 2026-10)
           const proration = calculateContractPeriodMonthlyRevenue({
             startDate: l.startDate,
+            rentFreeDays: getDayBasedRentFreeDays(l),
             endDate: l.endDate,
             monthlyRent: baseMonthlyRent,
             targetMonth: selectedPeriod,

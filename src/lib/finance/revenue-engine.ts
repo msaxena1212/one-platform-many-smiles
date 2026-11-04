@@ -440,11 +440,24 @@ const MONTH_NAMES = [
  *
  * Irrespective of whether payment has been collected or cheques cleared.
  */
+/**
+ * Day-based rent-free period (e.g. 14 days from commencement). Returns the number
+ * of free days when the lease has a rent-free concession shorter than one month,
+ * otherwise 0 (whole-month concessions are handled by the billing concession check).
+ */
+export function getDayBasedRentFreeDays(l: any): number {
+  const days = Number(l?.rentFreeDays ?? l?.rent_free_days ?? l?.rent_free_period_days ?? 0);
+  const has = l?.hasRentFree ?? l?.has_rent_free ?? days > 0;
+  return has && days > 0 && days < 30 ? Math.floor(days) : 0;
+}
+
 export function calculateContractPeriodMonthlyRevenue(params: {
   startDate: string;
   endDate: string;
   monthlyRent: number;
   targetMonth: string; // "YYYY-MM"
+  /** Rent-free days from commencement; rent accrues from startDate + rentFreeDays. */
+  rentFreeDays?: number;
   prorationMethod?: ProrationMethod;
   effectiveRevenueEndDate?: string;
   actualVacateDate?: string;
@@ -456,6 +469,7 @@ export function calculateContractPeriodMonthlyRevenue(params: {
     endDate,
     monthlyRent,
     targetMonth,
+    rentFreeDays = 0,
     prorationMethod = '30_DAY_MONTH',
     effectiveRevenueEndDate,
     actualVacateDate,
@@ -475,9 +489,13 @@ export function calculateContractPeriodMonthlyRevenue(params: {
   const calendarDaysInMonth = monthEnd.getUTCDate();
   const totalDaysInMonth = prorationMethod === '30_DAY_MONTH' ? 30 : calendarDaysInMonth;
 
-  const leaseStart = parseDateFlexible(startDate);
+  const contractStart = parseDateFlexible(startDate);
   const leaseEnd = parseDateFlexible(endDate);
-  if (!leaseStart || !leaseEnd) return null;
+  if (!contractStart || !leaseEnd) return null;
+  // Rent accrues only after the rent-free period (e.g. 1 Oct + 14 days -> rent from 15 Oct).
+  const leaseStart = rentFreeDays > 0
+    ? new Date(contractStart.getTime() + rentFreeDays * 86400000)
+    : contractStart;
   // parameters mapped
   const approvedVacate = effectiveRevenueEndDate || actualVacateDate || (earlyVacate ? plannedVacateDate : undefined);
   const effectiveTermDate = approvedVacate ? parseDateFlexible(approvedVacate) || leaseEnd : leaseEnd;
@@ -602,6 +620,7 @@ export function calculatePropertyPortfolioRevenue(params: {
       endDate: lease.endDate,
       monthlyRent: lease.monthlyRent,
       targetMonth,
+      rentFreeDays: getDayBasedRentFreeDays(lease),
       prorationMethod,
     });
 

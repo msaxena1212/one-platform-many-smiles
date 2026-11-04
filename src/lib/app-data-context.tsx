@@ -542,9 +542,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             return null as any;
           }
 
-          const startDate = excelOverride?.start || l.commencement_date || "";
-          const endDate = excelOverride?.end || l.expiry_date || "";
-          const annualRent = excelOverride?.rent ? excelOverride.rent * 12 : Number(l.rental_amount || 0);
+          // The database is the source of truth; the static Excel master is only a fallback
+          // for records that have no value stored (otherwise contract edits would be ignored).
+          const startDate = l.commencement_date || excelOverride?.start || "";
+          const endDate = l.expiry_date || excelOverride?.end || "";
+          // Once a contract has been saved (has_rent_free not null) the stored free period is
+          // authoritative, including "no free period". Otherwise fall back to the Excel master.
+          const rfSaved = l.has_rent_free != null;
+          const dbHasRf = rfSaved ? Boolean(l.has_rent_free) : Boolean(excelOverride?.hasRentFree);
+          const dbRfDays = rfSaved ? Number(l.rent_free_period_days ?? 0) : Number(excelOverride?.rentFreeDays ?? 0);
 
           return {
             id: l.lease_number || l.id,
@@ -555,7 +561,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             tenantName: canonicalName(excelOverride?.tenant || l.customers?.full_name || l.tenant_name || "Tenant"),
             startDate: startDate,
             endDate: endDate,
-            monthlyRent: excelOverride?.rent || (Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : 0),
+            monthlyRent: Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : (excelOverride?.rent || 0),
             securityDeposit: Number(l.security_deposit || 0) || excelOverride?.rent || 0,
             pdcCount: Number(l.number_of_pdc || 12),
             paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
@@ -568,7 +574,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             noticePeriodDays: Number(l.notice_period_days || 30),
             status: (l.lease_status?.toLowerCase() as LeaseStatus) || "active",
             collectionCompleted: true,
-          };
+            hasRentFree: dbHasRf,
+            rentFreeDays: dbRfDays,
+            rentFreePosition: l.rent_free_position || excelOverride?.freePeriodPosition || "FIRST_MONTH",
+          } as any;
         })
         .filter(Boolean);
 
@@ -601,9 +610,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           if (!seenLeaseUnits.has(unitKey)) {
             seenLeaseUnits.add(unitKey);
 
-            const startDate = excelOverride?.start || u.contract_start_date || "2026-01-01";
-            const endDate = excelOverride?.end || u.contract_end_date || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })();
-            const monthlyRent = excelOverride?.rent || Number(u.current_rent || u.price || u.rent_amount || 6500);
+            const startDate = u.contract_start_date || excelOverride?.start || "2026-01-01";
+            const endDate = u.contract_end_date || excelOverride?.end || (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().split("T")[0]; })();
+            const monthlyRent = Number(u.current_rent || 0) > 0 ? Number(u.current_rent) : (excelOverride?.rent || Number(u.price || u.rent_amount || 6500));
             const secDeposit = Number(u.security_deposit_amount || monthlyRent);
             const contractNo = u.contract_no || `L-${unitIdentifier.replace(/\W/g, "") || u.id.slice(0, 5)}`;
             const tenantName = canonicalName(excelOverride?.tenant || (u.current_tenant && u.current_tenant.trim() ? u.current_tenant.trim() : `Tenant (${unitIdentifier})`));

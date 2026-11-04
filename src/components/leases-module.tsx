@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
@@ -184,11 +185,15 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       console.warn("Could not save to localStorage:", e);
     }
 
-    // 2. Persist to Supabase leases table safely (check UUID to prevent PostgreSQL 22P02 invalid input syntax error)
+    // 2. Persist to Supabase leases table (errors are surfaced, never swallowed)
+    const dbErrors: string[] = [];
+    const rentFreeDays = editForm.has_rent_free ? (parseInt(String(editForm.rent_free_days), 10) || 30) : 0;
     try {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editForm.id);
-      if (isUUID) {
-        await supabase
+      const matchCol = isUUID ? 'id' : 'lease_number';
+      const matchVal = isUUID ? editForm.id : editForm.lease_number;
+      if (matchVal) {
+        const { data, error } = await supabase
           .from('leases')
           .update({
             commencement_date: editForm.commencement_date,
@@ -197,27 +202,30 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             lease_status: editForm.lease_status.toLowerCase(),
             number_of_pdc: pdcCount,
           })
-          .eq('id', editForm.id);
-      } else if (editForm.lease_number) {
-        await supabase
+          .eq(matchCol, matchVal)
+          .select('id');
+        if (error) dbErrors.push(`lease: ${error.message}`);
+        else if (!data || data.length === 0) dbErrors.push('lease: no database row was updated (blocked by permissions or lease not found)');
+
+        // Rent-free fields are written separately so a missing column cannot block the core update.
+        const { error: rfError } = await supabase
           .from('leases')
           .update({
-            commencement_date: editForm.commencement_date,
-            expiry_date: editForm.expiry_date,
-            rental_amount: annRent,
-            lease_status: editForm.lease_status.toLowerCase(),
-            number_of_pdc: pdcCount,
+            has_rent_free: editForm.has_rent_free,
+            rent_free_period_days: rentFreeDays,
+            rent_free_position: editForm.rent_free_position,
           })
-          .eq('lease_number', editForm.lease_number);
+          .eq(matchCol, matchVal);
+        if (rfError) console.warn('Rent-free fields not persisted to leases table:', rfError.message);
       }
-    } catch (e) {
-      console.warn("Supabase lease update note:", e);
+    } catch (e: any) {
+      dbErrors.push(`lease: ${e?.message || e}`);
     }
 
-    // 3. Persist to Supabase units table if unit exists
+    // 3. Persist to Supabase units table (match on the unit columns the app reads elsewhere)
     if (editForm.unit_name && editForm.unit_name !== '—') {
       try {
-        await supabase
+        const { data: uData, error } = await supabase
           .from('units')
           .update({
             contract_start_date: editForm.commencement_date,
@@ -225,9 +233,12 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             current_rent: mRent,
             current_tenant: editForm.tenant_name,
           })
-          .or(`unit_number.eq.${editForm.unit_name},unit_ref.eq.${editForm.unit_name},unit_code.eq.${editForm.unit_name}`);
-      } catch (e) {
-        console.warn("Supabase unit update note:", e);
+          .or(`unit_ref.eq.${editForm.unit_name},unit_code.eq.${editForm.unit_name},unit_name.eq.${editForm.unit_name}`)
+          .select('id');
+        if (error) dbErrors.push(`unit: ${error.message}`);
+        else if (!uData || uData.length === 0) dbErrors.push('unit: no database row was updated (blocked by permissions or unit not found)');
+      } catch (e: any) {
+        dbErrors.push(`unit: ${e?.message || e}`);
       }
     }
 
@@ -254,7 +265,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       return l;
     }));
 
-    toast.success(`Contract ${editForm.lease_number} saved permanently.`);
+    if (dbErrors.length) {
+      toast.error(`Contract saved on this device only. Database update failed: ${dbErrors.join('; ')}`);
+    } else {
+      toast.success(`Contract ${editForm.lease_number} saved permanently.`);
+      // Reload so Units, billing and reports pick up the saved dates from the database.
+      setTimeout(() => { if (typeof window !== 'undefined') window.location.reload(); }, 900);
+    }
     setEditModalOpen(false);
   }
 
