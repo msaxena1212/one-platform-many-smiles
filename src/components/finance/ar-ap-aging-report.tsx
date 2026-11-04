@@ -174,6 +174,16 @@ export function ArApAgingReportSubModule() {
       if (chqKey && escalatedCheques.has(chqKey)) return;
 
       const lease = leases.find((l) => l.id === pdc.leaseId);
+      // A returned/bounced cheque often has no linked lease row. Fall back to the
+      // PDC's own property/unit/tenant, then to the unit master, so the dishonoured
+      // amount stays under the real property instead of "Unassigned Property".
+      const pdcUnitName = (lease?.unit || pdc.unitName || "").trim();
+      const unitMaster = pdcUnitName
+        ? units.find((u) => normalizeKey(u.unit) === normalizeKey(pdcUnitName))
+        : undefined;
+      const resolvedProperty = (
+        lease?.property || pdc.propertyName || unitMaster?.property || ""
+      ).trim();
       const origAmt = Number(pdc.amount || 0);
       const paidAmt = Number((pdc as any).paid_amount || 0);
       const amt = Math.max(0, origAmt - paidAmt);
@@ -186,9 +196,9 @@ export function ArApAgingReportSubModule() {
       items.push({
         id: `pdc-ar-${pdc.id}`,
         invoiceNo: `CHQ-${pdc.chequeNo}`,
-        partyName: (lease?.tenantName || (pdc as any).tenantName || "Unassigned Tenant").trim(),
-        property: (lease?.property || "Unassigned Property").trim(),
-        unit: (lease?.unit || "").trim(),
+        partyName: (lease?.tenantName || pdc.tenantName || unitMaster?.currentTenant || "Unassigned Tenant").trim(),
+        property: resolvedProperty || "Unassigned Property",
+        unit: pdcUnitName,
         invoiceDate: dueDateStr,
         dueDate: dueDateStr,
         daysOverdue,

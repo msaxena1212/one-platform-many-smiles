@@ -573,7 +573,22 @@ export function CustomerStatementSubModule({
       const matchesCust = vTenant === currentCustomer.name.toLowerCase();
       if (!matchesCust) return;
       if (v.voucher_no.startsWith("VCH-PDC-RCV-")) {
-        const alreadyExists = rows.some((r) => r.chequeNo.includes(v.voucher_no.slice(-6)));
+        // Voucher-derived rows are only a fallback for cheques missing from the
+        // PDC register. Match on the real cheque number (reference or the
+        // "[Cheque #N]" tag in the description), or on amount + date + unit,
+        // never on the random voucher suffix.
+        const vChq = String(
+          (v as any).reference_number || /cheque\s*#\s*([\w-]+)/i.exec(String(v.name || ""))?.[1] || "",
+        ).trim().toLowerCase();
+        const vDate = String(v.date || "").slice(0, 10);
+        const vUnit = String(v.unit_ref || "").trim().toLowerCase();
+        const alreadyExists = rows.some((r) => {
+          const sameAmt = Math.abs(r.amount - Number(v.amount)) < 0.01;
+          if (!sameAmt) return false;
+          if (vChq && r.chequeNo.trim().toLowerCase() === vChq) return true;
+          return String(r.dueDate || "").slice(0, 10) === vDate &&
+            (!vUnit || r.unit.trim().toLowerCase() === vUnit);
+        });
         if (!alreadyExists) {
           totalInHand += v.amount;
           grandTotal += v.amount;

@@ -654,8 +654,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
               if (!drCode || !crCode) {
                 if (desc.includes("rent pdc") || desc.includes("rv-l1-01")) {
-                  drCode = "12900"; drName = "PDC In Hand";
-                  crCode = "21400"; crName = "Customer (PDC) Liability";
+                  drCode = "12900001"; drName = "Rent PDC In Hand";
+                  crCode = "21400001"; crName = "Customer PDC Liability — Unit SL";
                 } else if (desc.includes("security deposit") || desc.includes("rv-l1-02")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "21500"; crName = "Security Deposit Liability";
@@ -663,7 +663,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "21100"; crName = "Refundable Deposit Liability";
                 } else if (desc.includes("guarantee cheque") || desc.includes("rv-l1-gchq")) {
-                  drCode = "12900"; drName = "PDC In Hand (Guarantee)";
+                  drCode = "12900002"; drName = "Deposit PDC In Hand (Guarantee)";
                   crCode = "21200"; crName = "Guarantee Cheque Liability";
                 } else if (desc.includes("pdc deposited to bank") || desc.includes("vch-dep-")) {
                   const bInfo = resolvePdcBankGl(desc);
@@ -673,33 +673,38 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   drCode = "21400001"; drName = "Customer PDC Liability";
                   crCode = "12413001"; crName = "Tenant Receivables";
                 } else if (desc.includes("pdc returned on cash settlement") || desc.includes("vch-csh-ret-")) {
-                  drCode = "21400"; drName = "Customer (PDC) Liability";
-                  crCode = "12900"; crName = "PDC In Hand";
+                  drCode = "21400001"; drName = "Customer PDC Liability — Unit SL";
+                  crCode = "12900001"; crName = "Rent PDC In Hand";
                 } else if (desc.includes("bank deposit of replaced pdc cash till") || desc.includes("vch-csh-dep-")) {
                   drCode = "12000001"; drName = "Bank Operating Account";
-                  crCode = "12100001"; drName = "Cash In Hand";
+                  crCode = "12100001"; crName = "Cash In Hand";
                 } else if (desc.includes("bank transfer received in place of pdc") || (desc.includes("vch-trf-") && !desc.includes("cnl")) || (r.voucher_number && r.voucher_number.toLowerCase().startsWith("vch-trf-") && !r.voucher_number.toLowerCase().includes("cnl"))) {
                   const bInfo = resolvePdcBankGl(desc);
                   drCode = bInfo.glCode || "12000001"; drName = bInfo.glName || "Bank Operating Account";
-                  crCode = "12413"; crName = "Tenant Receivables";
+                  crCode = "12413001"; crName = "Tenant Receivables — Unit SL";
                 } else if (desc.includes("pdc cancelled / returned on bank transfer settlement") || desc.includes("vch-trf-cnl-") || (r.voucher_number && r.voucher_number.toLowerCase().startsWith("vch-trf-cnl-"))) {
-                  drCode = "21400"; drName = "Customer PDC Liability";
-                  crCode = "12900"; crName = "PDC In Hand";
+                  drCode = "21400001"; drName = "Customer PDC Liability — Unit SL";
+                  crCode = "12900001"; crName = "Rent PDC In Hand";
                 } else if (desc.includes("cash collected in place of pdc") || desc.includes("vch-csh-pdc-")) {
+                  // Cash replacing a PDC settles the tenant receivable — never revenue.
                   drCode = "12100001"; drName = "Cash In Hand";
-                  crCode = "41100"; crName = "Rental Revenue";
+                  crCode = "12413001"; crName = "Tenant Receivables — Unit SL";
                 } else if (desc.includes("pdc cheque returned") || desc.includes("vch-ret-pdc-")) {
-                  drCode = "12900"; drName = "PDC In Hand";
-                  crCode = "12000001"; drName = "Bank Operating Account";
+                  drCode = "12900001"; drName = "Rent PDC In Hand";
+                  crCode = "12000001"; crName = "Bank Operating Account";
                 } else if (desc.includes("tenant dues restored") || desc.includes("vch-ret-ar-")) {
-                  drCode = "12413"; drName = "Tenant Receivables";
-                  crCode = "21400"; crName = "Customer (PDC) Liability";
+                  drCode = "12413001"; drName = "Tenant Receivables — Unit SL";
+                  crCode = "21400001"; crName = "Customer PDC Liability — Unit SL";
                 } else if (desc.includes("admin charges") || desc.includes("rv-l1-adm")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "41500"; crName = "Admin Fee Income";
                 } else if (desc.includes("agency commission") || desc.includes("rv-l1-agn")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "41400"; crName = "Agency Commission Income";
+                } else if (!isPV && /pdc|cheque|in place of|transfer|settlement|replaced/.test(desc)) {
+                  // PDC-related receipts settle the tenant receivable, never revenue.
+                  drCode = "12000001"; drName = "Bank Operating Account";
+                  crCode = "12413001"; crName = "Tenant Receivables — Unit SL";
                 } else {
                   drCode = isPV ? "22100001" : "12000001";
                   drName = isPV ? "Accounts Payable / Expense" : "Bank Operating Account";
@@ -2431,16 +2436,26 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       // Leg 1 (VCH-TRF): Receiving Bank Account (DR) / Tenant Receivables (CR 12413)
       // Leg 2 (VCH-TRF-CNL): Customer PDC Liability (DR 21400) / PDC In Hand (CR 12900)
       if (vchNo.startsWith("VCH-TRF-CNL-") || vchDesc.includes("pdc cancelled") || vchDesc.includes("returned on bank transfer")) {
-        debitCode = "21400";
-        debitName = "Customer PDC Liability";
-        creditCode = "12900";
-        creditName = "PDC In Hand";
+        debitCode = "21400001";
+        debitName = "Customer PDC Liability — Unit SL";
+        creditCode = "12900001";
+        creditName = "Rent PDC In Hand";
       } else if (vchNo.startsWith("VCH-TRF-") || vchDesc.includes("bank transfer received in place of pdc") || vchDesc.includes("bank transfer settlement")) {
         if (!debitCode || debitCode === "41100") debitCode = "12000001";
         if (!debitName || debitName.includes("Revenue")) debitName = "Bank Operating Account";
-        creditCode = "12413";
-        creditName = "Tenant Receivables";
+        creditCode = "12413001";
+        creditName = "Tenant Receivables — Unit SL";
       }
+
+      // Normalise legacy GL control codes to the fixed SL codes so reports never
+      // book into the control accounts directly.
+      const CONTROL_TO_SL: Record<string, [string, string]> = {
+        "12413": ["12413001", "Tenant Receivables — Unit SL"],
+        "12900": ["12900001", "Rent PDC In Hand"],
+        "21400": ["21400001", "Customer PDC Liability — Unit SL"],
+      };
+      if (CONTROL_TO_SL[debitCode]) [debitCode, debitName] = CONTROL_TO_SL[debitCode];
+      if (CONTROL_TO_SL[creditCode]) [creditCode, creditName] = CONTROL_TO_SL[creditCode];
 
       const isDrExp = debitCode.startsWith("5");
       const isDrAsset = debitCode.startsWith("1");

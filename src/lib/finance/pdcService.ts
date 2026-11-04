@@ -9,7 +9,7 @@ import {
   postVoucher,
 } from './posting-engine';
 import { FinPdcRegisterApi } from '../supabase-finance';
-import { resolveAccountingAccounts, type PdcType } from './account-resolver';
+import { resolveAccountingAccounts, normalizeUuid, type PdcType } from './account-resolver';
 
 // ── Typed errors ──────────────────────────────────────────────────────────────
 
@@ -50,6 +50,50 @@ export class PdcStateError extends Error {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
+/**
+ * Resolve the real UUID tenant / property / unit for a PDC so postings hit the
+ * unit-level SLs (12413 / 12900 / 21400 [unit SL]) instead of falling back to
+ * the GL control accounts. Legacy PDC rows only carry bigint ids or a unit
+ * code, so look the UUIDs up via the lease first, then via the unit master.
+ */
+async function resolveUuidScope(args: {
+  leaseId?: string | number | null;
+  unitCode?: string | null;
+}): Promise<{ tenant_id?: string; property_id?: string; unit_id?: string }> {
+  const leaseId = normalizeUuid(args.leaseId as any);
+  try {
+    if (leaseId) {
+      const { data: lease } = await supabase
+        .from('leases')
+        .select('customer_id, property_id, unit_id')
+        .eq('id', leaseId)
+        .maybeSingle();
+      if (lease?.unit_id) {
+        return {
+          tenant_id:   normalizeUuid(lease.customer_id),
+          property_id: normalizeUuid(lease.property_id),
+          unit_id:     normalizeUuid(lease.unit_id),
+        };
+      }
+    }
+    const code = (args.unitCode || '').trim();
+    if (code) {
+      const { data: unitRows } = await supabase
+        .from('units')
+        .select('id, property_id')
+        .or(`unit_ref.eq.${code},unit_code.eq.${code},unit_name.eq.${code}`)
+        .limit(1);
+      const u = unitRows?.[0];
+      if (u?.id) {
+        return { property_id: normalizeUuid(u.property_id), unit_id: normalizeUuid(u.id) };
+      }
+    }
+  } catch {
+    // fall through — caller keeps its placeholder context
+  }
+  return {};
+}
+
 /** Fetch amount, tenant_id, property_id, unit_id for a PDC row from any source */
 async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
   const isNumericId = !isNaN(Number(pdcId)) && typeof pdcId !== "object";
@@ -65,12 +109,24 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
 
       if (finRow && Number(finRow.amount) > 0) {
         const rawChq = finRow.cheque_number || String(chequeNo ?? pdcId);
-        const derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
+        let derivedUnit = rawChq.includes('Flat') ? rawChq.split('-')[1] : undefined;
+        // fin_pdc_register ids are legacy bigints; the linked `pdcs` row carries
+        // the lease / unit code needed to find the real unit UUID.
+        let scope: Awaited<ReturnType<typeof resolveUuidScope>> = {};
+        if (finRow.original_pdc_id != null) {
+          const { data: legacy } = await supabase
+            .from('pdcs')
+            .select('lease_id, unit_name')
+            .eq('sl_no', Number(finRow.original_pdc_id))
+            .maybeSingle();
+          derivedUnit = derivedUnit || legacy?.unit_name || undefined;
+          scope = await resolveUuidScope({ leaseId: legacy?.lease_id, unitCode: legacy?.unit_name });
+        }
         return {
           amount:      Number(finRow.amount),
-          tenant_id:   finRow.tenant_id   ? String(finRow.tenant_id)   : '00000000-0000-0000-0000-000000000003',
-          property_id: finRow.property_id ? String(finRow.property_id) : '00000000-0000-0000-0000-000000000001',
-          unit_id:     finRow.unit_id     ? String(finRow.unit_id)     : '00000000-0000-0000-0000-000000000002',
+          tenant_id:   scope.tenant_id   || (finRow.tenant_id   ? String(finRow.tenant_id)   : '00000000-0000-0000-0000-000000000003'),
+          property_id: scope.property_id || (finRow.property_id ? String(finRow.property_id) : '00000000-0000-0000-0000-000000000001'),
+          unit_id:     scope.unit_id     || (finRow.unit_id     ? String(finRow.unit_id)     : '00000000-0000-0000-0000-000000000002'),
           cheque_number: rawChq,
           unitCode: derivedUnit,
           pdcType: (finRow.pdc_type as PdcType | null) ?? 'RENT_PDC',
@@ -89,17 +145,18 @@ async function resolveGlContext(pdcId: string | number, chequeNo?: string) {
   try {
     const { data: pdc } = await supabase
       .from('pdcs')
-      .select('id, sl_no, amount, unit_name, cheque_number, status, status_pdc, maturity_date, property_code, tenant_name')
+      .select('id, sl_no, amount, unit_name, cheque_number, status, status_pdc, maturity_date, property_code, tenant_name, lease_id')
       .eq('id', String(pdcId))
       .maybeSingle();
 
     if (pdc && Number(pdc.amount) > 0) {
       const derivedUnit = pdc.unit_name || (chequeNo?.includes('Flat') ? chequeNo.split('-')[1] : undefined);
+      const scope = await resolveUuidScope({ leaseId: pdc.lease_id, unitCode: derivedUnit });
       return {
         amount:        Number(pdc.amount),
-        tenant_id:     '00000000-0000-0000-0000-000000000003',
-        property_id:   '00000000-0000-0000-0000-000000000001',
-        unit_id:       '00000000-0000-0000-0000-000000000002',
+        tenant_id:     scope.tenant_id   || '00000000-0000-0000-0000-000000000003',
+        property_id:   scope.property_id || '00000000-0000-0000-0000-000000000001',
+        unit_id:       scope.unit_id     || '00000000-0000-0000-0000-000000000002',
         cheque_number: pdc.cheque_number || String(chequeNo ?? pdcId),
         unitCode:      derivedUnit,
         pdcType:       'RENT_PDC' as PdcType,
