@@ -281,7 +281,7 @@ export function SecurityDepositReconciliationSubModule() {
       // 1. If backed by fin_deposits row, update DB deposit status
       if (activeDeposit.dbDepositId) {
         try {
-          await settleDeposit(activeDeposit.dbDepositId, deduction);
+          await settleDeposit(activeDeposit.dbDepositId, deduction, netRefund);
         } catch {}
       }
 

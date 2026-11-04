@@ -29,6 +29,8 @@ export type ProcApInvoice = {
   unit_ref?: string;
   expense_gl_account?: string;
   expense_gl_code?: string;
+  /** Expense split of a direct AP invoice: one entry per ledger, each with an optional property and unit. */
+  allocations?: Array<{ gl_code: string; gl_name: string; amount: number; property: string; unit: string; note?: string }>;
 };
 
 export type PaymentReceipt = {
@@ -54,6 +56,14 @@ export type PaymentReceipt = {
 
 const INVOICE_STORAGE_KEY = 'proc_ap_invoices_cache_v2';
 const RECEIPT_STORAGE_KEY = 'proc_payment_receipts_v2';
+
+// Real-time sync across browser tabs: when another tab saves AP invoices or receipts, tell this tab's screens to reload.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === INVOICE_STORAGE_KEY) window.dispatchEvent(new Event('ap_invoices_updated'));
+    if (e.key === RECEIPT_STORAGE_KEY) window.dispatchEvent(new Event('payment_receipts_updated'));
+  });
+}
 
 function getLocalInvoices(): ProcApInvoice[] {
   try {
@@ -104,7 +114,7 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
       voucher_date: paidDate,
       voucher_type: "PV",
       reference_no: invoice.invoice_number,
-      description: `Vendor Payment: ${invoice.invoice_number} | PO: ${invoice.po_number || 'N/A'} | GRN: ${invoice.grn_number || 'N/A'} | Rcpt: ${receiptNum}`,
+      description: `Vendor Payment: ${invoice.invoice_number} | PO: ${invoice.po_number || 'N/A'} | GRN: ${invoice.grn_number || 'N/A'} | Rcpt: ${receiptNum} | Method: ${invoice.payment_method || 'Bank'}`,
       total_amount: invoice.total_amount,
       status: "posted",
       posted_at: new Date().toISOString()
@@ -365,7 +375,10 @@ export const ApInvoicesApi = {
         ? `PV-${suffix}`
         : `PV-${suffix}-P${installmentIndex}`;
 
-      const paidAmount = Number(payload.amount_paid || existingInv.total_amount);
+      // amount_paid is the running total paid on the invoice, so this receipt is what was added since the last payment.
+      const previouslyPaid = Number(existingInv.amount_paid || 0);
+      const runningPaid = Number(payload.amount_paid || existingInv.total_amount);
+      const paidAmount = runningPaid > previouslyPaid ? Math.round((runningPaid - previouslyPaid) * 100) / 100 : runningPaid;
 
       const receipt: PaymentReceipt = {
         id: `rcpt-${Date.now()}-${installmentIndex}`,
@@ -398,7 +411,7 @@ export const ApInvoicesApi = {
       saveLocalReceipts(updatedReceipts);
 
       // Post to Finance module vouchers & reports
-      void postFinancePaymentVoucher({ ...existingInv, total_amount: paidAmount }, rcptNum, pvNum);
+      void postFinancePaymentVoucher({ ...existingInv, total_amount: paidAmount, payment_method: payload.payment_method || existingInv.payment_method }, rcptNum, pvNum);
 
       // ── Cross-sync with Maintenance Vendor Invoices (pms_vendor_invoices) ──
       try {

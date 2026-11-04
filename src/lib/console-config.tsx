@@ -717,7 +717,6 @@ const consoleConfigs: Record<ConsoleKey, ConsoleConfig> = {
               { to: "/admin/finance", search: { tab: "lease_expiry_report" }, label: "Lease Expiry & Vacancy Loss", icon: <Calendar className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "utility_recharge_report" }, label: "Utility Recharge & Recovery", icon: <Activity className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "deposit_reconciliation_report" }, label: "Deposit & Snagging Reconciliation", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-              { to: "/admin/finance", search: { tab: "property_pnl" }, label: "Property Profit & Loss", icon: <Building2 className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "revenue_generation" }, label: "Revenue Generation", icon: <TrendingUp className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "trial_balance_simple" }, label: "Trial Balance (Simple)", icon: <Scale className="h-3.5 w-3.5" /> },
               { to: "/admin/finance", search: { tab: "trial_balance" }, label: "Trial Balance", icon: <Scale className="h-3.5 w-3.5" /> },
