@@ -843,6 +843,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   const [tradeCatTableReady, setTradeCatTableReady] = useState(false);
   const [showTradeCatModal, setShowTradeCatModal] = useState(false);
   const [newTradeCat, setNewTradeCat] = useState("");
+  const [tradeCatLoadError, setTradeCatLoadError] = useState("");
 
   const loadTradeCategories = useCallback(async () => {
     const { data, error } = await supabase
@@ -851,8 +852,13 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       .eq("is_active", true)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
-    if (error) { setTradeCatTableReady(false); return; }
+    if (error) {
+      setTradeCatTableReady(false);
+      setTradeCatLoadError(error.message);
+      return;
+    }
     setTradeCatTableReady(true);
+    setTradeCatLoadError("");
     setTradeCategories((data || []).map((r: any) => ({ id: r.id, name: r.name })));
   }, []);
   useEffect(() => { void loadTradeCategories(); }, [loadTradeCategories]);
@@ -3021,6 +3027,12 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
                   <Input placeholder="Search code, name, category..." value={search} onChange={e => setSearch(e.target.value)} className="w-64 text-xs h-8" />
+                  {role === "admin" && (
+                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
+                      onClick={() => setShowTradeCatModal(true)}>
+                      <Pencil className="h-3.5 w-3.5" /> Manage Categories
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
                     onClick={() => setShowBulkCatalogModal(true)}>
                     <Upload className="h-3.5 w-3.5" /> Bulk Import
@@ -4946,7 +4958,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
           </DialogHeader>
           {!tradeCatTableReady && (
             <p className="text-xs text-amber-600">
-              The trade category table is not available yet (run migration 20261104090000_proc_trade_categories.sql). Showing defaults, read-only.
+              Could not load trade categories{tradeCatLoadError ? `: ${tradeCatLoadError}` : ". Run migration 20261104090000_proc_trade_categories.sql."} Showing defaults, read-only.
             </p>
           )}
           <div className="flex gap-2">

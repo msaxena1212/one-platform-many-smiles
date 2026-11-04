@@ -4673,8 +4673,17 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
             {type === "Receipt Voucher" && (
               <div>
                 <Label className="text-[11px] font-semibold">Tenant / Lease / Unit *</Label>
-                <Select
+                <SearchableSelect
                   value={form.leaseId || "none"}
+                  placeholder="Search tenant, unit or property..."
+                  emptyText="No matching tenant"
+                  options={[
+                    { label: "Select tenant and unit", value: "none" },
+                    ...leases.map(lease => ({
+                      label: `${lease.tenantName} — ${lease.unit} (${lease.property})`,
+                      value: lease.id,
+                    })),
+                  ]}
                   onValueChange={value => {
                     const lease = leases.find(item => item.id === value);
                     setForm(current => ({
@@ -4684,19 +4693,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                       credit: lease ? "12413001 - Tenant Receivables — Unit SL" : current.credit,
                     }));
                   }}
-                >
-                  <SelectTrigger className="h-8 text-xs bg-background">
-                    <SelectValue placeholder="Select tenant and unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Select tenant and unit</SelectItem>
-                    {leases.map(lease => (
-                      <SelectItem key={lease.id} value={lease.id}>
-                        {lease.tenantName} — {lease.unit} ({lease.property})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
             )}
 

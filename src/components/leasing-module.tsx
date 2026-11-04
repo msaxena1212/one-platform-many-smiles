@@ -8669,7 +8669,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       setAgreementTermsForm((f) => ({
                         ...f,
                         annualRent: annual,
-                        monthlyRent: Math.round(annual / 12),
+                        monthlyRent: Math.round((annual / 12) * 100) / 100,
                       }));
                     }}
                     className="bg-background font-mono"

@@ -118,7 +118,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
     const o = lookupOverride(lease, storedOverrides);
 
-    const monthly = o?.monthlyRent ?? (lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0));
+    const monthly = o?.monthlyRent ?? (lease.monthlyRent || (lease.rental_amount ? Math.round((lease.rental_amount / 12) * 100) / 100 : 0));
     const annual = o?.rental_amount ?? (lease.rental_amount || (monthly * 12));
 
     setEditForm({
@@ -796,7 +796,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                   </tr>
                 ) : (
                   paginatedLeases.map((lease) => {
-                    const monthlyRent = lease.monthlyRent || (lease.rental_amount ? Math.round(lease.rental_amount / 12) : 0);
+                    const monthlyRent = lease.monthlyRent || (lease.rental_amount ? Math.round((lease.rental_amount / 12) * 100) / 100 : 0);
                     return (
                     <tr key={lease.id} className="hover:bg-muted/10 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{lease.lease_number || 'N/A'}</td>
@@ -897,7 +897,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             propertyName={getPropertyName(selectedLease)}
             tenantName={getTenantName(selectedLease)}
             leaseNo={selectedLease.lease_number || selectedLease.id}
-            securityDepositAmount={selectedLease.rental_amount ? Math.round(selectedLease.rental_amount / 12) : 5000}
+            securityDepositAmount={selectedLease.rental_amount ? Math.round((selectedLease.rental_amount / 12) * 100) / 100 : 5000}
             defaultType={selectedLease.lease_status === 'ACTIVE' ? 'MOVE_OUT' : 'MOVE_IN'}
           />
         </>

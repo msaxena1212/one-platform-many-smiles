@@ -62,7 +62,7 @@ function NewLeaseForm() {
       if (customerError) throw customerError;
 
       const annRent = Number(formData.rentalAmount) || 0;
-      const mRent = Math.round(annRent / 12);
+      const mRent = Math.round((annRent / 12) * 100) / 100;
       const termMonths = formData.hasRentFree ? 13 : 12;
 
       // 2. Create the lease attached to the customer

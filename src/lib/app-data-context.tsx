@@ -568,7 +568,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             tenantName: canonicalName(excelOverride?.tenant || l.customers?.full_name || l.tenant_name || "Tenant"),
             startDate: startDate,
             endDate: endDate,
-            monthlyRent: Number(l.rental_amount || 0) > 0 ? Math.round(Number(l.rental_amount) / 12) : (excelOverride?.rent || 0),
+            monthlyRent: Number(l.rental_amount || 0) > 0
+              ? Math.round((Number(l.rental_amount) / 12) * 100) / 100
+              : (excelOverride?.rent || 0),
             securityDeposit: Number(l.security_deposit || 0) || excelOverride?.rent || 0,
             pdcCount: Number(l.number_of_pdc || 12),
             paymentFrequency: (l.payment_frequency?.toLowerCase() as LeasePaymentFrequency) || "monthly",
@@ -678,11 +680,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               (cleanU ? storedOverrides[`L-${cleanU}`] : null) ||
               (tName ? storedOverrides[tName] : null);
             if (!o) return l;
+            const overrideAnnualRent = Number(o.rental_amount);
+            const overrideMonthlyRent = Number(o.monthlyRent);
+            const monthlyRent = overrideAnnualRent > 0 && overrideMonthlyRent === Math.round(overrideAnnualRent / 12)
+              ? Math.round((overrideAnnualRent / 12) * 100) / 100
+              : o.monthlyRent ?? l.monthlyRent;
             return {
               ...l,
               startDate: o.commencement_date || l.startDate,
               endDate: o.expiry_date || l.endDate,
-              monthlyRent: o.monthlyRent ?? l.monthlyRent,
+              monthlyRent,
               securityDeposit: o.monthlyRent ?? l.securityDeposit,
               tenantName: o.tenant_name || l.tenantName,
               status: (o.lease_status ? o.lease_status.toLowerCase() : l.status) as LeaseStatus,

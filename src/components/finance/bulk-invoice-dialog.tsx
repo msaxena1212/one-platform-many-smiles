@@ -139,6 +139,10 @@ const REVENUE_STREAMS = [
   { code: "41600", label: "41600 - Late Fee & Penalties" },
 ];
 
+function formatQarAmount(amount: number): string {
+  return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 function extractTargetMonthKey(billingPeriodStr?: string, issueDateStr?: string): string {
   if (billingPeriodStr) {
     const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -564,7 +568,10 @@ export function BulkInvoiceDialog({
   const currentItems = (activeTab === "property" ? propertyBatchItems : customerBatchItems)
     .filter((item) => item.concessionNote !== "Outside selected billing month");
   const selectedItems = useMemo(() => currentItems.filter(i => i.selected), [currentItems]);
-  const totalAmountSelected = useMemo(() => selectedItems.reduce((acc, i) => acc + (Number(i.amount) || 0), 0), [selectedItems]);
+  const totalAmountSelected = useMemo(
+    () => selectedItems.reduce((totalCents, item) => totalCents + Math.round((Number(item.amount) || 0) * 100), 0) / 100,
+    [selectedItems],
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // GENERATE BULK INVOICES
@@ -589,7 +596,7 @@ export function BulkInvoiceDialog({
       due_date: dueDate,
       stream: item.isRentFree ? `Monthly Rental - Concession Period (${item.concessionNote || 'Rent-Free Concession'})` : item.stream,
       account_code: item.accountCode,
-      amount: item.amount,
+      amount: Math.round(item.amount * 100) / 100,
       customerId: item.customerId,
       leaseId: item.leaseId,
       billingPeriod,
@@ -614,7 +621,7 @@ export function BulkInvoiceDialog({
       invoices: createdList,
     });
 
-    toast.success(`Successfully generated ${selectedItems.length} invoices amounting to QAR ${totalAmountSelected.toLocaleString()}!`);
+    toast.success(`Successfully generated ${selectedItems.length} invoices amounting to QAR ${formatQarAmount(totalAmountSelected)}!`);
 
     if (onSuccess) {
       onSuccess(selectedItems.length, totalAmountSelected);
@@ -814,7 +821,7 @@ export function BulkInvoiceDialog({
                   </div>
 
                   <div className="font-mono text-xs">
-                    Total Amount: <strong className="text-sm font-bold text-primary">QAR {totalAmountSelected.toLocaleString()}</strong>
+                    Total Amount: <strong className="text-sm font-bold text-primary">QAR {formatQarAmount(totalAmountSelected)}</strong>
                   </div>
                 </div>
               </div>
@@ -900,7 +907,7 @@ export function BulkInvoiceDialog({
                   </div>
 
                   <div className="font-mono text-xs">
-                    Total Amount: <strong className="text-sm font-bold text-primary">QAR {totalAmountSelected.toLocaleString()}</strong>
+                    Total Amount: <strong className="text-sm font-bold text-primary">QAR {formatQarAmount(totalAmountSelected)}</strong>
                   </div>
                 </div>
               </div>
@@ -944,7 +951,7 @@ export function BulkInvoiceDialog({
                     <TableHead className="font-bold">Property</TableHead>
                     <TableHead className="font-bold">Lease / Ref</TableHead>
                     <TableHead className="font-bold">Invoice #</TableHead>
-                    <TableHead className="text-right font-bold">Base Rent</TableHead>
+                    <TableHead className="text-right font-bold">Monthly Base Rent (QAR)</TableHead>
                     <TableHead className="text-right font-bold">Billed Amount (QAR)</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -990,7 +997,7 @@ export function BulkInvoiceDialog({
                         <TableCell className="font-mono text-[11px] text-muted-foreground">{item.leaseNumber || "—"}</TableCell>
                         <TableCell className="font-mono text-xs text-primary font-bold">{item.invoiceNo}</TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
-                          {item.baseRent.toLocaleString()}
+                          {formatQarAmount(item.baseRent)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Input
@@ -1020,7 +1027,7 @@ export function BulkInvoiceDialog({
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Ready to generate:</span>
               <Badge variant="outline" className="font-bold text-primary font-mono text-xs">
-                {selectedItems.length} Invoices &bull; QAR {totalAmountSelected.toLocaleString()}
+                {selectedItems.length} Invoices &bull; QAR {formatQarAmount(totalAmountSelected)}
               </Badge>
             </div>
 
@@ -1053,7 +1060,7 @@ export function BulkInvoiceDialog({
               <h3 className="text-lg font-bold text-foreground">Bulk Invoices Generated &amp; Posted!</h3>
               <p className="text-xs text-muted-foreground max-w-md mx-auto">
                 Successfully created and registered <strong>{batchResult.count} accounts receivable invoices</strong> totaling{" "}
-                <strong className="text-foreground font-mono">QAR {batchResult.totalAmount.toLocaleString()}</strong> to the tenant sub-ledgers.
+                <strong className="text-foreground font-mono">QAR {formatQarAmount(batchResult.totalAmount)}</strong> to the tenant sub-ledgers.
               </p>
 
               <div className="p-3 rounded-lg border bg-muted/30 text-xs font-mono grid grid-cols-2 gap-2 text-left my-4">
@@ -1075,7 +1082,7 @@ export function BulkInvoiceDialog({
                 </div>
                 <div>
                   <span className="text-muted-foreground block text-[10px] uppercase">Total Billed:</span>
-                  <span className="font-bold text-primary font-mono text-sm">QAR {batchResult.totalAmount.toLocaleString()}</span>
+                  <span className="font-bold text-primary font-mono text-sm">QAR {formatQarAmount(batchResult.totalAmount)}</span>
                 </div>
               </div>
 
@@ -1151,14 +1158,14 @@ export function BulkInvoiceDialog({
                         <td className="p-2 font-medium">{inv.tenant}</td>
                         <td className="p-2 text-muted-foreground">{inv.property} - {inv.unit}</td>
                         <td className="p-2 text-muted-foreground">{inv.stream}</td>
-                        <td className="p-2 text-right font-mono font-bold">{inv.amount?.toLocaleString()}</td>
+                        <td className="p-2 text-right font-mono font-bold">{formatQarAmount(inv.amount || 0)}</td>
                         <td className="p-2 font-mono text-muted-foreground">{inv.due_date}</td>
                       </tr>
                     ))}
                     <tr className="bg-muted/40 font-bold border-t">
                       <td colSpan={4} className="p-2 text-right">Total Invoiced:</td>
                       <td className="p-2 text-right font-mono text-primary text-sm">
-                        QAR {batchResult.totalAmount.toLocaleString()}
+                        QAR {formatQarAmount(batchResult.totalAmount)}
                       </td>
                       <td></td>
                     </tr>

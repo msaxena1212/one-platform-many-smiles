@@ -596,6 +596,45 @@ export const HrmsApi = {
       .single();
   },
 
+  /**
+   * Month-end attendance sheet: expands per-employee totals into daily rows (present first,
+   * then paid leave, then unpaid absence) so payroll's day counting picks them up.
+   */
+  async saveMonthlyAttendance(
+    startDate: string,
+    endDate: string,
+    rows: { employee_id: string; absent: number; paidLeave: number; overtimeHours: number }[]
+  ) {
+    const days: string[] = [];
+    for (let d = new Date(`${startDate}T00:00:00Z`); d <= new Date(`${endDate}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(d.toISOString().split('T')[0]);
+    }
+    const records: any[] = [];
+    for (const r of rows) {
+      const absent = Math.min(Math.max(Math.round(r.absent) || 0, 0), days.length);
+      const leave = Math.min(Math.max(Math.round(r.paidLeave) || 0, 0), days.length - absent);
+      const presentCount = days.length - absent - leave;
+      days.forEach((date, i) => {
+        const status = i < presentCount ? 'PRESENT' : i < presentCount + leave ? 'LEAVE' : 'ABSENT';
+        records.push({
+          employee_id: r.employee_id,
+          attendance_date: date,
+          status,
+          total_working_hours: status === 'PRESENT' ? 8 : 0,
+          overtime_minutes: i === 0 ? Math.round((Number(r.overtimeHours) || 0) * 60) : 0,
+          remarks: 'Monthly attendance sheet',
+        });
+      });
+    }
+    for (let i = 0; i < records.length; i += 500) {
+      const { error } = await supabase
+        .from('hrms_attendance_daily')
+        .upsert(records.slice(i, i + 500), { onConflict: 'employee_id,attendance_date' });
+      if (error) return { error };
+    }
+    return { error: null };
+  },
+
   // Leaves
   async getLeaveTypes(): Promise<HrmsLeaveType[]> {
     const { data, error } = await supabase.from('hrms_leave_types').select('*').order('name');

@@ -42,6 +42,7 @@ import {
 } from "@/lib/hrmsService";
 import { REAL_EMPLOYEES_SEED } from "@/lib/hrmsSeedData";
 import { syncPayrollRun } from "@/lib/finance/payrollIntegrationService";
+import { printPayslip } from "@/lib/payslip-pdf";
 import { QatarWpsSifDialog } from "@/components/hrms/qatar-wps-sif-dialog";
 import { openPrintableEosbClearance } from "@/lib/qatar-eosb-clearance";
 import {
@@ -127,6 +128,10 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   const [showAddTicketModal, setShowAddTicketModal] = useState<boolean>(false);
   const [showAddAnnouncementModal, setShowAddAnnouncementModal] = useState<boolean>(false);
   const [showCreatePayrollModal, setShowCreatePayrollModal] = useState<boolean>(false);
+  const [showPayrollAttendanceModal, setShowPayrollAttendanceModal] = useState<boolean>(false);
+  const [payrollAttSearch, setPayrollAttSearch] = useState("");
+  const [payrollAttRows, setPayrollAttRows] = useState<Record<string, { absent: string; paidLeave: string; overtimeHours: string; dirty: boolean }>>({});
+  const [savingPayrollAtt, setSavingPayrollAtt] = useState(false);
   const [showWpsSifModal, setShowWpsSifModal] = useState<boolean>(false);
   const [showAddShiftModal, setShowAddShiftModal] = useState<boolean>(false);
   const [showAddResignationModal, setShowAddResignationModal] = useState<boolean>(false);
@@ -651,6 +656,73 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
       setShowCreatePayrollModal(false);
       loadAllHRMSData();
     }
+  };
+
+  const payrollCycle = payrollCycles.find((c) => c.id === selectedCycleId) || payrollCycles[0];
+
+  const openPayrollAttendance = () => {
+    if (!payrollCycle) {
+      toast.error("Please select or create a payroll cycle first");
+      return;
+    }
+    const rows: Record<string, { absent: string; paidLeave: string; overtimeHours: string; dirty: boolean }> = {};
+    for (const emp of employees) {
+      const mine = attendance.filter(
+        (a) => a.employee_id === emp.id && a.attendance_date >= payrollCycle.start_date && a.attendance_date <= payrollCycle.end_date
+      );
+      rows[emp.id] = {
+        absent: String(mine.filter((a) => a.status === "ABSENT" || a.status === "UNPAID_LEAVE").length),
+        paidLeave: "0",
+        overtimeHours: String(Math.round((mine.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0) / 60) * 10) / 10),
+        dirty: false,
+      };
+    }
+    setPayrollAttRows(rows);
+    setPayrollAttSearch("");
+    setShowPayrollAttendanceModal(true);
+  };
+
+  const payrollMonthDays = payrollCycle
+    ? Math.round((Date.parse(`${payrollCycle.end_date}T00:00:00Z`) - Date.parse(`${payrollCycle.start_date}T00:00:00Z`)) / 86400000) + 1
+    : 30;
+
+  const setPayrollPaidDays = (empId: string, value: string) => {
+    const paid = Math.min(Math.max(Number(value) || 0, 0), payrollMonthDays);
+    updatePayrollAttRow(empId, "absent", String(payrollMonthDays - paid));
+  };
+
+  const updatePayrollAttRow = (empId: string, field: "absent" | "paidLeave" | "overtimeHours", value: string) => {
+    setPayrollAttRows((cur) => ({ ...cur, [empId]: { ...cur[empId], [field]: value, dirty: true } }));
+  };
+
+  const handleSavePayrollAttendance = async (recalculate: boolean) => {
+    if (!payrollCycle) return;
+    const changed = Object.entries(payrollAttRows)
+      .filter(([, r]) => r.dirty)
+      .map(([employee_id, r]) => ({
+        employee_id,
+        absent: Number(r.absent) || 0,
+        paidLeave: Number(r.paidLeave) || 0,
+        overtimeHours: Number(r.overtimeHours) || 0,
+      }));
+    if (changed.length === 0 && !recalculate) {
+      toast.info("No attendance changes to save");
+      return;
+    }
+    setSavingPayrollAtt(true);
+    if (changed.length > 0) {
+      const { error } = await HrmsApi.saveMonthlyAttendance(payrollCycle.start_date, payrollCycle.end_date, changed);
+      if (error) {
+        setSavingPayrollAtt(false);
+        toast.error("Failed to save attendance: " + (error as any).message);
+        return;
+      }
+      toast.success(`Attendance saved for ${changed.length} employee(s)`);
+    }
+    setSavingPayrollAtt(false);
+    setShowPayrollAttendanceModal(false);
+    await loadAllHRMSData();
+    if (recalculate) await handleRunPayrollCalculation();
   };
 
   const handleRunPayrollCalculation = async () => {
@@ -1701,6 +1773,9 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={openPayrollAttendance} className="gap-1.5">
+                <Clock className="h-4 w-4" /> Update Attendance
+              </Button>
               <Button variant="outline" size="sm" onClick={handleRunPayrollCalculation} className="gap-1.5">
                 <RefreshCw className="h-4 w-4" /> Calculate Salary & Leave Pay
               </Button>
@@ -3026,6 +3101,79 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Payroll Attendance Sheet Modal */}
+      <Dialog open={showPayrollAttendanceModal} onOpenChange={setShowPayrollAttendanceModal}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Update Attendance — {payrollCycle?.name}</DialogTitle>
+            <DialogDescription>
+              Paid days default to the full calendar month ({payrollMonthDays} days, {payrollCycle?.start_date} to {payrollCycle?.end_date}).
+              Enter unpaid days and overtime from the attendance records; changing either paid or unpaid days updates the other.
+              Saving replaces the daily attendance for the edited employees in this cycle.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Search employee name or code..."
+            value={payrollAttSearch}
+            onChange={(e) => setPayrollAttSearch(e.target.value)}
+            className="h-8 text-xs"
+          />
+          <div className="max-h-[50vh] overflow-y-auto border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead className="w-28">Paid days</TableHead>
+                  <TableHead className="w-28">Unpaid days</TableHead>
+                  <TableHead className="w-28">Overtime hrs</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employees
+                  .filter((e: any) => payrollAttRows[e.id])
+                  .filter((e: any) =>
+                    `${e.first_name || ""} ${e.last_name || ""} ${e.employee_id_code || ""}`.toLowerCase().includes(payrollAttSearch.toLowerCase())
+                  )
+                  .map((e: any) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="text-xs">
+                        <span className="font-medium">{e.first_name} {e.last_name}</span>
+                        <span className="ml-2 font-mono text-muted-foreground">{e.employee_id_code}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number" min={0} max={payrollMonthDays} step="1" className="h-8 text-xs"
+                          value={Math.max(0, payrollMonthDays - (Number(payrollAttRows[e.id].absent) || 0))}
+                          onChange={(ev) => setPayrollPaidDays(e.id, ev.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number" min={0} max={payrollMonthDays} step="1" className="h-8 text-xs"
+                          value={payrollAttRows[e.id].absent}
+                          onChange={(ev) => updatePayrollAttRow(e.id, "absent", ev.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number" min={0} step="0.5" className="h-8 text-xs"
+                          value={payrollAttRows[e.id].overtimeHours}
+                          onChange={(ev) => updatePayrollAttRow(e.id, "overtimeHours", ev.target.value)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowPayrollAttendanceModal(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" disabled={savingPayrollAtt} onClick={() => void handleSavePayrollAttendance(false)}>Save</Button>
+            <Button size="sm" disabled={savingPayrollAtt} onClick={() => void handleSavePayrollAttendance(true)}>Save & Recalculate Payroll</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Payroll Cycle Modal */}
       <Dialog open={showCreatePayrollModal} onOpenChange={setShowCreatePayrollModal}>
         <DialogContent className="max-w-md">
@@ -3901,9 +4049,18 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                 variant="outline"
                 size="sm"
                 className="gap-1.5 text-xs print:hidden"
-                onClick={() => window.print()}
+                onClick={() => {
+                  if (!selectedPayslipForView) return;
+                  const fullEmp = employees.find((e: any) => e.id === selectedPayslipForView.employee_id);
+                  printPayslip({
+                    payslip: { ...selectedPayslipForView, employees: { ...fullEmp, ...selectedPayslipForView.employees, ...(fullEmp || {}) } },
+                    cycleName: payrollCycle?.name || "Payroll",
+                    periodStart: payrollCycle?.start_date,
+                    periodEnd: payrollCycle?.end_date,
+                  });
+                }}
               >
-                <Printer className="h-3.5 w-3.5" /> Print Statement
+                <Printer className="h-3.5 w-3.5" /> Print Payslip
               </Button>
             </div>
           </DialogHeader>
