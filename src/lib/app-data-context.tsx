@@ -112,6 +112,13 @@ export interface PmsPdc {
   payerName?: string;
   period?: string;
   file?: string;
+  chequeNumber?: string;
+  dueDate?: string;
+  depositDate?: string;
+  unit?: string;
+  property?: string;
+  tenureStart?: string;
+  tenureEnd?: string;
 }
 
 export interface PmsVoucher {
@@ -789,6 +796,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         unitName: p.unit_name || p.unit_ref || "",
         tenantName: p.tenant_name || p.drawer_name || "",
         date: p.maturity_date || p.cheque_date || "",
+        chequeNumber: p.cheque_number || p.chequeNo || "",
+        dueDate: p.maturity_date || p.cheque_date || "",
+        depositDate: p.deposit_date || "",
+        unit: p.unit_name || p.unit_ref || "",
+        property: p.property_name || p.property_code || "",
+        tenureStart: p.rent_from_date || p.tenureStart || "",
+        tenureEnd: p.rent_to_date || p.tenureEnd || "",
         amount: Number(p.amount || 0),
         status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
         payerName: p.tenant_name || p.drawer_name || "Tenant",

@@ -97,6 +97,7 @@ export interface PayableInvoice {
   due_date: string;
   account: string;
   account_code: string;
+  stream?: string;
   amount: number;
   status: "Unpaid" | "Paid" | "Partially Paid";
   property?: string;
@@ -119,6 +120,9 @@ export interface FinanceVoucher {
   property_name?: string;
   unit_ref?: string;
   tenant_name?: string;
+  account_code?: string;
+  payment_mode?: string;
+  reference_number?: string;
   lines?: JournalLedgerLine[];
 }
 

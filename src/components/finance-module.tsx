@@ -43,7 +43,7 @@ import { ReceivablesLegal } from "./finance/receivables";
 import { PayrollSync } from "./finance/payroll-sync";
 import { formatDDMMMYYYY, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { postVoucher } from "@/lib/finance/posting-engine";
-import { useFinanceStore } from "@/lib/finance/finance-store";
+import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
 import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
 import {
@@ -90,6 +90,13 @@ export interface FinanceModuleProps {
     unit: string;
   } | null;
 }
+
+const FINANCE_ROUTE_BY_ROLE = {
+  admin: "/admin/finance",
+  "prop-mgr": "/prop-mgr/finance",
+  finance: "/finance/",
+  cashier: "/cashier/",
+} as const;
 
 const FINANCE_NAV = [
   {
@@ -196,13 +203,7 @@ const FINANCE_NAV = [
 ];
 
 export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
-  const financeRouteByRole = {
-    admin: "/admin/finance",
-    "prop-mgr": "/prop-mgr/finance",
-    finance: "/finance/",
-    cashier: "/cashier/",
-  } as const;
-  const navigate = useNavigate({ from: financeRouteByRole[role] });
+  const navigate = useNavigate({ from: FINANCE_ROUTE_BY_ROLE[role] });
   const searchParams = useSearch({ strict: false }) as Record<string, any>;
   const activeKey = searchParams.tab || "finance_dashboard";
 
@@ -278,7 +279,7 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
         {/* Content */}
         <ScrollArea className="flex-1">
           <div className="p-6">
-            <FinanceSubModuleRouter subKey={activeKey} />
+            <FinanceSubModuleRouter subKey={activeKey} role={role} />
           </div>
         </ScrollArea>
       </div>
@@ -288,7 +289,7 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
 
 // ── Sub-Module Router ─────────────────────────────────────────────────────────
 
-function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
+function FinanceSubModuleRouter({ subKey, role }: { subKey: string; role: FinanceModuleProps["role"] }) {
   switch (subKey) {
     // Setup
     case "financial_year": return <FinancialYearSubModule />;
@@ -310,7 +311,7 @@ function FinanceSubModuleRouter({ subKey }: { subKey: string }) {
     case "payable_invoice": return <PayableInvoiceSubModule />;
     case "journal_voucher": return <VoucherManagerSubModule type="Journal Voucher" />;
     case "payment_voucher": return <VoucherManagerSubModule type="Payment Voucher" />;
-    case "receivable_invoice": return <ReceivableInvoiceSubModule />;
+    case "receivable_invoice": return <ReceivableInvoiceSubModule role={role} />;
     case "receipt_voucher": return <VoucherManagerSubModule type="Receipt Voucher" />;
 
     // Receivables & Operations
@@ -805,6 +806,7 @@ interface BudgetHeadItem {
   allocated_budget: number;
   financial_year: string;
   status: "Active" | "Inactive";
+  date?: string;
   description?: string;
 }
 
@@ -1020,11 +1022,6 @@ function BudgetHeadSubModule() {
   }
 
   function handleSave() {
-    const periodCheck = isDateInClosedPostingPeriod(form.date);
-    if (periodCheck.closed) {
-      toast.error(`Posting Blocked: Accounting Period ${periodCheck.periodName} is CLOSED / LOCKED. Re-open the period in Finance > Posting Period to post backdated entries.`);
-      return;
-    }
     if (!form.name.trim() || !form.code.trim()) {
       toast.error("Please provide both Budget Head Code and Name.");
       return;
@@ -5000,8 +4997,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
   );
 }
 
-function ReceivableInvoiceSubModule() {
-  const navigate = useNavigate();
+function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"] }) {
+  const navigate = useNavigate({ from: FINANCE_ROUTE_BY_ROLE[role] });
   const { leases, units, customers } = useAppData();
   const { addReceivableInvoice, receivableInvoices: storeReceivables, markReceivableInvoicePaid } = useFinanceStore();
   const [open, setOpen] = useState(false);
@@ -5165,7 +5162,7 @@ function ReceivableInvoiceSubModule() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => navigate({ search: (prev: any) => ({ ...prev, tab: "unbilled_units_report" }) as any })}
+            onClick={() => navigate({ search: { tab: "unbilled_units_report" } })}
             className="gap-1.5 border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 font-semibold text-xs shadow-xs"
           >
             <AlertTriangle className="h-3.5 w-3.5" />
@@ -5506,7 +5503,7 @@ function ReceivableInvoiceSubModule() {
                     <SelectContent>
                       {availableUnits.map(u => (
                         <SelectItem key={u.id || u.unit} value={u.unit}>
-                          {u.unit} {u.current_tenant ? `(${u.current_tenant})` : ""}
+                          {u.unit} {u.currentTenant ? `(${u.currentTenant})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
