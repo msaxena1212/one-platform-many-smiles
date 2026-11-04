@@ -163,6 +163,51 @@ export function ArApAgingReportSubModule() {
       });
     });
 
+    // 1b. Apply unlinked customer credits (cleared PDCs and receipt vouchers) to open invoices,
+    // oldest first, so the aging matches the Customer Statement of Account. Credits that
+    // already reference a specific invoice were applied above and are excluded here.
+    const invoiceNosLower = receivableInvoices.map((i) => i.invoice_no.trim().toLowerCase()).filter(Boolean);
+    const creditByParty = new Map<string, number>();
+    const addCredit = (party: string, amt: number) => {
+      const k = normalizeKey(party);
+      if (!k || !(amt > 0)) return;
+      creditByParty.set(k, (creditByParty.get(k) || 0) + amt);
+    };
+    pdcs.forEach((pdc) => {
+      if (String(pdc.status || "").toLowerCase() !== "cleared") return;
+      const clearedOn = String(pdc.date || "").split("T")[0];
+      if (clearedOn && clearedOn > asOfDate) return;
+      const lease = leases.find((l) => l.id === pdc.leaseId);
+      addCredit(lease?.tenantName || pdc.tenantName || "", Number(pdc.amount) || 0);
+    });
+    vouchers.forEach((v) => {
+      if (v.voucher_type !== "Receipt Voucher" || v.date > asOfDate) return;
+      const nameLower = (v.name || "").toLowerCase();
+      const noLower = (v.voucher_no || "").toLowerCase();
+      const isDepositOrCustody =
+        noLower.startsWith("vch-sd-") || nameLower.includes("security deposit") ||
+        noLower.startsWith("vch-pdc-rcv-") || noLower.startsWith("vch-dep-") ||
+        nameLower.includes("pdc received") || nameLower.includes("pdc deposited");
+      if (isDepositOrCustody) return;
+      if (invoiceNosLower.some((n) => nameLower.includes(n) || noLower.includes(n))) return;
+      addCredit(v.tenant_name || "", Number(v.amount) || 0);
+    });
+    items
+      .filter((it) => it.canQuickSettle && it.invoiceNo && !it.invoiceNo.startsWith("CHQ-"))
+      .sort((x, y) => x.invoiceDate.localeCompare(y.invoiceDate))
+      .forEach((it) => {
+        const k = normalizeKey(it.partyName);
+        let credit = creditByParty.get(k) || 0;
+        if (credit <= 0) return;
+        const applied = Math.min(credit, it.outstandingAmount);
+        it.paidAmount += applied;
+        it.outstandingAmount = Math.max(0, it.outstandingAmount - applied);
+        creditByParty.set(k, credit - applied);
+      });
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].canQuickSettle && items[i].outstandingAmount <= 0.005) items.splice(i, 1);
+    }
+
     // 2. Dishonored / Bounced PDCs (only if not already escalated to Legal Receivables)
     const escalatedCheques = new Set(
       legalReceivables.map((l) => l.legal_case_id.replace(/^LGL-/, "").trim().toLowerCase())

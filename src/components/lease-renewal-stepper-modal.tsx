@@ -457,14 +457,7 @@ export function LeaseRenewalStepperModal({
     } else if (currentStep === 2) {
       setCurrentStep(3);
     } else if (currentStep === 3) {
-      if (generatePdcs && !noPdcApprovalRequested && pdcCheques.length === 0) {
-        toast.error("Please provide at least one PDC or enable 'Contract without PDCs (Finance Approval)'.");
-        return;
-      }
-      if (noPdcApprovalRequested && !noPdcReason.trim()) {
-        toast.error("Please provide a reason / justification for contract renewal without PDCs.");
-        return;
-      }
+      // PDCs are optional at renewal: they can be registered later from PDC Management.
       setCurrentStep(4);
     }
   }
@@ -533,14 +526,15 @@ export function LeaseRenewalStepperModal({
           date: rentPaymentDate,
           receiptFile: rentReceiptFile,
         } : undefined,
-        generatePdcs: !noPdcApprovalRequested && generatePdcs,
-        requiresFinanceApproval: noPdcApprovalRequested,
-        financeApprovalReason: noPdcApprovalRequested ? `[Finance Approval Required] No PDCs attached. Justification: ${noPdcReason}. Target Approver: ${noPdcApprovedBy}` : undefined,
+        generatePdcs: !noPdcApprovalRequested && generatePdcs && pdcCheques.length > 0,
+        requiresFinanceApproval: false,
+        financeApprovalReason: undefined,
         pdcs: noPdcApprovalRequested ? [] : pdcCheques,
         pdcBatchFile: noPdcApprovalRequested ? undefined : pdcBatchFile,
         vaultLocation: vaultLocation,
         custodyOfficer: custodyOfficer,
-        notes: noPdcApprovalRequested ? `[CONTRACT WITHOUT PDCS - PENDING FINANCE APPROVAL: ${noPdcReason}]\n${renewalNotes}` : renewalNotes,
+        notes: noPdcApprovalRequested || pdcCheques.length === 0 ? `[RENEWED WITHOUT PDCS - add cheques later from PDC Management${noPdcReason.trim() ? `: ${noPdcReason}` : ""}]
+${renewalNotes}` : renewalNotes,
       };
 
       await onConfirmRenewal(payload);
@@ -1164,7 +1158,7 @@ export function LeaseRenewalStepperModal({
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-amber-600" />
                       <Label htmlFor="no-pdc-toggle" className="text-xs font-bold text-amber-900 dark:text-amber-200 cursor-pointer">
-                        Contract Without PDCs (Finance Approval Route)
+                        Contract Without PDCs (add cheques later)
                       </Label>
                     </div>
                     <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
@@ -1177,7 +1171,7 @@ export function LeaseRenewalStepperModal({
                     onCheckedChange={(checked) => {
                       setNoPdcApprovalRequested(checked);
                       if (checked) {
-                        toast.info("PDC restriction lifted. Renewal will route for Finance Approval.");
+                        toast.info("Renewal will proceed without PDCs. Add cheques later from PDC Management.");
                       }
                     }}
                   />
@@ -1202,7 +1196,7 @@ export function LeaseRenewalStepperModal({
                     </div>
                     <div className="space-y-1">
                       <Label className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
-                        Finance Approval Authority
+                        Recorded Authority
                       </Label>
                       <Select value={noPdcApprovedBy} onValueChange={setNoPdcApprovedBy}>
                         <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
@@ -1215,7 +1209,7 @@ export function LeaseRenewalStepperModal({
                     </div>
                     <div className="col-span-full rounded-md bg-amber-100/70 dark:bg-amber-900/30 p-2.5 text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
                       <Info className="h-4 w-4 shrink-0 text-amber-600" />
-                      <span>The renewal contract will be created with status <strong>Pending Finance Approval</strong>. Once approved by Finance, the lease becomes Active without blocking the user.</span>
+                      <span>The renewal will be created as <strong>Active</strong> with no approval step. Register the cheques later from PDC Management.</span>
                     </div>
                   </div>
                 )}
@@ -1636,7 +1630,7 @@ export function LeaseRenewalStepperModal({
                         {noPdcApprovalRequested ? (
                           <>
                             <ShieldCheck className="h-4 w-4 text-amber-600" />
-                            <span className="text-amber-800 dark:text-amber-300">Finance Approval Exemption</span>
+                            <span className="text-amber-800 dark:text-amber-300">Renewal Without PDCs</span>
                           </>
                         ) : (
                           <>
@@ -1646,10 +1640,9 @@ export function LeaseRenewalStepperModal({
                       </div>
                       {noPdcApprovalRequested ? (
                         <div className="space-y-1 text-muted-foreground">
-                          <p><strong className="text-foreground">Contract Type:</strong> <span className="text-amber-700 dark:text-amber-300 font-semibold">Exempt from PDCs (Approval Required)</span></p>
+                          <p><strong className="text-foreground">Contract Type:</strong> <span className="text-amber-700 dark:text-amber-300 font-semibold">Without PDCs (cheques to be added later)</span></p>
                           <p><strong className="text-foreground">Reason:</strong> {noPdcReason}</p>
-                          <p><strong className="text-foreground">Designated Approver:</strong> {noPdcApprovedBy}</p>
-                          <p><strong className="text-foreground">Workflow:</strong> Initial status set to <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Pending Finance Approval</Badge></p>
+                                                    <p><strong className="text-foreground">Status:</strong> <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">Active</Badge></p>
                         </div>
                       ) : (
                         <div className="space-y-1 text-muted-foreground">
