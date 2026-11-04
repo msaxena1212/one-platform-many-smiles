@@ -294,8 +294,8 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       const streetAddress = form.street_building_name || form.address || `${finalPropertyCode} Street`;
 
-      const validAmenities = (form.amenities || []).map(a => a.trim()).filter(Boolean);
-      const otherAmenitiesList = form.other_amenities ? form.other_amenities.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const validAmenities = cleanAmenities;
+      const otherAmenitiesList: string[] = [];
       const totalAmenitiesCount = validAmenities.length + otherAmenitiesList.length;
 
       if (totalAmenitiesCount === 0) {

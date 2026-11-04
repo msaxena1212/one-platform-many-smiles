@@ -3902,65 +3902,6 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
                 onChange={e => setAllocationForm(f => ({ ...f, remarks: e.target.value }))}
               />
             </div>
-            <div className="col-span-4 border-t pt-3 mt-1 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-semibold">Amenities & Facilities</span>
-                <span className="text-[11px] text-destructive font-medium">* At least 1 required</span>
-              </div>
-              <div className="space-y-2">
-                {(propertyForm.amenities || []).map((amenity, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Input 
-                      placeholder={idx === 0 ? "Amenity 1 (e.g. Swimming Pool) *" : idx === 1 ? "Amenity 2 (e.g. Gym)" : `Amenity ${idx + 1}`} 
-                      value={amenity} 
-                      onChange={e => {
-                        const newAmenities = [...propertyForm.amenities];
-                        newAmenities[idx] = e.target.value;
-                        setPropertyForm(f => ({ ...f, amenities: newAmenities }));
-                      }} 
-                      className="text-xs flex-1"
-                    />
-                    {propertyForm.amenities.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={() => {
-                          const newAmenities = propertyForm.amenities.filter((_, i) => i !== idx);
-                          setPropertyForm(f => ({ ...f, amenities: newAmenities.length > 0 ? newAmenities : [""] }));
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-
-                {propertyForm.amenities.length < 5 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7"
-                    onClick={() => {
-                      setPropertyForm(f => ({ ...f, amenities: [...f.amenities, ""] }));
-                    }}
-                  >
-                    <Plus className="mr-1 h-3 w-3" /> Add Amenity ({propertyForm.amenities.length}/5)
-                  </Button>
-                )}
-
-                <div className="pt-1">
-                  <Input 
-                    placeholder="Other Amenities (comma separated)" 
-                    value={propertyForm.other_amenities} 
-                    onChange={e => setPropertyForm(f => ({ ...f, other_amenities: e.target.value }))} 
-                    className="text-xs"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
 
           <DialogFooter>

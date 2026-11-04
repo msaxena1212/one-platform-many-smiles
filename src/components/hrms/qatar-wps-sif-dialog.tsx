@@ -52,7 +52,10 @@ import {
   normalizeQatarIban,
   normalizeQatarId,
 } from "@/lib/qatar-wps-sif";
-import type { HrmsPayslip, HrmsEmployee } from "@/lib/hrmsService";
+import type { HrmsPayslip } from "@/lib/hrmsService";
+
+// Employee rows come straight from the HRMS employees query; only `id` is relied on structurally.
+type HrmsEmployee = { id: string; [key: string]: any };
 
 interface QatarWpsSifDialogProps {
   open: boolean;

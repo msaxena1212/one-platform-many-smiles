@@ -208,6 +208,7 @@ type Customer = {
 };
 
 type Reservation = {
+  customerId?: string;
   id: string;
   property: string;
   unit: string;

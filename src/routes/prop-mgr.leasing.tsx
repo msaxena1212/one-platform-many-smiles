@@ -117,6 +117,7 @@ type Customer = {
 };
 
 type Reservation = {
+  customerId?: string;
   id: string;
   property: string;
   unit: string;
@@ -2593,7 +2594,9 @@ function LeasingPage() {
     const lease = leases.find((item) => item.id === settlement.leaseId);
     if (lease) {
       setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" } : item)));
-      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition || "Vacant - Under Maintenance") as Unit["status"] } : item)));
+      if (!leases.some((l) => l.id !== lease.id && l.unit === lease.unit && l.status !== "closed")) {
+        setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: (settlement.unitDisposition || "Vacant - Under Maintenance") as Unit["status"] } : item)));
+      }
     }
     recordAudit({
       stage: "Security Deposit Settlement & Lease Closure",
@@ -2909,6 +2912,36 @@ function LeasingPage() {
       },
       ...items,
     ]);
+    // Release the vacated unit for a new lease now. The deposit settlement stays open
+    // under the old lease/tenant, so the refund liability is never mixed with the next tenant.
+    const releasedStatus = (String(completeCheckoutForm.unitDisposition || "Available").toLowerCase().includes("maintenance")
+      ? "Vacant - Under Maintenance"
+      : "Available") as Unit["status"];
+    setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: releasedStatus } : item)));
+    setRealUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: releasedStatus } : item)));
+    void supabase
+      .from("units")
+      .update({
+        status: releasedStatus,
+        lease_status: "VACANT",
+        current_tenant: null,
+        contract_no: null,
+        contract_start_date: null,
+        contract_end_date: null,
+        current_rent: null,
+        updated_at: new Date().toISOString(),
+      } as any)
+      .or(`unit_ref.eq.${lease.unit},unit_code.eq.${lease.unit},unit_name.eq.${lease.unit}`)
+      .select("id")
+      .then(({ data, error }: { data: any; error: any }) => {
+        if (error || !data?.length) {
+          toast.error(`Unit ${lease.unit} could not be released in the database${error ? `: ${error.message}` : ""}. Update it from Units.`);
+        } else {
+          window.dispatchEvent(new Event("pms_data_updated"));
+        }
+      });
+    toast.success(`Unit ${lease.unit} is now available for a new lease. Deposit settlement remains open.`);
+
     recordAudit({
       stage: "Check-Out Inspection",
       owner: "Property Manager",
