@@ -105,7 +105,8 @@ function getConcessionStatusForPeriod(
   const startStr = override?.commencement_date || l?.startDate || l?.commencement_date;
   const endStr = override?.expiry_date || l?.endDate || l?.expiry_date;
 
-  if (graceDays > 0 && startStr) {
+  // The lease "grace period" is a late-payment grace (defaults to 7 days) - it is NOT free rent.
+  if (false && graceDays > 0 && startStr) {
     const sDate = new Date(startStr);
     const bDate = new Date(periodStartStr || new Date().toISOString());
     const graceEndMs = sDate.getTime() + graceDays * 86400000;

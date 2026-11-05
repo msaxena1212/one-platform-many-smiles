@@ -267,7 +267,7 @@ export function generateQatarWpsSif(
     const bankCode = (rec.employeeBankSwift || "QNBAQAQA").trim().toUpperCase();
     const iban = (rec.employeeIban || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
     const payFreq = "M"; // Monthly
-    const days = rec.workingDays || 30;
+    const days = rec.workingDays || 31;
     const net = (Number(rec.netSalary) || 0).toFixed(2);
     const basic = (Number(rec.basicSalary) || 0).toFixed(2);
     const otHrs = (Number(rec.extraHours) || 0).toFixed(1);
@@ -343,7 +343,7 @@ export function generateQatarWpsCsv(
       rec.employeeBankSwift || "QNBAQAQA",
       `"${rec.employeeIban || ""}"`,
       "M",
-      rec.workingDays || 30,
+      rec.workingDays || 31,
       (Number(rec.netSalary) || 0).toFixed(2),
       (Number(rec.basicSalary) || 0).toFixed(2),
       (Number(rec.extraHours) || 0).toFixed(1),

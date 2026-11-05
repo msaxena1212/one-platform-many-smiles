@@ -363,11 +363,59 @@ export interface FinanceStoreContextType {
   isSyncing: boolean;
   refreshFinanceData: () => Promise<void>;
   resetAndInitializeGLFromPDCs: () => Promise<{ created: number; cleared: number }>;
+  correctVoucherDate: (params: {
+    voucherNo: string;
+    newDate: string;
+    reason: string;
+    user?: string;
+  }) => Promise<{ success: boolean; message: string }>;
+  voucherDateCorrections: Record<string, VoucherDateCorrection>;
 }
 
 const FinanceContext = createContext<FinanceStoreContextType | null>(null);
 
 const STORE_KEY = "zyno-finance-store-v1";
+
+export interface VoucherDateCorrection {
+  newDate: string;
+  oldDate?: string;
+  reason: string;
+  timestamp: string;
+  user?: string;
+}
+
+export const VOUCHER_DATE_CORRECTIONS_KEY = "pms_voucher_date_corrections";
+export const INITIAL_DATE_CORRECTIONS: Record<string, VoucherDateCorrection> = {
+  "VCH-DEP-f9773c03-95fb-44bc-8642-dff034d46d72": {
+    newDate: "2026-10-04",
+    oldDate: "2026-11-02",
+    reason: "Corrected deposit date: Actual bank deposit took place on 04-10-2026",
+    timestamp: "2026-11-05T06:45:00.000Z",
+    user: "Finance Controller",
+  },
+};
+
+export function getStoredVoucherDateCorrections(): Record<string, VoucherDateCorrection> {
+  if (typeof window === "undefined") return INITIAL_DATE_CORRECTIONS;
+  try {
+    const raw = localStorage.getItem(VOUCHER_DATE_CORRECTIONS_KEY);
+    if (!raw) {
+      localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(INITIAL_DATE_CORRECTIONS));
+      return INITIAL_DATE_CORRECTIONS;
+    }
+    const parsed = JSON.parse(raw);
+    return { ...INITIAL_DATE_CORRECTIONS, ...parsed };
+  } catch {
+    return INITIAL_DATE_CORRECTIONS;
+  }
+}
+
+export function saveStoredVoucherDateCorrections(corrections: Record<string, VoucherDateCorrection>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(corrections));
+  } catch {}
+}
 
 export function resolvePdcBankGl(bank?: string | number | null): { glCode: string; glName: string } {
   if (!bank) {
@@ -496,6 +544,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── States ────────────────────────────────────────────────────────────────
+  const [voucherDateCorrections, setVoucherDateCorrections] = useState<Record<string, VoucherDateCorrection>>(() => getStoredVoucherDateCorrections());
   const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => {
     if (typeof window === "undefined") return INITIAL_JOURNAL_LEDGER;
     try {
@@ -526,7 +575,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
           // Purge testing transactions for OA22-10 / OA24-10 / Cheque 35
           if (
-            vNo.includes("TRF-35") ||
+            vNo.includes("TRF-35") || vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
             vNo.includes("TRF-CNL-35") ||
             uRef.includes("OA22-10") ||
             uRef.includes("OA24-10") ||
@@ -565,7 +614,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               credit_code: "12413001",
             };
           }
-          return v;
+          const dateCorr = INITIAL_DATE_CORRECTIONS[v.voucher_no] || (typeof window !== "undefined" ? getStoredVoucherDateCorrections()[v.voucher_no] : null);
+          return dateCorr ? { ...v, date: dateCorr.newDate } : v;
         });
       }
       return INITIAL_VOUCHERS;
@@ -632,7 +682,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               const vNo = (r.voucher_number || "").toUpperCase();
               const desc = (r.description || "").toLowerCase();
               if (
-                vNo.includes("TRF-35") ||
+                vNo.includes("TRF-35") || vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
                 vNo.includes("TRF-CNL-35") ||
                 desc.includes("oa22-10") ||
                 desc.includes("oa24-10") ||
@@ -660,6 +710,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 if (desc.includes("rent pdc") || desc.includes("rv-l1-01")) {
                   drCode = "12900001"; drName = "Rent PDC In Hand";
                   crCode = "21400001"; crName = "Customer PDC Liability — Unit SL";
+                } else if (isPV && desc.includes("security deposit refund")) {
+                  // A deposit REFUND is cash/bank going OUT: Dr Deposit Liability / Cr Cash or Bank (never Dr Cash).
+                  const refundViaCash = String(r.payment_method || r.method || "").toLowerCase() === "cash";
+                  drCode = "21500001"; drName = "Security Deposit Liability";
+                  crCode = refundViaCash ? "12100001" : "12000001";
+                  crName = refundViaCash ? "Cash In Hand" : "Bank Operating Account";
                 } else if (desc.includes("security deposit") || desc.includes("rv-l1-02")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "21500"; crName = "Security Deposit Liability";
@@ -740,7 +796,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 id: r.id,
                 voucher_no: r.voucher_number,
                 voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
-                date: r.voucher_date,
+                date: (INITIAL_DATE_CORRECTIONS[r.voucher_number] || getStoredVoucherDateCorrections()[r.voucher_number])?.newDate || r.voucher_date,
                 name: r.description || r.voucher_number,
                 debit: drName || "Debit Account",
                 debit_code: drCode || "12000001",
@@ -1013,7 +1069,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   id:           `pdc-dep-${p.id ?? chequeNo}`,
                   voucher_no:   depNo,
                   voucher_type: "Receipt Voucher",
-                  date:         p.deposit_date || chqDate,
+                  date:         (INITIAL_DATE_CORRECTIONS[depNo] || getStoredVoucherDateCorrections()[depNo])?.newDate || p.deposit_date || chqDate,
                   name:         `PDC Deposited to ${bankInfo.glName} — ${desc} [Cheque #${chequeNo}]`,
                   debit:        bankInfo.glName,
                   debit_code:   bankInfo.glCode,
@@ -1396,7 +1452,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             id:           `pdc-dep-${p.id}`,
             voucher_no:   `VCH-DEP-${p.id}`,
             voucher_type: "Receipt Voucher",
-            date:         p.deposit_date || chqDate,
+            date:         (INITIAL_DATE_CORRECTIONS[`VCH-DEP-${p.id}`] || getStoredVoucherDateCorrections()[`VCH-DEP-${p.id}`])?.newDate || p.deposit_date || chqDate,
             name:         `PDC Deposited to ${bankInfo.glName} — ${desc} [Cheque #${chequeNo}]`,
             debit:        bankInfo.glName,
             debit_code:   bankInfo.glCode,
@@ -2025,6 +2081,94 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     toast.success("Petty Cash expense recorded.");
   }
 
+  async function correctVoucherDate(params: {
+    voucherNo: string;
+    newDate: string;
+    reason: string;
+    user?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    const { voucherNo, newDate, reason, user } = params;
+    if (!voucherNo || !newDate) {
+      toast.error("Voucher reference and new date are required.");
+      return { success: false, message: "Missing required parameters." };
+    }
+
+    const currentCorrections = getStoredVoucherDateCorrections();
+    const existing = currentCorrections[voucherNo];
+    const oldDate = existing?.oldDate || vouchers.find(v => v.voucher_no === voucherNo)?.date || "";
+
+    const updatedCorrections: Record<string, VoucherDateCorrection> = {
+      ...currentCorrections,
+      [voucherNo]: {
+        newDate,
+        oldDate,
+        reason: reason || "Date correction by finance administrator",
+        timestamp: new Date().toISOString(),
+        user: user || "Finance Controller",
+      },
+    };
+
+    saveStoredVoucherDateCorrections(updatedCorrections);
+    setVoucherDateCorrections(updatedCorrections);
+
+    // Update in-memory vouchers
+    setVouchers(prev => {
+      const updated = prev.map(v => (v.voucher_no === voucherNo ? { ...v, date: newDate } : v));
+      try {
+        localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Best-effort remote update in Supabase fin_vouchers
+    try {
+      await supabase
+        .from("fin_vouchers")
+        .update({ voucher_date: newDate })
+        .eq("voucher_number", voucherNo);
+    } catch (e) {
+      console.warn("[correctVoucherDate] fin_vouchers update warning:", e);
+    }
+
+    // If PDC voucher, also update pdcs table
+    if (voucherNo.startsWith("VCH-DEP-") || voucherNo.startsWith("VCH-CLR-") || voucherNo.startsWith("VCH-PDC-")) {
+      const pdcId = voucherNo.replace(/^(VCH-DEP-|VCH-CLR-|VCH-PDC-RCV-)/, "").trim();
+      if (pdcId && pdcId.length > 5) {
+        try {
+          if (voucherNo.startsWith("VCH-DEP-")) {
+            await supabase.from("pdcs").update({ deposit_date: newDate }).eq("id", pdcId);
+          } else if (voucherNo.startsWith("VCH-CLR-")) {
+            await supabase.from("pdcs").update({ cleared_date: newDate }).eq("id", pdcId);
+          }
+        } catch (e) {
+          console.warn("[correctVoucherDate] pdcs date update warning:", e);
+        }
+      }
+    }
+
+    // Record immutable audit log
+    try {
+      await supabase.from("security_audit_logs").insert({
+        event_type: "data_mutation",
+        severity: "warning",
+        action: "CORRECT_VOUCHER_DATE",
+        resource: `fin_vouchers:${voucherNo}`,
+        details: {
+          voucher_number: voucherNo,
+          old_date: oldDate,
+          new_date: newDate,
+          reason,
+          operator: user || "Finance Controller",
+        },
+      });
+    } catch (e) {
+      console.warn("[correctVoucherDate] audit log warning:", e);
+    }
+
+    toast.success(`Transaction ${voucherNo} date successfully corrected to ${newDate}`);
+    return { success: true, message: `Successfully updated date to ${newDate}` };
+  }
+
   // ── Real-Time Dynamic Reports Calculation Engine ───────────────────────────
 
   const allLedgerTransactions: LedgerTransaction[] = useMemo(() => {
@@ -2525,6 +2669,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       const finalProp   = propName   || (vch.name.includes("Depreciation") ? "Main Portfolio (Corporate)" : "");
       const finalUnit   = unitName   || (vch.name.includes("Depreciation") ? "Fixed Assets / Depr"       : "");
       const finalTenant = tenantName || (vch.name.includes("Depreciation") ? "Internal Assets Desk"       : "");
+      const vchCodeKey = (vch.voucher_no || "").trim();
+      const dateCorr = INITIAL_DATE_CORRECTIONS[vchCodeKey] || (typeof window !== "undefined" ? getStoredVoucherDateCorrections()[vchCodeKey] : null);
+      const effectiveVchDate = dateCorr?.newDate || vch.date;
 
       if (vch.lines && vch.lines.length > 0) {
         vch.lines.forEach((line, idx) => {
@@ -2539,7 +2686,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
           list.push({
             id: `tx-vch-line-${vch.id}-${idx}`,
-            date: vch.date,
+            date: effectiveVchDate,
             account_code: code,
             account_name: getCoaName(line.account, code, "Operating Account"),
             account_type: isL_Exp ? "Expenses" : isL_Rev ? "Revenue" : isL_Liab ? "Liabilities" : isL_Asset ? "Assets" : "Capital",
@@ -2558,7 +2705,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
       list.push({
         id: `tx-vch-dr-${vch.id}`,
-        date: vch.date,
+        date: effectiveVchDate,
         account_code: debitCode,
         account_name: getCoaName(debitName, debitCode, "Bank Operating Account"),
         account_type: isDrExp ? "Expenses" : isDrAsset ? "Assets" : isDrLiab ? "Liabilities" : "Assets",
@@ -2578,7 +2725,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
       list.push({
         id: `tx-vch-cr-${vch.id}`,
-        date: vch.date,
+        date: effectiveVchDate,
         account_code: creditCode,
         account_name: getCoaName(creditName, creditCode, "Tenant Receivables"),
         account_type: isCrRev ? "Revenue" : isCrAsset ? "Assets" : isCrLiab ? "Liabilities" : "Capital",
@@ -3094,6 +3241,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         isSyncing,
         refreshFinanceData,
         resetAndInitializeGLFromPDCs,
+        correctVoucherDate,
+        voucherDateCorrections,
       }}
     >
       {children}

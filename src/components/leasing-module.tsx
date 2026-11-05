@@ -2519,6 +2519,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   });
 
   const [uploadAgreementOpen, setUploadAgreementOpen] = useState(false);
+  const settleInFlightRef = useRef<string>("");
   const [uploadAgreementForm, setUploadAgreementForm] = useState({
     file: "",
     fileName: "",
@@ -5242,6 +5243,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const lease = leases.find((item) => item.id === settlement.leaseId);
     const checkout = checkouts.find((item) => item.leaseId === settlement.leaseId);
     const settlementDate = today.toISOString().split("T")[0];
+    // Guard: never post the same settlement twice (this created duplicate PV-SET vouchers).
+    if (settlement.approval === "paid" || settleInFlightRef.current === settlement.id) { toast.error("This settlement has already been posted."); return; }
+    settleInFlightRef.current = settlement.id;
+    setTimeout(() => { if (settleInFlightRef.current === settlement.id) settleInFlightRef.current = ""; }, 15000);
     const pvNo = `PV-SET-${Date.now().toString().slice(-6)}`;
     const jvNo = `JV-SET-${Date.now().toString().slice(-6)}`;
     const rvDmgNo = `RV-DMG-${Date.now().toString().slice(-6)}`;

@@ -8651,7 +8651,42 @@ function BalanceSheetSubModule() {
 }
 
 function GeneralLedgerReportSubModule() {
-  const { allLedgerTransactions, leases, units, customers, isSyncing, refreshFinanceData, resetAndInitializeGLFromPDCs } = useFinanceStore() as any;
+  const { allLedgerTransactions, leases, units, customers, isSyncing, refreshFinanceData, resetAndInitializeGLFromPDCs, correctVoucherDate, voucherDateCorrections } = useFinanceStore() as any;
+  const [dateCorrectionModalOpen, setDateCorrectionModalOpen] = useState(false);
+  const [selectedVoucherForCorrection, setSelectedVoucherForCorrection] = useState<{
+    reference: string;
+    currentDate: string;
+    accountName?: string;
+    property?: string;
+    unit?: string;
+    tenant?: string;
+    amount?: number;
+  } | null>(null);
+  const [correctionNewDate, setCorrectionNewDate] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+
+  async function handleSaveDateCorrection() {
+    if (!selectedVoucherForCorrection?.reference || !correctionNewDate) {
+      toast.error("Please enter a valid reference and new date.");
+      return;
+    }
+    setIsSavingCorrection(true);
+    try {
+      await correctVoucherDate({
+        voucherNo: selectedVoucherForCorrection.reference,
+        newDate: correctionNewDate,
+        reason: correctionReason || "Date correction by finance administrator",
+      });
+      setDateCorrectionModalOpen(false);
+      setSelectedVoucherForCorrection(null);
+      setCorrectionReason("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update date");
+    } finally {
+      setIsSavingCorrection(false);
+    }
+  }
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -8895,6 +8930,24 @@ function GeneralLedgerReportSubModule() {
           >
             <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin text-primary" : ""}`} />
             {isSyncing ? "Syncing..." : "Refresh"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedVoucherForCorrection({
+                reference: "",
+                currentDate: new Date().toISOString().split("T")[0],
+                amount: 0,
+              });
+              setCorrectionNewDate("");
+              setCorrectionReason("");
+              setDateCorrectionModalOpen(true);
+            }}
+            className="h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5 font-medium"
+            title="Correct the posted date of any voucher or PDC with audit tracking"
+          >
+            <Calendar className="h-3 w-3" /> Correct Voucher Date
           </Button>
           <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200 text-xs">
             DR: {totalDebit.toLocaleString()} QAR
@@ -9202,12 +9255,14 @@ function GeneralLedgerReportSubModule() {
               <TableHead className="py-2 px-2.5 text-right font-bold cursor-pointer whitespace-nowrap min-w-[90px]" onClick={() => toggleSort("credit")}>
                 Credit (QAR){sortIcon("credit")}
               </TableHead>
+              <TableHead className="py-2 px-2 text-center font-bold whitespace-nowrap min-w-[50px]">Action
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="text-[11px]">
             {paginated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-10 text-muted-foreground">
                   No GL postings match the selected Property, Unit, Date, Month, or Customer filter criteria.
                 </TableCell>
               </TableRow>
@@ -9231,6 +9286,30 @@ function GeneralLedgerReportSubModule() {
                   </TableCell>
                   <TableCell className="py-1.5 px-2.5 text-right font-mono font-semibold text-emerald-600 whitespace-nowrap">
                     {tx.credit > 0 ? tx.credit.toLocaleString() : "—"}
+                  </TableCell>
+                  <TableCell className="py-1 px-1.5 text-center whitespace-nowrap">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 hover:bg-muted text-muted-foreground hover:text-foreground inline-flex items-center justify-center rounded"
+                      title={`Correct date for voucher ${tx.reference}`}
+                      onClick={() => {
+                        setSelectedVoucherForCorrection({
+                          reference: tx.reference,
+                          currentDate: tx.date,
+                          accountName: tx.account_name,
+                          property: tx.property_name,
+                          unit: tx.unit_ref,
+                          tenant: tx.tenant_name,
+                          amount: tx.debit > 0 ? tx.debit : tx.credit,
+                        });
+                        setCorrectionNewDate(tx.date);
+                        setCorrectionReason("");
+                        setDateCorrectionModalOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -9264,10 +9343,151 @@ function GeneralLedgerReportSubModule() {
           </div>
         </div>
       )}
+          {/* ── Transaction / Voucher Date Correction Dialog ─────────────────────── */}
+      <Dialog open={dateCorrectionModalOpen} onOpenChange={setDateCorrectionModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Calendar className="h-4 w-4 text-primary" />
+              Correct Transaction / Voucher Date
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Change the posted accounting date of any voucher or PDC deposit.
+              This immediately re-indexes the General Ledger, Trial Balance, and Financial Statements with an immutable audit entry.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Voucher / PDC Reference</Label>
+              <Input
+                placeholder="e.g. VCH-DEP-f9773c03-95fb-44bc-8642-dff034d46d72"
+                value={selectedVoucherForCorrection?.reference || ""}
+                onChange={e => setSelectedVoucherForCorrection(prev => ({
+                  reference: e.target.value.trim(),
+                  currentDate: prev?.currentDate || "",
+                  amount: prev?.amount || 0
+                }))}
+                className="font-mono text-xs"
+              />
+            </div>
+
+            {selectedVoucherForCorrection && (
+              <div className="rounded-lg border bg-muted/30 p-2.5 text-xs grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Current Date</span>
+                  <span className="font-mono font-semibold">{selectedVoucherForCorrection.currentDate || "Unknown"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Amount</span>
+                  <span className="font-mono font-semibold">QAR {(selectedVoucherForCorrection.amount || 0).toLocaleString()}</span>
+                </div>
+                {selectedVoucherForCorrection.tenant && (
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">Customer</span>
+                    <span className="truncate block font-medium">{selectedVoucherForCorrection.tenant}</span>
+                  </div>
+                )}
+                {selectedVoucherForCorrection.unit && (
+                  <div>
+                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">Unit</span>
+                    <span className="font-mono font-medium">{selectedVoucherForCorrection.unit}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">New Transaction Date (YYYY-MM-DD)</Label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCorrectionNewDate("2026-10-04")}
+                    className="text-[10px] text-primary hover:underline px-1.5 py-0.5 rounded bg-primary/10"
+                  >
+                    Set 04-10-2026
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCorrectionNewDate(new Date().toISOString().split("T")[0])}
+                    className="text-[10px] text-muted-foreground hover:underline px-1.5 py-0.5 rounded bg-muted"
+                  >
+                    Today
+                  </button>
+                </div>
+              </div>
+              <Input
+                type="date"
+                value={correctionNewDate}
+                onChange={e => setCorrectionNewDate(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Reason for Date Correction (Required for Audit Trail)</Label>
+              <Textarea
+                rows={2}
+                placeholder="e.g. Cheque actually deposited on 04-10-2026; entered as 02-11-2026 in error."
+                value={correctionReason}
+                onChange={e => setCorrectionReason(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+
+            {/* Recent Date Corrections History */}
+            {voucherDateCorrections && Object.keys(voucherDateCorrections).length > 0 && (
+              <div className="pt-2 border-t space-y-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
+                  Logged Date Corrections ({Object.keys(voucherDateCorrections).length})
+                </span>
+                <div className="max-h-28 overflow-y-auto space-y-1 text-[11px] pr-1">
+                  {Object.entries(voucherDateCorrections).map(([vNo, corr]) => (
+                    <div key={vNo} className="flex items-center justify-between p-1.5 rounded bg-muted/40 border text-[11px]">
+                      <div className="truncate max-w-[280px]">
+                        <span className="font-mono font-bold block truncate">{vNo}</span>
+                        <span className="text-muted-foreground text-[10px] truncate block">{(corr as any)?.reason}</span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <Badge variant="outline" className="font-mono text-[10px] bg-emerald-50 text-emerald-700">
+                          {(corr as any)?.newDate}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDateCorrectionModalOpen(false);
+                setSelectedVoucherForCorrection(null);
+              }}
+              disabled={isSavingCorrection}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={isSavingCorrection || !selectedVoucherForCorrection?.reference || !correctionNewDate}
+              onClick={handleSaveDateCorrection}
+              className="gap-1.5"
+            >
+              {isSavingCorrection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+              Apply Date Correction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
 
 function CashFlowSubModule() {
   const { cashFlowReport: cf, isSyncing, refreshFinanceData } = useFinanceStore();

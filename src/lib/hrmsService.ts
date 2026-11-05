@@ -168,8 +168,8 @@ export function calculateEmployeeLeaveEntitlement(
     Number(emp?.tra || 0) +
     Number(emp?.other_allowances || 0);
 
-  const dailyBasicPay = Math.round((basicSalary / 30) * 100) / 100;
-  const dailyGrossPay = Math.round((grossSalary / 30) * 100) / 100;
+  const dailyBasicPay = Math.round((basicSalary / PAYROLL_DAYS_BASIS) * 100) / 100;
+  const dailyGrossPay = Math.round((grossSalary / PAYROLL_DAYS_BASIS) * 100) / 100;
 
   const requestedDays = Math.max(0, Number(requestedDaysInput ?? eligibleLeaveDays) || 0);
   const paidEligibleDaysForRequest = Math.min(requestedDays, Math.max(eligibleLeaveDays, requestedDays));
@@ -220,6 +220,8 @@ export function calculateEmployeeLeaveEntitlement(
 const HRMS_EMP_LEAVE_META_KEY = 'hrms_employee_leave_meta_v1';
 const HRMS_LEAVE_APPS_LOCAL_KEY = 'hrms_leave_applications_local_v1';
 const HRMS_PAYROLL_CYCLES_LOCAL_KEY = 'hrms_payroll_cycles_local_v1';
+// Payroll (salary, unpaid-leave, leave-salary) always uses a fixed 31-day basis. Rental income uses 30 days.
+const PAYROLL_DAYS_BASIS = 31;
 const HRMS_PAYSLIPS_LOCAL_KEY = 'hrms_payslips_local_v1';
 
 function readLocalJson<T>(key: string, fallback: T): T {
@@ -761,7 +763,7 @@ export const HrmsApi = {
         totalEncashableDays += Number(b.balance);
       }
     });
-    const perDayBasic = basicSalary / 30;
+    const perDayBasic = basicSalary / PAYROLL_DAYS_BASIS;
     const leaveEncashmentAmount = Math.round(totalEncashableDays * perDayBasic);
 
     // 3. Statutory Gratuity / End of Service (Qatar Labor Law: 21 days basic pay per year of service after 1+ year)
@@ -1115,7 +1117,7 @@ export const HrmsApi = {
         );
         const presentDays = empAttendance.length > 0
           ? empAttendance.filter(a => a.status === 'PRESENT' || a.status === 'HALF_DAY').length
-          : Math.max(0, 30 - paidLeaves - unpaidLeaves);
+          : Math.max(0, PAYROLL_DAYS_BASIS - paidLeaves - unpaidLeaves);
         const overtimeMinutes = empAttendance.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
         const overtimeHours = Math.round((overtimeMinutes / 60) * 10) / 10;
         
@@ -1124,7 +1126,7 @@ export const HrmsApi = {
         const overtimePay = Math.round(overtimeHours * hourlyRate * 1.25);
 
         // Unpaid leave deduction (Basic + Allowances / 30 * unpaidLeaves)
-        const unpaidLeaveDeduction = unpaidLeaves > 0 ? Math.round(((basic + allowances) / 30) * unpaidLeaves) : 0;
+        const unpaidLeaveDeduction = unpaidLeaves > 0 ? Math.round(((basic + allowances) / PAYROLL_DAYS_BASIS) * unpaidLeaves) : 0;
 
         const gross = basic + allowances + overtimePay + approvedLeaveSalary;
         
@@ -1144,7 +1146,7 @@ export const HrmsApi = {
           id: `pslip-${cycleId}-${emp.id}`,
           payroll_cycle_id: cycleId,
           employee_id: emp.id,
-          working_days: 30,
+          working_days: PAYROLL_DAYS_BASIS,
           present_days: presentDays,
           paid_leaves: paidLeaves,
           unpaid_leaves: unpaidLeaves,

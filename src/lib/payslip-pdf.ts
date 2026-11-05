@@ -126,7 +126,7 @@ export function generatePayslipHtml({ payslip: p, cycleName, periodStart, period
   </table>
 
   <table class="info" style="margin-top:10px">
-    <tr><td class="l">Working Days</td><td>${esc(p.working_days ?? 30)}</td><td class="l">Present Days</td><td>${esc(p.present_days ?? 0)}</td>
+    <tr><td class="l">Working Days</td><td>${esc(p.working_days ?? 31)}</td><td class="l">Present Days</td><td>${esc(p.present_days ?? 0)}</td>
         <td class="l">Paid Leave</td><td>${esc(p.paid_leaves ?? 0)}</td><td class="l">Unpaid / Absent</td><td>${esc(p.unpaid_leaves ?? 0)}</td>
         <td class="l">OT Hours</td><td>${esc(p.overtime_hours ?? 0)}</td></tr>
   </table>
