@@ -979,7 +979,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       if (catRes && catRes.length > 0) {
         setCatalog(catRes);
       }
-      setApInvoices([]);
+      setApInvoices(apInvRes || []);
     } catch (e: any) {
       console.error("Error loading procurement data:", e);
     } finally {
@@ -2959,18 +2959,22 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                         </TableRow>
                       )}
                       {catalog.filter(c => ["maintenance_spare", "consumable"].includes(c.item_type)).map(item => {
-                        // Retrieve live onHand from shared maintenance stock if available
+                        // Retrieve live onHand from Supabase inventory_parts API table
                         let onHand = Number((item as any).on_hand_qty ?? (item as any).quantity_on_hand ?? 25);
                         let storageLoc = (item as any).storage_location || (item as any).warehouse_location || "Facility Store (Rack B-04)";
-                        try {
-                          const savedStock = JSON.parse(localStorage.getItem("pms_maintenance_stock") || "[]");
-                          const matched = savedStock.find((s: any) => s.code === item.item_code || s.name?.toLowerCase().includes(item.name?.toLowerCase().slice(0, 10)));
-                          if (matched && typeof matched.onHand === "number") {
-                            onHand = matched.onHand;
-                            if (matched.location) storageLoc = matched.location;
-                          }
-                        } catch {
-                          // fallback
+                        const matchedPart = inventoryParts.find(p => p.sku === item.item_code || p.name?.toLowerCase() === item.name.toLowerCase() || p.procurement_item_id === item.id);
+                        if (matchedPart) {
+                          onHand = Number(matchedPart.quantity_on_hand ?? 0);
+                          if (matchedPart.location) storageLoc = matchedPart.location;
+                        } else {
+                          try {
+                            const savedStock = JSON.parse(localStorage.getItem("pms_maintenance_stock") || "[]");
+                            const matched = savedStock.find((s: any) => s.code === item.item_code || s.name?.toLowerCase().includes(item.name?.toLowerCase().slice(0, 10)));
+                            if (matched && typeof matched.onHand === "number") {
+                              onHand = matched.onHand;
+                              if (matched.location) storageLoc = matched.location;
+                            }
+                          } catch {}
                         }
 
                         const reorder = Number(item.reorder_level ?? 10);
