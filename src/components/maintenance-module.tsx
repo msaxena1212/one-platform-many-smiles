@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouterState } from "@tanstack/react-router";
+import { getDbState, setDbState } from "@/lib/database-state";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -462,10 +463,29 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
 
+  // 100% Database REST API synchronization (PostgreSQL pms_app_state)
   useEffect(() => {
-    localStorage.removeItem("pms_work_orders");
-    localStorage.removeItem("pms_vendor_invoices");
-    localStorage.removeItem("pms_maintenance_stock");
+    async function loadMaintenanceData() {
+      try {
+        const [dbTickets, dbWorkOrders, dbPpm, dbTech, dbInv, dbParts] = await Promise.all([
+          getDbState<MaintenanceTicket[]>("maintenance_tickets", initialTickets),
+          getDbState<WorkOrder[]>("maintenance_work_orders", initialWorkOrders),
+          getDbState<PpmSchedule[]>("maintenance_ppm_schedules", initialPpmSchedules),
+          getDbState<Technician[]>("maintenance_technicians", initialTechnicians),
+          getDbState<MaintenanceVendorInvoice[]>("maintenance_vendor_invoices", initialVendorInvoices),
+          getDbState<Record<string, Array<{ id: string; partId: string; quantity: number }>>>("maintenance_ticket_spare_parts", {}),
+        ]);
+        if (dbTickets && dbTickets.length > 0) setTickets(dbTickets);
+        if (dbWorkOrders && dbWorkOrders.length > 0) setWorkOrders(dbWorkOrders);
+        if (dbPpm && dbPpm.length > 0) setPpmSchedules(dbPpm);
+        if (dbTech && dbTech.length > 0) setTechnicians(dbTech);
+        if (dbInv && dbInv.length > 0) setVendorInvoices(dbInv);
+        if (dbParts && Object.keys(dbParts).length > 0) setTicketSparePartsMap(dbParts);
+      } catch (err) {
+        console.warn("Notice loading maintenance data from database:", err);
+      }
+    }
+    loadMaintenanceData();
   }, []);
 
   // Ticket Spare Parts Map state (persisted per ticket)
@@ -479,28 +499,28 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem("pms_ticket_spare_parts", JSON.stringify(ticketSparePartsMap));
-    } catch (e) {
-      console.error("Failed to save ticketSparePartsMap to localStorage", e);
-    }
-  }, [ticketSparePartsMap]);
+    setDbState("maintenance_tickets", tickets);
+  }, [tickets]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("pms_vendor_invoices", JSON.stringify(vendorInvoices));
-    } catch (e) {
-      console.error("Failed to save vendorInvoices to localStorage", e);
-    }
+    setDbState("maintenance_work_orders", workOrders);
+  }, [workOrders]);
+
+  useEffect(() => {
+    setDbState("maintenance_ppm_schedules", ppmSchedules);
+  }, [ppmSchedules]);
+
+  useEffect(() => {
+    setDbState("maintenance_technicians", technicians);
+  }, [technicians]);
+
+  useEffect(() => {
+    setDbState("maintenance_vendor_invoices", vendorInvoices);
   }, [vendorInvoices]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("pms_work_orders", JSON.stringify(workOrders));
-    } catch (e) {
-      console.error("Failed to save workOrders to localStorage", e);
-    }
-  }, [workOrders]);
+    setDbState("maintenance_ticket_spare_parts", ticketSparePartsMap);
+  }, [ticketSparePartsMap]);
 
   // Real-time listener for invoice payment updates from Finance / Vendor Management
   useEffect(() => {

@@ -412,3 +412,4 @@ export function exportCatalogCSV(catalog: CatalogItem[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+

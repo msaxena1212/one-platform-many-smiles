@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
 
 const today = new Date();
@@ -993,9 +994,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchDirectFromDatabase();
+    void DynamicMastersService.initFromDb();
 
     const handleRefresh = () => {
       fetchDirectFromDatabase();
+      void DynamicMastersService.initFromDb();
     };
 
     window.addEventListener("finance_vouchers_updated", handleRefresh);

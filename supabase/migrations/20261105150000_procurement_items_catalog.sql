@@ -64,3 +64,4 @@ ON CONFLICT (item_code) DO UPDATE SET
   reorder_level = EXCLUDED.reorder_level,
   active = EXCLUDED.active,
   updated_at = now();
+

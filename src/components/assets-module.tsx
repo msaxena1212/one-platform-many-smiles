@@ -42,6 +42,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { toast } from "sonner";
 import Barcode from 'react-barcode';
 import { QRCodeSVG } from 'qrcode.react';
+import { getDbState, setDbState } from "@/lib/database-state";
 
 // ── Types for Sub-module Records ──────────────────────────────────────────
 export interface AssetRevaluationRecord {
@@ -398,29 +399,54 @@ export function AssetManager({ role }: { role: "admin" | "prop-mgr" }) {
     } catch { return []; }
   });
 
-  // Sync state changes to localStorage
+  // Load persistent sub-module records from database REST API (pms_app_state)
   useEffect(() => {
-    try { localStorage.setItem("asset_revaluation_records_v2", JSON.stringify(revaluations)); } catch {}
+    async function loadAssetSubRecords() {
+      try {
+        const [dbReval, dbSells, dbWriteoffs, dbAlloc, dbMaint, dbWarr] = await Promise.all([
+          getDbState<AssetRevaluationRecord[]>("asset_revaluation_records_v2", []),
+          getDbState<AssetSaleRecord[]>("asset_sale_records_v2", []),
+          getDbState<AssetWriteoffRecord[]>("asset_writeoff_records_v2", []),
+          getDbState<AssetAllocationRecord[]>("asset_allocation_records_v2", []),
+          getDbState<AssetMaintenanceRecord[]>("asset_maintenance_records_v2", []),
+          getDbState<AssetWarrantyRecord[]>("asset_warranty_records_v2", []),
+        ]);
+        if (dbReval && dbReval.length > 0) setRevaluations(dbReval);
+        if (dbSells && dbSells.length > 0) setSells(dbSells);
+        if (dbWriteoffs && dbWriteoffs.length > 0) setWriteoffs(dbWriteoffs);
+        if (dbAlloc && dbAlloc.length > 0) setAllocations(dbAlloc);
+        if (dbMaint && dbMaint.length > 0) setMaintenances(dbMaint);
+        if (dbWarr && dbWarr.length > 0) setWarranties(dbWarr);
+      } catch (e) {
+        console.warn("Notice loading asset sub-records from database:", e);
+      }
+    }
+    loadAssetSubRecords();
+  }, []);
+
+  // Sync state changes to Database REST API (pms_app_state)
+  useEffect(() => {
+    setDbState("asset_revaluation_records_v2", revaluations);
   }, [revaluations]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_sale_records_v2", JSON.stringify(sells)); } catch {}
+    setDbState("asset_sale_records_v2", sells);
   }, [sells]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_writeoff_records_v2", JSON.stringify(writeoffs)); } catch {}
+    setDbState("asset_writeoff_records_v2", writeoffs);
   }, [writeoffs]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_allocation_records_v2", JSON.stringify(allocations)); } catch {}
+    setDbState("asset_allocation_records_v2", allocations);
   }, [allocations]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_maintenance_records_v2", JSON.stringify(maintenances)); } catch {}
+    setDbState("asset_maintenance_records_v2", maintenances);
   }, [maintenances]);
 
   useEffect(() => {
-    try { localStorage.setItem("asset_warranty_records_v2", JSON.stringify(warranties)); } catch {}
+    setDbState("asset_warranty_records_v2", warranties);
   }, [warranties]);
 
   const [showDepreciationModal, setShowDepreciationModal] = useState(false);

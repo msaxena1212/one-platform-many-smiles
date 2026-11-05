@@ -1,5 +1,6 @@
 // Dynamic Master Store & Management Service
 // Supports full CRUD, is_mandatory toggles, and real-time syncing for Excel templates & manual forms.
+import { getDbState, setDbState } from "./database-state";
 
 export interface MasterEntry {
   id: string;
@@ -717,6 +718,7 @@ export class DynamicMastersService {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+      void setDbState(LOCAL_STORAGE_KEY, data);
     } catch (e) {
       console.error('Error saving dynamic masters:', e);
     }
@@ -736,7 +738,25 @@ export class DynamicMastersService {
     if (typeof window === 'undefined') return;
     const flags = this.getMandatoryFlags();
     flags[masterKey] = isMandatory;
-    localStorage.setItem(MANDATORY_FLAGS_KEY, JSON.stringify(flags));
+    try {
+      localStorage.setItem(MANDATORY_FLAGS_KEY, JSON.stringify(flags));
+      void setDbState(MANDATORY_FLAGS_KEY, flags);
+    } catch {}
+  }
+
+  public static async initFromDb(): Promise<void> {
+    try {
+      const [dbData, dbFlags] = await Promise.all([
+        getDbState<Record<string, MasterEntry[]>>(LOCAL_STORAGE_KEY, {}),
+        getDbState<Record<string, boolean>>(MANDATORY_FLAGS_KEY, {}),
+      ]);
+      if (dbData && Object.keys(dbData).length > 0) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dbData));
+      }
+      if (dbFlags && Object.keys(dbFlags).length > 0) {
+        localStorage.setItem(MANDATORY_FLAGS_KEY, JSON.stringify(dbFlags));
+      }
+    } catch {}
   }
 
   public static isMasterMandatory(masterKey: string): boolean {
