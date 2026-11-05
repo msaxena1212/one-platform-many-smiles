@@ -10,21 +10,16 @@ WHERE v.voucher_number IN ('PV-SET-970199', 'PV-SET-973725', 'PV-SET-073390');
 -- STEP 2: delete (child rows first), all-or-nothing
 BEGIN;
 
-CREATE TEMP TABLE _del_ids ON COMMIT DROP AS
-  SELECT id FROM public.fin_vouchers
-  WHERE voucher_number IN ('PV-SET-970199', 'PV-SET-973725', 'PV-SET-073390');
+-- 1. Delete lines belonging to the 3 duplicate settlement vouchers
+DELETE FROM public.fin_voucher_lines 
+WHERE voucher_id IN (
+  SELECT id FROM public.fin_vouchers 
+  WHERE voucher_number IN ('PV-SET-970199', 'PV-SET-973725', 'PV-SET-073390')
+);
 
-DO $$ BEGIN
-  IF (SELECT count(*) FROM _del_ids) > 3 THEN
-    RAISE EXCEPTION 'Expected at most 3 vouchers, aborting';
-  END IF;
-END $$;
-
-DELETE FROM public.fin_voucher_lines WHERE voucher_id IN (SELECT id FROM _del_ids);
--- Linked accounting events / receipts, if any (ignore if the tables don't reference these vouchers)
-DELETE FROM public.fin_transaction_receipts WHERE voucher_id IN (SELECT id FROM _del_ids);
-DELETE FROM public.fin_accounting_events    WHERE voucher_id IN (SELECT id FROM _del_ids);
-DELETE FROM public.fin_vouchers             WHERE id        IN (SELECT id FROM _del_ids);
+-- 2. Delete the vouchers themselves
+DELETE FROM public.fin_vouchers 
+WHERE voucher_number IN ('PV-SET-970199', 'PV-SET-973725', 'PV-SET-073390');
 
 COMMIT;
 

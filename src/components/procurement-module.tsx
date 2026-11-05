@@ -26,6 +26,16 @@ import { nextProcurementDocumentNumber } from "@/lib/procurement/numbering";
 import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
 import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
+import {
+  type CatalogItem,
+  type ItemType,
+  type BudgetHead,
+  defaultCatalogItems,
+  loadCatalogItems,
+  persistCatalogItem,
+  persistCatalogBatch,
+  exportCatalogCSV
+} from "@/lib/procurement-catalog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type PurchaseRequest = {
@@ -116,9 +126,6 @@ type GoodsReceiptLine = {
   remarks?: string | null;
 };
 
-type ItemType = "asset" | "maintenance_spare" | "consumable" | "service";
-type BudgetHead = "Salary" | "Maintenance Items" | "Property Assets" | "Unit Assets" | "Other";
-
 export type ProcLineItem = {
   id: string;
   itemId?: string;
@@ -138,22 +145,6 @@ export type ProcLineItem = {
   uom: string;
   remarks?: string;
 };
-
-type CatalogItem = {
-  id: string;
-  item_code: string;
-  name: string;
-  category: string;
-  item_type: ItemType;
-  budget_type: "CAPEX" | "OPEX";
-  budget_head: BudgetHead;
-  unit_price: number;
-  unit_of_measure: string;
-  reorder_level: number;
-  active: boolean;
-};
-
-const defaultCatalogItems: CatalogItem[] = [];
 
 const typeLabel: Record<ItemType, string> = { asset: "Fixed Asset", maintenance_spare: "Maintenance Spare", consumable: "Consumable", service: "Service" };
 
@@ -683,7 +674,11 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   const [catalog, setCatalog] = useState<CatalogItem[]>(() => {
     try {
       const saved = localStorage.getItem("proc_catalog_items");
-      return saved ? JSON.parse(saved) : defaultCatalogItems;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return defaultCatalogItems;
     } catch {
       return defaultCatalogItems;
     }
@@ -928,7 +923,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
     setLoading(true);
     try {
       const [
-        pRes, uRes, vRes, prRes, poRes, polRes, grnRes, grnlRes, rfxRes, vqRes, shRes, invRes, apInvRes
+        pRes, uRes, vRes, prRes, poRes, polRes, grnRes, grnlRes, rfxRes, vqRes, shRes, invRes, apInvRes, catRes
       ] = await Promise.all([
         fetchProperties().catch(() => []),
         fetchUnits().catch(() => []),
@@ -943,6 +938,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         supabase.from("proc_shipments").select("*").order("created_at", { ascending: false }),
         supabase.from("inventory_parts").select("*"),
         ApInvoicesApi.fetchAll().catch(() => []),
+        loadCatalogItems().catch(() => defaultCatalogItems),
       ]);
 
       // Normalize shipments to decode extra metadata stored in remarks or fallback columns
@@ -980,6 +976,9 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       setQuoteList(vqRes.data || []);
       setShipments(normalizedShipments);
       setInventoryParts(invRes.data || []);
+      if (catRes && catRes.length > 0) {
+        setCatalog(catRes);
+      }
       setApInvoices([]);
     } catch (e: any) {
       console.error("Error loading procurement data:", e);
@@ -3026,7 +3025,10 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                   <CardDescription>Central register of all inventory items, fixed assets, maintenance spares, and billable services.</CardDescription>
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
-                  <Input placeholder="Search code, name, category..." value={search} onChange={e => setSearch(e.target.value)} className="w-64 text-xs h-8" />
+                  <Input placeholder="Search code, name, category..." value={search} onChange={e => setSearch(e.target.value)} className="w-56 text-xs h-8" />
+                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => exportCatalogCSV(catalog)} title="Export catalog to CSV">
+                    <Download className="h-3.5 w-3.5" /> Export CSV
+                  </Button>
                   {role === "admin" && (
                     <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5"
                       onClick={() => setShowTradeCatModal(true)}>
@@ -3063,7 +3065,32 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                     <TableBody>
                       {catalog.filter(c => `${c.name} ${c.item_code} ${c.category} ${c.item_type}`.toLowerCase().includes(search.toLowerCase())).length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-xs">No catalog items matching search query.</TableCell>
+                          <TableCell colSpan={10} className="text-center py-10">
+                            {search.trim() ? (
+                              <div className="space-y-2">
+                                <p className="text-xs text-muted-foreground">No catalog items matching "{search}".</p>
+                                <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setSearch("")}>Clear Search</Button>
+                              </div>
+                            ) : (
+                              <div className="space-y-3 max-w-sm mx-auto">
+                                <Package className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                                <p className="text-sm font-semibold text-foreground">No catalog items found</p>
+                                <p className="text-xs text-muted-foreground">Import items via CSV or click below to initialize baseline catalog items.</p>
+                                <div className="flex justify-center gap-2 pt-2">
+                                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => setShowBulkCatalogModal(true)}>
+                                    <Upload className="h-3.5 w-3.5" /> Bulk Import
+                                  </Button>
+                                  <Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={async () => {
+                                    const seeded = await persistCatalogBatch(defaultCatalogItems, []);
+                                    setCatalog(seeded);
+                                    toast.success(`Loaded ${seeded.length} baseline catalog items.`);
+                                  }}>
+                                    <PackageCheck className="h-3.5 w-3.5" /> Load Baseline ({defaultCatalogItems.length})
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </TableCell>
                         </TableRow>
                       )}
                       {catalog.filter(c => `${c.name} ${c.item_code} ${c.category} ${c.item_type}`.toLowerCase().includes(search.toLowerCase())).map(item => (
@@ -3795,11 +3822,10 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       <BulkCatalogImportModal
         open={showBulkCatalogModal}
         onClose={() => setShowBulkCatalogModal(false)}
-        onImport={(newItems) => {
-          const merged = [...catalog, ...newItems];
+        onImport={async (newItems) => {
+          const merged = await persistCatalogBatch(newItems, catalog);
           setCatalog(merged);
-          try { localStorage.setItem("proc_catalog_items", JSON.stringify(merged)); } catch {}
-          toast.success(`${newItems.length} item(s) imported to Item Catalog.`);
+          toast.success(`${newItems.length} item(s) imported to Item Catalog & synced to database.`);
           setShowBulkCatalogModal(false);
         }}
       />
@@ -5122,13 +5148,12 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
             <Button variant="outline" onClick={() => setShowCatalogModal(false)}>Cancel</Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-              onClick={() => {
+              onClick={async () => {
                 const newItem: CatalogItem = { ...catalogForm, id: `cat-${Date.now()}` };
-                const updated = [newItem, ...catalog];
+                const updated = await persistCatalogItem(newItem, catalog);
                 setCatalog(updated);
-                localStorage.setItem("proc_catalog_items", JSON.stringify(updated));
                 setShowCatalogModal(false);
-                toast.success(`Item "${newItem.name}" (${newItem.item_code}) added to Item Master Catalog.`);
+                toast.success(`Item "${newItem.name}" (${newItem.item_code}) added & synced to database.`);
               }}
               disabled={!catalogForm.name || !catalogForm.item_code || !catalogForm.category}
             >
