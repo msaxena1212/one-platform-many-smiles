@@ -4,7 +4,7 @@ import {
   Users, Building2, Briefcase, Calendar, Clock, DollarSign, Award,
   Receipt, ShieldCheck, LogOut, Megaphone, HelpCircle, Plus, Search,
   Filter, Download, CheckCircle2, XCircle, AlertTriangle, Eye, RefreshCw,
-  FileText, ArrowRight, UserCheck, ChevronRight, Settings, Trash2, Edit3, Send,
+  FileText, ArrowRight, UserCheck, ChevronRight, ChevronLeft, X, Settings, Trash2, Edit3, Send,
   GitBranch, MapPin, Printer, FileSpreadsheet, Loader2, Landmark
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -116,6 +116,17 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [employeeCurrentPage, setEmployeeCurrentPage] = useState<number>(1);
   const EMPLOYEES_PER_PAGE = 20;
+
+  // Attendance Search, Filter & Pagination
+  const [attendanceSearch, setAttendanceSearch] = useState<string>("");
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<string>("ALL");
+  const [attendanceCurrentPage, setAttendanceCurrentPage] = useState<number>(1);
+  const [attendancePageSize, setAttendancePageSize] = useState<number>(10);
+
+  // Payroll Search, Filter & Pagination
+  const [payrollSearch, setPayrollSearch] = useState<string>("");
+  const [payrollCurrentPage, setPayrollCurrentPage] = useState<number>(1);
+  const [payrollPageSize, setPayrollPageSize] = useState<number>(10);
 
   // Modals
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState<boolean>(false);
@@ -1086,6 +1097,60 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
     return filteredEmployees.slice(startIndex, startIndex + EMPLOYEES_PER_PAGE);
   }, [filteredEmployees, employeeCurrentPage]);
 
+  // ── Attendance Pagination & Filter Logic ────────────────────────────────────
+  const filteredAttendance = useMemo(() => {
+    const term = attendanceSearch.toLowerCase().trim();
+    return attendance.filter((att) => {
+      const empName = att.employees
+        ? `${att.employees.first_name} ${att.employees.last_name || ""}`.toLowerCase()
+        : "";
+      const empCode = (att.employees?.employee_id_code || "").toLowerCase();
+      const dept = (att.employees?.departments?.name || "").toLowerCase();
+      const matchesSearch =
+        !term ||
+        empName.includes(term) ||
+        empCode.includes(term) ||
+        dept.includes(term) ||
+        (att.attendance_date && att.attendance_date.includes(term));
+
+      const matchesStatus =
+        attendanceStatusFilter === "ALL" ||
+        att.status?.toUpperCase() === attendanceStatusFilter.toUpperCase();
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [attendance, attendanceSearch, attendanceStatusFilter]);
+
+  const totalAttendancePages = Math.max(1, Math.ceil(filteredAttendance.length / attendancePageSize));
+
+  const paginatedAttendance = useMemo(() => {
+    const safePage = Math.min(attendanceCurrentPage, totalAttendancePages);
+    const startIndex = (safePage - 1) * attendancePageSize;
+    return filteredAttendance.slice(startIndex, startIndex + attendancePageSize);
+  }, [filteredAttendance, attendanceCurrentPage, totalAttendancePages, attendancePageSize]);
+
+  // ── Payroll Payslips Pagination & Filter Logic ──────────────────────────────
+  const filteredPayslips = useMemo(() => {
+    const term = payrollSearch.toLowerCase().trim();
+    if (!term) return payslips;
+    return payslips.filter((ps) => {
+      const name = ps.employees
+        ? `${ps.employees.first_name} ${ps.employees.last_name || ""}`.toLowerCase()
+        : "";
+      const code = (ps.employees?.employee_id_code || "").toLowerCase();
+      const dept = (ps.employees?.departments?.name || "").toLowerCase();
+      return name.includes(term) || code.includes(term) || dept.includes(term);
+    });
+  }, [payslips, payrollSearch]);
+
+  const totalPayrollPages = Math.max(1, Math.ceil(filteredPayslips.length / payrollPageSize));
+
+  const paginatedPayslips = useMemo(() => {
+    const safePage = Math.min(payrollCurrentPage, totalPayrollPages);
+    const startIndex = (safePage - 1) * payrollPageSize;
+    return filteredPayslips.slice(startIndex, startIndex + payrollPageSize);
+  }, [filteredPayslips, payrollCurrentPage, totalPayrollPages, payrollPageSize]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* ── TAB 1: DASHBOARD & METRICS ────────────────────────────────────────── */}
@@ -1534,61 +1599,238 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             </Card>
 
             {/* Attendance Roster Log */}
-            <Card className="lg:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between pb-3">
-                <div>
-                  <CardTitle className="text-base font-semibold">Daily Attendance Logs</CardTitle>
-                  <CardDescription>Real-time biometric and web attendance logs</CardDescription>
+            <Card className="lg:col-span-2 shadow-xs border">
+              <CardHeader className="pb-3 border-b bg-card/50">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base font-semibold">Daily Attendance Logs</CardTitle>
+                      <Badge variant="outline" className="text-xs font-mono font-medium">
+                        {filteredAttendance.length} records
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-xs mt-0.5">
+                      Real-time biometric and web attendance logs with status validation
+                    </CardDescription>
+                  </div>
+                  <Button size="sm" onClick={() => setShowRecordAttendanceModal(true)} className="gap-1.5 shadow-xs">
+                    <Clock className="h-4 w-4" /> Log Attendance
+                  </Button>
                 </div>
-                <Button size="sm" onClick={() => setShowRecordAttendanceModal(true)}>
-                  <Clock className="h-4 w-4 mr-1" /> Log Attendance
-                </Button>
+
+                {/* Filter and Search Controls */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search employee, ID, or date..."
+                      value={attendanceSearch}
+                      onChange={(e) => {
+                        setAttendanceSearch(e.target.value);
+                        setAttendanceCurrentPage(1);
+                      }}
+                      className="pl-8 pr-7 h-8 text-xs bg-background"
+                    />
+                    {attendanceSearch && (
+                      <button
+                        onClick={() => {
+                          setAttendanceSearch("");
+                          setAttendanceCurrentPage(1);
+                        }}
+                        className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    {/* Status Filter Buttons */}
+                    <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+                      {(["ALL", "PRESENT", "ABSENT"] as const).map((st) => (
+                        <button
+                          key={st}
+                          onClick={() => {
+                            setAttendanceStatusFilter(st);
+                            setAttendanceCurrentPage(1);
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                            attendanceStatusFilter === st
+                              ? "bg-background text-foreground shadow-xs font-semibold"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {st === "ALL" ? "All Status" : st === "PRESENT" ? "Present" : "Absent"}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Page Size Selector */}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span>Rows:</span>
+                      <Select
+                        value={String(attendancePageSize)}
+                        onValueChange={(val) => {
+                          setAttendancePageSize(Number(val));
+                          setAttendanceCurrentPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-16 text-xs bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="15">15</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent>
+
+              <CardContent className="pt-3">
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
-                    <TableHeader className="bg-muted/50">
+                    <TableHeader className="bg-muted/40">
                       <TableRow>
-                        <TableHead>Employee</TableHead>
+                        <TableHead className="w-[35%]">Employee</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>First In</TableHead>
                         <TableHead>Last Out</TableHead>
                         <TableHead>Hours</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right pr-4">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {attendance.map((att) => (
-                        <TableRow key={att.id}>
-                          <TableCell className="font-medium text-sm">
-                            {att.employees
-                              ? `${att.employees.first_name} ${att.employees.last_name}`
-                              : "Employee"}
-                          </TableCell>
-                          <TableCell className="text-xs">{att.attendance_date}</TableCell>
-                          <TableCell className="text-xs font-mono">
-                            {att.first_in ? new Date(att.first_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}
-                          </TableCell>
-                          <TableCell className="text-xs font-mono">
-                            {att.last_out ? new Date(att.last_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—"}
-                          </TableCell>
-                          <TableCell className="text-xs font-semibold">{att.total_working_hours}h</TableCell>
-                          <TableCell>
-                            <Badge variant={att.status === "PRESENT" ? "default" : "destructive"}>
-                              {att.status}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {attendance.length === 0 && (
+                      {paginatedAttendance.map((att) => {
+                        const isPresent = att.status === "PRESENT";
+                        const initials = `${att.employees?.first_name?.[0] || 'E'}${att.employees?.last_name?.[0] || ''}`.toUpperCase();
+                        return (
+                          <TableRow key={att.id} className="hover:bg-muted/30 transition-colors">
+                            <TableCell className="py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                  isPresent
+                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
+                                }`}>
+                                  {initials}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-sm text-foreground truncate">
+                                    {att.employees
+                                      ? `${att.employees.first_name} ${att.employees.last_name || ""}`.trim()
+                                      : "Employee"}
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                                    <span className="font-mono">{att.employees?.employee_id_code || "—"}</span>
+                                    {att.employees?.departments?.name && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="truncate">{att.employees.departments.name}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                              {att.attendance_date}
+                            </TableCell>
+                            <TableCell className="text-xs font-mono whitespace-nowrap">
+                              {att.first_in ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 text-foreground">
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  {new Date(att.first_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs font-mono whitespace-nowrap">
+                              {att.last_out ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 text-foreground">
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                  {new Date(att.last_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs font-semibold whitespace-nowrap">
+                              {att.total_working_hours > 0 ? (
+                                <span className="font-mono text-foreground">{att.total_working_hours}h</span>
+                              ) : (
+                                <span className="font-mono text-muted-foreground">0h</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right pr-4 whitespace-nowrap">
+                              {isPresent ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                  PRESENT
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                  ABSENT
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {paginatedAttendance.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-sm">
-                            No attendance punches recorded today. Click "Log Attendance" to add.
+                          <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
+                            <Clock className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+                            No attendance punches found matching your criteria.
                           </TableCell>
                         </TableRow>
                       )}
                     </TableBody>
                   </Table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 mt-1 text-xs text-muted-foreground">
+                  <div>
+                    Showing{" "}
+                    <span className="font-semibold text-foreground">
+                      {filteredAttendance.length === 0 ? 0 : (attendanceCurrentPage - 1) * attendancePageSize + 1}
+                    </span>{" "}
+                    to{" "}
+                    <span className="font-semibold text-foreground">
+                      {Math.min(attendanceCurrentPage * attendancePageSize, filteredAttendance.length)}
+                    </span>{" "}
+                    of <span className="font-semibold text-foreground">{filteredAttendance.length}</span> logs
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={attendanceCurrentPage <= 1}
+                      onClick={() => setAttendanceCurrentPage((p) => Math.max(1, p - 1))}
+                      className="h-8 px-2.5 text-xs gap-1"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                    </Button>
+                    <div className="text-xs font-medium px-2">
+                      Page {attendanceCurrentPage} of {totalAttendancePages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={attendanceCurrentPage >= totalAttendancePages}
+                      onClick={() => setAttendanceCurrentPage((p) => Math.min(totalAttendancePages, p + 1))}
+                      className="h-8 px-2.5 text-xs gap-1"
+                    >
+                      Next <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1821,18 +2063,80 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             </div>
           )}
 
-          {/* Payslip Items Table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">Monthly Payslips Roster</CardTitle>
-              <CardDescription>Calculated basic pay, allowances, approved leave salary, statutory/loan deductions, and net salaries</CardDescription>
+          {/* Payslip Items Table with Search & Pagination */}
+          <Card className="shadow-xs border">
+            <CardHeader className="pb-3 border-b bg-card/50">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-base font-semibold">Monthly Payslips Roster</CardTitle>
+                    <Badge variant="outline" className="text-xs font-mono font-medium">
+                      {filteredPayslips.length} payslips
+                    </Badge>
+                  </div>
+                  <CardDescription className="text-xs mt-0.5">
+                    Calculated basic pay, allowances, approved leave salary, statutory/loan deductions, and net salaries
+                  </CardDescription>
+                </div>
+              </div>
+
+              {/* Search & Rows Per Page Toolbar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search employee name, code, or department..."
+                    value={payrollSearch}
+                    onChange={(e) => {
+                      setPayrollSearch(e.target.value);
+                      setPayrollCurrentPage(1);
+                    }}
+                    className="pl-8 pr-7 h-8 text-xs bg-background"
+                  />
+                  {payrollSearch && (
+                    <button
+                      onClick={() => {
+                        setPayrollSearch("");
+                        setPayrollCurrentPage(1);
+                      }}
+                      className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>Rows per page:</span>
+                    <Select
+                      value={String(payrollPageSize)}
+                      onValueChange={(val) => {
+                        setPayrollPageSize(Number(val));
+                        setPayrollCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-24 text-xs bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 / page</SelectItem>
+                        <SelectItem value="20">20 / page</SelectItem>
+                        <SelectItem value="38">All (38)</SelectItem>
+                        <SelectItem value="50">50 / page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
+
+            <CardContent className="pt-3">
               <div className="rounded-lg border overflow-hidden">
                 <Table>
-                  <TableHeader className="bg-muted/50">
+                  <TableHeader className="bg-muted/40">
                     <TableRow>
-                      <TableHead>Employee</TableHead>
+                      <TableHead className="w-[22%]">Employee</TableHead>
                       <TableHead>Code</TableHead>
                       <TableHead>Basic (QAR)</TableHead>
                       <TableHead>Allowances</TableHead>
@@ -1841,48 +2145,122 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       <TableHead>Deductions</TableHead>
                       <TableHead>Net Salary</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-right pr-4">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payslips.map((ps) => (
-                      <TableRow key={ps.id}>
-                        <TableCell className="font-medium text-sm">
-                          {ps.employees ? `${ps.employees.first_name} ${ps.employees.last_name}` : "Employee"}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{ps.employees?.employee_id_code || "—"}</TableCell>
-                        <TableCell className="text-xs font-mono">{Number(ps.basic_pay).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs font-mono text-emerald-600">+{Number(ps.allowances).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400">
-                          {Number(ps.leave_salary || 0) > 0 ? `+${Number(ps.leave_salary).toLocaleString()} QAR` : "0 QAR"}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono font-semibold">{Number(ps.gross_earnings).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-xs font-mono text-rose-600">-{Number(ps.total_deductions).toLocaleString()} QAR</TableCell>
-                        <TableCell className="text-sm font-mono font-bold text-primary">{Number(ps.net_salary).toLocaleString()} QAR</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{ps.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 text-xs gap-1 text-primary hover:text-primary/80"
-                            onClick={() => setSelectedPayslipForView(ps)}
-                          >
-                            <Eye className="h-3.5 w-3.5" /> View Payslip
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {payslips.length === 0 && (
+                    {paginatedPayslips.map((ps) => {
+                      const initials = `${ps.employees?.first_name?.[0] || 'E'}${ps.employees?.last_name?.[0] || ''}`.toUpperCase();
+                      return (
+                        <TableRow key={ps.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-7 w-7 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0">
+                                {initials}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-sm text-foreground truncate">
+                                  {ps.employees ? `${ps.employees.first_name} ${ps.employees.last_name || ""}`.trim() : "Employee"}
+                                </div>
+                                {ps.employees?.departments?.name && (
+                                  <div className="text-[11px] text-muted-foreground truncate">
+                                    {ps.employees.departments.name}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            {ps.employees?.employee_id_code || "—"}
+                          </TableCell>
+                          <TableCell className="text-xs font-mono whitespace-nowrap">
+                            {Number(ps.basic_pay).toLocaleString()} QAR
+                          </TableCell>
+                          <TableCell className="text-xs font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap font-medium">
+                            +{Number(ps.allowances).toLocaleString()} QAR
+                          </TableCell>
+                          <TableCell className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                            {Number(ps.leave_salary || 0) > 0 ? `+${Number(ps.leave_salary).toLocaleString()} QAR` : "0 QAR"}
+                          </TableCell>
+                          <TableCell className="text-xs font-mono font-semibold whitespace-nowrap">
+                            {Number(ps.gross_earnings).toLocaleString()} QAR
+                          </TableCell>
+                          <TableCell className="text-xs font-mono text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                            {Number(ps.total_deductions || 0) > 0 ? `-${Number(ps.total_deductions).toLocaleString()} QAR` : "-0 QAR"}
+                          </TableCell>
+                          <TableCell className="text-sm font-mono font-bold text-primary whitespace-nowrap">
+                            {Number(ps.net_salary).toLocaleString()} QAR
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {ps.status || "Generated"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right pr-4 whitespace-nowrap">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 text-xs gap-1.5 text-primary hover:text-primary/80 hover:bg-primary/10"
+                              onClick={() => setSelectedPayslipForView(ps)}
+                            >
+                              <Eye className="h-3.5 w-3.5" /> View Payslip
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {paginatedPayslips.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                          No payslips calculated for this cycle yet. Click "Calculate Salary" above.
+                        <TableCell colSpan={10} className="text-center py-10 text-muted-foreground text-sm">
+                          <DollarSign className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
+                          {payrollSearch
+                            ? "No payslips match your search query."
+                            : "No payslips calculated for this cycle yet. Click \"Calculate Salary & Leave Pay\" above."}
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 mt-1 text-xs text-muted-foreground">
+                <div>
+                  Showing{" "}
+                  <span className="font-semibold text-foreground">
+                    {filteredPayslips.length === 0 ? 0 : (payrollCurrentPage - 1) * payrollPageSize + 1}
+                  </span>{" "}
+                  to{" "}
+                  <span className="font-semibold text-foreground">
+                    {Math.min(payrollCurrentPage * payrollPageSize, filteredPayslips.length)}
+                  </span>{" "}
+                  of <span className="font-semibold text-foreground">{filteredPayslips.length}</span> employee payslips
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={payrollCurrentPage <= 1}
+                    onClick={() => setPayrollCurrentPage((p) => Math.max(1, p - 1))}
+                    className="h-8 px-2.5 text-xs gap-1"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                  </Button>
+                  <div className="text-xs font-medium px-2">
+                    Page {payrollCurrentPage} of {totalPayrollPages}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={payrollCurrentPage >= totalPayrollPages}
+                    onClick={() => setPayrollCurrentPage((p) => Math.min(totalPayrollPages, p + 1))}
+                    className="h-8 px-2.5 text-xs gap-1"
+                  >
+                    Next <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
