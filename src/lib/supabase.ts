@@ -1,27 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 
+const CANONICAL_SUPABASE_URL = 'https://rnebpqnzignwjeukgztz.supabase.co';
+const CANONICAL_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuZWJwcW56aWdud2pldWtnenR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxNzU4ODIsImV4cCI6MjA5OTc1MTg4Mn0.maLd6Jgr8uggrfu5uZg9sjRmG0z0r7NlaMB4wIdSRTg';
+
 const supabaseUrl =
   import.meta.env.VITE_SUPABASE_URL ||
   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : undefined) ||
-  '';
+  CANONICAL_SUPABASE_URL;
 const supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : undefined) ||
-  '';
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    '[Supabase] VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing from environment variables.\n' +
-    'On the production server, ensure /home/ubuntu/one-platform-many-smiles/.env contains:\n' +
-    '  VITE_SUPABASE_URL=https://<project-ref>.supabase.co\n' +
-    '  VITE_SUPABASE_ANON_KEY=<your-anon-key>\n' +
-    'Then rebuild: npm run build && pm2 restart pms-app'
-  );
-}
+  CANONICAL_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder'
+  supabaseUrl,
+  supabaseAnonKey
 );
 
 
