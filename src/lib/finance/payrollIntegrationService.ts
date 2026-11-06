@@ -38,9 +38,9 @@ export type PayrollSyncPayload = {
   lines: PayrollJournalLine[];
 };
 
-const SALARY_EXPENSE_GLS = new Set(['50100', '50100001']);
-const PAYROLL_PAYABLE_GLS = new Set(['21900', '21900001']);
-const BANK_GLS = new Set(['12000', '12000001']);
+const SALARY_EXPENSE_GLS = new Set(['50100', '50100001', '51101', '51101001']);
+const PAYROLL_PAYABLE_GLS = new Set(['21900', '21900001', '22005', '22005001', '221401']);
+const BANK_GLS = new Set(['12000', '12000001', '12000002']);
 
 /**
  * Handle API ingestion of External Payroll Runs
@@ -121,19 +121,21 @@ export async function syncPayrollRun(payload: PayrollSyncPayload) {
       property_id: payload.lines[0]?.property_id,
       unit_id: payload.lines[0]?.unit_id,
       cost_center_id: payload.lines[0]?.cost_center_id,
-      description: `Payroll ${payload.period} – Net Pay Payable`,
+      description: `Payroll ${payload.period} – Salary Payable`,
     });
   }
-  voucherLines.push({
-    account_code: bank.slCode,
-    account_name: `${bank.groupName} / ${bank.className} / ${bank.glName} / ${bank.slName}`,
-    debit: 0,
-    credit: externalBankCredit,
-    property_id: payload.lines[0]?.property_id,
-    unit_id: payload.lines[0]?.unit_id,
-    cost_center_id: payload.lines[0]?.cost_center_id,
-    description: `Payroll ${payload.period} – Bank Disbursement`,
-  });
+  if (externalBankCredit > 0) {
+    voucherLines.push({
+      account_code: bank.slCode,
+      account_name: `${bank.groupName} / ${bank.className} / ${bank.glName} / ${bank.slName}`,
+      debit: 0,
+      credit: externalBankCredit,
+      property_id: payload.lines[0]?.property_id,
+      unit_id: payload.lines[0]?.unit_id,
+      cost_center_id: payload.lines[0]?.cost_center_id,
+      description: `Payroll ${payload.period} – Bank Disbursement`,
+    });
+  }
 
   const totalDebit = voucherLines.reduce((s, l) => s + l.debit, 0);
 

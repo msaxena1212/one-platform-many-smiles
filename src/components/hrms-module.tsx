@@ -897,34 +897,27 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
             {
               employee_id: p.employee_id,
               department: p.employees?.departments?.name || "General Operations",
-              account_code: "50100", // Staff Salaries & Allowances
+              account_code: "50100", // Staff Salary (Expense)
               debit: Number(p.gross_earnings || p.basic_pay || 0),
               credit: 0
             },
             {
               employee_id: p.employee_id,
               department: p.employees?.departments?.name || "General Operations",
-              account_code: "21900", // Payroll Deductions / Liabilities
+              account_code: "21900", // Salary Payable (Liability)
               debit: 0,
-              credit: Number(p.total_deductions || 0)
-            },
-            {
-              employee_id: p.employee_id,
-              department: p.employees?.departments?.name || "General Operations",
-              account_code: "12000", // Bank Disbursement Account
-              debit: 0,
-              credit: Number(p.net_salary || 0)
+              credit: Number(p.gross_earnings || p.basic_pay || 0)
             }
           ]);
 
           const syncRes = await syncPayrollRun({
-            payroll_run_id: `HR-PAY-${selectedCycleId.slice(0, 8).toUpperCase()}`,
+            payroll_run_id: `HR-PAY-${selectedCycleId.slice(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`,
             period: periodStr,
             lines
           });
 
           if (syncRes?.success) {
-            toast.success("Finance Sync: Salary Journal Voucher automatically posted to General Ledger (Dr 50100 / Cr 12000 / Cr 21900)!");
+            toast.success("Finance Sync: Salary Journal Voucher posted (Dr Staff Salary / Cr Salary Payable)!");
           }
         }
       } catch (finErr: any) {

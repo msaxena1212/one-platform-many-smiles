@@ -4750,6 +4750,57 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item)),
     ]);
 
+    // Persist renewed lease and update previous lease in PostgreSQL via Supabase REST API
+    void (async () => {
+      try {
+        await supabase
+          .from("leases")
+          .update({ lease_status: "renewed" })
+          .or(`id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`);
+
+        const { data: uRow } = await supabase
+          .from("units")
+          .select("id, property_id")
+          .or(`unit_ref.eq.${oldLease.unit},unit_code.eq.${oldLease.unit},unit_name.eq.${oldLease.unit}`)
+          .maybeSingle();
+
+        const leasePayload: any = {
+          lease_number: contractNo,
+          commencement_date: newStartDate,
+          expiry_date: newEndDate,
+          rental_amount: agreedRent * 12,
+          lease_status: "ACTIVE",
+          security_deposit: newSecurityDeposit,
+          number_of_pdc: data.pdcs.length,
+          payment_frequency: data.paymentFrequency || "Monthly",
+          grace_period_days: data.gracePeriodDays || 5,
+          notice_period_days: data.noticePeriodDays || 60,
+          previous_lease_id: oldLease.id && oldLease.id.length === 36 ? oldLease.id : undefined,
+          unit_id: uRow?.id || undefined,
+          property_id: uRow?.property_id || undefined,
+          customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
+        };
+        await supabase.from("leases").insert(leasePayload);
+
+        if (uRow?.id) {
+          await supabase.from("units").update({
+            contract_start_date: newStartDate,
+            contract_end_date: newEndDate,
+            current_rent: agreedRent,
+            current_tenant: oldLease.tenantName,
+            status: "Occupied",
+            lease_status: "Leased",
+          }).eq("id", uRow.id);
+        }
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("pms_data_updated"));
+        }
+      } catch (dbErr) {
+        console.warn("Database lease renewal persistence notice:", dbErr);
+      }
+    })();
+
     // Register all Post-Dated Cheques in the system
     const renewalPdcs: Pdc[] = data.pdcs.map((p, idx) => ({
       id: `p-ren-${Date.now()}-${idx + 1}`,

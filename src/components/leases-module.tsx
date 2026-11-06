@@ -192,22 +192,46 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editForm.id);
       const matchCol = isUUID ? 'id' : 'lease_number';
       const matchVal = isUUID ? editForm.id : editForm.lease_number;
-      if (matchVal) {
-        const { data, error } = await supabase
-          .from('leases')
-          .update({
-            commencement_date: editForm.commencement_date,
-            expiry_date: editForm.expiry_date,
-            rental_amount: annRent,
-            lease_status: editForm.lease_status.toLowerCase(),
-            number_of_pdc: pdcCount,
-          })
-          .eq(matchCol, matchVal)
-          .select('id');
-        if (error) dbErrors.push(`lease: ${error.message}`);
-        else if (!data || data.length === 0) dbErrors.push('lease: no database row was updated (blocked by permissions or lease not found)');
 
-        // Rent-free fields are written separately so a missing column cannot block the core update.
+      let updateRes = await supabase
+        .from('leases')
+        .update({
+          commencement_date: editForm.commencement_date,
+          expiry_date: editForm.expiry_date,
+          rental_amount: annRent,
+          lease_status: editForm.lease_status.toUpperCase(),
+          number_of_pdc: pdcCount,
+        })
+        .or(`id.eq.${editForm.id},lease_number.eq.${editForm.lease_number || editForm.id}`)
+        .select('id');
+
+      if (!updateRes.data || updateRes.data.length === 0) {
+        // Fallback match through linked unit
+        const { data: uMatch } = await supabase
+          .from('units')
+          .select('id')
+          .or(`unit_ref.eq.${editForm.unit_name},unit_code.eq.${editForm.unit_name},unit_name.eq.${editForm.unit_name}`)
+          .maybeSingle();
+        if (uMatch?.id) {
+          updateRes = await supabase
+            .from('leases')
+            .update({
+              commencement_date: editForm.commencement_date,
+              expiry_date: editForm.expiry_date,
+              rental_amount: annRent,
+              lease_status: editForm.lease_status.toUpperCase(),
+              number_of_pdc: pdcCount,
+            })
+            .eq('unit_id', uMatch.id)
+            .select('id');
+        }
+      }
+
+      if (updateRes.error) dbErrors.push(`lease: ${updateRes.error.message}`);
+      else if (!updateRes.data || updateRes.data.length === 0) dbErrors.push('lease: no database row was updated (blocked by permissions or lease not found)');
+
+      // Rent-free fields are written separately so a missing column cannot block the core update.
+      if (matchVal) {
         const { error: rfError } = await supabase
           .from('leases')
           .update({
