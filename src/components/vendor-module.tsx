@@ -242,7 +242,16 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
       setContacts(cRes || []);
       setBankDetails(bRes || []);
       setQualifications(qRes || []);
-      setApInvoices(iRes || []);
+      // Vendor Management lists only invoices from vendors in the Vendor Registry. Maintenance contractor invoices and
+      // other records carry a vendor name that is not a registered vendor, so they stay out of this screen.
+      const registeredIds = new Set((vRes || []).map((v: any) => String(v.id)));
+      const registeredNames = new Set((vRes || []).map((v: any) => String(v.name || "").trim().toLowerCase()).filter(Boolean));
+      setApInvoices(
+        (iRes || []).filter((inv: any) =>
+          registeredIds.has(String(inv.vendor_id)) ||
+          registeredNames.has(String(inv.vendor_name || inv.vendor_id || "").trim().toLowerCase()),
+        ),
+      );
     } catch (e: any) { toast.error("Load failed: " + e.message); }
     finally { setLoading(false); }
   }, []);
@@ -250,8 +259,28 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
   useEffect(() => {
     loadAll();
     const handleUpdate = () => loadAll();
+    // Real-time sync: refresh when vendors, their contacts/banking or purchase orders change, and when the tab regains focus.
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const refreshSoon = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadAll(), 400);
+    };
+    const liveChannel = supabase.channel("vendors-live");
+    ["fin_vendors", "vendor_contacts", "vendor_bank_details", "vendor_qualifications", "proc_purchase_orders"].forEach((table) => {
+      liveChannel.on("postgres_changes" as any, { event: "*", schema: "public", table }, refreshSoon);
+    });
+    liveChannel.subscribe();
+    const onVisible = () => { if (document.visibilityState === "visible") refreshSoon(); };
+    window.addEventListener("focus", refreshSoon);
+    document.addEventListener("visibilitychange", onVisible);
     window.addEventListener('ap_invoices_updated', handleUpdate);
-    return () => window.removeEventListener('ap_invoices_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('ap_invoices_updated', handleUpdate);
+      window.removeEventListener("focus", refreshSoon);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabase.removeChannel(liveChannel);
+    };
   }, [loadAll]);
 
   // ── Vendor CRUD ────────────────────────────────────────────────────────────

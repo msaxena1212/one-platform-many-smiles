@@ -50,7 +50,7 @@ export function qarInWords(amount: number): string {
   return `${text} Only`;
 }
 
-export function generatePayslipHtml({ payslip: p, cycleName, periodStart, periodEnd }: PayslipPrintPayload): string {
+function payslipSheetHtml({ payslip: p, cycleName, periodStart, periodEnd }: PayslipPrintPayload): string {
   const branding = getDocumentBranding();
   const banner = branding?.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
   const emp = p.employees || {};
@@ -67,7 +67,7 @@ export function generatePayslipHtml({ payslip: p, cycleName, periodStart, period
     ["Incentives", "الحوافز", p.incentives],
   ];
   const deductions: [string, string, number][] = [
-    ["Unpaid Leave / Absence", "خصم الغياب", p.fines_deductions],
+    ["Unpaid Leave / Other Deductions", "خصم الغياب والاستقطاعات الأخرى", p.fines_deductions],
     ["Loan / Advance Recovery", "سداد السلف", p.loan_deductions],
     ["Statutory (GRSA Pension)", "التقاعد", p.statutory_deductions],
   ];
@@ -80,39 +80,7 @@ export function generatePayslipHtml({ payslip: p, cycleName, periodStart, period
   const net = Number(p.net_salary || 0);
   const issued = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
-  return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8" />
-<title>Payslip - ${esc(fullName)} - ${esc(cycleName)}</title>
-<style>
-  @page { size: A4; margin: 10mm; }
-  * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a1a; font-size: 12px; margin: 0; background: #fff; }
-  .sheet { max-width: 190mm; margin: 0 auto; }
-  .banner { width: 100%; display: block; }
-  h1 { text-align: center; font-size: 16px; margin: 10px 0 2px; letter-spacing: .5px; }
-  .sub { text-align: center; color: #555; margin-bottom: 10px; }
-  .ar { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #666; margin-left: 6px; font-size: 11px; direction: rtl; }
-  table { width: 100%; border-collapse: collapse; }
-  .info td { padding: 4px 8px; border: 1px solid #d5d5d5; }
-  .info td.l { background: #f4f6f6; font-weight: 600; width: 17%; }
-  .cols { display: flex; gap: 10px; margin-top: 10px; }
-  .cols > div { flex: 1; }
-  .box th { background: #0f4c4a; color: #fff; text-align: left; padding: 5px 8px; font-size: 11px; text-transform: uppercase; }
-  .box td { padding: 5px 8px; border-bottom: 1px solid #e3e3e3; }
-  .box tr.total td { font-weight: 700; background: #f4f6f6; border-top: 1px solid #999; }
-  .num { text-align: right; font-family: Consolas, monospace; white-space: nowrap; }
-  .muted { color: #888; }
-  .net { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #e7f3f2; border: 1px solid #0f4c4a; border-radius: 4px; }
-  .net .amt { font-size: 18px; font-weight: 700; font-family: Consolas, monospace; color: #0f4c4a; }
-  .words { margin-top: 6px; font-style: italic; color: #333; }
-  .sign { display: flex; justify-content: space-between; margin-top: 36px; }
-  .sign div { width: 40%; border-top: 1px solid #333; text-align: center; padding-top: 4px; font-size: 11px; }
-  .foot { margin-top: 14px; font-size: 10px; color: #666; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; }
-  .noprint { text-align: center; margin: 10px; }
-  @media print { .noprint { display: none; } }
-</style></head>
-<body><div class="sheet">
-  <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
+  return `<div class="sheet">
   <img class="banner" src="${banner}" alt="Al Ameen Real Estate" />
   <h1>SALARY SLIP <span class="ar">قسيمة الراتب</span></h1>
   <div class="sub">${esc(cycleName)}${periodStart && periodEnd ? ` &bull; ${esc(periodStart)} to ${esc(periodEnd)}` : ""} &bull; Currency: QAR</div>
@@ -126,7 +94,7 @@ export function generatePayslipHtml({ payslip: p, cycleName, periodStart, period
   </table>
 
   <table class="info" style="margin-top:10px">
-    <tr><td class="l">Working Days</td><td>${esc(p.working_days ?? 31)}</td><td class="l">Present Days</td><td>${esc(p.present_days ?? 0)}</td>
+    <tr><td class="l">Working Days</td><td>${esc(p.working_days ?? 30)}</td><td class="l">Present Days</td><td>${esc(p.present_days ?? 0)}</td>
         <td class="l">Paid Leave</td><td>${esc(p.paid_leaves ?? 0)}</td><td class="l">Unpaid / Absent</td><td>${esc(p.unpaid_leaves ?? 0)}</td>
         <td class="l">OT Hours</td><td>${esc(p.overtime_hours ?? 0)}</td></tr>
   </table>
@@ -150,17 +118,73 @@ export function generatePayslipHtml({ payslip: p, cycleName, periodStart, period
   </div>
   <div class="words">${esc(qarInWords(net))}</div>
 
+  ${p.remarks ? `<div class="words">Remarks: ${esc(p.remarks)}</div>` : ""}
   <div class="sign"><div>Prepared by (HR / Payroll)</div><div>Employee Signature</div></div>
   <div class="foot">
     ${esc(branding?.legalEntityName || "Al Ameen Real Estate W.L.L")} &bull; CR ${esc(branding?.crNumber || "CR-90821-QA")}
     &bull; ${esc(branding?.address || "Doha, State of Qatar")} &bull; ${esc(branding?.phone || "")}<br />
     Computer-generated salary slip issued on ${issued}. Salary paid under the Qatar Wage Protection System (WPS). Confidential.
   </div>
-</div></body></html>`;
+</div>`;
 }
 
-export function printPayslip(payload: PayslipPrintPayload): void {
-  const html = generatePayslipHtml(payload);
+const PAYSLIP_STYLE = `
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #1a1a1a; font-size: 12px; margin: 0; background: #fff; }
+  .sheet { max-width: 190mm; margin: 0 auto; page-break-after: always; }
+  .sheet:last-of-type { page-break-after: auto; }
+  .banner { width: 100%; display: block; }
+  h1 { text-align: center; font-size: 16px; margin: 10px 0 2px; letter-spacing: .5px; }
+  .sub { text-align: center; color: #555; margin-bottom: 10px; }
+  .ar { font-family: "Segoe UI", Tahoma, Arial, sans-serif; color: #666; margin-left: 6px; font-size: 11px; direction: rtl; }
+  table { width: 100%; border-collapse: collapse; }
+  .info td { padding: 4px 8px; border: 1px solid #d5d5d5; }
+  .info td.l { background: #f4f6f6; font-weight: 600; width: 17%; }
+  .cols { display: flex; gap: 10px; margin-top: 10px; }
+  .cols > div { flex: 1; }
+  .box th { background: #0f4c4a; color: #fff; text-align: left; padding: 5px 8px; font-size: 11px; text-transform: uppercase; }
+  .box td { padding: 5px 8px; border-bottom: 1px solid #e3e3e3; }
+  .box tr.total td { font-weight: 700; background: #f4f6f6; border-top: 1px solid #999; }
+  .num { text-align: right; font-family: Consolas, monospace; white-space: nowrap; }
+  .muted { color: #888; }
+  .net { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #e7f3f2; border: 1px solid #0f4c4a; border-radius: 4px; }
+  .net .amt { font-size: 18px; font-weight: 700; font-family: Consolas, monospace; color: #0f4c4a; }
+  .words { margin-top: 6px; font-style: italic; color: #333; }
+  .sign { display: flex; justify-content: space-between; margin-top: 36px; }
+  .sign div { width: 40%; border-top: 1px solid #333; text-align: center; padding-top: 4px; font-size: 11px; }
+  .foot { margin-top: 14px; font-size: 10px; color: #666; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; }
+  .noprint { text-align: center; margin: 10px; }
+  @media print { .noprint { display: none; } }
+`;
+
+function wrapPayslipDocument(title: string, sheets: string): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" /><title>${esc(title)}</title>
+<style>${PAYSLIP_STYLE}</style></head>
+<body>
+  <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
+  ${sheets}
+</body></html>`;
+}
+
+export function generatePayslipHtml(payload: PayslipPrintPayload): string {
+  const name = `${payload.payslip?.employees?.first_name || ""} ${payload.payslip?.employees?.last_name || ""}`.trim() || "Employee";
+  return wrapPayslipDocument(`Payslip - ${name} - ${payload.cycleName}`, payslipSheetHtml(payload));
+}
+
+/** One printable document with a page per employee for the whole payroll cycle. */
+export function generatePayslipsBatchHtml(
+  payslips: any[],
+  cycle: { cycleName: string; periodStart?: string; periodEnd?: string }
+): string {
+  return wrapPayslipDocument(
+    `Payslips - ${cycle.cycleName}`,
+    payslips.map((payslip) => payslipSheetHtml({ payslip, ...cycle })).join("")
+  );
+}
+
+function openPrintDocument(html: string): void {
   const w = window.open("", "_blank", "width=900,height=1000");
   if (w) {
     w.document.open();
@@ -180,4 +204,15 @@ export function printPayslip(payload: PayslipPrintPayload): void {
     iframe.contentWindow?.print();
     window.setTimeout(() => document.body.removeChild(iframe), 2000);
   }
+}
+
+export function printPayslip(payload: PayslipPrintPayload): void {
+  openPrintDocument(generatePayslipHtml(payload));
+}
+
+export function printPayslipsBatch(
+  payslips: any[],
+  cycle: { cycleName: string; periodStart?: string; periodEnd?: string }
+): void {
+  openPrintDocument(generatePayslipsBatchHtml(payslips, cycle));
 }

@@ -20,6 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { useAppData } from "@/lib/app-data-context";
+import { buildUnitTenantCustomers } from "@/lib/unit-tenant-customers";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { generateLeaseAgreementBlob, printBilingualLeaseContract } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
@@ -1549,6 +1550,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           });
           if (normKey) seenNames.add(normKey);
         }
+
+        // Source 2: tenants of occupied units that have no customers-table row (lease-master imports).
+        buildUnitTenantCustomers(unitsRes.data || [], seenNames, guessType).forEach((c) => dbCustomerMap.set(String(c.id), c));
 
         const allMapped = Array.from(dbCustomerMap.values())
           .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));

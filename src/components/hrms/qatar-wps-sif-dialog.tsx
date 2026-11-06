@@ -143,6 +143,10 @@ export function QatarWpsSifDialog({
   }, [config, cycleMonthYear, wpsRecords]);
 
   const handleDownloadSif = () => {
+    if (validation.errorsCount > 0) {
+      toast.error(`Fix ${validation.errorsCount} fatal WPS error(s) (missing IBAN, QID or bank details) before downloading the SIF file.`);
+      return;
+    }
     const blob = new Blob([sifResult.sifContent], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

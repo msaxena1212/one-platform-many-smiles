@@ -64,6 +64,7 @@ export interface HrmsAttendanceDaily {
   late_minutes: number;
   early_minutes: number;
   overtime_minutes: number;
+  overtime_premium_minutes?: number;
   status: string; // 'PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE', 'HOLIDAY', etc.
   is_regularized: boolean;
   remarks?: string;
@@ -168,8 +169,8 @@ export function calculateEmployeeLeaveEntitlement(
     Number(emp?.tra || 0) +
     Number(emp?.other_allowances || 0);
 
-  const dailyBasicPay = Math.round((basicSalary / PAYROLL_DAYS_BASIS) * 100) / 100;
-  const dailyGrossPay = Math.round((grossSalary / PAYROLL_DAYS_BASIS) * 100) / 100;
+  const dailyBasicPay = Math.round((basicSalary / 30) * 100) / 100;
+  const dailyGrossPay = Math.round((grossSalary / 30) * 100) / 100;
 
   const requestedDays = Math.max(0, Number(requestedDaysInput ?? eligibleLeaveDays) || 0);
   const paidEligibleDaysForRequest = Math.min(requestedDays, Math.max(eligibleLeaveDays, requestedDays));
@@ -220,9 +221,20 @@ export function calculateEmployeeLeaveEntitlement(
 const HRMS_EMP_LEAVE_META_KEY = 'hrms_employee_leave_meta_v1';
 const HRMS_LEAVE_APPS_LOCAL_KEY = 'hrms_leave_applications_local_v1';
 const HRMS_PAYROLL_CYCLES_LOCAL_KEY = 'hrms_payroll_cycles_local_v1';
-// Payroll (salary, unpaid-leave, leave-salary) always uses a fixed 31-day basis. Rental income uses 30 days.
-const PAYROLL_DAYS_BASIS = 31;
 const HRMS_PAYSLIPS_LOCAL_KEY = 'hrms_payslips_local_v1';
+const HRMS_PAYROLL_OVERRIDES_LOCAL_KEY = 'hrms_payroll_overrides_local_v1';
+
+/** Qatar Labour Law: daily wage = monthly wage / 30, regardless of the calendar month length. */
+export const PAYROLL_DAY_DIVISOR = 30;
+/** Overtime: 125% normal day hours; 150% for night (9pm-4am), weekly rest day and public holiday hours. */
+export const OT_NORMAL_MULTIPLIER = 1.25;
+export const OT_PREMIUM_MULTIPLIER = 1.5;
+/** GRSA pension (Qatari nationals): 5% employee / 10% employer on basic + social allowance. */
+export const GRSA_EMPLOYEE_RATE = 0.05;
+export const GRSA_EMPLOYER_RATE = 0.1;
+const PAYSLIP_EXTRA_COLUMNS = ['leave_salary', 'employer_contributions', 'overtime_premium_hours', 'manual_override', 'remarks', 'paid_at'];
+const PAYROLL_LOCKED_STATUSES = ['Approved', 'Paid', 'Locked'];
+export const isPayrollCycleLocked = (status?: string) => PAYROLL_LOCKED_STATUSES.includes(String(status || ''));
 
 function readLocalJson<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -316,7 +328,22 @@ export interface HrmsPayslip {
   total_deductions: number;
   net_salary: number;
   status: string;
+  employer_contributions?: number;
+  overtime_premium_hours?: number;
+  manual_override?: boolean;
+  remarks?: string;
+  paid_at?: string;
   employees?: any;
+}
+
+export interface HrmsPayrollOverride {
+  payroll_cycle_id: string;
+  employee_id: string;
+  basic_pay?: number | null;
+  allowances?: number | null;
+  incentives?: number | null;
+  other_deductions?: number | null;
+  remarks?: string | null;
 }
 
 export interface HrmsAppraisalCycle {
@@ -605,7 +632,15 @@ export const HrmsApi = {
   async saveMonthlyAttendance(
     startDate: string,
     endDate: string,
-    rows: { employee_id: string; absent: number; paidLeave: number; overtimeHours: number }[]
+    rows: {
+      employee_id: string;
+      absent: number;
+      paidLeave: number;
+      overtimeHours: number;
+      premiumOvertimeHours?: number;
+      /** Exact unpaid dates (YYYY-MM-DD). When given they replace the "absent days at month end" default. */
+      absentDates?: string[];
+    }[]
   ) {
     const days: string[] = [];
     for (let d = new Date(`${startDate}T00:00:00Z`); d <= new Date(`${endDate}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
@@ -613,25 +648,34 @@ export const HrmsApi = {
     }
     const records: any[] = [];
     for (const r of rows) {
-      const absent = Math.min(Math.max(Math.round(r.absent) || 0, 0), days.length);
+      const exact = r.absentDates && r.absentDates.length > 0 ? new Set(r.absentDates.filter(x => days.includes(x))) : null;
+      const absent = exact ? exact.size : Math.min(Math.max(Math.round(r.absent) || 0, 0), days.length);
       const leave = Math.min(Math.max(Math.round(r.paidLeave) || 0, 0), days.length - absent);
       const presentCount = days.length - absent - leave;
       days.forEach((date, i) => {
-        const status = i < presentCount ? 'PRESENT' : i < presentCount + leave ? 'LEAVE' : 'ABSENT';
+        const status = exact
+          ? exact.has(date) ? 'ABSENT' : 'PRESENT'
+          : i < presentCount ? 'PRESENT' : i < presentCount + leave ? 'LEAVE' : 'ABSENT';
         records.push({
           employee_id: r.employee_id,
           attendance_date: date,
           status,
           total_working_hours: status === 'PRESENT' ? 8 : 0,
           overtime_minutes: i === 0 ? Math.round((Number(r.overtimeHours) || 0) * 60) : 0,
+          overtime_premium_minutes: i === 0 ? Math.round((Number(r.premiumOvertimeHours) || 0) * 60) : 0,
           remarks: 'Monthly attendance sheet',
         });
       });
     }
     for (let i = 0; i < records.length; i += 500) {
-      const { error } = await supabase
-        .from('hrms_attendance_daily')
-        .upsert(records.slice(i, i + 500), { onConflict: 'employee_id,attendance_date' });
+      const chunk = records.slice(i, i + 500);
+      let { error } = await supabase.from('hrms_attendance_daily').upsert(chunk, { onConflict: 'employee_id,attendance_date' });
+      if (error) {
+        // Column overtime_premium_minutes not deployed yet: save without the premium split.
+        ({ error } = await supabase
+          .from('hrms_attendance_daily')
+          .upsert(chunk.map(({ overtime_premium_minutes, ...rest }) => rest), { onConflict: 'employee_id,attendance_date' }));
+      }
       if (error) return { error };
     }
     return { error: null };
@@ -763,7 +807,7 @@ export const HrmsApi = {
         totalEncashableDays += Number(b.balance);
       }
     });
-    const perDayBasic = basicSalary / PAYROLL_DAYS_BASIS;
+    const perDayBasic = basicSalary / 30;
     const leaveEncashmentAmount = Math.round(totalEncashableDays * perDayBasic);
 
     // 3. Statutory Gratuity / End of Service (Qatar Labor Law: 21 days basic pay per year of service after 1+ year)
@@ -1009,7 +1053,7 @@ export const HrmsApi = {
         .from('hrms_payroll_payslips')
         .select(`
           *,
-          employees(first_name, last_name, employee_id_code, email)
+          employees(first_name, last_name, employee_id_code, email, iban, bank_name, qid_passport_no, nationality, date_of_joining, departments(name), designations(title))
         `)
         .eq('payroll_cycle_id', cycleId);
       if (!error && data && data.length > 0) {
@@ -1037,6 +1081,10 @@ export const HrmsApi = {
           .maybeSingle();
         cycle = dbCycle;
       }
+      if (cycle && isPayrollCycleLocked(cycle.status)) {
+        return { error: `Payroll cycle is ${cycle.status} and locked; it can no longer be recalculated.`, count: 0 };
+      }
+      const skippedNoSalary: string[] = [];
 
       let emps: any[] = [];
       const isValidPersonnel = (e: any) => {
@@ -1079,6 +1127,9 @@ export const HrmsApi = {
         .gte('attendance_date', startDate)
         .lte('attendance_date', endDate);
 
+      const overrideRows = await this.getPayrollOverrides(cycleId);
+      const overrideByEmp = new Map(overrideRows.map(o => [o.employee_id, o]));
+
       const { data: activeLoans } = await supabase
         .from('hrms_employee_loans')
         .select('*')
@@ -1090,11 +1141,20 @@ export const HrmsApi = {
         return l.start_date <= endDate && l.end_date >= startDate;
       });
 
-      const payslips: HrmsPayslip[] = emps.map((emp) => {
-        const basic = Number(emp.basic_salary) || 3500;
+      const payslipsRaw = emps.map((emp): HrmsPayslip | null => {
+        const ov = overrideByEmp.get(emp.id);
+        const basic = Number(ov?.basic_pay ?? emp.basic_salary) || 0;
+        if (basic <= 0) {
+          skippedNoSalary.push(`${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.employee_id_code || emp.id);
+          return null;
+        }
         const hra = Number(emp.hra) || 0;
         const tra = Number(emp.tra) || 0;
-        const allowances = hra + tra + (Number(emp.other_allowances) || 0);
+        const allowances = ov?.allowances != null
+          ? Number(ov.allowances) || 0
+          : hra + tra + (Number(emp.other_allowances) || 0);
+        const incentives = Number(ov?.incentives) || 0;
+        const otherDeductions = Number(ov?.other_deductions) || 0;
         
         // Real attendance calculation
         const empAttendance = attendanceRows?.filter(a => a.employee_id === emp.id) || [];
@@ -1117,36 +1177,42 @@ export const HrmsApi = {
         );
         const presentDays = empAttendance.length > 0
           ? empAttendance.filter(a => a.status === 'PRESENT' || a.status === 'HALF_DAY').length
-          : Math.max(0, PAYROLL_DAYS_BASIS - paidLeaves - unpaidLeaves);
+          : Math.max(0, 30 - paidLeaves - unpaidLeaves);
         const overtimeMinutes = empAttendance.reduce((sum, a) => sum + (Number(a.overtime_minutes) || 0), 0);
-        const overtimeHours = Math.round((overtimeMinutes / 60) * 10) / 10;
-        
-        // OT hourly rate: (Basic / 240 hours) * 1.25 standard Qatar labor law multiplier
-        const hourlyRate = (basic / 240);
-        const overtimePay = Math.round(overtimeHours * hourlyRate * 1.25);
+        const premiumMinutes = empAttendance.reduce((sum, a) => sum + (Number(a.overtime_premium_minutes) || 0), 0);
+        const normalOtHours = Math.round((overtimeMinutes / 60) * 10) / 10;
+        const premiumOtHours = Math.round((premiumMinutes / 60) * 10) / 10;
+        const overtimeHours = Math.round((normalOtHours + premiumOtHours) * 10) / 10;
 
-        // Unpaid leave deduction (Basic + Allowances / 30 * unpaidLeaves)
-        const unpaidLeaveDeduction = unpaidLeaves > 0 ? Math.round(((basic + allowances) / PAYROLL_DAYS_BASIS) * unpaidLeaves) : 0;
+        // OT hourly rate: Basic / 240 hours; 125% normal, 150% night / rest-day / holiday hours
+        const hourlyRate = basic / 240;
+        const overtimePay = Math.round(
+          normalOtHours * hourlyRate * OT_NORMAL_MULTIPLIER + premiumOtHours * hourlyRate * OT_PREMIUM_MULTIPLIER
+        );
 
-        const gross = basic + allowances + overtimePay + approvedLeaveSalary;
+        // Unpaid leave deduction: (Basic + Allowances) / 30 per unpaid day
+        const unpaidLeaveDeduction = unpaidLeaves > 0 ? Math.round(((basic + allowances) / PAYROLL_DAY_DIVISOR) * unpaidLeaves) : 0;
+
+        const gross = basic + allowances + overtimePay + approvedLeaveSalary + incentives;
         
         // Qatar Tax System: 0% Personal Income Tax / 0% TDS
         // Only Qatari Nationals have statutory GRSA Pension deduction (5% employee share on Basic+Social), expats have 0 statutory tax deductions
         const isQatari = String(emp.nationality || '').toLowerCase().includes('qatar');
-        const statutory = isQatari ? Math.round((basic + hra) * 0.05) : 0;
+        const statutory = isQatari ? Math.round((basic + hra) * GRSA_EMPLOYEE_RATE) : 0;
+        const employerContribution = isQatari ? Math.round((basic + hra) * GRSA_EMPLOYER_RATE) : 0;
         
         // Loan / Advance deductions
         const empLoan = activeLoans?.find(l => l.employee_id === emp.id);
         const loanDeduction = Number(empLoan?.monthly_deduction) || 0;
 
-        const totalDeductions = statutory + loanDeduction + unpaidLeaveDeduction;
+        const totalDeductions = statutory + loanDeduction + unpaidLeaveDeduction + otherDeductions;
         const net = Math.max(0, gross - totalDeductions);
 
         return {
           id: `pslip-${cycleId}-${emp.id}`,
           payroll_cycle_id: cycleId,
           employee_id: emp.id,
-          working_days: PAYROLL_DAYS_BASIS,
+          working_days: 30,
           present_days: presentDays,
           paid_leaves: paidLeaves,
           unpaid_leaves: unpaidLeaves,
@@ -1155,11 +1221,15 @@ export const HrmsApi = {
           allowances: allowances,
           overtime_pay: overtimePay,
           leave_salary: approvedLeaveSalary,
-          incentives: 0,
+          incentives,
           gross_earnings: gross,
           statutory_deductions: statutory,
           loan_deductions: loanDeduction,
-          fines_deductions: unpaidLeaveDeduction,
+          fines_deductions: unpaidLeaveDeduction + otherDeductions,
+          employer_contributions: employerContribution,
+          overtime_premium_hours: premiumOtHours,
+          manual_override: Boolean(ov),
+          remarks: ov?.remarks || undefined,
           total_deductions: totalDeductions,
           net_salary: net,
           status: 'Generated',
@@ -1172,10 +1242,16 @@ export const HrmsApi = {
             bank_name: emp.bank_name || '',
             qid_passport_no: emp.qid_passport_no || '',
             departments: emp.departments,
-            designations: emp.designations
+            designations: emp.designations,
+            nationality: emp.nationality || '',
+            date_of_joining: emp.date_of_joining || ''
           }
         };
       });
+      const payslips = payslipsRaw.filter((p): p is HrmsPayslip => p !== null);
+      if (payslips.length === 0) {
+        return { error: 'No employees with a basic salary to process. Set a salary on the employee record or enter it in the attendance sheet.', count: 0 };
+      }
 
       const totalGross = payslips.reduce((acc, p) => acc + p.gross_earnings, 0);
       const totalDeductions = payslips.reduce((acc, p) => acc + p.total_deductions, 0);
@@ -1203,9 +1279,21 @@ export const HrmsApi = {
 
       try {
         await supabase.from('hrms_payroll_payslips').delete().eq('payroll_cycle_id', cycleId);
-        await supabase.from('hrms_payroll_payslips').insert(
-          payslips.map(({ employees, leave_salary, ...p }) => p)
+        let insertRes = await supabase.from('hrms_payroll_payslips').insert(
+          payslips.map(({ employees, ...p }) => p)
         );
+        if (insertRes.error) {
+          // Database predates the payroll extension migration: store the core columns only.
+          console.warn('Payslip insert with extended columns failed, retrying core columns:', insertRes.error.message);
+          insertRes = await supabase.from('hrms_payroll_payslips').insert(
+            payslips.map(({ employees, ...p }) => {
+              const core: any = { ...p };
+              PAYSLIP_EXTRA_COLUMNS.forEach(c => delete core[c]);
+              return core;
+            })
+          );
+        }
+        if (insertRes.error) console.error('Payslip insert failed:', insertRes.error.message);
         await supabase.from('hrms_payroll_cycles').update({
           total_gross: totalGross,
           total_deductions: totalDeductions,
@@ -1217,11 +1305,63 @@ export const HrmsApi = {
         console.error('Database payroll update error:', dbErr);
       }
 
-      return { error: null, count: payslips.length, totalGross, totalNet, payslips };
+      const totalEmployerGrsa = payslips.reduce((acc, p) => acc + Number(p.employer_contributions || 0), 0);
+      return { error: null, count: payslips.length, totalGross, totalNet, totalEmployerGrsa, skippedNoSalary, payslips };
     } catch (err: any) {
       console.error('generatePayrollForCycle error:', err);
       return { error: err?.message || 'Calculation failed', count: 0 };
     }
+  },
+
+  async getPayrollOverrides(cycleId: string): Promise<HrmsPayrollOverride[]> {
+    const local = readLocalJson<Record<string, HrmsPayrollOverride[]>>(HRMS_PAYROLL_OVERRIDES_LOCAL_KEY, {})[cycleId] || [];
+    const { data, error } = await supabase.from('hrms_payroll_overrides').select('*').eq('payroll_cycle_id', cycleId);
+    if (error) return local;
+    return (data || []) as HrmsPayrollOverride[];
+  },
+
+  async savePayrollOverrides(cycleId: string, rows: Omit<HrmsPayrollOverride, 'payroll_cycle_id'>[]) {
+    if (rows.length === 0) return { error: null };
+    const records = rows.map(r => ({ ...r, payroll_cycle_id: cycleId, updated_at: new Date().toISOString() }));
+    const { error } = await supabase
+      .from('hrms_payroll_overrides')
+      .upsert(records, { onConflict: 'payroll_cycle_id,employee_id' });
+    if (error) {
+      // Table not deployed yet: keep the inputs on this browser so payroll can still be run.
+      const map = readLocalJson<Record<string, HrmsPayrollOverride[]>>(HRMS_PAYROLL_OVERRIDES_LOCAL_KEY, {});
+      const merged = new Map((map[cycleId] || []).map(o => [o.employee_id, o]));
+      records.forEach(r => merged.set(r.employee_id, r as any));
+      map[cycleId] = Array.from(merged.values());
+      writeLocalJson(HRMS_PAYROLL_OVERRIDES_LOCAL_KEY, map);
+      return { error: null, localOnly: true, message: error.message };
+    }
+    return { error: null };
+  },
+
+  /** Marks an approved cycle as paid once the WPS / bank transfer is confirmed. */
+  async markPayrollPaid(cycleId: string, paymentReference: string) {
+    const paidAt = new Date().toISOString();
+    let res: any = await supabase
+      .from('hrms_payroll_cycles')
+      .update({ status: 'Paid', paid_at: paidAt, payment_reference: paymentReference })
+      .eq('id', cycleId);
+    if (res.error) {
+      res = await supabase.from('hrms_payroll_cycles').update({ status: 'Paid' }).eq('id', cycleId);
+    }
+    if (res.error) return { error: res.error };
+    let slipRes: any = await supabase
+      .from('hrms_payroll_payslips')
+      .update({ status: 'Paid', payment_reference: paymentReference, paid_at: paidAt })
+      .eq('payroll_cycle_id', cycleId);
+    if (slipRes.error) {
+      await supabase
+        .from('hrms_payroll_payslips')
+        .update({ status: 'Paid', payment_reference: paymentReference })
+        .eq('payroll_cycle_id', cycleId);
+    }
+    const localCycles = readLocalJson<HrmsPayrollCycle[]>(HRMS_PAYROLL_CYCLES_LOCAL_KEY, []);
+    writeLocalJson(HRMS_PAYROLL_CYCLES_LOCAL_KEY, localCycles.map(c => (c.id === cycleId ? { ...c, status: 'Paid' as const } : c)));
+    return { error: null };
   },
 
   async approvePayrollCycle(cycleId: string) {
