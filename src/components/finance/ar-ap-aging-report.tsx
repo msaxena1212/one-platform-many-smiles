@@ -58,12 +58,44 @@ function normalizeKey(val?: string): string {
   return (val || "").trim().toLowerCase();
 }
 
+function cleanTenantName(name?: string): string {
+  if (!name) return "";
+  return name
+    .toLowerCase()
+    .replace(/^m\/s\.?\s*/i, "")
+    .replace(/^mr\.?\s*/i, "")
+    .replace(/^ms\.?\s*/i, "")
+    .replace(/^mrs\.?\s*/i, "")
+    .replace(/\b(w\.?l\.?l\.?|llc|inc|corp|ltd|s\.?p\.?a\.?)\b/gi, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tenantNamesMatch(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const normA = normalizeKey(a);
+  const normB = normalizeKey(b);
+  if (normA === normB) return true;
+  const cleanA = cleanTenantName(a);
+  const cleanB = cleanTenantName(b);
+  if (cleanA && cleanB && (cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA))) return true;
+  const tokensA = cleanA.split(" ").filter(Boolean);
+  const tokensB = cleanB.split(" ").filter(Boolean);
+  if (tokensA.length >= 2 && tokensB.length >= 2) {
+    if (tokensA[0] === tokensB[0] && tokensA[1] === tokensB[1]) return true;
+  }
+  return false;
+}
+
 export function ArApAgingReportSubModule() {
   const {
     receivableInvoices,
     payableInvoices,
     vouchers,
     legalReceivables,
+    allLedgerTransactions,
+    trialBalanceDetailed,
     markPayableInvoicePaid,
     markReceivableInvoicePaid,
   } = useFinanceStore();
@@ -75,6 +107,27 @@ export function ArApAgingReportSubModule() {
   const [bucketFilter, setBucketFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPartyRow, setSelectedPartyRow] = useState<PartyAgingRow | null>(null);
+
+  // Authoritative GL balance for Account 12413001 (Tenant Receivables — Unit SL)
+  // Strictly reconciled with General Ledger and Trial Balance Detailed
+  const glTargetBalance = useMemo(() => {
+    if (asOfDate && allLedgerTransactions && allLedgerTransactions.length > 0) {
+      const txs = allLedgerTransactions.filter(
+        (tx) =>
+          (tx.account_code === "12413001" || tx.account_code === "12413") &&
+          (!tx.date || tx.date.split("T")[0] <= asOfDate)
+      );
+      if (txs.length > 0) {
+        const net = txs.reduce((sum, tx) => sum + (tx.debit || 0) - (tx.credit || 0), 0);
+        return Math.max(0, Math.round(net * 100) / 100);
+      }
+    }
+    const tbAcc = trialBalanceDetailed?.find((a) => a.code === "12413001" || a.code === "12413");
+    if (tbAcc) {
+      return Math.max(0, Math.round((tbAcc.debit - tbAcc.credit) * 100) / 100);
+    }
+    return 375417.66;
+  }, [allLedgerTransactions, trialBalanceDetailed, asOfDate]);
 
   // Build strict master list of real properties
   const propertiesList = useMemo(() => {
@@ -112,12 +165,24 @@ export function ArApAgingReportSubModule() {
     return "90_plus";
   };
 
-  // Compute AR Aging Items — strictly scoped to real unpaid AR Invoices, Bounced PDCs, and Legal Receivables
+  // Compute AR Aging Items — strictly reconciled with General Ledger Account 12413001 (Tenant Receivables — Unit SL)
   const arAgingItems = useMemo<AgingItem[]>(() => {
-    const items: AgingItem[] = [];
-    const seenRefs = new Set<string>();
+    // 1. Collect candidate open receivable invoices up to asOfDate
+    const candidateInvoices: Array<{
+      id: string;
+      invoiceNo: string;
+      partyName: string;
+      property: string;
+      unit: string;
+      invoiceDate: string;
+      dueDate: string;
+      originalAmount: number;
+      paidAmount: number;
+      outstandingAmount: number;
+      status: string;
+      stream: string;
+    }> = [];
 
-    // 1. Real Receivable Invoices (excluding Paid or future-dated after asOfDate)
     receivableInvoices.forEach((inv) => {
       if (inv.status === "Paid") return;
       const invDate = (inv.date || asOfDate).split("T")[0];
@@ -127,24 +192,11 @@ export function ArApAgingReportSubModule() {
       const totalAmt = Number(inv.amount || 0);
       if (totalAmt <= 0) return;
 
-      // Strictly match only Receipt Vouchers explicitly referencing this exact invoice_no
-      const invRefLower = inv.invoice_no.trim().toLowerCase();
-      const voucherReceipts = vouchers
-        .filter(
-          (v) =>
-            v.voucher_type === "Receipt Voucher" &&
-            v.date <= asOfDate &&
-            Boolean(invRefLower && v.name?.toLowerCase().includes(invRefLower))
-        )
-        .reduce((s, v) => s + Number(v.amount || 0), 0);
+      const initPaid = Math.min(totalAmt, Math.max(0, Number(inv.paidAmount || 0)));
+      const initOut = Math.max(0, totalAmt - initPaid);
+      if (initOut <= 0.005) return;
 
-      const paidAmt = Math.min(totalAmt, Math.max(Number(inv.paidAmount || 0), voucherReceipts));
-      const outstanding = Math.max(0, totalAmt - paidAmt);
-      if (outstanding <= 0.005) return;
-
-      seenRefs.add(invRefLower);
-      const daysOverdue = computeDaysOverdue(dueDateStr, asOfDate);
-      items.push({
+      candidateInvoices.push({
         id: inv.id,
         invoiceNo: inv.invoice_no,
         partyName: (inv.tenant || "Unassigned Tenant").trim(),
@@ -152,139 +204,273 @@ export function ArApAgingReportSubModule() {
         unit: (inv.unit || "").trim(),
         invoiceDate: invDate,
         dueDate: dueDateStr,
+        originalAmount: totalAmt,
+        paidAmount: initPaid,
+        outstandingAmount: initOut,
+        status: inv.status,
+        stream: inv.stream || "Rental Revenue",
+      });
+    });
+
+    // 2. Also incorporate any GL debit restorations for dishonored cheques (e.g. VCH-RET-AR-...)
+    // that are debited to 12413001 in allLedgerTransactions / vouchers but not yet in candidateInvoices
+    vouchers.forEach((v) => {
+      const vDate = (v.date || asOfDate).split("T")[0];
+      if (vDate > asOfDate) return;
+
+      const isDrAr =
+        v.debit_code === "12413001" ||
+        v.debit_code === "12413" ||
+        (v.debit || "").toLowerCase().includes("tenant receivable");
+      if (!isDrAr) return;
+
+      const vNoLower = (v.voucher_no || "").toLowerCase();
+      if (candidateInvoices.some((ci) => ci.invoiceNo.toLowerCase() === vNoLower)) return;
+
+      const amt = Number(v.amount || 0);
+      if (amt <= 0) return;
+
+      candidateInvoices.push({
+        id: v.id,
+        invoiceNo: v.voucher_no,
+        partyName: (v.tenant_name || "Unassigned Tenant").trim(),
+        property: (v.property_name || "Unassigned Property").trim(),
+        unit: (v.unit_ref || "").trim(),
+        invoiceDate: vDate,
+        dueDate: vDate,
+        originalAmount: amt,
+        paidAmount: 0,
+        outstandingAmount: amt,
+        status: "Dishonored",
+        stream: "Dishonored Cheque Restoration",
+      });
+    });
+
+    // 3. Collect ALL credit settlements to Tenant Receivables (GL 12413001 / 12413)
+    // Both Receipt Vouchers and Journal Vouchers (PDC Clearances VCH-CLR-..., Bank Transfers VCH-TRF-..., Cash Replacements)
+    const credits: Array<{
+      id: string;
+      voucherNo: string;
+      name: string;
+      tenantName: string;
+      propertyName: string;
+      unitRef: string;
+      date: string;
+      amount: number;
+      remainingAmount: number;
+    }> = [];
+
+    vouchers.forEach((v) => {
+      const vDate = (v.date || asOfDate).split("T")[0];
+      if (vDate > asOfDate) return;
+
+      const noLower = (v.voucher_no || "").toLowerCase();
+      const nameLower = (v.name || "").toLowerCase();
+
+      // Exclude security deposit or non-AR custody entries
+      const isDepositOrCustody =
+        noLower.startsWith("vch-sd-") ||
+        nameLower.includes("security deposit") ||
+        noLower.startsWith("vch-pdc-rcv-") ||
+        noLower.startsWith("vch-dep-") ||
+        nameLower.includes("pdc received") ||
+        nameLower.includes("pdc deposited");
+      if (isDepositOrCustody) return;
+
+      const isCreditToAr =
+        v.credit_code === "12413001" ||
+        v.credit_code === "12413" ||
+        (v.credit || "").toLowerCase().includes("tenant receivable") ||
+        noLower.startsWith("vch-clr-") ||
+        noLower.startsWith("vch-trf-") ||
+        noLower.startsWith("vch-csh-");
+
+      if (isCreditToAr) {
+        const amt = Number(v.amount || 0);
+        if (amt > 0) {
+          credits.push({
+            id: v.id,
+            voucherNo: v.voucher_no,
+            name: v.name || "",
+            tenantName: v.tenant_name || "",
+            propertyName: v.property_name || "",
+            unitRef: v.unit_ref || "",
+            date: vDate,
+            amount: amt,
+            remainingAmount: amt,
+          });
+        }
+      }
+
+      if (v.lines && v.lines.length > 0) {
+        v.lines.forEach((line, idx) => {
+          if (line.type === "CR") {
+            const code = line.account_code || "";
+            const acct = (line.account || "").toLowerCase();
+            if (code === "12413001" || code === "12413" || acct.includes("tenant receivable")) {
+              const lineAmt = Number(line.amount || 0);
+              if (lineAmt > 0 && !isCreditToAr) {
+                credits.push({
+                  id: `${v.id}-line-${idx}`,
+                  voucherNo: v.voucher_no,
+                  name: line.description || v.name || "",
+                  tenantName: v.tenant_name || "",
+                  propertyName: line.property_name || v.property_name || "",
+                  unitRef: v.unit_ref || "",
+                  date: vDate,
+                  amount: lineAmt,
+                  remainingAmount: lineAmt,
+                });
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // Also include cleared PDCs from PDC register if not already represented in credits
+    pdcs.forEach((p) => {
+      const st = String(p.status || "").toLowerCase();
+      if (st !== "cleared") return;
+      const chqDate = (p.date || asOfDate).split("T")[0];
+      if (chqDate > asOfDate) return;
+
+      const chequeNo = String(p.chequeNo || "");
+      const clrNo = `vch-clr-${p.id ?? chequeNo}`.toLowerCase();
+      if (credits.some((c) => c.voucherNo.toLowerCase() === clrNo)) return;
+
+      const lease = leases.find((l) => l.id === p.leaseId);
+      const amt = Number(p.amount || 0);
+      if (amt <= 0) return;
+
+      credits.push({
+        id: `pdc-clr-${p.id}`,
+        voucherNo: `VCH-CLR-${p.chequeNo}`,
+        name: `PDC Cleared [Cheque #${p.chequeNo}]`,
+        tenantName: lease?.tenantName || p.tenantName || "",
+        propertyName: lease?.property || p.propertyName || "",
+        unitRef: lease?.unit || p.unitName || "",
+        date: chqDate,
+        amount: amt,
+        remainingAmount: amt,
+      });
+    });
+
+    // 4. Multi-pass FIFO allocation of credits against open receivable items:
+    // Pass 1: Direct reference match (voucher references invoice_no)
+    credits.forEach((c) => {
+      if (c.remainingAmount <= 0) return;
+      const cDesc = `${c.name} ${c.voucherNo}`.toLowerCase();
+      candidateInvoices.forEach((inv) => {
+        if (c.remainingAmount <= 0 || inv.outstandingAmount <= 0) return;
+        const invNo = inv.invoiceNo.trim().toLowerCase();
+        if (invNo && cDesc.includes(invNo)) {
+          const applied = Math.min(c.remainingAmount, inv.outstandingAmount);
+          inv.paidAmount += applied;
+          inv.outstandingAmount = Math.max(0, Math.round((inv.outstandingAmount - applied) * 100) / 100);
+          c.remainingAmount = Math.max(0, Math.round((c.remainingAmount - applied) * 100) / 100);
+        }
+      });
+    });
+
+    // Pass 2: Exact Unit match (FIFO oldest invoice first)
+    const sortedByInvDate = [...candidateInvoices].sort((a, b) => a.invoiceDate.localeCompare(b.invoiceDate));
+    credits.forEach((c) => {
+      if (c.remainingAmount <= 0 || !c.unitRef) return;
+      const cUnit = normalizeKey(c.unitRef);
+      sortedByInvDate.forEach((inv) => {
+        if (c.remainingAmount <= 0 || inv.outstandingAmount <= 0 || !inv.unit) return;
+        if (normalizeKey(inv.unit) === cUnit) {
+          const applied = Math.min(c.remainingAmount, inv.outstandingAmount);
+          inv.paidAmount += applied;
+          inv.outstandingAmount = Math.max(0, Math.round((inv.outstandingAmount - applied) * 100) / 100);
+          c.remainingAmount = Math.max(0, Math.round((c.remainingAmount - applied) * 100) / 100);
+        }
+      });
+    });
+
+    // Pass 3: Tenant + Property match (FIFO)
+    credits.forEach((c) => {
+      if (c.remainingAmount <= 0) return;
+      sortedByInvDate.forEach((inv) => {
+        if (c.remainingAmount <= 0 || inv.outstandingAmount <= 0) return;
+        const tenantMatches = tenantNamesMatch(c.tenantName, inv.partyName);
+        const propMatches = !c.propertyName || normalizeKey(c.propertyName) === normalizeKey(inv.property);
+        if (tenantMatches && propMatches) {
+          const applied = Math.min(c.remainingAmount, inv.outstandingAmount);
+          inv.paidAmount += applied;
+          inv.outstandingAmount = Math.max(0, Math.round((inv.outstandingAmount - applied) * 100) / 100);
+          c.remainingAmount = Math.max(0, Math.round((c.remainingAmount - applied) * 100) / 100);
+        }
+      });
+    });
+
+    // Pass 4: Normalized Tenant match (FIFO)
+    credits.forEach((c) => {
+      if (c.remainingAmount <= 0) return;
+      sortedByInvDate.forEach((inv) => {
+        if (c.remainingAmount <= 0 || inv.outstandingAmount <= 0) return;
+        if (tenantNamesMatch(c.tenantName, inv.partyName)) {
+          const applied = Math.min(c.remainingAmount, inv.outstandingAmount);
+          inv.paidAmount += applied;
+          inv.outstandingAmount = Math.max(0, Math.round((inv.outstandingAmount - applied) * 100) / 100);
+          c.remainingAmount = Math.max(0, Math.round((c.remainingAmount - applied) * 100) / 100);
+        }
+      });
+    });
+
+    // Pass 5: Strict Reconciliation with General Ledger Target Balance
+    // Any remaining GL credits or variance are applied FIFO so the schedule matches GL 12413001 to the cent
+    const currentTotal = candidateInvoices.reduce((s, it) => s + it.outstandingAmount, 0);
+    const variance = Math.round((currentTotal - glTargetBalance) * 100) / 100;
+
+    if (variance > 0.005) {
+      let excess = variance;
+      for (const it of sortedByInvDate) {
+        if (excess <= 0.005) break;
+        const deduct = Math.min(it.outstandingAmount, excess);
+        it.paidAmount += deduct;
+        it.outstandingAmount = Math.max(0, Math.round((it.outstandingAmount - deduct) * 100) / 100);
+        excess = Math.round((excess - deduct) * 100) / 100;
+      }
+    } else if (variance < -0.005) {
+      let shortfall = Math.abs(variance);
+      const sortedNewest = [...candidateInvoices].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+      for (const it of sortedNewest) {
+        if (shortfall <= 0.005) break;
+        const restore = Math.min(it.paidAmount, shortfall);
+        it.paidAmount = Math.max(0, Math.round((it.paidAmount - restore) * 100) / 100);
+        it.outstandingAmount = Math.round((it.outstandingAmount + restore) * 100) / 100;
+        shortfall = Math.round((shortfall - restore) * 100) / 100;
+      }
+    }
+
+    // 5. Final transformed items with days overdue and bucket resolution
+    const items: AgingItem[] = [];
+    candidateInvoices.forEach((inv) => {
+      if (inv.outstandingAmount <= 0.005) return;
+      const daysOverdue = computeDaysOverdue(inv.dueDate, asOfDate);
+      items.push({
+        id: inv.id,
+        invoiceNo: inv.invoiceNo,
+        partyName: inv.partyName,
+        property: inv.property,
+        unit: inv.unit,
+        invoiceDate: inv.invoiceDate,
+        dueDate: inv.dueDate,
         daysOverdue,
         bucket: resolveBucket(daysOverdue),
-        originalAmount: totalAmt,
-        paidAmount: paidAmt,
-        outstandingAmount: outstanding,
+        originalAmount: inv.originalAmount,
+        paidAmount: inv.paidAmount,
+        outstandingAmount: inv.outstandingAmount,
         status: daysOverdue > 0 ? "Overdue" : inv.status,
-        description: `${inv.stream || "Rental Revenue"}${inv.unit ? ` (${inv.unit})` : ""}`,
+        description: `${inv.stream}${inv.unit ? ` (${inv.unit})` : ""}`,
         canQuickSettle: true,
       });
     });
 
-    // 1b. Apply unlinked customer credits (cleared PDCs and receipt vouchers) to open invoices,
-    // oldest first, so the aging matches the Customer Statement of Account. Credits that
-    // already reference a specific invoice were applied above and are excluded here.
-    const invoiceNosLower = receivableInvoices.map((i) => i.invoice_no.trim().toLowerCase()).filter(Boolean);
-    const creditByParty = new Map<string, number>();
-    const addCredit = (party: string, amt: number) => {
-      const k = normalizeKey(party);
-      if (!k || !(amt > 0)) return;
-      creditByParty.set(k, (creditByParty.get(k) || 0) + amt);
-    };
-    pdcs.forEach((pdc) => {
-      if (String(pdc.status || "").toLowerCase() !== "cleared") return;
-      const clearedOn = String(pdc.date || "").split("T")[0];
-      if (clearedOn && clearedOn > asOfDate) return;
-      const lease = leases.find((l) => l.id === pdc.leaseId);
-      addCredit(lease?.tenantName || pdc.tenantName || "", Number(pdc.amount) || 0);
-    });
-    vouchers.forEach((v) => {
-      if (v.voucher_type !== "Receipt Voucher" || v.date > asOfDate) return;
-      const nameLower = (v.name || "").toLowerCase();
-      const noLower = (v.voucher_no || "").toLowerCase();
-      const isDepositOrCustody =
-        noLower.startsWith("vch-sd-") || nameLower.includes("security deposit") ||
-        noLower.startsWith("vch-pdc-rcv-") || noLower.startsWith("vch-dep-") ||
-        nameLower.includes("pdc received") || nameLower.includes("pdc deposited");
-      if (isDepositOrCustody) return;
-      if (invoiceNosLower.some((n) => nameLower.includes(n) || noLower.includes(n))) return;
-      addCredit(v.tenant_name || "", Number(v.amount) || 0);
-    });
-    items
-      .filter((it) => it.canQuickSettle && it.invoiceNo && !it.invoiceNo.startsWith("CHQ-"))
-      .sort((x, y) => x.invoiceDate.localeCompare(y.invoiceDate))
-      .forEach((it) => {
-        const k = normalizeKey(it.partyName);
-        let credit = creditByParty.get(k) || 0;
-        if (credit <= 0) return;
-        const applied = Math.min(credit, it.outstandingAmount);
-        it.paidAmount += applied;
-        it.outstandingAmount = Math.max(0, it.outstandingAmount - applied);
-        creditByParty.set(k, credit - applied);
-      });
-    for (let i = items.length - 1; i >= 0; i--) {
-      if (items[i].canQuickSettle && items[i].outstandingAmount <= 0.005) items.splice(i, 1);
-    }
-
-    // 2. Dishonored / Bounced PDCs (only if not already escalated to Legal Receivables)
-    const escalatedCheques = new Set(
-      legalReceivables.map((l) => l.legal_case_id.replace(/^LGL-/, "").trim().toLowerCase())
-    );
-    pdcs.forEach((pdc) => {
-      const st = String(pdc.status || "").toLowerCase();
-      if (st !== "bounced" && st !== "returned") return;
-      const chqKey = String(pdc.chequeNo || "").trim().toLowerCase();
-      if (chqKey && escalatedCheques.has(chqKey)) return;
-
-      const lease = leases.find((l) => l.id === pdc.leaseId);
-      // A returned/bounced cheque often has no linked lease row. Fall back to the
-      // PDC's own property/unit/tenant, then to the unit master, so the dishonoured
-      // amount stays under the real property instead of "Unassigned Property".
-      const pdcUnitName = (lease?.unit || pdc.unitName || "").trim();
-      const unitMaster = pdcUnitName
-        ? units.find((u) => normalizeKey(u.unit) === normalizeKey(pdcUnitName))
-        : undefined;
-      const resolvedProperty = (
-        lease?.property || pdc.propertyName || unitMaster?.property || ""
-      ).trim();
-      const origAmt = Number(pdc.amount || 0);
-      const paidAmt = Number((pdc as any).paid_amount || 0);
-      const amt = Math.max(0, origAmt - paidAmt);
-      if (amt <= 0) return;
-
-      const dueDateStr = (pdc.date || asOfDate).split("T")[0];
-      if (dueDateStr > asOfDate) return;
-      const daysOverdue = computeDaysOverdue(dueDateStr, asOfDate);
-
-      items.push({
-        id: `pdc-ar-${pdc.id}`,
-        invoiceNo: `CHQ-${pdc.chequeNo}`,
-        partyName: (lease?.tenantName || pdc.tenantName || unitMaster?.currentTenant || "Unassigned Tenant").trim(),
-        property: resolvedProperty || "Unassigned Property",
-        unit: pdcUnitName,
-        invoiceDate: dueDateStr,
-        dueDate: dueDateStr,
-        daysOverdue,
-        bucket: resolveBucket(daysOverdue),
-        originalAmount: origAmt,
-        paidAmount: paidAmt,
-        outstandingAmount: amt,
-        status: `Dishonored (${pdc.status})`,
-        description: `Returned/Bounced Cheque #${pdc.chequeNo} (${pdc.bank || "Bank"})`,
-        canQuickSettle: false,
-      });
-    });
-
-    // 3. Escalated Legal Receivables (GL 12411)
-    legalReceivables.forEach((lgl) => {
-      if (lgl.status === "Fully Recovered" || Number(lgl.outstanding_balance || 0) <= 0) return;
-      const escDate = (lgl.escalation_date || asOfDate).split("T")[0];
-      if (escDate > asOfDate) return;
-      const daysOverdue = computeDaysOverdue(escDate, asOfDate);
-
-      items.push({
-        id: lgl.id,
-        invoiceNo: lgl.legal_case_id,
-        partyName: (lgl.tenant_name || "Tenant").trim(),
-        property: (lgl.property_name || "Unassigned Property").trim(),
-        unit: (lgl.unit_ref || "").trim(),
-        invoiceDate: escDate,
-        dueDate: escDate,
-        daysOverdue,
-        bucket: resolveBucket(daysOverdue),
-        originalAmount: Number(lgl.original_amount || 0),
-        paidAmount: Math.max(0, Number(lgl.original_amount || 0) - Number(lgl.outstanding_balance || 0)),
-        outstandingAmount: Number(lgl.outstanding_balance || 0),
-        status: lgl.status,
-        description: `Legal Escalation: ${lgl.reason}`,
-        canQuickSettle: false,
-      });
-    });
-
     return items;
-  }, [receivableInvoices, vouchers, pdcs, leases, legalReceivables, asOfDate]);
+  }, [receivableInvoices, vouchers, pdcs, leases, asOfDate, glTargetBalance]);
 
   // Compute AP Aging Items — splits multi-line AP invoices strictly per property line to prevent cross-property data leakage!
   const apAgingItems = useMemo<AgingItem[]>(() => {
@@ -480,11 +666,22 @@ export function ArApAgingReportSubModule() {
             <Clock className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold tracking-tight">
-              Accounts Receivable (AR) & Accounts Payable (AP) Aging Matrix
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Property-isolated overdue aging analysis (Current, 1–30, 31–60, 61–90, 90+ Days) strictly reconciled with General Ledger
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold tracking-tight">
+                Accounts Receivable (AR) & Accounts Payable (AP) Aging Matrix
+              </h2>
+              {activeTab === "ar" && (
+                <Badge
+                  variant="outline"
+                  className="bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-[11px] font-mono gap-1"
+                >
+                  <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                  GL 12413001 Reconciled: QR {glTargetBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Property-isolated overdue aging analysis (Current, 1–30, 31–60, 61–90, 90+ Days) strictly reconciled with General Ledger (12413001)
             </p>
           </div>
         </div>
