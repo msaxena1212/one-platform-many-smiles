@@ -199,7 +199,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
     // Step 1: Master
     code: "", name: "", contact_person: "", email: "", phone: "", tax_number: "", address: "", city: "", country: "Qatar", vendor_type: "Supplier", payment_terms: "Net 30 Days", settlement_mode: "Bank Wire / Electronic Transfer (QNB)", currency: "QAR", status: "Active" as "Active" | "Inactive" | "Blacklisted", notes: "",
     // Tax Details & Document Uploads
-    tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+    tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: "",
     terms_doc_name: "", company_profile_name: "", tax_cert_name: "",
     // Step 2: Contact
     contact_name: "", contact_role: "", contact_phone: "", contact_email: "", contact_primary: true,
@@ -289,10 +289,10 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
     setVendorStep(1);
     setVendorForm({
       code: "VND-" + String(Date.now()).slice(-4), name: "", contact_person: "", email: "", phone: "", tax_number: "", address: "", city: "", country: "Qatar", vendor_type: "Supplier", payment_terms: "Net 30 Days", settlement_mode: "Bank Wire / Electronic Transfer (QNB)", currency: "QAR", status: "Active", notes: "",
-      tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+      tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: "",
       terms_doc_name: "", company_profile_name: "", tax_cert_name: "",
       contact_name: "", contact_role: "Account Manager", contact_phone: "", contact_email: "", contact_primary: true,
-      qual_category: "General Maintenance", qual_certification: "Commercial Registration", qual_expiry: "", qual_status: "Active", qual_notes: "",
+      qual_category: "", qual_certification: "", qual_expiry: "", qual_status: "Active", qual_notes: "",
       bank_name: "", bank_account_name: "", bank_account_number: "", bank_iban: "", bank_swift: "", bank_currency: "QAR"
     });
     setShowVendorModal(true);
@@ -302,7 +302,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
     setVendorStep(1);
     setVendorForm({
       code: v.code || "", name: v.name || "", contact_person: v.contact_person || "", email: v.email || "", phone: v.phone || "", tax_number: v.tax_number || "", address: (v as any).address || "", city: (v as any).city || "", country: (v as any).country || "Qatar", vendor_type: (v as any).vendor_type || "Supplier", payment_terms: (v as any).payment_terms || "Net 30 Days", settlement_mode: (v as any).settlement_mode || "Bank Wire / Electronic Transfer (QNB)", currency: (v as any).currency || "QAR", status: (v.status as any) || "Active", notes: (v as any).notes || "",
-      tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+      tax_rate: "0", tax_registration_date: new Date().toISOString().slice(0, 10), cr_expiry_date: "",
       terms_doc_name: "", company_profile_name: "", tax_cert_name: "",
       contact_name: "", contact_role: "", contact_phone: "", contact_email: "", contact_primary: true,
       qual_category: "", qual_certification: "", qual_expiry: "", qual_status: "Active", qual_notes: "",
@@ -1100,14 +1100,17 @@ async function handleSaveInvoice() {
                 </Field>
                 {/* Tax & Commercial Registration Details */}
                 <div className="p-3 rounded-lg border bg-muted/20 space-y-2.5">
-                  <p className="font-semibold text-foreground flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Tax &amp; Commercial Registration (CR) Details
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-foreground flex items-center gap-1.5">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> Tax &amp; Commercial Registration (CR) Details
+                    </p>
+                    <span className="text-[10px] text-muted-foreground font-normal bg-muted px-2 py-0.5 rounded border">Optional — can be provided later</span>
+                  </div>
                   <div className="grid grid-cols-3 gap-2.5">
-                    <Field label="Tax / CR Number *">
-                      <Input value={vendorForm.tax_number} onChange={e => setVendorForm({ ...vendorForm, tax_number: e.target.value })} placeholder="CR-88291" className="h-8 text-xs font-mono font-bold" />
+                    <Field label="Tax / CR Number (Optional)">
+                      <Input value={vendorForm.tax_number} onChange={e => setVendorForm({ ...vendorForm, tax_number: e.target.value })} placeholder="CR-88291 (Optional)" className="h-8 text-xs font-mono" />
                     </Field>
-                    <Field label="CR Expiry Date">
+                    <Field label="CR Expiry Date (Optional)">
                       <Input type="date" value={vendorForm.cr_expiry_date} onChange={e => setVendorForm({ ...vendorForm, cr_expiry_date: e.target.value })} className="h-8 text-xs" />
                     </Field>
                     <Field label="Tax / VAT Rate (%)">
@@ -1118,9 +1121,12 @@ async function handleSaveInvoice() {
 
                 {/* Upload Documents (Terms, Company Profile, Tax Certificate) */}
                 <div className="p-3 rounded-lg border bg-blue-50/40 dark:bg-blue-950/20 space-y-2.5">
-                  <p className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
-                    <Paperclip className="h-3.5 w-3.5 text-blue-600" /> Upload Vendor Documentation &amp; Agreements
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+                      <Paperclip className="h-3.5 w-3.5 text-blue-600" /> Upload Vendor Documentation &amp; Agreements
+                    </p>
+                    <span className="text-[10px] text-blue-700 dark:text-blue-300 font-normal bg-blue-100/60 dark:bg-blue-900/40 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">Optional — upload anytime</span>
+                  </div>
                   <div className="grid grid-cols-3 gap-2.5 text-xs">
                     {/* Terms & Conditions Document */}
                     <div className="p-2 rounded border bg-background flex flex-col justify-between">
@@ -1200,7 +1206,7 @@ async function handleSaveInvoice() {
                       <SelectContent>{["QAR","USD","EUR","AED","SAR","GBP"].map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
-                  <Field label="Payment Terms *">
+                  <Field label="Payment Terms">
                     <Select value={vendorForm.payment_terms} onValueChange={v => setVendorForm({ ...vendorForm, payment_terms: v })}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1210,7 +1216,7 @@ async function handleSaveInvoice() {
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Settlement Mode *">
+                  <Field label="Settlement Mode">
                     <Select value={vendorForm.settlement_mode} onValueChange={v => setVendorForm({ ...vendorForm, settlement_mode: v })}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1254,7 +1260,7 @@ async function handleSaveInvoice() {
                   <span>Configure the direct key account representative or emergency escalation contact.</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Contact Full Name *">
+                  <Field label="Contact Full Name (Optional)">
                     <Input value={vendorForm.contact_name} onChange={e => setVendorForm({ ...vendorForm, contact_name: e.target.value })} placeholder="Salem Al-Kuwari" className="h-8 text-xs" />
                   </Field>
                   <Field label="Role / Designation">
@@ -1284,7 +1290,7 @@ async function handleSaveInvoice() {
                   <span>Provide compliance, ISO certifications, trade license, and qualification details.</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Trade / Service Category *">
+                  <Field label="Trade / Service Category (Optional)">
                     <Input value={vendorForm.qual_category} onChange={e => setVendorForm({ ...vendorForm, qual_category: e.target.value })} placeholder="HVAC, Fire Safety, Electrical..." className="h-8 text-xs" />
                   </Field>
                   <Field label="Certification / License">
@@ -1292,7 +1298,7 @@ async function handleSaveInvoice() {
                   </Field>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="License / Cert Expiry Date">
+                  <Field label="License / Cert Expiry Date (Optional)">
                     <Input type="date" value={vendorForm.qual_expiry} onChange={e => setVendorForm({ ...vendorForm, qual_expiry: e.target.value })} className="h-8 text-xs" />
                   </Field>
                   <Field label="Compliance Status">
@@ -1320,14 +1326,14 @@ async function handleSaveInvoice() {
                   <span>Set up supplier bank account for direct electronic wire settlements and AP disbursements.</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Bank Name *">
+                  <Field label="Bank Name (Optional)">
                     <Input value={vendorForm.bank_name} onChange={e => setVendorForm({ ...vendorForm, bank_name: e.target.value })} placeholder="Qatar National Bank (QNB)" className="h-8 text-xs" />
                   </Field>
                   <Field label="Account Holder Name">
                     <Input value={vendorForm.bank_account_name} onChange={e => setVendorForm({ ...vendorForm, bank_account_name: e.target.value })} placeholder={vendorForm.name || "Company Legal Name"} className="h-8 text-xs" />
                   </Field>
                 </div>
-                <Field label="Account Number *">
+                <Field label="Account Number (Optional)">
                   <Input value={vendorForm.bank_account_number} onChange={e => setVendorForm({ ...vendorForm, bank_account_number: e.target.value })} placeholder="0013-098271-001" className="h-8 text-xs font-mono" />
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
@@ -1356,8 +1362,20 @@ async function handleSaveInvoice() {
                 </Button>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowVendorModal(false)}>Cancel</Button>
+              {!editVendor && vendorStep === 1 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-medium"
+                  onClick={handleSaveVendor}
+                  disabled={saving}
+                >
+                  Save Supplier Now
+                </Button>
+              )}
               {!editVendor && vendorStep < 4 ? (
                 <Button
                   type="button"
@@ -1369,10 +1387,10 @@ async function handleSaveInvoice() {
                     setVendorStep(s => s + 1);
                   }}
                 >
-                  Next Step <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                  Next Step (Optional) <ChevronRight className="ml-1 h-3.5 w-3.5" />
                 </Button>
               ) : (
-                <Button size="sm" onClick={handleSaveVendor} disabled={saving}>
+                <Button size="sm" onClick={handleSaveVendor} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                   {editVendor ? "Update Vendor" : "Complete Registration"}
                 </Button>
               )}

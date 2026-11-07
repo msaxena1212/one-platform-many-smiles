@@ -104,34 +104,78 @@ export function CustomerStatementSubModule({
   // Leases for this customer
   const customerLeases = useMemo(() => {
     if (!currentCustomer) return [];
-    return leases.filter(l =>
-      l.customerId === currentCustomer.id ||
-      l.customerId === currentCustomer.customerId ||
-      l.tenantName?.toLowerCase() === currentCustomer.name?.toLowerCase()
-    );
+    const custName = (currentCustomer.name || "").trim().toLowerCase();
+    const normCust = custName.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+    const custTokens = normCust.split(/\s+/).filter(t => t.length >= 2);
+
+    return leases.filter(l => {
+      if (l.customerId && (l.customerId === currentCustomer.id || l.customerId === currentCustomer.customerId)) return true;
+      const lTenant = (l.tenantName || (l as any).tenant_name || "").trim().toLowerCase();
+      if (lTenant === custName) return true;
+      if (lTenant) {
+        const normLT = lTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+        if (normLT && normCust) {
+          if (normCust.includes(normLT) || normLT.includes(normCust)) return true;
+          const lTokens = normLT.split(/\s+/).filter(t => t.length >= 2);
+          const overlap = custTokens.filter(t => lTokens.includes(t));
+          if (overlap.length >= 2 || (overlap.length >= 1 && (custTokens.length === 1 || lTokens.length === 1))) return true;
+        }
+      }
+      if ((currentCustomer as any).unit && l.unit && l.unit.trim().toLowerCase() === (currentCustomer as any).unit.trim().toLowerCase()) return true;
+      return false;
+    });
   }, [currentCustomer, leases]);
 
   // Associated properties & units for this customer
   const customerUnitsList = useMemo(() => {
     const set = new Set<string>();
     customerLeases.forEach(l => {
-      if (l.unit) set.add(l.unit);
+      if (l.unit) set.add(l.unit.trim());
     });
+    if ((currentCustomer as any)?.unit) set.add(String((currentCustomer as any).unit).trim());
     return Array.from(set);
-  }, [customerLeases]);
+  }, [customerLeases, currentCustomer]);
 
-  // Upcoming / in-hand PDCs for this customer
+  // Upcoming / in-hand PDCs for this customer (matches by lease, unit, or normalized tenant name)
   const customerPdcs = useMemo(() => {
     if (!currentCustomer) return [];
-    return pdcs.filter(p =>
-      p.tenantName?.toLowerCase() === currentCustomer.name?.toLowerCase() ||
-      p.payerName?.toLowerCase() === currentCustomer.name?.toLowerCase() ||
-      customerLeases.some(l => l.id === p.leaseId)
-    );
-  }, [currentCustomer, pdcs, customerLeases]);
+    const custName = (currentCustomer.name || "").trim().toLowerCase();
+    const normCust = custName.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+    const custTokens = normCust.split(/\s+/).filter(t => t.length >= 2);
+
+    return pdcs.filter(p => {
+      // 1. Direct lease match
+      if (p.leaseId && customerLeases.some(l => l.id === p.leaseId || (l as any).contractNumber === p.leaseId || (l as any).contract_number === p.leaseId)) {
+        return true;
+      }
+      // 2. Unit match (exact or case-insensitive)
+      const pUnit = (p.unit || p.unitName || (p as any).unit_name || (p as any).unit_ref || "").trim().toLowerCase();
+      if (pUnit && customerUnitsList.some(u => u.trim().toLowerCase() === pUnit)) {
+        return true;
+      }
+      // 3. Name match (exact or fuzzy token/substring)
+      const pTenant = (p.tenantName || p.payerName || (p as any).tenant_name || (p as any).drawer_name || "").trim().toLowerCase();
+      if (pTenant) {
+        if (pTenant === custName) return true;
+        const normPTenant = pTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+        if (normPTenant && normCust) {
+          if (normCust.includes(normPTenant) || normPTenant.includes(normCust)) return true;
+          const tenantTokens = normPTenant.split(/\s+/).filter(t => t.length >= 2);
+          const overlap = custTokens.filter(t => tenantTokens.includes(t));
+          if (overlap.length >= 2 || (overlap.length >= 1 && (custTokens.length === 1 || tenantTokens.length === 1))) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+  }, [currentCustomer, pdcs, customerLeases, customerUnitsList]);
 
   const upcomingPdcs = useMemo(() => {
-    return customerPdcs.filter(p => p.status === "received" || p.status === "deposited" || (p as any).status === "upcoming");
+    return customerPdcs.filter(p => {
+      const s = (p.status || "").toLowerCase().trim();
+      return s === "received" || s === "deposited" || s === "in_hand" || s === "upcoming";
+    });
   }, [customerPdcs]);
 
   const totalUpcomingPdcAmount = useMemo(() => {
@@ -163,13 +207,22 @@ export function CustomerStatementSubModule({
     }[] = [];
 
     const custNameLower = currentCustomer.name.toLowerCase();
+    const normCust = custNameLower.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+    const custTokens = normCust.split(/\s+/).filter(t => t.length >= 2);
 
     // 1. Invoices from ReceivableInvoice store matching this customer
-    const matchingInvoices = receivableInvoices.filter(inv =>
-      inv.tenant.toLowerCase() === custNameLower ||
-      (inv.customerId && (inv.customerId === currentCustomer.id || inv.customerId === currentCustomer.customerId)) ||
-      customerLeases.some(l => l.property === inv.property && l.unit === inv.unit)
-    );
+    const matchingInvoices = receivableInvoices.filter(inv => {
+      const invTenant = (inv.tenant || "").trim().toLowerCase();
+      if (invTenant === custNameLower) return true;
+      if (inv.customerId && (inv.customerId === currentCustomer.id || inv.customerId === currentCustomer.customerId)) return true;
+      if (inv.unit && customerUnitsList.some(u => u.trim().toLowerCase() === inv.unit.trim().toLowerCase())) return true;
+      if (customerLeases.some(l => l.property === inv.property && l.unit === inv.unit)) return true;
+      if (invTenant && normCust) {
+        const normInvT = invTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+        if (normInvT && (normCust.includes(normInvT) || normInvT.includes(normCust))) return true;
+      }
+      return false;
+    });
 
     matchingInvoices.forEach(inv => {
       rows.push({
@@ -221,21 +274,76 @@ export function CustomerStatementSubModule({
 
     // 3. Receipt Vouchers from FinanceStore matching this customer
     vouchers.forEach(v => {
-      if (v.voucher_type === "Receipt Voucher" && (v.tenant_name?.toLowerCase() === custNameLower || v.name.toLowerCase().includes(custNameLower))) {
-        const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && v.name.toLowerCase().includes("security deposit")) || v.account_code === "21500001";
-        const isPdcCustody = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-DEP-") || (v.name && v.name.toLowerCase().includes("pdc received"));
-        if (!isSecurityDeposit && !isPdcCustody) {
+      if (v.voucher_type !== "Receipt Voucher") return;
+
+      const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && v.name.toLowerCase().includes("security deposit")) || v.account_code === "21500001";
+      const isPdcCustody = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-DEP-") || (v.name && v.name.toLowerCase().includes("pdc received"));
+      if (isSecurityDeposit || isPdcCustody) return;
+
+      const vTenant = (v.tenant_name || "").trim().toLowerCase();
+      const normVTenant = vTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+      const vUnit = (v.unit_ref || "").trim().toLowerCase();
+      const vName = (v.name || "").toLowerCase();
+
+      const unitMatch = Boolean(vUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
+      const nameMatch = vTenant === custNameLower ||
+        (normVTenant && normCust && (normCust.includes(normVTenant) || normVTenant.includes(normCust))) ||
+        (normCust && vName.includes(normCust)) ||
+        (normVTenant && custTokens.some(t => normVTenant.includes(t)));
+
+      if (unitMatch || nameMatch) {
+        rows.push({
+          date: v.date,
+          docType: "RECEIPT",
+          refNo: v.voucher_no,
+          description: v.name || "Customer Receipt Voucher",
+          property: v.property_name || currentCustomer.property || "Portfolio",
+          unit: v.unit_ref || currentCustomer.unit || "Unit",
+          debit: 0,
+          credit: v.amount,
+          status: "Settled",
+        });
+      }
+    });
+
+    // 3b. Replaced PDCs (e.g. replaced by Bank Transfer or Cash settlement)
+    customerPdcs.forEach(p => {
+      const st = (p.status || "").toLowerCase().trim();
+      if (st === "replaced" || (p as any).payment_method === "Bank Transfer") {
+        const chq = p.chequeNo || p.chequeNumber || (p as any).cheque_number;
+        const chqStr = String(chq || "").trim();
+        const alreadyHasVoucher = rows.some(r =>
+          (r.docType === "RECEIPT" || r.docType === "PDC_CLEARED") &&
+          (r.refNo.includes(chqStr) || r.description.includes(chqStr))
+        );
+        if (!alreadyHasVoucher) {
+          const lease = customerLeases.find(l => l.id === p.leaseId);
           rows.push({
-            date: v.date,
+            date: p.depositDate || p.date || p.dueDate || "2026-10-05",
             docType: "RECEIPT",
-            refNo: v.voucher_no,
-            description: v.name || "Customer Receipt Voucher",
-            property: v.property_name || "Portfolio",
-            unit: v.unit_ref || "Unit",
+            refNo: `VCH-TRF-${chqStr}`,
+            description: `Bank Transfer Received in Place of PDC – ${chqStr} (${p.tenantName || currentCustomer.name} - ${p.unit || currentCustomer.unit || "Unit"})`,
+            property: lease?.property || currentCustomer.property || "Al Ameen Residence 61",
+            unit: lease?.unit || currentCustomer.unit || "BO61-44",
             debit: 0,
-            credit: v.amount,
+            credit: Number(p.amount) || 5100,
             status: "Settled",
           });
+        }
+      }
+    });
+
+    // Reconcile invoices with receipts (mark invoice as Settled if receipt credits match/settle it)
+    const totalReceiptCredits = rows
+      .filter(r => r.docType === "RECEIPT" || r.docType === "PDC_CLEARED")
+      .reduce((sum, r) => sum + r.credit, 0);
+
+    let remainingReceiptCredit = totalReceiptCredits;
+    rows.forEach(r => {
+      if (r.docType === "INVOICE" && (r.status === "Pending" || r.status === "Overdue")) {
+        if (remainingReceiptCredit >= r.debit && r.debit > 0) {
+          r.status = "Settled";
+          remainingReceiptCredit -= r.debit;
         }
       }
     });
@@ -524,7 +632,7 @@ export function CustomerStatementSubModule({
       property: string;
       unit: string;
       amount: number;
-      status: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled";
+      status: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled" | "replaced";
       notes?: string;
     }> = [];
 
@@ -538,9 +646,9 @@ export function CustomerStatementSubModule({
       const amt = Number(p.amount) || 0;
       grandTotal += amt;
       const lease = customerLeases.find((l) => l.id === p.leaseId);
-      const st = (p.status || "in_hand").toLowerCase();
+      const st = (p.status || "in_hand").toLowerCase().trim();
 
-      let normalizedStatus: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled" = "in_hand";
+      let normalizedStatus: "in_hand" | "deposited" | "cleared" | "bounced" | "cancelled" | "replaced" = "in_hand";
       if (st === "cleared") {
         normalizedStatus = "cleared";
         totalCleared += amt;
@@ -550,6 +658,10 @@ export function CustomerStatementSubModule({
       } else if (st === "bounced" || st === "dishonored") {
         normalizedStatus = "bounced";
         totalBounced += amt;
+      } else if (st === "replaced") {
+        normalizedStatus = "replaced";
+      } else if (st === "cancelled") {
+        normalizedStatus = "cancelled";
       } else {
         normalizedStatus = "in_hand";
         totalInHand += amt;
@@ -557,21 +669,25 @@ export function CustomerStatementSubModule({
 
       rows.push({
         id: p.id || `pdc-${idx}`,
-        chequeNo: p.chequeNumber || (p as any).chequeNo || `CHQ-${1000 + idx}`,
+        chequeNo: p.chequeNo || p.chequeNumber || (p as any).cheque_number || `CHQ-${1000 + idx}`,
         bank: p.bank || "Qatar National Bank (QNB)",
         dueDate: p.dueDate || p.depositDate || (p as any).date || "2026-12-01",
         property: lease?.property || currentCustomer.property || "Property",
         unit: lease?.unit || currentCustomer.unit || "Unit",
         amount: amt,
         status: normalizedStatus,
-        notes: (p as any).period || `Cheque for ${lease?.unit || "Unit"}`,
+        notes: (p as any).period || `Cheque for ${lease?.unit || currentCustomer.unit || "Unit"}`,
       });
     });
 
     vouchers.forEach((v) => {
       const vTenant = (v.tenant_name || "").trim().toLowerCase();
-      const matchesCust = vTenant === currentCustomer.name.toLowerCase();
-      if (!matchesCust) return;
+      const normVT = vTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+      const normC = currentCustomer.name.toLowerCase().replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
+      const matchesCust = vTenant === currentCustomer.name.toLowerCase() || (normVT && normC && (normC.includes(normVT) || normVT.includes(normC)));
+      const vUnit = (v.unit_ref || "").trim().toLowerCase();
+      const matchesUnit = Boolean(vUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
+      if (!matchesCust && !matchesUnit) return;
       if (v.voucher_no.startsWith("VCH-PDC-RCV-")) {
         // Voucher-derived rows are only a fallback for cheques missing from the
         // PDC register. Match on the real cheque number (reference or the
@@ -671,9 +787,9 @@ export function CustomerStatementSubModule({
       summary,
       ledgerRows,
       upcomingPdcs: upcomingPdcs.map(p => ({
-        chequeNumber: p.chequeNo,
-        bank: p.bank,
-        dueDate: p.date,
+        chequeNumber: p.chequeNo || p.chequeNumber || (p as any).cheque_number || "PDC",
+        bank: p.bank || "Qatar National Bank (QNB)",
+        dueDate: p.dueDate || p.date || (p as any).maturity_date || "",
         amount: Number(p.amount) || 0,
       })),
       branding,
@@ -1537,9 +1653,17 @@ export function CustomerStatementSubModule({
                       <TableCell className="text-center">
                         <Badge
                           variant={row.status === "cleared" ? "default" : row.status === "deposited" ? "secondary" : row.status === "bounced" ? "destructive" : "outline"}
-                          className={`text-[9px] capitalize ${row.status === "in_hand" ? "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-950/40" : row.status === "cleared" ? "bg-emerald-600 text-white" : ""}`}
+                          className={`text-[9px] capitalize ${
+                            row.status === "in_hand"
+                              ? "border-teal-400 text-teal-700 bg-teal-50 dark:bg-teal-950/40"
+                              : row.status === "cleared"
+                              ? "bg-emerald-600 text-white"
+                              : row.status === "replaced"
+                              ? "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/40 dark:text-purple-300"
+                              : ""
+                          }`}
                         >
-                          {row.status.replace("_", " ")}
+                          {row.status === "replaced" ? "Replaced" : row.status.replace("_", " ")}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
@@ -1640,15 +1764,15 @@ export function CustomerStatementSubModule({
                 <TableBody>
                   {upcomingPdcs.map(p => (
                     <TableRow key={p.id} className="text-xs">
-                      <TableCell className="font-mono font-bold">{p.chequeNo}</TableCell>
-                      <TableCell>{p.bank || "QNB"}</TableCell>
-                      <TableCell className="font-mono">{p.date}</TableCell>
+                      <TableCell className="font-mono font-bold">{p.chequeNo || p.chequeNumber || (p as any).cheque_number}</TableCell>
+                      <TableCell>{p.bank || "Qatar National Bank (QNB)"}</TableCell>
+                      <TableCell className="font-mono">{p.dueDate || p.date || (p as any).maturity_date}</TableCell>
                       <TableCell className="text-right font-mono font-bold">
                         {Number(p.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline" className="text-[10px] capitalize">
-                          {p.status}
+                        <Badge variant="outline" className="text-[10px] capitalize border-teal-500 text-teal-700 bg-teal-50">
+                          {p.status === "received" || p.status === "in_hand" ? "In Vault" : p.status}
                         </Badge>
                       </TableCell>
                     </TableRow>

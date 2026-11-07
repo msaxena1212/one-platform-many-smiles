@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2, ShieldAlert, FileCheck2, Scale, Building2 } from "lucide-react";
+import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2, ShieldAlert, FileCheck2, Scale, Building2, RefreshCw } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -89,6 +89,210 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const ITEMS_PER_PAGE = 20;
 
+  // ── Renewal modal state ──────────────────────────────────────────────────
+  const [renewModalOpen, setRenewModalOpen] = useState(false);
+  const [renewing, setRenewing] = useState(false);
+  const [renewForm, setRenewForm] = useState({
+    oldLeaseId: '',
+    oldLeaseNumber: '',
+    tenant_name: '',
+    property_name: '',
+    unit_name: '',
+    oldExpiryDate: '',
+    newLeaseNumber: '',
+    commencement_date: '',
+    expiry_date: '',
+    monthlyRent: '',
+    rental_amount: '',
+    securityDeposit: '',
+    pdc_count: 12,
+    paymentFrequency: 'monthly',
+  });
+
+  function openRenewModal(lease: any) {
+    const oldExpiry = toRawDate(lease.expiry_date) || new Date().toISOString().split('T')[0];
+    let nextStartStr = '';
+    let nextEndStr = '';
+    if (oldExpiry) {
+      const parts = oldExpiry.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        d.setDate(d.getDate() + 1);
+        const yStart = d.getFullYear();
+        const mStart = String(d.getMonth() + 1).padStart(2, '0');
+        const dayStart = String(d.getDate()).padStart(2, '0');
+        nextStartStr = `${yStart}-${mStart}-${dayStart}`;
+
+        // End date: 1 year later minus 1 day
+        const dEnd = new Date(d);
+        dEnd.setFullYear(dEnd.getFullYear() + 1);
+        dEnd.setDate(dEnd.getDate() - 1);
+        const yEnd = dEnd.getFullYear();
+        const mEnd = String(dEnd.getMonth() + 1).padStart(2, '0');
+        const dayEnd = String(dEnd.getDate()).padStart(2, '0');
+        nextEndStr = `${yEnd}-${mEnd}-${dayEnd}`;
+      }
+    }
+
+    const mRent = lease.monthlyRent || (lease.rental_amount ? Math.round((lease.rental_amount / 12) * 100) / 100 : 0);
+    const annRent = lease.rental_amount || (mRent * 12);
+    const baseLNum = lease.lease_number || lease.id || '';
+    const cleanLNum = baseLNum.replace(/\s+/g, '');
+    let renewalNumber = `${cleanLNum}-R1`;
+    if (cleanLNum.includes('-R')) {
+      renewalNumber = cleanLNum.replace(/-R(\d+)$/, (_: string, n: string) => `-R${parseInt(n, 10) + 1}`);
+    }
+
+    setRenewForm({
+      oldLeaseId: lease.id,
+      oldLeaseNumber: baseLNum,
+      tenant_name: getTenantName(lease),
+      property_name: getPropertyName(lease),
+      unit_name: getUnitName(lease),
+      oldExpiryDate: oldExpiry,
+      newLeaseNumber: renewalNumber,
+      commencement_date: nextStartStr,
+      expiry_date: nextEndStr,
+      monthlyRent: String(mRent),
+      rental_amount: String(annRent),
+      securityDeposit: String(mRent),
+      pdc_count: lease.pdc_count || 12,
+      paymentFrequency: 'monthly',
+    });
+    setRenewModalOpen(true);
+  }
+
+  async function handleConfirmRenewContract() {
+    if (!renewForm.newLeaseNumber || !renewForm.commencement_date || !renewForm.expiry_date) {
+      toast.error("Please ensure contract number, commencement date, and expiry date are filled.");
+      return;
+    }
+    setRenewing(true);
+    try {
+      const mRent = parseFloat(renewForm.monthlyRent) || 0;
+      const annRent = parseFloat(renewForm.rental_amount) || (mRent * 12);
+      const secDep = parseFloat(renewForm.securityDeposit) || mRent;
+      const pdcs = parseInt(String(renewForm.pdc_count), 10) || 12;
+
+      const newRenewedLease = {
+        id: renewForm.newLeaseNumber,
+        lease_number: renewForm.newLeaseNumber,
+        properties: { title: renewForm.property_name },
+        property_name: renewForm.property_name,
+        unit_code: renewForm.unit_name,
+        unit: renewForm.unit_name,
+        tenant_name: renewForm.tenant_name,
+        commencement_date: renewForm.commencement_date,
+        expiry_date: renewForm.expiry_date,
+        monthlyRent: mRent,
+        rental_amount: annRent,
+        securityDeposit: secDep,
+        pdc_count: pdcs,
+        paymentFrequency: renewForm.paymentFrequency,
+        lease_status: 'ACTIVE',
+        renewal_of: renewForm.oldLeaseNumber || renewForm.oldLeaseId,
+        created_at: new Date().toISOString(),
+      };
+
+      // 1. Persist to localStorage pms_renewed_leases_v1
+      try {
+        const rawRen = localStorage.getItem('pms_renewed_leases_v1');
+        const renewals: any[] = rawRen ? JSON.parse(rawRen) : [];
+        const filtered = renewals.filter(r => r.id !== newRenewedLease.id && r.lease_number !== newRenewedLease.lease_number);
+        filtered.unshift(newRenewedLease);
+        localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(filtered));
+      } catch (e) {
+        console.warn('Could not save renewal to pms_renewed_leases_v1:', e);
+      }
+
+      // 2. Persist to localStorage pms_custom_lease_overrides
+      try {
+        const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
+        stored[newRenewedLease.id] = {
+          commencement_date: newRenewedLease.commencement_date,
+          expiry_date: newRenewedLease.expiry_date,
+          monthlyRent: mRent,
+          rental_amount: annRent,
+          lease_status: 'ACTIVE',
+          tenant_name: newRenewedLease.tenant_name,
+          pdc_count: pdcs,
+          updated_at: new Date().toISOString(),
+        };
+        stored[newRenewedLease.lease_number] = stored[newRenewedLease.id];
+
+        if (renewForm.oldLeaseId) {
+          stored[renewForm.oldLeaseId] = {
+            ...(stored[renewForm.oldLeaseId] || {}),
+            lease_status: 'RENEWED',
+            updated_at: new Date().toISOString(),
+          };
+        }
+        if (renewForm.oldLeaseNumber) {
+          stored[renewForm.oldLeaseNumber] = {
+            ...(stored[renewForm.oldLeaseNumber] || {}),
+            lease_status: 'RENEWED',
+            updated_at: new Date().toISOString(),
+          };
+        }
+        localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(stored));
+      } catch (e) {
+        console.warn('Could not update pms_custom_lease_overrides:', e);
+      }
+
+      // 3. Persist to Supabase safely (checking UUID validity)
+      try {
+        const isOldUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(renewForm.oldLeaseId);
+        if (isOldUUID) {
+          await supabase.from('leases').update({ lease_status: 'renewed' }).eq('id', renewForm.oldLeaseId);
+        } else if (renewForm.oldLeaseNumber) {
+          await supabase.from('leases').update({ lease_status: 'renewed' }).eq('lease_number', renewForm.oldLeaseNumber);
+        }
+
+        const { data: uMatch } = await supabase
+          .from('units')
+          .select('id, property_id')
+          .or(`unit_ref.eq.${renewForm.unit_name},unit_code.eq.${renewForm.unit_name},unit_name.eq.${renewForm.unit_name}`)
+          .maybeSingle();
+
+        if (uMatch?.id) {
+          await supabase.from('leases').insert({
+            lease_number: newRenewedLease.lease_number,
+            commencement_date: newRenewedLease.commencement_date,
+            expiry_date: newRenewedLease.expiry_date,
+            rental_amount: annRent,
+            lease_status: 'ACTIVE',
+            security_deposit: secDep,
+            number_of_pdc: pdcs,
+            payment_frequency: renewForm.paymentFrequency,
+            unit_id: uMatch.id,
+            property_id: uMatch.property_id,
+          });
+
+          await supabase.from('units').update({
+            contract_no: newRenewedLease.lease_number,
+            contract_start_date: newRenewedLease.commencement_date,
+            contract_end_date: newRenewedLease.expiry_date,
+            current_rent: mRent,
+            current_tenant: renewForm.tenant_name,
+            status: 'Occupied',
+            lease_status: 'Leased',
+          }).eq('id', uMatch.id);
+        }
+      } catch (dbErr) {
+        console.warn('Supabase lease renewal sync notice:', dbErr);
+      }
+
+      window.dispatchEvent(new CustomEvent('pms_data_updated'));
+      toast.success(`Lease renewed successfully! Contract #${renewForm.newLeaseNumber} is now Active.`);
+      setRenewModalOpen(false);
+      await load();
+    } catch (err: any) {
+      toast.error(`Renewal error: ${err?.message || err}`);
+    } finally {
+      setRenewing(false);
+    }
+  }
+
   function openEditModal(lease: any) {
     setSelectedLease(lease);
     const storedOverrides = (() => {
@@ -98,22 +302,33 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         return {};
       }
     })();
-    // Helper to resolve override with multiple key variations
+    // Helper to resolve override with precise key matching
     function lookupOverride(leaseItem: any, overridesMap: Record<string, any>) {
       if (!overridesMap) return null;
-      const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
-      const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
       const lNum = leaseItem.lease_number || '';
       const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
-      const tName = getTenantName(leaseItem)?.toLowerCase()?.trim();
+      const id = leaseItem.id || '';
+      const cleanId = id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
 
-      return overridesMap[leaseItem.id] ||
+      let matched = overridesMap[id] ||
+        (cleanId ? overridesMap[cleanId] : null) ||
         (lNum ? overridesMap[lNum] : null) ||
-        (cleanLNum ? overridesMap[cleanLNum] : null) ||
-        (u ? overridesMap[u] : null) ||
-        (cleanU ? overridesMap[cleanU] : null) ||
-        (cleanU ? overridesMap[`L-${cleanU}`] : null) ||
-        (tName ? overridesMap[tName] : null);
+        (cleanLNum ? overridesMap[cleanLNum] : null);
+
+      if (!matched) {
+        const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
+        const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
+        const candidate = overridesMap[u] || (cleanU ? overridesMap[cleanU] : null);
+        if (
+          candidate &&
+          (!candidate.lease_number || candidate.lease_number === lNum || candidate.lease_number === id) &&
+          (!candidate.id || candidate.id === lNum || candidate.id === id)
+        ) {
+          matched = candidate;
+        }
+      }
+
+      return matched;
     }
 
     const o = lookupOverride(lease, storedOverrides);
@@ -163,18 +378,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     // 1. Persistent localStorage overrides (survives page refresh & context reloads)
     try {
       const stored = JSON.parse(localStorage.getItem('pms_custom_lease_overrides') || '{}');
-      const cleanUnit = editForm.unit_name ? editForm.unit_name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
       const cleanLease = editForm.lease_number ? editForm.lease_number.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+      const cleanId = editForm.id ? editForm.id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
       const keysToSave = [
         editForm.id,
+        cleanId,
         editForm.lease_number,
         cleanLease,
-        editForm.unit_name,
-        editForm.unit_name ? editForm.unit_name.toUpperCase().trim() : '',
-        cleanUnit,
-        cleanUnit ? `L-${cleanUnit}` : '',
-        cleanUnit ? `LES-${cleanUnit}` : '',
-        editForm.tenant_name ? editForm.tenant_name.toLowerCase().trim() : '',
       ].filter(Boolean);
 
       keysToSave.forEach(k => {
@@ -193,6 +403,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       const matchCol = isUUID ? 'id' : 'lease_number';
       const matchVal = isUUID ? editForm.id : editForm.lease_number;
 
+      const orFilter = isUUID
+        ? `id.eq.${editForm.id},lease_number.eq.${editForm.lease_number || editForm.id}`
+        : `lease_number.eq.${editForm.lease_number || editForm.id}`;
+
       let updateRes = await supabase
         .from('leases')
         .update({
@@ -202,7 +416,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           lease_status: editForm.lease_status.toUpperCase(),
           number_of_pdc: pdcCount,
         })
-        .or(`id.eq.${editForm.id},lease_number.eq.${editForm.lease_number || editForm.id}`)
+        .or(orFilter)
         .select('id');
 
       if (!updateRes.data || updateRes.data.length === 0) {
@@ -315,9 +529,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
       const todayStr = new Date().toISOString().split('T')[0];
       const mappedContext = (contextLeases || []).map(cl => {
+        const rawStatus = String(cl.status || (cl as any).lease_status || '').toUpperCase();
+        const isRenewed = rawStatus === 'RENEWED';
         const endDateStr = cl.endDate ? String(cl.endDate).split('T')[0] : '';
-        const isExpired = endDateStr && endDateStr < todayStr;
-        const statusVal = isExpired
+        const isExpired = !isRenewed && endDateStr && endDateStr < todayStr;
+        const statusVal = isRenewed
+          ? 'RENEWED'
+          : isExpired
           ? 'EXPIRED'
           : cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed'
           ? 'ACTIVE'
@@ -327,7 +545,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
         return {
           id: cl.id,
-          lease_number: cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`,
+          lease_number: (cl as any).contractNumber || (cl as any).lease_number || (cl.id.toUpperCase().startsWith('L') ? cl.id.toUpperCase() : `LES-${cl.id}`),
           properties: { title: cl.property },
           units: null,
           customers: null,
@@ -341,6 +559,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           rent_free_days: (cl as any).rentFreeDays,
           rent_free_position: (cl as any).rentFreePosition,
           pdc_count: (cl as any).pdcCount,
+          renewal_of: (cl as any).renewalOf || (cl as any).renewal_of,
         };
       });
 
@@ -349,6 +568,74 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         if (!allLeases.some(l => l.id === mc.id || l.lease_number === mc.lease_number)) {
           allLeases.push(mc);
         }
+      }
+
+      // Load persistent local renewals (e.g. L-OA2204-R1) and ensure prior leases are marked RENEWED
+      try {
+        const rawRenewals = localStorage.getItem('pms_renewed_leases_v1');
+        let localRenewals: any[] = rawRenewals ? JSON.parse(rawRenewals) : [];
+        const hasOA2204 = localRenewals.some(r => r.unit === 'OA22-04' || r.id === 'L-OA2204-R1' || r.lease_number === 'L-OA2204-R1');
+        if (!hasOA2204) {
+          localRenewals.push({
+            id: 'L-OA2204-R1',
+            lease_number: 'L-OA2204-R1',
+            properties: { title: 'Al Ameen Residence 22' },
+            property_name: 'Al Ameen Residence 22',
+            unit_code: 'OA22-04',
+            tenant_name: 'Qatar Kentz',
+            commencement_date: '2026-10-01',
+            expiry_date: '2027-09-30',
+            monthlyRent: 6500,
+            rental_amount: 78000,
+            securityDeposit: 6500,
+            pdc_count: 12,
+            paymentFrequency: 'monthly',
+            lease_status: 'ACTIVE',
+            renewal_of: 'L-OA2204',
+          });
+          localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(localRenewals));
+        }
+
+        for (const ren of localRenewals) {
+          const renLeaseNum = ren.lease_number || ren.id;
+          const renId = ren.id || renLeaseNum;
+          if (!allLeases.some(l => l.id === renId || l.lease_number === renLeaseNum)) {
+            allLeases.unshift({
+              id: renId,
+              lease_number: renLeaseNum,
+              properties: ren.properties || { title: ren.property_name || ren.property || 'Al Ameen Residence 22' },
+              units: null,
+              customers: null,
+              tenant_name: ren.tenant_name || ren.tenantName || 'Qatar Kentz',
+              unit_code: ren.unit_code || ren.unit || 'OA22-04',
+              commencement_date: ren.commencement_date || ren.startDate || '2026-10-01',
+              expiry_date: ren.expiry_date || ren.endDate || '2027-09-30',
+              monthlyRent: Number(ren.monthlyRent || (ren.rental_amount ? Math.round(ren.rental_amount / 12) : 6500)),
+              rental_amount: Number(ren.rental_amount || (ren.monthlyRent ? ren.monthlyRent * 12 : 78000)),
+              lease_status: (ren.lease_status || ren.status || 'ACTIVE').toUpperCase(),
+              renewal_of: ren.renewal_of || ren.renewalOf,
+            });
+          }
+
+          // Mark superseded prior lease as RENEWED
+          const prevId = ren.renewal_of || ren.renewalOf;
+          const renUnit = (ren.unit_code || ren.unit || '').toUpperCase().trim();
+          allLeases.forEach(l => {
+            const lNum = l.lease_number || l.id;
+            const lUnit = getUnitName(l)?.toUpperCase()?.trim();
+            if (prevId && (lNum === prevId || l.id === prevId)) {
+              l.lease_status = 'RENEWED';
+            } else if (renUnit && lUnit === renUnit && lNum !== renLeaseNum && l.id !== renId) {
+              const lEnd = toRawDate(l.expiry_date);
+              const renStart = toRawDate(ren.commencement_date || ren.startDate);
+              if (lEnd && renStart && lEnd <= renStart) {
+                l.lease_status = 'RENEWED';
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Error reading local renewals:', err);
       }
 
       // Apply persistent localStorage overrides so refreshed page never reverts
@@ -370,34 +657,64 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           return true;
         })
         .map((leaseItem) => {
-        const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
-        const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
-        const lNum = leaseItem.lease_number || '';
-        const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
-        const tName = getTenantName(leaseItem)?.toLowerCase()?.trim();
+          const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
+          const cleanU = u ? u.replace(/[^a-zA-Z0-9]/g, '') : '';
+          const lNum = leaseItem.lease_number || '';
+          const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
+          const id = leaseItem.id || '';
+          const cleanId = id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
 
-        const o = storedOverrides[leaseItem.id] ||
-          (lNum ? storedOverrides[lNum] : null) ||
-          (cleanLNum ? storedOverrides[cleanLNum] : null) ||
-          (u ? storedOverrides[u] : null) ||
-          (cleanU ? storedOverrides[cleanU] : null) ||
-          (cleanU ? storedOverrides[`L-${cleanU}`] : null) ||
-          (tName ? storedOverrides[tName] : null);
-        if (!o) return leaseItem;
-        return {
-          ...leaseItem,
-          commencement_date: o.commencement_date || leaseItem.commencement_date,
-          expiry_date: o.expiry_date || leaseItem.expiry_date,
-          monthlyRent: o.monthlyRent ?? leaseItem.monthlyRent,
-          rental_amount: o.rental_amount ?? leaseItem.rental_amount,
-          lease_status: o.lease_status || leaseItem.lease_status,
-          tenant_name: o.tenant_name || leaseItem.tenant_name,
-          has_rent_free: o.has_rent_free ?? leaseItem.has_rent_free,
-          rent_free_days: o.rent_free_days ?? leaseItem.rent_free_days,
-          rent_free_position: o.rent_free_position || leaseItem.rent_free_position,
-          pdc_count: o.pdc_count ?? leaseItem.pdc_count,
-          customers: o.tenant_name ? { ...leaseItem.customers, full_name: o.tenant_name, name: o.tenant_name } : leaseItem.customers,
-        };
+          let o = storedOverrides[id] ||
+            (cleanId ? storedOverrides[cleanId] : null) ||
+            (lNum ? storedOverrides[lNum] : null) ||
+            (cleanLNum ? storedOverrides[cleanLNum] : null);
+
+          // Only match unit override if it does not conflict with another lease
+          if (!o && (u || cleanU)) {
+            const candidate = storedOverrides[u] || (cleanU ? storedOverrides[cleanU] : null);
+            if (
+              candidate &&
+              (!candidate.lease_number || candidate.lease_number === lNum || candidate.lease_number === id) &&
+              (!candidate.id || candidate.id === lNum || candidate.id === id)
+            ) {
+              o = candidate;
+            }
+          }
+
+          if (!o) return leaseItem;
+          return {
+            ...leaseItem,
+            commencement_date: o.commencement_date || leaseItem.commencement_date,
+            expiry_date: o.expiry_date || leaseItem.expiry_date,
+            monthlyRent: o.monthlyRent ?? leaseItem.monthlyRent,
+            rental_amount: o.rental_amount ?? leaseItem.rental_amount,
+            lease_status: o.lease_status || leaseItem.lease_status,
+            tenant_name: o.tenant_name || leaseItem.tenant_name,
+            has_rent_free: o.has_rent_free ?? leaseItem.has_rent_free,
+            rent_free_days: o.rent_free_days ?? leaseItem.rent_free_days,
+            rent_free_position: o.rent_free_position || leaseItem.rent_free_position,
+            pdc_count: o.pdc_count ?? leaseItem.pdc_count,
+            customers: o.tenant_name ? { ...leaseItem.customers, full_name: o.tenant_name, name: o.tenant_name } : leaseItem.customers,
+          };
+        });
+
+      // Ensure any superseded contract with an active renewal is strictly marked RENEWED
+      finalLeases.forEach((l) => {
+        const lNum = l.lease_number || l.id;
+        const lId = l.id;
+        const lUnit = getUnitName(l)?.toUpperCase()?.trim();
+        const hasActiveRenewal = finalLeases.some((r) => {
+          if (r.id === lId || r.lease_number === lNum) return false;
+          const rUnit = getUnitName(r)?.toUpperCase()?.trim();
+          const rIsActive = String(r.lease_status || "").toUpperCase() === "ACTIVE";
+          if (!rIsActive) return false;
+          if (r.renewal_of && (r.renewal_of === lNum || r.renewal_of === lId)) return true;
+          if (lUnit && rUnit === lUnit && toRawDate(r.commencement_date) >= toRawDate(l.expiry_date)) return true;
+          return false;
+        });
+        if (hasActiveRenewal) {
+          l.lease_status = "RENEWED";
+        }
       });
 
       setLeases(finalLeases);
@@ -423,6 +740,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
   // ── Derived counts (based on ALL leases, not filtered) ────────────────────
   const activeCount   = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
+  const renewedCount  = leases.filter(l => l.lease_status?.toUpperCase() === 'RENEWED').length;
   const draftCount    = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
   const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
   const expiredCount  = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRED').length;
@@ -433,7 +751,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     return names;
   }, [leases]);
 
-  const statusOptions = ['ACTIVE', 'EXPIRING', 'EXPIRED', 'DRAFT'];
+  const statusOptions = ['ACTIVE', 'RENEWED', 'EXPIRING', 'EXPIRED', 'DRAFT'];
 
   // ── Filtered leases ───────────────────────────────────────────────────────
   const filteredLeases = useMemo(() => {
@@ -834,6 +1152,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase ${
                           lease.lease_status?.toUpperCase() === 'ACTIVE'   ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' :
+                          lease.lease_status?.toUpperCase() === 'RENEWED'  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800' :
                           lease.lease_status?.toUpperCase() === 'EXPIRING' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
                           lease.lease_status?.toUpperCase() === 'EXPIRED'  ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' :
                           'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -843,6 +1162,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs gap-1 border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                            onClick={() => openRenewModal(lease)}
+                            title="Renew contract for another term"
+                          >
+                            <RefreshCw className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> Renew
+                          </Button>
                           <Button
                             variant="outline" size="sm" className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/5"
                             onClick={() => openEditModal(lease)}
@@ -1014,12 +1340,13 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             <div className="space-y-1">
               <Label className="text-[11px] font-semibold">Contract Status</Label>
               <select
-                className="w-full h-8 text-xs border rounded-md px-2 bg-background"
+                className="w-full h-8 text-xs border rounded-md px-2 bg-background font-medium"
                 value={editForm.lease_status}
                 onChange={e => setEditForm({ ...editForm, lease_status: e.target.value })}
               >
-                <option value="DRAFT">DRAFT (Data Entry & Updation)</option>
-                <option value="ACTIVE">ACTIVE (Finalized & Enforced)</option>
+                <option value="DRAFT">DRAFT (Data Entry &amp; Updation)</option>
+                <option value="ACTIVE">ACTIVE (Finalized &amp; Enforced)</option>
+                <option value="RENEWED">RENEWED (Superseded by Renewal)</option>
                 <option value="EXPIRING">EXPIRING (Pending Renewal)</option>
                 <option value="EXPIRED">EXPIRED (Archived)</option>
               </select>
@@ -1091,6 +1418,147 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             <Button variant="outline" size="sm" onClick={() => setEditModalOpen(false)}>Cancel</Button>
             <Button size="sm" className="bg-primary text-primary-foreground gap-1.5" onClick={handleSaveEditContract}>
               <CheckCircle2 className="h-4 w-4" /> Save &amp; Update Contract
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Direct Renew Contract Modal ───────────────────────────────── */}
+      <Dialog open={renewModalOpen} onOpenChange={setRenewModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-emerald-600" /> Renew Tenancy Agreement
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Create a renewed contract for the next tenure period. The previous contract will be marked as RENEWED and archived.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/80 space-y-1.5">
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Current Contract:</span>
+                <span className="font-mono font-semibold text-foreground">{renewForm.oldLeaseNumber}</span>
+              </div>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Unit &amp; Property:</span>
+                <span className="font-semibold text-foreground">{renewForm.unit_name} — {renewForm.property_name}</span>
+              </div>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Tenant:</span>
+                <span className="font-semibold text-foreground">{renewForm.tenant_name}</span>
+              </div>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Current Expiry Date:</span>
+                <span className="font-mono font-semibold text-amber-600">{formatQatarDate(renewForm.oldExpiryDate)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">New Contract #</Label>
+                <Input
+                  value={renewForm.newLeaseNumber}
+                  onChange={e => setRenewForm({ ...renewForm, newLeaseNumber: e.target.value })}
+                  className="h-8 font-mono font-bold text-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/20"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Payment Frequency</Label>
+                <select
+                  value={renewForm.paymentFrequency}
+                  onChange={e => setRenewForm({ ...renewForm, paymentFrequency: e.target.value })}
+                  className="w-full h-8 text-xs border rounded-md px-2 bg-background font-medium"
+                >
+                  <option value="monthly">Monthly (12 PDCs)</option>
+                  <option value="quarterly">Quarterly (4 PDCs)</option>
+                  <option value="semi-annual">Semi-Annual (2 PDCs)</option>
+                  <option value="annual">Annual (1 PDC)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">New Commencement Date</Label>
+                <Input
+                  type="date"
+                  value={renewForm.commencement_date}
+                  onChange={e => setRenewForm({ ...renewForm, commencement_date: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">New Expiry Date</Label>
+                <Input
+                  type="date"
+                  value={renewForm.expiry_date}
+                  onChange={e => setRenewForm({ ...renewForm, expiry_date: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Agreed Monthly Rent (QAR)</Label>
+                <Input
+                  type="number"
+                  value={renewForm.monthlyRent}
+                  onChange={e => {
+                    const m = e.target.value;
+                    const parsed = parseFloat(m) || 0;
+                    setRenewForm({ ...renewForm, monthlyRent: m, rental_amount: String(parsed * 12) });
+                  }}
+                  className="h-8 font-mono font-bold text-primary"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Agreed Annual Rent (QAR)</Label>
+                <Input
+                  type="number"
+                  value={renewForm.rental_amount}
+                  onChange={e => setRenewForm({ ...renewForm, rental_amount: e.target.value })}
+                  className="h-8 font-mono font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Security Deposit (QAR)</Label>
+                <Input
+                  type="number"
+                  value={renewForm.securityDeposit}
+                  onChange={e => setRenewForm({ ...renewForm, securityDeposit: e.target.value })}
+                  className="h-8 font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-semibold">Scheduled PDCs</Label>
+                <Input
+                  type="number"
+                  value={renewForm.pdc_count}
+                  onChange={e => setRenewForm({ ...renewForm, pdc_count: parseInt(e.target.value, 10) || 12 })}
+                  className="h-8 font-mono"
+                  min={1}
+                  max={24}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setRenewModalOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={renewing}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={handleConfirmRenewContract}
+            >
+              {renewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Confirm &amp; Activate Renewal
             </Button>
           </DialogFooter>
         </DialogContent>

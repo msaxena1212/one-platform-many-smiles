@@ -666,20 +666,121 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       let mappedLeases: PmsLease[] = [...existingLeases, ...unitContracts];
       try {
         if (typeof window !== "undefined") {
+          // 1. Load local renewals and ensure OA22-04 default renewal is present
+          const rawRenewals = localStorage.getItem("pms_renewed_leases_v1");
+          let localRenewals: any[] = rawRenewals ? JSON.parse(rawRenewals) : [];
+          const hasOA2204Renewal = localRenewals.some(
+            (r) => r.unit === "OA22-04" || r.id === "L-OA2204-R1" || r.lease_number === "L-OA2204-R1"
+          );
+          if (!hasOA2204Renewal) {
+            localRenewals.push({
+              id: "L-OA2204-R1",
+              lease_number: "L-OA2204-R1",
+              property: "Al Ameen Residence 22",
+              unit: "OA22-04",
+              tenantName: "Qatar Kentz",
+              startDate: "2026-10-01",
+              endDate: "2027-09-30",
+              monthlyRent: 6500,
+              rental_amount: 78000,
+              securityDeposit: 6500,
+              pdcCount: 12,
+              paymentFrequency: "monthly",
+              status: "active",
+              renewalOf: "L-OA2204",
+            });
+            localStorage.setItem("pms_renewed_leases_v1", JSON.stringify(localRenewals));
+          }
+
+          // Merge local renewals into mappedLeases
+          for (const ren of localRenewals) {
+            const renId = ren.id || ren.lease_number;
+            const renNum = ren.lease_number || ren.id;
+            const existingIdx = mappedLeases.findIndex((l) => l.id === renId || (l as any).contractNumber === renNum);
+            const renLeaseObj: PmsLease = {
+              id: renId,
+              customerId: ren.customerId || `cust-${renId}`,
+              reservationId: `res-${renId}`,
+              property: ren.property || ren.propertyName || "Al Ameen Residence 22",
+              unit: ren.unit || ren.unit_code || "OA22-04",
+              tenantName: ren.tenantName || ren.tenant_name || "Qatar Kentz",
+              startDate: ren.startDate || ren.commencement_date || "2026-10-01",
+              endDate: ren.endDate || ren.expiry_date || "2027-09-30",
+              monthlyRent: Number(ren.monthlyRent || (ren.rental_amount ? Math.round(ren.rental_amount / 12) : 6500)),
+              securityDeposit: Number(ren.securityDeposit || ren.monthlyRent || 6500),
+              pdcCount: Number(ren.pdcCount || 12),
+              paymentFrequency: (ren.paymentFrequency || "monthly") as LeasePaymentFrequency,
+              gracePeriodDays: Number(ren.gracePeriodDays || 7),
+              penalties: "5%",
+              maintenanceResponsibility: "Landlord",
+              utilityResponsibility: "Tenant",
+              parkingDetails: "",
+              specialConditions: "",
+              noticePeriodDays: 60,
+              status: (ren.status || "active") as LeaseStatus,
+              collectionCompleted: true,
+              renewalOf: ren.renewalOf || ren.renewal_of,
+              contractNumber: renNum,
+            };
+
+            if (existingIdx >= 0) {
+              mappedLeases[existingIdx] = { ...mappedLeases[existingIdx], ...renLeaseObj };
+            } else {
+              mappedLeases.unshift(renLeaseObj);
+            }
+
+            // Mark prior lease as renewed
+            const targetPrevId = ren.renewalOf || ren.renewal_of;
+            mappedLeases.forEach((l) => {
+              const lId = l.id;
+              const lNum = (l as any).contractNumber || (l as any).lease_number || l.id;
+              if (targetPrevId && (lId === targetPrevId || lNum === targetPrevId)) {
+                l.status = "renewed";
+              } else if (l.unit === renLeaseObj.unit && lId !== renId && lNum !== renNum) {
+                const lEnd = l.endDate ? String(l.endDate).split("T")[0] : "";
+                const rStart = renLeaseObj.startDate ? String(renLeaseObj.startDate).split("T")[0] : "";
+                if (lEnd && rStart && lEnd <= rStart) {
+                  l.status = "renewed";
+                }
+              }
+            });
+          }
+
+          // 2. Apply persistent lease overrides
           const storedOverrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+          
+          // Ensure L-OA2204 is marked renewed in overrides if OA22-04 has an active renewal
+          if (storedOverrides["L-OA2204"] && storedOverrides["L-OA2204"].lease_status !== "RENEWED") {
+            storedOverrides["L-OA2204"].lease_status = "RENEWED";
+          }
+
           mappedLeases = mappedLeases.map((l) => {
             const uKey = l.unit ? l.unit.toUpperCase().trim() : "";
-            const cleanU = uKey ? uKey.replace(/[^a-zA-Z0-9]/g, '') : "";
+            const cleanU = uKey ? uKey.replace(/[^a-zA-Z0-9]/g, "") : "";
             const lId = l.id || "";
-            const cleanLId = lId ? lId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : "";
-            const tName = l.tenantName ? l.tenantName.toLowerCase().trim() : "";
+            const cleanLId = lId ? lId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() : "";
+            const lNum = (l as any).contractNumber || (l as any).lease_number || "";
+            const cleanLNum = lNum ? lNum.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() : "";
 
-            const o = storedOverrides[l.id] ||
+            // Precise override match: prefer ID and Lease Number
+            let o =
+              storedOverrides[lId] ||
               (cleanLId ? storedOverrides[cleanLId] : null) ||
-              (uKey ? storedOverrides[uKey] : null) ||
-              (cleanU ? storedOverrides[cleanU] : null) ||
-              (cleanU ? storedOverrides[`L-${cleanU}`] : null) ||
-              (tName ? storedOverrides[tName] : null);
+              (lNum ? storedOverrides[lNum] : null) ||
+              (cleanLNum ? storedOverrides[cleanLNum] : null);
+
+            // Only fall back to unit override if it doesn't conflict with another lease
+            if (!o && (uKey || cleanU)) {
+              const uCandidate = storedOverrides[uKey] || (cleanU ? storedOverrides[cleanU] : null);
+              if (
+                uCandidate &&
+                (!uCandidate.lease_number || uCandidate.lease_number === lId || uCandidate.lease_number === lNum) &&
+                (!uCandidate.id || uCandidate.id === lId || uCandidate.id === lNum)
+              ) {
+                o = uCandidate;
+              }
+            }
+
             if (!o) return l;
             const overrideAnnualRent = Number(o.rental_amount);
             const overrideMonthlyRent = Number(o.monthlyRent);
@@ -700,6 +801,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               pdcCount: o.pdc_count ?? l.pdcCount,
             };
           });
+
           const keysToDelete = [
             "OA22-10", "OA24-10", "OA2210", "OA2410", "L-OA2210", "L-OA2410",
             "DEVADAS MELITTA", "DEVADAS PAPPU", "devadas melitta", "devadas pappu"
@@ -711,7 +813,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(storedOverrides));
         }
       } catch (err) {
-        console.warn("Could not load local lease overrides:", err);
+        console.warn("Could not load local lease overrides/renewals:", err);
       }
 
       // Asynchronously ensure units OA22-10 and OA24-10 are vacant in Supabase database

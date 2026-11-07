@@ -696,18 +696,30 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             .map(r => {
               const isPV = r.voucher_type === "PV";
               const isRV = r.voucher_type === "RV";
-              const lines: Array<{ account_code: string; account_name: string; debit_amount?: number; credit_amount?: number; debit?: number; credit?: number }> = r.fin_voucher_lines || [];
+              const lines: Array<{ account_code: string; account_name: string; debit_amount?: number; credit_amount?: number; debit?: number; credit?: number; description?: string }> = r.fin_voucher_lines || [];
               const drLine = lines.find(l => Number(l.debit_amount ?? l.debit) > 0);
               const crLine = lines.find(l => Number(l.credit_amount ?? l.credit) > 0);
 
               const desc = (r.description || "").toLowerCase();
+              const vNo = (r.voucher_number || "").toLowerCase();
               let drCode = drLine?.account_code;
               let crCode = crLine?.account_code;
               let drName = drLine?.account_name;
               let crName = crLine?.account_name;
 
               if (!drCode || !crCode) {
-                if (desc.includes("rent pdc") || desc.includes("rv-l1-01")) {
+                if (desc.includes("payroll") || desc.includes("salary") || vNo.includes("pay") || vNo.includes("pr-run")) {
+                  if (isPV || desc.includes("disburse") || desc.includes("bank")) {
+                    drCode = "50100"; drName = "Staff Salaries & Payroll";
+                    crCode = "12000001"; crName = "Bank Operating Account";
+                  } else {
+                    drCode = "50100"; drName = "Staff Salaries & Payroll";
+                    crCode = "21900"; crName = "Salary Payable";
+                  }
+                } else if (desc.includes("eosb") || desc.includes("gratuity") || vNo.includes("accrual")) {
+                  drCode = "50120"; drName = "End of Service Benefits (EOSB) Provision";
+                  crCode = "21210"; crName = "Accrued EOSB Liability";
+                } else if (desc.includes("rent pdc") || desc.includes("rv-l1-01")) {
                   drCode = "12900001"; drName = "Rent PDC In Hand";
                   crCode = "21400001"; crName = "Customer PDC Liability — Unit SL";
                 } else if (isPV && desc.includes("security deposit refund")) {
@@ -807,6 +819,18 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 property_name: vchProp,
                 unit_ref: vchUnit,
                 tenant_name: vchTenant,
+                lines: lines.length > 0 ? lines.map((l: any, idx: number) => ({
+                  id: l.id || `line-${r.id}-${idx}`,
+                  type: (Number(l.debit_amount ?? l.debit ?? 0) > 0 ? "DR" : "CR") as "DR" | "CR",
+                  account: l.account_name || (Number(l.debit_amount ?? l.debit ?? 0) > 0 ? drName : crName) || "Operating Account",
+                  account_code: l.account_code || (Number(l.debit_amount ?? l.debit ?? 0) > 0 ? drCode : crCode) || "10000",
+                  amount: Number(l.debit_amount ?? l.debit ?? 0) > 0 ? Number(l.debit_amount ?? l.debit) : Number(l.credit_amount ?? l.credit ?? 0),
+                  description: l.description || r.description,
+                  property_name: vchProp,
+                })) : [
+                  { id: `dr-${r.id}`, type: "DR" as const, account: drName || "Operating Account", account_code: drCode || "12000001", amount: Number(r.total_amount) || 0, description: r.description },
+                  { id: `cr-${r.id}`, type: "CR" as const, account: crName || "Operating Account", account_code: crCode || "41100", amount: Number(r.total_amount) || 0, description: r.description },
+                ],
               };
             });
 
@@ -1208,13 +1232,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           const existingIds = new Set(prev.map(j => j.id));
           const mapped: JournalLedgerEntry[] = evtData
             .filter((e: any) => !existingIds.has(e.id))
+            .filter((e: any) => !existingIds.has(e.id) && !e.voucher_id)
             .map((e: any) => {
               const meta = (e.metadata as any) || {};
               // Infer Dr/Cr from event_type
               const evtType = (e.event_type || "").toLowerCase();
+              const evtDesc = (e.description || "").toLowerCase();
               let drCode = "12000001", crCode = "41100001";
               let drName = "Bank Operating Account", crName = "Rental Revenue";
-              if (evtType.includes("pdc") && evtType.includes("receiv")) {
+              if (evtDesc.includes("payroll") || evtDesc.includes("salary") || evtType.includes("payroll")) {
+                drCode = "50100"; drName = "Staff Salaries & Payroll";
+                crCode = "21900"; crName = "Salary Payable";
+              } else if (evtDesc.includes("eosb") || evtDesc.includes("gratuity")) {
+                drCode = "50120"; drName = "End of Service Benefits (EOSB) Provision";
+                crCode = "21210"; crName = "Accrued EOSB Liability";
+              } else if (evtType.includes("pdc") && evtType.includes("receiv")) {
                 drCode = "12900001"; drName = "Rent PDC In Hand";
                 crCode = "21400001"; crName = "Customer PDC Liability";
               } else if (evtType.includes("deposit") && evtType.includes("security")) {
@@ -1239,6 +1271,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 cr_code: crCode,
                 amount: Number(e.total_debit || e.total_credit || 0),
                 status: "Posted",
+
                 property_name: meta.property_name,
                 unit_ref: meta.unit_ref,
                 tenant_name: meta.tenant_name,
@@ -1249,6 +1282,66 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
 
       // 5. Reload localStorage caches for AP/AR/Cashbook (vouchers are maintained authoritatively above)
+      // 5. Pull fin_payroll_syncs from Supabase & ensure GL reflection
+      try {
+        const { data: pSyncData } = await supabase
+          .from("fin_payroll_syncs")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (pSyncData && pSyncData.length > 0) {
+          setPayrollSyncs(pSyncData.map((s: any) => ({
+            id: s.id,
+            payroll_run_id: s.payroll_run_id,
+            period: s.period,
+            department: "Operations & Facility Management",
+            account_code: "50100",
+            basic_salary: Number(s.total_amount) || 0,
+            allowances: 0,
+            overtime: 0,
+            deductions: 0,
+            total_amount: Number(s.total_amount) || 0,
+            bank_account: "12000001 - Bank Operating Account",
+            status: s.status === "Posted" ? "Posted" : "Pending",
+            error_details: s.error_details || "Synced with GL",
+          })));
+
+          setVouchers(prev => {
+            const vMap = new Map(prev.map(v => [v.voucher_no, v]));
+            pSyncData.forEach((ps: any) => {
+              const vNo = `VCH-PAY-${ps.payroll_run_id}`;
+              if (!vMap.has(vNo) && ps.status === "Posted") {
+                const amt = Number(ps.total_amount) || 0;
+                const dateStr = ps.created_at ? ps.created_at.split("T")[0] : new Date().toISOString().split("T")[0];
+                vMap.set(vNo, {
+                  id: `vch-ps-${ps.id}`,
+                  voucher_no: vNo,
+                  voucher_type: "Journal Voucher",
+                  date: dateStr,
+                  name: `Payroll Salary Disbursement & Accrual — Period ${ps.period}`,
+                  debit: "Staff Salaries & Payroll",
+                  debit_code: "50100",
+                  credit: "Salary Payable",
+                  credit_code: "21900",
+                  amount: amt,
+                  method: "Payroll Journal",
+                  status: "Posted",
+
+                  lines: [
+                    { type: "DR", account: "Staff Salaries & Payroll", account_code: "50100", amount: amt, description: `Staff Salary Expense - Period ${ps.period}` },
+                    { type: "CR", account: "Salary Payable", account_code: "21900", amount: amt, description: `Salary Payable - Period ${ps.period}` },
+                  ]
+                });
+              }
+            });
+            return Array.from(vMap.values());
+          });
+        }
+      } catch (pErr) {
+        console.warn("Payroll syncs DB fetch note:", pErr);
+      }
+
+      // 6. Reload localStorage caches for AP/AR/Cashbook (vouchers are maintained authoritatively above)
       if (typeof window !== "undefined") {
         try {
           const jDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
@@ -1545,6 +1638,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             credit_code: isPV ? "12000001" : (r.reference_no && /^\d+$/.test(r.reference_no) ? r.reference_no : "41100"),
             amount: Number(r.total_amount) || 0,
             status: "Posted",
+
           };
 
           setVouchers(prev => {
@@ -1578,6 +1672,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             cr_code: "10000",
             amount: r.total_debit || 0,
             status: "Posted",
+
             property_name: (r.metadata as any)?.property_name,
             unit_ref: (r.metadata as any)?.unit_ref,
             tenant_name: (r.metadata as any)?.tenant_name,
@@ -1707,7 +1802,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     const newEntry: JournalLedgerEntry = {
       ...entry,
       id: `je-${Date.now()}`,
-      status: "Posted"
+      status: "Posted",
     };
     setJournalEntries(prev => [newEntry, ...prev]);
     toast.success(`Journal Entry ${newEntry.je_no} posted to General Ledger!`);
@@ -1776,7 +1871,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           credit_code: "12000001",
           amount: inv.amount,
           method: "Bank Transfer",
-          status: "Posted"
+          status: "Posted",
         };
         setVouchers(v => [pv, ...v]);
         return { ...inv, status: "Paid" as const };
@@ -1795,7 +1890,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     const newVch: FinanceVoucher = {
       ...vch,
       id: `vch-${Date.now()}`,
-      status: "Posted"
+      status: "Posted",
     };
     setVouchers(prev => {
       if (prev.some(v => v.voucher_no === newVch.voucher_no)) return prev;
@@ -1885,7 +1980,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           credit_code: "12413001",
           amount: inv.amount,
           method: "Bank Transfer",
-          status: "Posted"
+          status: "Posted",
         };
         setVouchers(v => [rv, ...v]);
         return { ...inv, status: "Paid" as const };
@@ -1964,6 +2059,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         amount: amount,
         method: paymentMethod,
         status: "Posted",
+
         property_name: finalProp,
         unit_ref: finalUnit,
         tenant_name: finalTenant,
@@ -2000,6 +2096,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       ...run,
       id: `pr-${Date.now()}`,
       status: "Posted",
+
       error_details: `Successfully mapped & posted net QR ${run.total_amount.toLocaleString()} from ${run.bank_account}`
     };
     setPayrollSyncs(prev => [newRun, ...prev]);
@@ -2017,7 +2114,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       credit_code: "12000001",
       amount: run.total_amount,
       method: "Bank Transfer",
-      status: "Posted"
+      status: "Posted",
+      lines: [
+        { type: "DR", account: "Staff Salaries & Allowances", account_code: "50100", amount: run.total_amount, description: `Staff Salary Expense - Period ${run.period}` },
+        { type: "CR", account: "Bank Operating Account", account_code: "12000001", amount: run.total_amount, description: `Payroll Disbursement from ${run.bank_account}` }
+      ]
     };
     setVouchers(v => [pv, ...v]);
     toast.success(`Payroll Run ${run.payroll_run_id} synced & posted to General Ledger!`);
@@ -2211,6 +2312,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       "21400001": "Customer PDC Liability",
       "21500001": "Security Deposit Liability",
       "21600001": "Utility Deposit Liability",
+      "21900": "Salary Payable",
+      "21900001": "Salary Payable",
+      "21210": "Accrued EOSB Liability",
+      "21220": "Accrued Leave Salary Liability",
+      "22005": "Staff Salary & Dues Payable",
+      "22005001": "Staff Salary & Dues Payable",
+      "22300": "Payroll Payable",
 
       // ── Type 3: Equity / Capital ──
       "30000": "Owner Capital & Equity",
@@ -2227,6 +2335,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       "41201007": "Cheque Dishonour Recovery",
 
       // ── Type 5: Expenditure (Direct Expenses 510) ──
+      "50100": "Staff Salaries & Payroll",
+      "50100001": "Staff Salaries & Payroll",
+      "50120": "End of Service Benefits (EOSB) Provision",
+      "50130": "Leave Salary Provision Expense",
+      "52300": "Payroll / Salaries Expense",
       "51001": "Labour Outsource",
       "51001001": "CMEP-Labor Cost-Facilities Mgt",
       "51001002": "House Keeping Labor Cost",
@@ -2593,6 +2706,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         if (!debitName || debitName.includes("Revenue")) debitName = "Bank Operating Account";
         creditCode = "12413001";
         creditName = "Tenant Receivables — Unit SL";
+      } else if (vch.voucher_type === "Payroll Voucher" || vchDesc.includes("payroll") || vchDesc.includes("salary")) {
+        if (!vch.debit_code || vch.debit_code === "12000001") {
+          debitCode = "50100";
+          debitName = "Staff Salaries & Payroll";
+        }
+        if (!vch.credit_code || vch.credit_code === "12413" || vch.credit_code === "41100") {
+          creditCode = "21900";
+          creditName = "Salary Payable";
+        }
       }
 
       // Normalise legacy GL control codes to the fixed SL codes so reports never
@@ -2898,6 +3020,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     { code: "22100001", name: "Accounts Payable / Expense Accrual", type: "Liabilities" },
     { code: "22200",    name: "VAT Payable (Output Tax)", type: "Liabilities" },
     { code: "22300",    name: "Payroll Payable", type: "Liabilities" },
+    { code: "21900",    name: "Salary Payable", type: "Liabilities" },
+    { code: "21900001", name: "Salary Payable — Staff SL", type: "Liabilities" },
+    { code: "21210",    name: "Accrued EOSB Liability", type: "Liabilities" },
+    { code: "21220",    name: "Accrued Leave Salary Liability", type: "Liabilities" },
+    { code: "22005",    name: "Staff Salary & Dues Payable", type: "Liabilities" },
+    { code: "22005001", name: "Staff Salary & Dues Payable — Staff SL", type: "Liabilities" },
     { code: "22400",    name: "Unclaimed Deposits", type: "Liabilities" },
     { code: "22500",    name: "Advance Rent Received", type: "Liabilities" },
     // ── 3000x Capital / Equity ───────────────────────────────────────────────
@@ -2926,6 +3054,12 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     { code: "52100008", name: "General Maintenance Expense", type: "Expenses" },
     { code: "52200",    name: "Utilities Expense", type: "Expenses" },
     { code: "52300",    name: "Payroll / Salaries Expense", type: "Expenses" },
+    { code: "50100",    name: "Staff Salaries & Payroll", type: "Expenses" },
+    { code: "50100001", name: "Staff Salaries & Payroll — General", type: "Expenses" },
+    { code: "50120",    name: "End of Service Benefits (EOSB) Expense", type: "Expenses" },
+    { code: "50130",    name: "Leave Salary Provision Expense", type: "Expenses" },
+    { code: "51101",    name: "Staff Cost (Control)", type: "Expenses" },
+    { code: "51101001", name: "Staff Basic Salary", type: "Expenses" },
     { code: "52400",    name: "Management Fee Expense", type: "Expenses" },
     { code: "52500",    name: "Bank Charges Expense", type: "Expenses" },
     { code: "52600",    name: "Depreciation Expense", type: "Expenses" },
@@ -3030,7 +3164,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const netExp = (tx.debit || 0) - (tx.credit || 0);
         totalExpenses += netExp;
         // 51101xxx = Staff Cost / Payroll
-        if (tx.account_code.startsWith("51101")) payrollExpense += netExp;
+        if (tx.account_code.startsWith("51101") || tx.account_code.startsWith("501") || tx.account_code.startsWith("523")) payrollExpense += netExp;
         // 51003xxx = Utilities & Other Direct Exp
         else if (tx.account_code.startsWith("51003")) utilitiesExpense += netExp;
         // 51004007 = Housekeeping Materials, 51002002 = Pool AMC → Cleaning

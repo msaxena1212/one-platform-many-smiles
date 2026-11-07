@@ -616,10 +616,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const activeTab = searchParams.get("tab") || "customers";
 
   const handleTabChange = (val: string) => {
-    const targetRoute = currentPath.startsWith("/admin") 
-      ? "/admin/leases" 
-      : currentPath.startsWith("/leasing") 
-        ? "/leasing/create" 
+    const targetRoute = currentPath.startsWith("/admin")
+      ? "/admin/leases"
+      : currentPath.startsWith("/leasing")
+        ? "/leasing/create"
         : "/prop-mgr/leasing";
 
     navigate({
@@ -698,7 +698,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    } catch {}
+    } catch { }
     return [];
   });
   const [settlements, setSettlements] = useState<Settlement[]>(() => {
@@ -708,7 +708,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    } catch {}
+    } catch { }
     return [];
   });
   const [busyAction, setBusyAction] = useState("");
@@ -1007,7 +1007,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [currentAuthProfile, setCurrentAuthProfile] = useState<any>(null);
 
   useEffect(() => {
-    getCurrentProfile().then(p => setCurrentAuthProfile(p)).catch(() => {});
+    getCurrentProfile().then(p => setCurrentAuthProfile(p)).catch(() => { });
   }, []);
 
   const isAdmin = useMemo(() => {
@@ -1020,7 +1020,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         if (uRole === "ADMIN" || uRole === "SUPER_ADMIN" || uRole === "SUPERADMIN") return true;
         const demo = JSON.parse(localStorage.getItem("zyno_demo_session") || "{}");
         if (demo.role && (demo.role.toUpperCase() === "ADMIN" || demo.role.toUpperCase() === "SUPER_ADMIN")) return true;
-      } catch {}
+      } catch { }
     }
     return false;
   }, [role, currentPath, currentAuthProfile]);
@@ -1108,10 +1108,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       // Synthesize vouchers directly from pdcs table preserving all distinct rows
       const synthesizedPdcs: (Voucher & { property_name: string; unit_name: string; tenant_name: string; pdc_status: string })[] = (pdcsTableData || []).map((p: any) => {
         const resolvedProperty = (p.property_code || p.property_name || "").trim();
-        const resolvedUnit     = (p.unit_name || p.unit_ref || "").trim();
-        const resolvedTenant   = (p.tenant_name || p.drawer_name || "").trim();
+        const resolvedUnit = (p.unit_name || p.unit_ref || "").trim();
+        const resolvedTenant = (p.tenant_name || p.drawer_name || "").trim();
 
-        const chqDate  = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
+        const chqDate = (p.maturity_date ? String(p.maturity_date).split("T")[0] : "") || p.deposit_date || (p.created_at ? String(p.created_at).split("T")[0] : "") || todayStr;
 
         // Derive display-facing PDC status strictly from stored DB status (manual workflow only)
         const storedStatus = (p.status || "").toLowerCase().trim();
@@ -1119,36 +1119,36 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
         const vStatus: Voucher["status"] =
           pdcStatus === "cleared" || pdcStatus === "deposited" ? "posted" :
-          pdcStatus === "returned" || pdcStatus === "bounced"  ? "draft"  :
-          pdcStatus === "cancelled"                            ? "shared" :
-          "posted";
+            pdcStatus === "returned" || pdcStatus === "bounced" ? "draft" :
+              pdcStatus === "cancelled" ? "shared" :
+                "posted";
 
         return {
-          id:               `dpdc-${p.id}`,
-          pdc_id:           p.id,
-          leaseId:          resolvedTenant || "PDC",
-          name:             `Receipt Voucher - PDC #${p.cheque_number || "—"}${resolvedTenant ? ` (${resolvedTenant}${resolvedUnit ? ` - ${resolvedUnit}` : ""})` : ""}`,
-          receiptNo:        `RV-PDC-${p.cheque_number || p.id}`,
-          method:           "PDC",
-          period:           chqDate,
-          debit:            "PDC In Hand (12900001)",
-          credit:           resolvedUnit ? `Customer(PDC)-${resolvedUnit} (21400)` : "Tenant Receivable (21400001)",
-          amount:           Number(p.amount || 0),
-          status:           vStatus,
-          property_name:    resolvedProperty,
-          unit_name:        resolvedUnit,
-          tenant_name:      resolvedTenant,
-          pdc_status:       pdcStatus,
-          cheque_number:    p.cheque_number || "",
-          maturity_date:    p.maturity_date ? String(p.maturity_date).split("T")[0] : chqDate,
-          deposit_date:     p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
-          rent_from_date:   p.rent_from_date ? String(p.rent_from_date).split("T")[0] : "",
-          rent_to_date:     p.rent_to_date ? String(p.rent_to_date).split("T")[0] : "",
-          bank:             p.bank || "",
-          bank_branch:      p.bank_branch || "",
+          id: `dpdc-${p.id}`,
+          pdc_id: p.id,
+          leaseId: resolvedTenant || "PDC",
+          name: `Receipt Voucher - PDC #${p.cheque_number || "—"}${resolvedTenant ? ` (${resolvedTenant}${resolvedUnit ? ` - ${resolvedUnit}` : ""})` : ""}`,
+          receiptNo: `RV-PDC-${p.cheque_number || p.id}`,
+          method: "PDC",
+          period: chqDate,
+          debit: "PDC In Hand (12900001)",
+          credit: resolvedUnit ? `Customer(PDC)-${resolvedUnit} (21400)` : "Tenant Receivable (21400001)",
+          amount: Number(p.amount || 0),
+          status: vStatus,
+          property_name: resolvedProperty,
+          unit_name: resolvedUnit,
+          tenant_name: resolvedTenant,
+          pdc_status: pdcStatus,
+          cheque_number: p.cheque_number || "",
+          maturity_date: p.maturity_date ? String(p.maturity_date).split("T")[0] : chqDate,
+          deposit_date: p.deposit_date ? String(p.deposit_date).split("T")[0] : "",
+          rent_from_date: p.rent_from_date ? String(p.rent_from_date).split("T")[0] : "",
+          rent_to_date: p.rent_to_date ? String(p.rent_to_date).split("T")[0] : "",
+          bank: p.bank || "",
+          bank_branch: p.bank_branch || "",
           cheque_front_url: p.cheque_front_url || "",
-          cheque_back_url:  p.cheque_back_url || "",
-          raw_pdc:          p,
+          cheque_back_url: p.cheque_back_url || "",
+          raw_pdc: p,
         };
       });
 
@@ -1181,21 +1181,21 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
 
         return {
-          id:               v.id,
-          leaseId:          tenantName || "DEP",
-          name:             v.description || `Security Deposit Receipt - ${tenantName} (${unitName})`,
-          receiptNo:        v.reference_no || v.voucher_number,
-          method:           parsedMethod || "Cash",
-          period:           v.voucher_date ? String(v.voucher_date).split("T")[0] : todayStr,
-          debit:            "Cash In Hand / Bank (12000001)",
-          credit:           "Security Deposit Liability (21500)",
-          amount:           Number(v.total_amount || 0),
-          status:           "posted",
-          property_name:    propertyName,
-          unit_name:        unitName,
-          tenant_name:      tenantName,
-          pdc_status:       "in hand",
-          source_type:      "SECURITY_DEPOSIT",
+          id: v.id,
+          leaseId: tenantName || "DEP",
+          name: v.description || `Security Deposit Receipt - ${tenantName} (${unitName})`,
+          receiptNo: v.reference_no || v.voucher_number,
+          method: parsedMethod || "Cash",
+          period: v.voucher_date ? String(v.voucher_date).split("T")[0] : todayStr,
+          debit: "Cash In Hand / Bank (12000001)",
+          credit: "Security Deposit Liability (21500)",
+          amount: Number(v.total_amount || 0),
+          status: "posted",
+          property_name: propertyName,
+          unit_name: unitName,
+          tenant_name: tenantName,
+          pdc_status: "in hand",
+          source_type: "SECURITY_DEPOSIT",
         } as any;
       });
 
@@ -1584,10 +1584,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         const qDigits = custSearchQuery.trim().replace(/\D/g, "");
         const custIdMatch = (customer?.customerId || "").toLowerCase().includes(q) || (customer?.tax_identification_no || "").toLowerCase().includes(q);
         const nameMatch = (customer?.name || "").toLowerCase().includes(q);
-        const qidMatch  = (customer?.qatarId || "").toLowerCase().includes(q);
+        const qidMatch = (customer?.qatarId || "").toLowerCase().includes(q);
         const passMatch = (customer?.passport || "").toLowerCase().includes(q);
-        const crMatch   = (customer?.crNumber || "").toLowerCase().includes(q);
-        const rawPhone  = (customer?.mobile || (customer as any)?.phone || "").toLowerCase();
+        const crMatch = (customer?.crNumber || "").toLowerCase().includes(q);
+        const rawPhone = (customer?.mobile || (customer as any)?.phone || "").toLowerCase();
         const phoneMatch = rawPhone.includes(q) || (qDigits.length >= 4 && rawPhone.replace(/\D/g, "").includes(qDigits));
         if (!custIdMatch && !nameMatch && !qidMatch && !passMatch && !crMatch && !phoneMatch) return false;
       }
@@ -1839,10 +1839,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           const status = isExpired
             ? "expired"
             : idx % 3 === 0
-            ? "awaiting_response"
-            : idx % 3 === 1
-            ? "under_discussion"
-            : "renewal_confirmed";
+              ? "awaiting_response"
+              : idx % 3 === 1
+                ? "under_discussion"
+                : "renewal_confirmed";
 
           updated.push({
             id: `rnw-${lease.id}`,
@@ -1906,7 +1906,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
       });
       if (changed) {
-        try { localStorage.setItem("pms_checkout_cases_v3", JSON.stringify(updated)); } catch {}
+        try { localStorage.setItem("pms_checkout_cases_v3", JSON.stringify(updated)); } catch { }
       }
       return changed ? updated : prev;
     });
@@ -1948,7 +1948,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         }
       });
       if (changed) {
-        try { localStorage.setItem("pms_settlement_cases_v3", JSON.stringify(updated)); } catch {}
+        try { localStorage.setItem("pms_settlement_cases_v3", JSON.stringify(updated)); } catch { }
       }
       return changed ? updated : prev;
     });
@@ -2356,10 +2356,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           items.map((asset) =>
             asset.id === assetId
               ? {
-                  ...asset,
-                  asset_condition: change.condition,
-                  remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : asset.remarks,
-                }
+                ...asset,
+                asset_condition: change.condition,
+                remarks: change.imageFileName ? `Image uploaded: ${change.imageFileName}` : asset.remarks,
+              }
               : asset,
           ),
         );
@@ -2582,7 +2582,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       };
       setSignedHandoverDocs(prev => {
         const next = { ...prev, [handoverKey]: entry };
-        try { localStorage.setItem("zyno_signed_handover_receipts", JSON.stringify(next)); } catch {}
+        try { localStorage.setItem("zyno_signed_handover_receipts", JSON.stringify(next)); } catch { }
         return next;
       });
       toast.success(`Signed Handover Receipt uploaded: ${file.name}`);
@@ -3162,8 +3162,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         reservation.tokenPaymentMode === "Cash"
           ? `${cashierInfo}`
           : reservation.tokenPaymentMode === "Bank Transfer"
-          ? `${cashierInfo} | Bank: ${reservationForm.tokenPayerBank || "Direct Wire"} | Ref: ${reservationForm.tokenTransferRef || tokReceiptNo} | Date: ${reservationForm.tokenTransferDate || today_str}`
-          : `${cashierInfo} | Cheque #${reservationForm.tokenChequeNo || "PDC"} | Bank: ${reservationForm.tokenChequeBank || "CBQ"} | Due: ${reservationForm.tokenChequeDate || today_str}`;
+            ? `${cashierInfo} | Bank: ${reservationForm.tokenPayerBank || "Direct Wire"} | Ref: ${reservationForm.tokenTransferRef || tokReceiptNo} | Date: ${reservationForm.tokenTransferDate || today_str}`
+            : `${cashierInfo} | Cheque #${reservationForm.tokenChequeNo || "PDC"} | Bank: ${reservationForm.tokenChequeBank || "CBQ"} | Due: ${reservationForm.tokenChequeDate || today_str}`;
 
       const holdVoucher: Voucher = {
         id: `v${vouchers.length + 1}`,
@@ -3176,8 +3176,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           reservation.tokenPaymentMode === "Bank Transfer"
             ? "Bank Operating Account (12000)"
             : reservation.tokenPaymentMode === "Cheque"
-            ? "PDC In Hand Account (12900)"
-            : "Cash In Hand (12100)",
+              ? "PDC In Hand Account (12900)"
+              : "Cash In Hand (12100)",
         credit: `Reservation Advance Liability - ${unit.unit} (21100001)`,
         amount: tokAmt,
         status: "posted",
@@ -3193,14 +3193,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           reservation.tokenPaymentMode === "Bank Transfer"
             ? "Bank Operating Account"
             : reservation.tokenPaymentMode === "Cheque"
-            ? "PDC In Hand Account"
-            : "Cash In Hand",
+              ? "PDC In Hand Account"
+              : "Cash In Hand",
         debit_code:
           reservation.tokenPaymentMode === "Bank Transfer"
             ? "12000"
             : reservation.tokenPaymentMode === "Cheque"
-            ? "12900"
-            : "12100",
+              ? "12900"
+              : "12100",
         credit: "Reservation Advance Liability (21100001)",
         credit_code: "21100",
         amount: tokAmt,
@@ -3925,7 +3925,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     if (!signatureWorkflowLease) return;
     const lease = signatureWorkflowLease;
     const isPdcMode = collectForm.paymentMode === "PDC";
-    
+
     // ── Filter only rows that have both cheque no and amount filled for PDC mode ──
     let nextPdcs: Pdc[] = [];
     let rentTotal = 0;
@@ -4075,7 +4075,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       if (directDepAmt > 0) {
         const depDebit = collectForm.depositMode === "Cash" ? "Cash In Hand (12100)" :
-                         collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account (12000)" : "PDC In Hand (12900001)";
+          collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account (12000)" : "PDC In Hand (12900001)";
         depositVouchers.push({
           id: `v${vouchers.length + 2}`,
           leaseId: lease.id,
@@ -4248,18 +4248,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     // Feed directly to authoritative FinanceStore vouchers for General Ledger and Reports
     newVouchers.forEach(v => {
       const drCode = v.debit.includes("12900002") ? "12900" :
-                     v.debit.includes("12900") ? "12900" :
-                     v.debit.includes("21100001") ? "21100" :
-                     v.debit.toLowerCase().includes("cash") ? "12100" : "12000";
+        v.debit.includes("12900") ? "12900" :
+          v.debit.includes("21100001") ? "21100" :
+            v.debit.toLowerCase().includes("cash") ? "12100" : "12000";
       const crCode = v.credit.includes("21400") ? "21400" :
-                     v.credit.includes("21500") ? "21500" :
-                     v.credit.includes("21100001") ? "21100" :
-                     v.credit.includes("21100003") ? "21100" :
-                     v.credit.includes("21100004") ? "21100" :
-                     v.credit.includes("21100005") ? "21100" :
-                     v.credit.includes("21200001") ? "21200" :
-                     v.credit.includes("41201") ? "41201" :
-                     v.credit.includes("21100") ? "21100" : "41100";
+        v.credit.includes("21500") ? "21500" :
+          v.credit.includes("21100001") ? "21100" :
+            v.credit.includes("21100003") ? "21100" :
+              v.credit.includes("21100004") ? "21100" :
+                v.credit.includes("21100005") ? "21100" :
+                  v.credit.includes("21200001") ? "21200" :
+                    v.credit.includes("41201") ? "41201" :
+                      v.credit.includes("21100") ? "21100" : "41100";
 
       addFinanceStoreVoucher({
         voucher_no: v.receiptNo || `RV-${lease.id}-${Date.now().toString().slice(-4)}`,
@@ -4380,7 +4380,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   async function downloadLeaseAgreement(lease: Lease) {
     try {
       const customer = (customers || []).find((c) => c.id === lease.customerId || (c.name && lease.tenantName && c.name.toLowerCase().trim() === lease.tenantName.toLowerCase().trim()));
-      
+
       printBilingualLeaseContract({
         ...lease,
         contractNumber: undefined,
@@ -4444,7 +4444,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   async function addVoucher() {
     const { leaseId, name, receiptNo, method, period, amount, createPdc, pdcChequeNo, pdcBank, pdcDate } = addVoucherForm;
     if (!leaseId || !amount || !name) { alert("Please fill Lease, Voucher Name, and Amount."); return; }
-    
+
     const lease = leases.find((l) => l.id === leaseId);
     const unitCode = lease?.unit || "Unit";
     const accounts = getVoucherAccounts(name, unitCode, method);
@@ -4578,13 +4578,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     if (!selectedDiscussRenewal) return;
     setRenewals((items) => items.map((item) => item.id === selectedDiscussRenewal.id
       ? {
-          ...item,
-          status: "under_discussion",
-          proposedRent: discussRenewalForm.discussedRent ? Number(discussRenewalForm.discussedRent) : item.proposedRent,
-          proposedPeriod: discussRenewalForm.proposedPeriod || item.proposedPeriod,
-          outstandingObligations: discussRenewalForm.notes ? item.outstandingObligations + ` | Notes: ${discussRenewalForm.notes}` : item.outstandingObligations,
-          lastConfirmationDate: discussRenewalForm.nextFollowUpDate || item.lastConfirmationDate,
-        }
+        ...item,
+        status: "under_discussion",
+        proposedRent: discussRenewalForm.discussedRent ? Number(discussRenewalForm.discussedRent) : item.proposedRent,
+        proposedPeriod: discussRenewalForm.proposedPeriod || item.proposedPeriod,
+        outstandingObligations: discussRenewalForm.notes ? item.outstandingObligations + ` | Notes: ${discussRenewalForm.notes}` : item.outstandingObligations,
+        lastConfirmationDate: discussRenewalForm.nextFollowUpDate || item.lastConfirmationDate,
+      }
       : item
     ));
     recordAudit({
@@ -4754,13 +4754,77 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item)),
     ]);
 
+    // Persist renewal to localStorage (both pms_renewed_leases_v1 and pms_custom_lease_overrides)
+    try {
+      if (typeof window !== "undefined") {
+        const rawRen = localStorage.getItem("pms_renewed_leases_v1");
+        const renList: any[] = rawRen ? JSON.parse(rawRen) : [];
+        const renItem = {
+          id: renewed.id,
+          lease_number: contractNo,
+          property: oldLease.property,
+          unit: oldLease.unit,
+          tenantName: oldLease.tenantName,
+          startDate: newStartDate,
+          endDate: newEndDate,
+          monthlyRent: agreedRent,
+          rental_amount: agreedRent * 12,
+          securityDeposit: newSecurityDeposit,
+          pdcCount: data.pdcs.length,
+          paymentFrequency: data.paymentFrequency || "monthly",
+          status: "active",
+          renewalOf: oldLease.id,
+        };
+        const filtered = renList.filter((r) => r.id !== renItem.id && r.lease_number !== renItem.lease_number);
+        filtered.unshift(renItem);
+        localStorage.setItem("pms_renewed_leases_v1", JSON.stringify(filtered));
+
+        const storedOverrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+        storedOverrides[renewed.id] = {
+          commencement_date: newStartDate,
+          expiry_date: newEndDate,
+          monthlyRent: agreedRent,
+          rental_amount: agreedRent * 12,
+          lease_status: "ACTIVE",
+          tenant_name: oldLease.tenantName,
+          pdc_count: data.pdcs.length,
+          updated_at: new Date().toISOString(),
+        };
+        storedOverrides[contractNo] = storedOverrides[renewed.id];
+
+        // Mark previous lease as RENEWED
+        if (oldLease.id) {
+          storedOverrides[oldLease.id] = {
+            ...(storedOverrides[oldLease.id] || {}),
+            lease_status: "RENEWED",
+            updated_at: new Date().toISOString(),
+          };
+        }
+        if (oldLease.contractNumber) {
+          storedOverrides[oldLease.contractNumber] = {
+            ...(storedOverrides[oldLease.contractNumber] || {}),
+            lease_status: "RENEWED",
+            updated_at: new Date().toISOString(),
+          };
+        }
+        localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(storedOverrides));
+      }
+    } catch (e) {
+      console.warn("Could not save renewal to localStorage:", e);
+    }
+
     // Persist renewed lease and update previous lease in PostgreSQL via Supabase REST API
     void (async () => {
       try {
+        const isOldUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(oldLease.id);
+        const oldFilter = isOldUUID
+          ? `id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`
+          : `lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`;
+
         await supabase
           .from("leases")
           .update({ lease_status: "renewed" })
-          .or(`id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`);
+          .or(oldFilter);
 
         const { data: uRow } = await supabase
           .from("units")
@@ -4779,7 +4843,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           payment_frequency: data.paymentFrequency || "Monthly",
           grace_period_days: data.gracePeriodDays || 5,
           notice_period_days: data.noticePeriodDays || 60,
-          previous_lease_id: oldLease.id && oldLease.id.length === 36 ? oldLease.id : undefined,
+          previous_lease_id: isOldUUID ? oldLease.id : undefined,
           unit_id: uRow?.id || undefined,
           property_id: uRow?.property_id || undefined,
           customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
@@ -4978,7 +5042,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       .map((d) => d.name);
     if (expiredDocs.length > 0) {
       const proceed = window.confirm(
-        `Warning: The following mandatory documents have expired and should be renewed before activating the new lease period:\n\n${expiredDocs.join(", ")}\n\nProceed with renewal? (You can update documents in the Documents tab.)` 
+        `Warning: The following mandatory documents have expired and should be renewed before activating the new lease period:\n\n${expiredDocs.join(", ")}\n\nProceed with renewal? (You can update documents in the Documents tab.)`
       );
       if (!proceed) return;
     }
@@ -5028,6 +5092,118 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         collectionCompleted: false,
       };
       setLeases((items) => [renewed!, ...items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus } : item))]);
+
+      // Persist to local storage
+      try {
+        if (typeof window !== "undefined") {
+          const rawRen = localStorage.getItem("pms_renewed_leases_v1");
+          const renList: any[] = rawRen ? JSON.parse(rawRen) : [];
+          const renItem = {
+            id: renewed.id,
+            lease_number: contractNo,
+            property: oldLease.property,
+            unit: oldLease.unit,
+            tenantName: oldLease.tenantName,
+            startDate: newStartDate,
+            endDate: newEndDate,
+            monthlyRent: agreedRent,
+            rental_amount: agreedRent * 12,
+            securityDeposit: newSecurityDeposit,
+            pdcCount: pdcCount,
+            paymentFrequency: renewalResponseForm.paymentFrequency || oldLease.paymentFrequency || "monthly",
+            status: "active",
+            renewalOf: oldLease.id,
+          };
+          const filtered = renList.filter((r) => r.id !== renItem.id && r.lease_number !== renItem.lease_number);
+          filtered.unshift(renItem);
+          localStorage.setItem("pms_renewed_leases_v1", JSON.stringify(filtered));
+
+          const storedOverrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+          storedOverrides[renewed.id] = {
+            commencement_date: newStartDate,
+            expiry_date: newEndDate,
+            monthlyRent: agreedRent,
+            rental_amount: agreedRent * 12,
+            lease_status: "ACTIVE",
+            tenant_name: oldLease.tenantName,
+            pdc_count: pdcCount,
+            updated_at: new Date().toISOString(),
+          };
+          storedOverrides[contractNo] = storedOverrides[renewed.id];
+
+          if (oldLease.id) {
+            storedOverrides[oldLease.id] = {
+              ...(storedOverrides[oldLease.id] || {}),
+              lease_status: "RENEWED",
+              updated_at: new Date().toISOString(),
+            };
+          }
+          if (oldLease.contractNumber) {
+            storedOverrides[oldLease.contractNumber] = {
+              ...(storedOverrides[oldLease.contractNumber] || {}),
+              lease_status: "RENEWED",
+              updated_at: new Date().toISOString(),
+            };
+          }
+          localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(storedOverrides));
+        }
+      } catch (e) {
+        console.warn("Could not save renewal to localStorage:", e);
+      }
+
+      // Persist to Supabase asynchronously
+      void (async () => {
+        try {
+          const isOldUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(oldLease.id);
+          const oldFilter = isOldUUID
+            ? `id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`
+            : `lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`;
+
+          await supabase.from("leases").update({ lease_status: "renewed" }).or(oldFilter);
+
+          const { data: uRow } = await supabase
+            .from("units")
+            .select("id, property_id")
+            .or(`unit_ref.eq.${oldLease.unit},unit_code.eq.${oldLease.unit},unit_name.eq.${oldLease.unit}`)
+            .maybeSingle();
+
+          const leasePayload: any = {
+            lease_number: contractNo,
+            commencement_date: newStartDate,
+            expiry_date: newEndDate,
+            rental_amount: agreedRent * 12,
+            lease_status: "ACTIVE",
+            security_deposit: newSecurityDeposit,
+            number_of_pdc: pdcCount,
+            payment_frequency: renewalResponseForm.paymentFrequency || "Monthly",
+            grace_period_days: Number(renewalResponseForm.gracePeriodDays) || 5,
+            notice_period_days: Number(renewalResponseForm.noticePeriodDays) || 60,
+            previous_lease_id: isOldUUID ? oldLease.id : undefined,
+            unit_id: uRow?.id || undefined,
+            property_id: uRow?.property_id || undefined,
+            customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
+          };
+          await supabase.from("leases").insert(leasePayload);
+
+          if (uRow?.id) {
+            await supabase.from("units").update({
+              contract_no: contractNo,
+              contract_start_date: newStartDate,
+              contract_end_date: newEndDate,
+              current_rent: agreedRent,
+              current_tenant: oldLease.tenantName,
+              status: "Occupied",
+              lease_status: "Leased",
+            }).eq("id", uRow.id);
+          }
+
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("pms_data_updated"));
+          }
+        } catch (dbErr) {
+          console.warn("Database lease renewal persistence notice:", dbErr);
+        }
+      })();
     } else {
       // Just mark existing lease as renewed without creating a new lease record
       setLeases((items) => items.map((item) => (item.id === oldLease.id ? { ...item, status: "renewed" as LeaseStatus, monthlyRent: agreedRent } : item)));
@@ -5250,8 +5426,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const deductions = (settlement.outstandingRent || 0) + (settlement.damages || 0) + (settlement.utilityCharges || 0)
       + (settlement.cleaningCharges || 0) + (settlement.restorationCharges || 0) + (settlement.otherDeductions || 0);
     const initialMode = (settlement.settlementMode || "DEDUCT_FROM_DEPOSIT") as "DEDUCT_FROM_DEPOSIT" | "PAY_SEPARATELY";
-    const calcRefund = initialMode === "PAY_SEPARATELY" 
-      ? settlement.depositReceived 
+    const calcRefund = initialMode === "PAY_SEPARATELY"
+      ? settlement.depositReceived
       : Math.max(0, settlement.depositReceived - deductions);
     const _unusedRent = settlement.unusedRentRefund || 0;
     setSettleRefundForm({
@@ -5575,14 +5751,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       setLeases((items) => items.map((item) => (
         item.id === lease.id
           ? {
-              ...item,
-              status: "closed",
-              endDate: earlyVacateDate || item.endDate,
-              actualVacateDate: earlyVacateDate || settlementDate,
-              plannedVacateDate: earlyVacateDate || item.plannedVacateDate,
-              earlyVacate: isEarlyVacate || item.earlyVacate,
-              earlyVacateReason: isEarlyVacate ? (item.earlyVacateReason || "Tenant vacated before lease expiry") : item.earlyVacateReason,
-            }
+            ...item,
+            status: "closed",
+            endDate: earlyVacateDate || item.endDate,
+            actualVacateDate: earlyVacateDate || settlementDate,
+            plannedVacateDate: earlyVacateDate || item.plannedVacateDate,
+            earlyVacate: isEarlyVacate || item.earlyVacate,
+            earlyVacateReason: isEarlyVacate ? (item.earlyVacateReason || "Tenant vacated before lease expiry") : item.earlyVacateReason,
+          }
           : item
       )));
       {
@@ -5640,8 +5816,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         settleRefundForm.paymentMethod === "Bank Transfer"
           ? `Bank: ${settleRefundForm.refundBank || 'QNB'}${settleRefundForm.refundIban ? ` | IBAN: ${settleRefundForm.refundIban}` : ''}${settleRefundForm.refundTxRef ? ` | Transfer Ref: ${settleRefundForm.refundTxRef}` : ''}${settleRefundForm.refundPaymentDate ? ` | Transfer Date: ${settleRefundForm.refundPaymentDate}` : ''}`
           : settleRefundForm.paymentMethod === "Cheque"
-          ? `Cheque No: ${settleRefundForm.refundChequeNo || 'N/A'}${settleRefundForm.refundChequeBank ? ` | Issuing Bank: ${settleRefundForm.refundChequeBank}` : ''}${settleRefundForm.refundChequeDate ? ` | Cheque Date: ${settleRefundForm.refundChequeDate}` : ''}`
-          : `Disbursed by: ${settleRefundForm.refundCashierName || 'Treasury'}${settleRefundForm.refundPaymentDate ? ` | Date: ${settleRefundForm.refundPaymentDate}` : ''}`;
+            ? `Cheque No: ${settleRefundForm.refundChequeNo || 'N/A'}${settleRefundForm.refundChequeBank ? ` | Issuing Bank: ${settleRefundForm.refundChequeBank}` : ''}${settleRefundForm.refundChequeDate ? ` | Cheque Date: ${settleRefundForm.refundChequeDate}` : ''}`
+            : `Disbursed by: ${settleRefundForm.refundCashierName || 'Treasury'}${settleRefundForm.refundPaymentDate ? ` | Date: ${settleRefundForm.refundPaymentDate}` : ''}`;
 
       // ── RECEIPT 2: Full Security Deposit Refund Voucher (Payment Voucher) ──
       secondaryReceipt = {
@@ -5681,8 +5857,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         settleRefundForm.paymentMethod === "Bank Transfer"
           ? `Bank: ${settleRefundForm.refundBank || 'QNB'}${settleRefundForm.refundIban ? ` | IBAN: ${settleRefundForm.refundIban}` : ''}${settleRefundForm.refundTxRef ? ` | Transfer Ref: ${settleRefundForm.refundTxRef}` : ''}${settleRefundForm.refundPaymentDate ? ` | Transfer Date: ${settleRefundForm.refundPaymentDate}` : ''}`
           : settleRefundForm.paymentMethod === "Cheque"
-          ? `Cheque No: ${settleRefundForm.refundChequeNo || 'N/A'}${settleRefundForm.refundChequeBank ? ` | Issuing Bank: ${settleRefundForm.refundChequeBank}` : ''}${settleRefundForm.refundChequeDate ? ` | Cheque Date: ${settleRefundForm.refundChequeDate}` : ''}`
-          : `Disbursed by: ${settleRefundForm.refundCashierName || 'Treasury'}${settleRefundForm.refundPaymentDate ? ` | Date: ${settleRefundForm.refundPaymentDate}` : ''}`;
+            ? `Cheque No: ${settleRefundForm.refundChequeNo || 'N/A'}${settleRefundForm.refundChequeBank ? ` | Issuing Bank: ${settleRefundForm.refundChequeBank}` : ''}${settleRefundForm.refundChequeDate ? ` | Cheque Date: ${settleRefundForm.refundChequeDate}` : ''}`
+            : `Disbursed by: ${settleRefundForm.refundCashierName || 'Treasury'}${settleRefundForm.refundPaymentDate ? ` | Date: ${settleRefundForm.refundPaymentDate}` : ''}`;
 
       // ── Deduct From Deposit Mode: Single Consolidated Receipt ──
       primaryReceipt = {
@@ -5948,15 +6124,15 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     setLeases((items) => items.map((item) => (
       item.id === lease.id
         ? {
-            ...item,
-            status: "checkout" as LeaseStatus,
-            plannedVacateDate: moveOutDate,
-            earlyVacate: isEarlyVacate,
-            earlyVacateReason: isEarlyVacate ? (startCheckoutForm.notes || "Tenant requested vacating before lease expiry") : item.earlyVacateReason,
-          }
+          ...item,
+          status: "checkout" as LeaseStatus,
+          plannedVacateDate: moveOutDate,
+          earlyVacate: isEarlyVacate,
+          earlyVacateReason: isEarlyVacate ? (startCheckoutForm.notes || "Tenant requested vacating before lease expiry") : item.earlyVacateReason,
+        }
         : item
     )));
-    
+
     // 2. Update renewal case status to non_renewal_confirmed
     setRenewals((items) => items.map((item) => (item.leaseId === lease.id ? { ...item, status: "non_renewal_confirmed" as RenewalCase["status"] } : item)));
 
@@ -6116,11 +6292,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       const newRows = [...prev];
       const oldValue = newRows[idx][field];
       newRows[idx] = { ...newRows[idx], [field]: value };
-      
+
       if (idx === 0 && oldValue !== value) {
         const lease = leases.find(l => l.id === pdcLeaseId);
         const count = lease ? lease.pdcCount : 12;
-        
+
         for (let i = 1; i < count; i++) {
           if (field === "amount" && !prev[i].amount) {
             newRows[i].amount = value;
@@ -6320,7 +6496,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 />
               </Field>
             </div>
-            
+
             {/* Customer Selection */}
             <Field label="Prospective Tenant Customer *">
               <SearchableSelect
@@ -6605,18 +6781,16 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     onClick={() => setCustomerStep(s.n)}
                     className={`flex items-center gap-2 group focus:outline-none`}
                   >
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${
-                      customerStep === s.n
-                        ? "bg-primary border-primary text-primary-foreground shadow-md"
-                        : customerStep > s.n
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${customerStep === s.n
+                      ? "bg-primary border-primary text-primary-foreground shadow-md"
+                      : customerStep > s.n
                         ? "bg-primary/20 border-primary/40 text-primary"
                         : "bg-muted border-muted-foreground/30 text-muted-foreground"
-                    }`}>
+                      }`}>
                       {customerStep > s.n ? "✓" : s.n}
                     </div>
-                    <span className={`text-[11px] font-semibold hidden sm:block transition-colors ${
-                      customerStep === s.n ? "text-foreground" : customerStep > s.n ? "text-primary" : "text-muted-foreground"
-                    }`}>{s.label}</span>
+                    <span className={`text-[11px] font-semibold hidden sm:block transition-colors ${customerStep === s.n ? "text-foreground" : customerStep > s.n ? "text-primary" : "text-muted-foreground"
+                      }`}>{s.label}</span>
                   </button>
                   {idx < arr.length - 1 && (
                     <div className={`flex-1 h-0.5 mx-2 rounded transition-all ${customerStep > s.n ? "bg-primary/40" : "bg-muted-foreground/20"}`} />
@@ -6877,7 +7051,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Field label="Commercial Registration No. *">
+                  <Field label="Commercial Registration No. (Optional)">
                     <Input
                       placeholder="CR-109283"
                       value={customerForm.crNumber}
@@ -6906,7 +7080,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       )}
                     </div>
                   </Field>
-                  <Field label="CR Expiry Date">
+                  <Field label="CR Expiry Date (Optional)">
                     <Input
                       type="date"
                       value={customerForm.crExpiryDate}
@@ -7224,7 +7398,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </div>
               <div>
                 <DialogTitle className="text-base font-bold flex items-center gap-2">
-                  {viewCustomerData?.type === "individual" 
+                  {viewCustomerData?.type === "individual"
                     ? (viewCustomerData.firstName || viewCustomerData.displayName || viewCustomerData.name || "Customer Details")
                     : (viewCustomerData?.companyLegalName || viewCustomerData?.displayName || viewCustomerData?.name || "Customer Details")}
                 </DialogTitle>
@@ -7234,12 +7408,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className={`capitalize text-xs font-semibold px-2.5 py-0.5 ${
-                (viewCustomerData?.customerStatus || "Active") === "Active" ? "bg-green-50 text-green-700 border-green-200" :
+              <Badge variant="outline" className={`capitalize text-xs font-semibold px-2.5 py-0.5 ${(viewCustomerData?.customerStatus || "Active") === "Active" ? "bg-green-50 text-green-700 border-green-200" :
                 (viewCustomerData?.customerStatus) === "Inactive" ? "bg-muted text-muted-foreground border-border" :
-                (viewCustomerData?.customerStatus) === "Blacklisted" ? "bg-red-50 text-red-700 border-red-200" :
-                "bg-blue-50 text-blue-700 border-blue-200"
-              }`}>
+                  (viewCustomerData?.customerStatus) === "Blacklisted" ? "bg-red-50 text-red-700 border-red-200" :
+                    "bg-blue-50 text-blue-700 border-blue-200"
+                }`}>
                 {viewCustomerData?.customerStatus || "Active"}
               </Badge>
             </div>
@@ -7859,7 +8032,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Field label="Commercial Registration No. *">
+                  <Field label="Commercial Registration No. (Optional)">
                     <Input
                       placeholder="CR-109283"
                       value={customerForm.crNumber}
@@ -7888,7 +8061,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       )}
                     </div>
                   </Field>
-                  <Field label="CR Expiry Date">
+                  <Field label="CR Expiry Date (Optional)">
                     <Input
                       type="date"
                       value={customerForm.crExpiryDate}
@@ -8569,7 +8742,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 ]}
               />
             </Field>
-            
+
             <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Percent className="h-3.5 w-3.5 text-primary" /> Renewal Parameters
@@ -8664,8 +8837,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   verifyDocForm.status === "verified"
                     ? "All details verified and match official record."
                     : verifyDocForm.status === "info_required"
-                    ? "Specify what additional document/information is required from tenant..."
-                    : "Specify reason for document rejection..."
+                      ? "Specify what additional document/information is required from tenant..."
+                      : "Specify reason for document rejection..."
                 }
                 className="text-xs bg-background"
               />
@@ -8677,8 +8850,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               verifyDocForm.status === "verified"
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                 : verifyDocForm.status === "info_required"
-                ? "bg-amber-600 hover:bg-amber-700 text-white"
-                : "bg-rose-600 hover:bg-rose-700 text-white"
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
+                  : "bg-rose-600 hover:bg-rose-700 text-white"
             }>
               Submit Decision ({verifyDocForm.status === "verified" ? "Verify" : verifyDocForm.status === "info_required" ? "Need Info" : "Reject"})
             </Button>
@@ -9057,28 +9230,28 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               const displayedRows = collectForm.customCheques && collectForm.customCheques.length > 0
                 ? collectForm.customCheques
                 : Array.from({ length: count }, (_, i) => {
-                    const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
-                    const bd = new Date(baseDate);
-                    const day = bd.getDate();
-                    const targetMonthRaw = bd.getMonth() + i;
-                    const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
-                    const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
-                    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-                    const maturityStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
-                    const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
-                    const tsDate = new Date(leaseStart); tsDate.setMonth(tsDate.getMonth() + i);
-                    const teDate = new Date(leaseStart); teDate.setMonth(teDate.getMonth() + i + 1); teDate.setDate(teDate.getDate() - 1);
-                    return {
-                      chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                      bank: collectForm.chequeBank || "QNB",
-                      date: maturityStr,
-                      amount: regAmount,
-                      period: `Cheque ${i + 1}`,
-                      tenureStart: tsDate.toISOString().split("T")[0],
-                      tenureEnd: teDate.toISOString().split("T")[0],
-                      file: "",
-                    };
-                  });
+                  const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
+                  const bd = new Date(baseDate);
+                  const day = bd.getDate();
+                  const targetMonthRaw = bd.getMonth() + i;
+                  const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
+                  const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                  const maturityStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+                  const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
+                  const tsDate = new Date(leaseStart); tsDate.setMonth(tsDate.getMonth() + i);
+                  const teDate = new Date(leaseStart); teDate.setMonth(teDate.getMonth() + i + 1); teDate.setDate(teDate.getDate() - 1);
+                  return {
+                    chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                    bank: collectForm.chequeBank || "QNB",
+                    date: maturityStr,
+                    amount: regAmount,
+                    period: `Cheque ${i + 1}`,
+                    tenureStart: tsDate.toISOString().split("T")[0],
+                    tenureEnd: teDate.toISOString().split("T")[0],
+                    file: "",
+                  };
+                });
 
               return (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-3">
@@ -9303,14 +9476,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <div
                       onClick={() => setCollectForm((f) => ({ ...f, depositIsSplit: !f.depositIsSplit }))}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        collectForm.depositIsSplit ? "bg-primary" : "bg-muted-foreground/30"
-                      }`}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${collectForm.depositIsSplit ? "bg-primary" : "bg-muted-foreground/30"
+                        }`}
                     >
                       <span
-                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                          collectForm.depositIsSplit ? "translate-x-[18px]" : "translate-x-[2px]"
-                        }`}
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${collectForm.depositIsSplit ? "translate-x-[18px]" : "translate-x-[2px]"
+                          }`}
                       />
                     </div>
                     <span className="text-[11px] font-semibold text-foreground">Split Payment</span>
@@ -9378,9 +9549,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     const total = (Number(collectForm.depositSplitCash) || 0) + (Number(collectForm.depositSplitBank) || 0) + (Number(collectForm.depositSplitCheque) || 0) + (Number(collectForm.appliedTokenAdvance) || 0);
                     const expected = Number(collectForm.depositAmount) || signatureWorkflowLease?.securityDeposit || 0;
                     return total > 0 ? (
-                      <div className={`text-xs rounded px-2.5 py-1.5 flex items-center justify-between ${
-                        Math.abs(total - expected) < 1 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-                      }`}>
+                      <div className={`text-xs rounded px-2.5 py-1.5 flex items-center justify-between ${Math.abs(total - expected) < 1 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                        }`}>
                         <span>Split Total: <strong>QAR {total.toLocaleString()}</strong></span>
                         {expected > 0 && <span>Expected: <strong>QAR {expected.toLocaleString()}</strong> {Math.abs(total - expected) < 1 ? "✓ Balanced" : `(Difference: QAR ${Math.abs(total - expected).toLocaleString()})`}</span>}
                       </div>
@@ -9788,11 +9958,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               {handoverTabOrder.map((tab) => (
                 <button
                   key={tab}
-                  className={`flex-1 rounded-lg px-2.5 py-1.5 transition-all ${
-                    handoverActiveTab === tab
-                      ? "bg-background text-foreground shadow-sm font-semibold"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`flex-1 rounded-lg px-2.5 py-1.5 transition-all ${handoverActiveTab === tab
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                    }`}
                   onClick={() => setHandoverActiveTab(tab)}
                   type="button"
                 >
@@ -9994,9 +10163,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   { label: "Photos taken and on file", check: Number(handoverForm.photosTaken) > 0 },
                   { label: "Tenant acknowledgement text / signature captured", check: !!(handoverForm.tenantAcknowledgement) },
                 ].map(({ label, check }, i) => (
-                  <div key={i} className={`flex items-start gap-3 rounded-lg border p-3 ${
-                    check ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"
-                  }`}>
+                  <div key={i} className={`flex items-start gap-3 rounded-lg border p-3 ${check ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"
+                    }`}>
                     <span className={`mt-0.5 text-base ${check ? "text-green-600" : "text-orange-500"}`}>{check ? "✅" : "⏳"}</span>
                     <span className="text-sm" dangerouslySetInnerHTML={{ __html: label }} />
                   </div>
@@ -11656,7 +11824,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 </Select>
               </Field>
             </div>
-            
+
             <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
               <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" /> General Ledger Accounts
@@ -11813,7 +11981,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   </div>
                   <Select
                     value="in hand"
-                    onValueChange={() => {}}
+                    onValueChange={() => { }}
                     disabled
                   >
                     <SelectTrigger className="h-8 text-xs mt-1 bg-muted/40 border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold cursor-not-allowed">
@@ -12202,7 +12370,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               </div>
             </div>
             <DialogDescription className="text-xs">
-              {settleRefundStep === 1 
+              {settleRefundStep === 1
                 ? "Step 1 of 2: Review and adjust tenant damage deductions and select settlement mode."
                 : "Step 2 of 2: Configure payment details, review GL journal posting, and issue receipt."}
             </DialogDescription>
@@ -12228,7 +12396,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             const dmgPayMode = settleRefundForm.damagePaymentMode || "Bank Transfer";
             const isBank = settleRefundForm.paymentMethod !== "Cash";
             const bankLabel = isBank ? "12000 Bank Operating Account" : "12100 Cash In Hand";
-            
+
             let dmgDrLabel = "12000 Bank Operating Account";
             if (dmgPayMode === "Cash") {
               dmgDrLabel = "12100 Cash In Hand";
@@ -12392,17 +12560,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <div className="space-y-1">
                             <Label className="text-[10px] font-medium text-blue-950">
                               {dmgPayMode === "Cash" ? "Cash Receipt / Slip #" :
-                               dmgPayMode === "Cheque" ? "Cheque Number #" :
-                               dmgPayMode === "Bank Guarantee" ? "Bank Guarantee (BG) Ref #" :
-                               "Transaction / Wire Ref #"} <span className="text-destructive">*</span>
+                                dmgPayMode === "Cheque" ? "Cheque Number #" :
+                                  dmgPayMode === "Bank Guarantee" ? "Bank Guarantee (BG) Ref #" :
+                                    "Transaction / Wire Ref #"} <span className="text-destructive">*</span>
                             </Label>
                             <Input
                               className="h-7 text-xs font-mono bg-background"
                               placeholder={
                                 dmgPayMode === "Cash" ? "e.g. CRV-4019" :
-                                dmgPayMode === "Cheque" ? "e.g. CHQ-0018492" :
-                                dmgPayMode === "Bank Guarantee" ? "e.g. BG-QNB-2026-8812" :
-                                "e.g. TRX-CBQ-90123"
+                                  dmgPayMode === "Cheque" ? "e.g. CHQ-0018492" :
+                                    dmgPayMode === "Bank Guarantee" ? "e.g. BG-QNB-2026-8812" :
+                                      "e.g. TRX-CBQ-90123"
                               }
                               value={settleRefundForm.paymentRefNo}
                               onChange={(e) => setSettleRefundForm({ ...settleRefundForm, paymentRefNo: e.target.value })}
@@ -12412,16 +12580,16 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <div className="space-y-1">
                             <Label className="text-[10px] font-medium text-blue-950">
                               {dmgPayMode === "Cash" ? "Receiving Location / Counter" :
-                               dmgPayMode === "Bank Guarantee" ? "Issuing Bank Name" :
-                               dmgPayMode === "Cheque" ? "Drawn Bank Name" :
-                               "Payer Bank Name"}
+                                dmgPayMode === "Bank Guarantee" ? "Issuing Bank Name" :
+                                  dmgPayMode === "Cheque" ? "Drawn Bank Name" :
+                                    "Payer Bank Name"}
                             </Label>
                             <Input
                               className="h-7 text-xs bg-background"
                               placeholder={
                                 dmgPayMode === "Cash" ? "e.g. Finance Cashier Desk" :
-                                dmgPayMode === "Bank Guarantee" ? "e.g. Qatar National Bank (QNB)" :
-                                "e.g. QNB / CBQ / Doha Bank"
+                                  dmgPayMode === "Bank Guarantee" ? "e.g. Qatar National Bank (QNB)" :
+                                    "e.g. QNB / CBQ / Doha Bank"
                               }
                               value={settleRefundForm.payerBank}
                               onChange={(e) => setSettleRefundForm({ ...settleRefundForm, payerBank: e.target.value })}
@@ -12431,8 +12599,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <div className="space-y-1">
                             <Label className="text-[10px] font-medium text-blue-950">
                               {dmgPayMode === "Cheque" ? "Cheque Date" :
-                               dmgPayMode === "Bank Guarantee" ? "BG Issue Date" :
-                               "Payment / Receipt Date"}
+                                dmgPayMode === "Bank Guarantee" ? "BG Issue Date" :
+                                  "Payment / Receipt Date"}
                             </Label>
                             <Input
                               type="date"
@@ -12467,9 +12635,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         <div className="space-y-1">
                           <Label className="text-[10px] font-medium text-blue-950">
                             {dmgPayMode === "Cash" ? "Upload Signed Cash Receipt / Counter Slip" :
-                             dmgPayMode === "Cheque" ? "Upload Cheque Leaf Copy (Front & Back)" :
-                             dmgPayMode === "Bank Guarantee" ? "Upload Bank Guarantee Certificate / Official Letter" :
-                             "Upload Payment Slip / Bank Transfer Confirmation"}
+                              dmgPayMode === "Cheque" ? "Upload Cheque Leaf Copy (Front & Back)" :
+                                dmgPayMode === "Bank Guarantee" ? "Upload Bank Guarantee Certificate / Official Letter" :
+                                  "Upload Payment Slip / Bank Transfer Confirmation"}
                           </Label>
                           {settleRefundForm.paymentProofFileName ? (
                             <div className="flex items-center justify-between p-2 rounded bg-background border border-emerald-300">
@@ -12494,9 +12662,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 <Upload className="h-3.5 w-3.5" />
                                 <span className="text-xs font-medium">
                                   {dmgPayMode === "Cash" ? "Click to upload signed cash voucher / receipt copy" :
-                                   dmgPayMode === "Cheque" ? "Click to upload scanned cheque leaf copy" :
-                                   dmgPayMode === "Bank Guarantee" ? "Click to upload scanned BG certificate / letter" :
-                                   "Click to upload bank transfer slip / screenshot"}
+                                    dmgPayMode === "Cheque" ? "Click to upload scanned cheque leaf copy" :
+                                      dmgPayMode === "Bank Guarantee" ? "Click to upload scanned BG certificate / letter" :
+                                        "Click to upload bank transfer slip / screenshot"}
                                 </span>
                               </div>
                               <span className="text-[10px] text-muted-foreground mt-0.5">PNG, JPG, PDF up to 10MB</span>
@@ -12684,11 +12852,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                   ? Math.max(0, effDep - tot) : effDep;
                                 setSettleRefundForm(f => ({ ...f, currentMonthPdcDeposited: true, unusedRentRefund: String(computed), refundAmount: String(refund) }));
                               }}
-                              className={`flex-1 rounded border px-2 py-1 text-[11px] font-semibold transition-all ${
-                                settleRefundForm.currentMonthPdcDeposited
-                                  ? "border-teal-600 bg-teal-600 text-white shadow-sm"
-                                  : "border-border bg-background text-muted-foreground hover:border-teal-400 hover:text-teal-700"
-                              }`}
+                              className={`flex-1 rounded border px-2 py-1 text-[11px] font-semibold transition-all ${settleRefundForm.currentMonthPdcDeposited
+                                ? "border-teal-600 bg-teal-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:border-teal-400 hover:text-teal-700"
+                                }`}
                             >✓ Yes</button>
                             <button
                               type="button"
@@ -12700,11 +12867,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                   ? Math.max(0, grossDeposit - tot) : grossDeposit;
                                 setSettleRefundForm(f => ({ ...f, currentMonthPdcDeposited: false, unusedRentRefund: "0", refundAmount: String(refund) }));
                               }}
-                              className={`flex-1 rounded border px-2 py-1 text-[11px] font-semibold transition-all ${
-                                !settleRefundForm.currentMonthPdcDeposited
-                                  ? "border-red-500 bg-red-500 text-white shadow-sm"
-                                  : "border-border bg-background text-muted-foreground hover:border-red-400 hover:text-red-600"
-                              }`}
+                              className={`flex-1 rounded border px-2 py-1 text-[11px] font-semibold transition-all ${!settleRefundForm.currentMonthPdcDeposited
+                                ? "border-red-500 bg-red-500 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:border-red-400 hover:text-red-600"
+                                }`}
                             >✗ No</button>
                           </div>
                         </div>
@@ -13076,8 +13242,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   {settleRefundStep === 1 ? (
                     <>
                       <Button variant="outline" onClick={() => setSettleRefundOpen(false)}>Cancel</Button>
-                      <Button 
-                        className="bg-purple-600 hover:bg-purple-700 text-white" 
+                      <Button
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
                         onClick={() => setSettleRefundStep(2)}
                       >
                         Next: Payment &amp; GL Review →
@@ -13088,8 +13254,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       <Button variant="outline" onClick={() => setSettleRefundStep(1)}>
                         ← Back to Deductions
                       </Button>
-                      <Button 
-                        className="bg-purple-600 hover:bg-purple-700 text-white" 
+                      <Button
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
                         onClick={executeSettleAndRefund}
                       >
                         <CheckCircle2 className="mr-2 h-4 w-4" /> Confirm Settlement &amp; Issue Receipt
@@ -13269,11 +13435,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             ].map((tab) => (
               <button
                 key={tab.id}
-                className={`flex-1 rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-                  checkoutActiveTab === tab.id
-                    ? "bg-background text-foreground shadow-sm font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex-1 rounded-md px-2.5 py-1.5 font-medium transition-colors ${checkoutActiveTab === tab.id
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+                  }`}
                 onClick={() => setCheckoutActiveTab(tab.id)}
                 type="button"
               >
@@ -13486,20 +13651,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                   ? Math.round((_rent / _dTot) * Math.max(0, _dTot - _dOcc)) : 0;
                                 setCompleteCheckoutForm(f => ({ ...f, currentMonthPdcDeposited: true, unusedRentRefund: String(computed) }));
                               }}
-                              className={`flex-1 rounded border px-2 py-1.5 text-[11px] font-bold transition-all ${
-                                _isPdc
-                                  ? "border-teal-600 bg-teal-600 text-white shadow-sm"
-                                  : "border-border bg-background text-muted-foreground hover:border-teal-400 hover:text-teal-700"
-                              }`}
+                              className={`flex-1 rounded border px-2 py-1.5 text-[11px] font-bold transition-all ${_isPdc
+                                ? "border-teal-600 bg-teal-600 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:border-teal-400 hover:text-teal-700"
+                                }`}
                             >✓ Yes</button>
                             <button
                               type="button"
                               onClick={() => setCompleteCheckoutForm(f => ({ ...f, currentMonthPdcDeposited: false, unusedRentRefund: "0" }))}
-                              className={`flex-1 rounded border px-2 py-1.5 text-[11px] font-bold transition-all ${
-                                !_isPdc
-                                  ? "border-red-500 bg-red-500 text-white shadow-sm"
-                                  : "border-border bg-background text-muted-foreground hover:border-red-400 hover:text-red-600"
-                              }`}
+                              className={`flex-1 rounded border px-2 py-1.5 text-[11px] font-bold transition-all ${!_isPdc
+                                ? "border-red-500 bg-red-500 text-white shadow-sm"
+                                : "border-border bg-background text-muted-foreground hover:border-red-400 hover:text-red-600"
+                                }`}
                             >✗ No</button>
                           </div>
                         </div>
@@ -13860,14 +14023,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 vouchersLoading
                   ? "…"
                   : allVouchers.filter((v) =>
-                      Boolean(
-                        v.id?.startsWith("dpdc-") ||
-                        (v as any).pdc_id ||
-                        (v.method && String(v.method).toUpperCase().includes("PDC")) ||
-                        (v.name && String(v.name).toUpperCase().includes("PDC")) ||
-                        (v.receiptNo && String(v.receiptNo).startsWith("RV-PDC-"))
-                      )
-                    ).length
+                    Boolean(
+                      v.id?.startsWith("dpdc-") ||
+                      (v as any).pdc_id ||
+                      (v.method && String(v.method).toUpperCase().includes("PDC")) ||
+                      (v.name && String(v.name).toUpperCase().includes("PDC")) ||
+                      (v.receiptNo && String(v.receiptNo).startsWith("RV-PDC-"))
+                    )
+                  ).length
               }
               icon={<CreditCard className="h-4 w-4 text-emerald-600" />}
               description="Rent post-dated cheques in hand"
@@ -13878,17 +14041,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 vouchersLoading
                   ? "…"
                   : allVouchers.filter((v) =>
-                      Boolean(
-                        (v as any).source_type === "SECURITY_DEPOSIT" ||
-                        (v as any).voucher_number?.startsWith("VCH-SD-") ||
-                        v.id?.startsWith("VCH-SD-") ||
-                        (v.receiptNo && String(v.receiptNo).startsWith("RV-DEP-")) ||
-                        (v.name && String(v.name).toLowerCase().includes("security deposit")) ||
-                        v.method === "Security Deposit" ||
-                        v.method === "Cash" ||
-                        v.method === "Guarantee Cheque"
-                      )
-                    ).length
+                    Boolean(
+                      (v as any).source_type === "SECURITY_DEPOSIT" ||
+                      (v as any).voucher_number?.startsWith("VCH-SD-") ||
+                      v.id?.startsWith("VCH-SD-") ||
+                      (v.receiptNo && String(v.receiptNo).startsWith("RV-DEP-")) ||
+                      (v.name && String(v.name).toLowerCase().includes("security deposit")) ||
+                      v.method === "Security Deposit" ||
+                      v.method === "Cash" ||
+                      v.method === "Guarantee Cheque"
+                    )
+                  ).length
               }
               icon={<ShieldCheck className="h-4 w-4 text-amber-600" />}
               description="Deposit liabilities (GL 21500)"
@@ -14043,12 +14206,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 const unitFilteredRes = resUnitFilter === "all"
                   ? propertyFilteredRes
                   : propertyFilteredRes.filter(r => {
-                      if (resUnitFilter.includes("||")) {
-                        const [fp, fu] = resUnitFilter.split("||");
-                        return r.property === fp && r.unit === fu;
-                      }
-                      return r.unit === resUnitFilter;
-                    });
+                    if (resUnitFilter.includes("||")) {
+                      const [fp, fu] = resUnitFilter.split("||");
+                      return r.property === fp && r.unit === fu;
+                    }
+                    return r.unit === resUnitFilter;
+                  });
                 // Normalize name for dedup/comparison (M/s. → M/s)
                 const normResName = (n: string) => (n || "").trim().replace(/^(M|m)\s*\/(S|s)\.?\s*/, "M/s ").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
                 const customerFilteredRes = resCustomerFilter === "all" ? unitFilteredRes : unitFilteredRes.filter(r => normResName(r.tenantName) === normResName(resCustomerFilter));
@@ -14064,12 +14227,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 // Options: plain unit names when a property is selected; "Prop — Unit" when all
                 const uniqueUnits: { label: string; value: string }[] = resPropertyFilter === "all"
                   ? Array.from(new Set(reservations.map(r => `${r.property}||${r.unit}`)))
-                      .filter(Boolean)
-                      .sort()
-                      .map(combo => {
-                        const [p, u] = combo.split("||");
-                        return { label: `${p} — ${u}`, value: combo };
-                      })
+                    .filter(Boolean)
+                    .sort()
+                    .map(combo => {
+                      const [p, u] = combo.split("||");
+                      return { label: `${p} — ${u}`, value: combo };
+                    })
                   : uniqueUnitNames.map(u => ({ label: u, value: u }));
                 // Build uniqueCustomers deduplicated by normalized key to avoid "M/s X" vs "M/s.X" splits
                 const _custSeenKeys = new Set<string>();
@@ -14218,9 +14381,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   if (resSearchQuery.trim()) {
                     const q = resSearchQuery.toLowerCase();
                     const match = (r.tenantName || "").toLowerCase().includes(q) ||
-                                  (r.unit || "").toLowerCase().includes(q) ||
-                                  (r.property || "").toLowerCase().includes(q) ||
-                                  (r.remarks || "").toLowerCase().includes(q);
+                      (r.unit || "").toLowerCase().includes(q) ||
+                      (r.property || "").toLowerCase().includes(q) ||
+                      (r.remarks || "").toLowerCase().includes(q);
                     if (!match) return false;
                   }
                   return true;
@@ -14357,33 +14520,30 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     <button
                       type="button"
                       onClick={() => setCustTypeFilter("all")}
-                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                        custTypeFilter === "all"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "hover:bg-background/50 hover:text-foreground"
-                      }`}
+                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${custTypeFilter === "all"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "hover:bg-background/50 hover:text-foreground"
+                        }`}
                     >
                       All ({allCustomers.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setCustTypeFilter("company")}
-                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                        custTypeFilter === "company"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "hover:bg-background/50 hover:text-foreground"
-                      }`}
+                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${custTypeFilter === "company"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "hover:bg-background/50 hover:text-foreground"
+                        }`}
                     >
                       Company ({allCustomers.filter(c => c?.type === "company").length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setCustTypeFilter("individual")}
-                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                        custTypeFilter === "individual"
-                          ? "bg-background text-foreground shadow-sm"
-                          : "hover:bg-background/50 hover:text-foreground"
-                      }`}
+                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3.5 py-1 text-xs font-semibold ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${custTypeFilter === "individual"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "hover:bg-background/50 hover:text-foreground"
+                        }`}
                     >
                       Individual ({allCustomers.filter(c => (c?.type || "individual") === "individual").length})
                     </button>
@@ -14464,15 +14624,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       onValueChange={(val) => {
                         setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
                         setDirectCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
-                        supabase.from("customers").update({ customer_status: val }).eq("id", customer.id).then(() => {});
+                        supabase.from("customers").update({ customer_status: val }).eq("id", customer.id).then(() => { });
                       }}
                     >
-                      <SelectTrigger className={`h-7 text-xs w-32 font-semibold border ${
-                        (customer?.customerStatus || "Active") === "Active" ? "bg-green-50 text-green-700 border-green-200" :
+                      <SelectTrigger className={`h-7 text-xs w-32 font-semibold border ${(customer?.customerStatus || "Active") === "Active" ? "bg-green-50 text-green-700 border-green-200" :
                         (customer?.customerStatus) === "Inactive" ? "bg-muted text-muted-foreground border-border" :
-                        (customer?.customerStatus) === "Blacklisted" ? "bg-red-50 text-red-700 border-red-200" :
-                        "bg-blue-50 text-blue-700 border-blue-200"
-                      }`}>
+                          (customer?.customerStatus) === "Blacklisted" ? "bg-red-50 text-red-700 border-red-200" :
+                            "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -14569,11 +14728,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             <button
               type="button"
               onClick={() => { setDocCustomerTypeTab("company"); setDocCustomerFilter("all"); setDocTypeFilter("all"); setDocStatusFilter("all"); setDocSearchQuery(""); setDocPage(0); }}
-              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-all ${
-                docCustomerTypeTab === "company"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-all ${docCustomerTypeTab === "company"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
             >
               <Building2 className="h-3.5 w-3.5" />
               Company ({allCustomers.filter(c => c?.type === "company").length})
@@ -14581,11 +14739,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             <button
               type="button"
               onClick={() => { setDocCustomerTypeTab("individual"); setDocCustomerFilter("all"); setDocTypeFilter("all"); setDocStatusFilter("all"); setDocSearchQuery(""); setDocPage(0); }}
-              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-all ${
-                docCustomerTypeTab === "individual"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-all ${docCustomerTypeTab === "individual"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
             >
               <Users className="h-3.5 w-3.5" />
               Individual ({allCustomers.filter(c => c?.type !== "company").length})
@@ -14724,18 +14881,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               {(() => {
                 // ── Document schema per customer type ─────────────────
                 const COMPANY_DOCS = [
-                  { key: "CR",    label: "Commercial Registration (CR)",          mandatory: true  },
-                  { key: "CC",    label: "Computer Card (Establishment ID)",       mandatory: true  },
-                  { key: "SQ",    label: "Authorized Signatory QID",              mandatory: true  },
-                  { key: "ML",    label: "Company Municipal License",             mandatory: false },
-                  { key: "OTHER", label: "Other Documents",                       mandatory: false },
+                  { key: "CR", label: "Commercial Registration (CR)", mandatory: false },
+                  { key: "CC", label: "Computer Card (Establishment ID)", mandatory: false },
+                  { key: "SQ", label: "Authorized Signatory QID", mandatory: false },
+                  { key: "ML", label: "Company Municipal License", mandatory: false },
+                  { key: "OTHER", label: "Other Documents", mandatory: false },
                 ];
                 const INDIVIDUAL_DOCS = [
-                  { key: "QID",   label: "Qatar ID (QID) - Front & Back",         mandatory: true  },
-                  { key: "PP",    label: "Passport Copy",                          mandatory: true  },
-                  { key: "SC",    label: "Salary Certificate / Employment Letter", mandatory: true  },
-                  { key: "BS",    label: "Bank Statement (3 Months)",             mandatory: false },
-                  { key: "OTHER", label: "Other Documents",                       mandatory: false },
+                  { key: "QID", label: "Qatar ID (QID) - Front & Back", mandatory: true },
+                  { key: "PP", label: "Passport Copy", mandatory: true },
+                  { key: "SC", label: "Salary Certificate / Employment Letter", mandatory: true },
+                  { key: "BS", label: "Bank Statement (3 Months)", mandatory: false },
+                  { key: "OTHER", label: "Other Documents", mandatory: false },
                 ];
 
                 // ── Build per-customer document map ──────────────────
@@ -14761,7 +14918,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                   if (docSearchQuery.trim()) {
                     const q = docSearchQuery.toLowerCase();
                     const matchCust = (cust.name || "").toLowerCase().includes(q);
-                    const matchDoc  = custDocs.some(d =>
+                    const matchDoc = custDocs.some(d =>
                       (d?.name || "").toLowerCase().includes(q) ||
                       (d?.file || "").toLowerCase().includes(q) ||
                       (d?.reviewer || "").toLowerCase().includes(q)
@@ -14775,10 +14932,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 const statusPill = (status: string | undefined) => {
                   const s = status || "pending";
                   const cfg: Record<string, { bg: string; text: string; label: string }> = {
-                    verified:      { bg: "bg-emerald-100", text: "text-emerald-800", label: "Verified"     },
-                    pending:       { bg: "bg-amber-100",   text: "text-amber-800",   label: "Pending"      },
-                    info_required: { bg: "bg-blue-100",    text: "text-blue-800",    label: "Need Info"    },
-                    rejected:      { bg: "bg-red-100",     text: "text-red-800",     label: "Rejected"     },
+                    verified: { bg: "bg-emerald-100", text: "text-emerald-800", label: "Verified" },
+                    pending: { bg: "bg-amber-100", text: "text-amber-800", label: "Pending" },
+                    info_required: { bg: "bg-blue-100", text: "text-blue-800", label: "Need Info" },
+                    rejected: { bg: "bg-red-100", text: "text-red-800", label: "Rejected" },
                   };
                   const c = cfg[s] || cfg.pending;
                   return (
@@ -14838,11 +14995,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             </button>
                             {/* Verify button — only enabled once a file is uploaded */}
                             <button
-                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded border transition-colors ${
-                                hasFile
-                                  ? 'border-primary/40 bg-primary/5 hover:bg-primary/15 text-primary'
-                                  : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed opacity-60'
-                              }`}
+                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded border transition-colors ${hasFile
+                                ? 'border-primary/40 bg-primary/5 hover:bg-primary/15 text-primary'
+                                : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed opacity-60'
+                                }`}
                               disabled={!hasFile}
                               onClick={() => {
                                 if (!hasFile) return;
@@ -14903,12 +15059,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 };
 
                 // ── Partition customers ───────────────────────────────
-                const companyCustomers    = filteredCustomers.filter(c => c?.type === "company");
+                const companyCustomers = filteredCustomers.filter(c => c?.type === "company");
                 const individualCustomers = filteredCustomers.filter(c => c?.type !== "company");
 
                 const currentCustomers = docCustomerTypeTab === "company" ? companyCustomers : individualCustomers;
-                const currentSchema    = docCustomerTypeTab === "company" ? COMPANY_DOCS : INDIVIDUAL_DOCS;
-                const currentLabel     = docCustomerTypeTab === "company" ? "Company" : "Individual";
+                const currentSchema = docCustomerTypeTab === "company" ? COMPANY_DOCS : INDIVIDUAL_DOCS;
+                const currentLabel = docCustomerTypeTab === "company" ? "Company" : "Individual";
 
                 // ── Pagination (20 per page) ──────────────────────────
                 const PAGE_SIZE = 20;
@@ -15675,30 +15831,30 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 pdcs:
                                   leasePdcs.length > 0
                                     ? leasePdcs.map((p, idx) => ({
-                                        chequeNo: p.chequeNo || "",
-                                        bank: p.bank || "QNB",
-                                        date: p.date || "",
-                                        amount: p.amount || 0,
-                                        period:
-                                          p.period ||
-                                          ((p as any).tenureStart && (p as any).tenureEnd
-                                            ? `${(p as any).tenureStart} to ${(p as any).tenureEnd}`
-                                            : `Cheque ${idx + 1}`),
-                                        tenureStart: (p as any).tenureStart || addDays(new Date(lease.startDate || today), idx * 30),
-                                        tenureEnd: (p as any).tenureEnd || addDays(new Date(lease.startDate || today), idx * 30 + 29),
-                                      }))
+                                      chequeNo: p.chequeNo || "",
+                                      bank: p.bank || "QNB",
+                                      date: p.date || "",
+                                      amount: p.amount || 0,
+                                      period:
+                                        p.period ||
+                                        ((p as any).tenureStart && (p as any).tenureEnd
+                                          ? `${(p as any).tenureStart} to ${(p as any).tenureEnd}`
+                                          : `Cheque ${idx + 1}`),
+                                      tenureStart: (p as any).tenureStart || addDays(new Date(lease.startDate || today), idx * 30),
+                                      tenureEnd: (p as any).tenureEnd || addDays(new Date(lease.startDate || today), idx * 30 + 29),
+                                    }))
                                     : Array.from({ length: lease.pdcCount || 12 }, (_, i) => ({
-                                        chequeNo: `PDC-${(lease.unit || "").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                                        bank: "QNB",
-                                        date: addDays(new Date(lease.startDate || today), i * 30),
-                                        amount:
-                                          i === (lease.pdcCount || 12) - 1
-                                            ? Math.max(0, pdcTot - (lease.monthlyRent || 0) * ((lease.pdcCount || 12) - 1))
-                                            : lease.monthlyRent || 0,
-                                        period: `${addDays(new Date(lease.startDate || today), i * 30)} to ${addDays(new Date(lease.startDate || today), i * 30 + 29)}`,
-                                        tenureStart: addDays(new Date(lease.startDate || today), i * 30),
-                                        tenureEnd: addDays(new Date(lease.startDate || today), i * 30 + 29),
-                                      })),
+                                      chequeNo: `PDC-${(lease.unit || "").replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                                      bank: "QNB",
+                                      date: addDays(new Date(lease.startDate || today), i * 30),
+                                      amount:
+                                        i === (lease.pdcCount || 12) - 1
+                                          ? Math.max(0, pdcTot - (lease.monthlyRent || 0) * ((lease.pdcCount || 12) - 1))
+                                          : lease.monthlyRent || 0,
+                                      period: `${addDays(new Date(lease.startDate || today), i * 30)} to ${addDays(new Date(lease.startDate || today), i * 30 + 29)}`,
+                                      tenureStart: addDays(new Date(lease.startDate || today), i * 30),
+                                      tenureEnd: addDays(new Date(lease.startDate || today), i * 30 + 29),
+                                    })),
                                 vouchers: leaseVouchers.map((v) => ({
                                   receiptNo: v.receiptNo,
                                   name: v.name,
@@ -15727,831 +15883,831 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           })()}
         </TabsContent>
 
-          <TabsContent value="keys" className="space-y-4">
-            {(() => {
-              const allLeases = leases || [];
+        <TabsContent value="keys" className="space-y-4">
+          {(() => {
+            const allLeases = leases || [];
 
-              // Unique options for cross-filtering
-              const uniqueProps = Array.from(new Set(allLeases.map((l) => l.property).filter(Boolean))).sort() as string[];
-              const uniqueUnits = Array.from(
-                new Set(
-                  allLeases
-                    .filter((l) => keysPropertyFilter === "all" || l.property === keysPropertyFilter)
-                    .map((l) => l.unit)
-                    .filter(Boolean)
-                )
-              ).sort() as string[];
-              const uniqueStatuses = Array.from(new Set(allLeases.map((l) => l.status).filter(Boolean))).sort() as string[];
+            // Unique options for cross-filtering
+            const uniqueProps = Array.from(new Set(allLeases.map((l) => l.property).filter(Boolean))).sort() as string[];
+            const uniqueUnits = Array.from(
+              new Set(
+                allLeases
+                  .filter((l) => keysPropertyFilter === "all" || l.property === keysPropertyFilter)
+                  .map((l) => l.unit)
+                  .filter(Boolean)
+              )
+            ).sort() as string[];
+            const uniqueStatuses = Array.from(new Set(allLeases.map((l) => l.status).filter(Boolean))).sort() as string[];
 
-              const filteredKeysList = allLeases.filter((lease) => {
-                const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
-                const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
-                const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+            const filteredKeysList = allLeases.filter((lease) => {
+              const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+              const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+              const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
 
-                // Property filter
-                if (keysPropertyFilter !== "all" && lease?.property !== keysPropertyFilter) return false;
+              // Property filter
+              if (keysPropertyFilter !== "all" && lease?.property !== keysPropertyFilter) return false;
 
-                // Unit filter
-                if (keysUnitFilter !== "all" && lease?.unit !== keysUnitFilter) return false;
+              // Unit filter
+              if (keysUnitFilter !== "all" && lease?.unit !== keysUnitFilter) return false;
 
-                // Status filter
-                if (keysStatusFilter !== "all" && (lease?.status || "").toLowerCase() !== keysStatusFilter.toLowerCase()) return false;
+              // Status filter
+              if (keysStatusFilter !== "all" && (lease?.status || "").toLowerCase() !== keysStatusFilter.toLowerCase()) return false;
 
-                // Key Notice filter
-                if (keysNoticeFilter !== "all") {
-                  if (keysNoticeFilter === "notified" && notice && notice.status !== "notified") return false;
-                  if (keysNoticeFilter === "pending" && (!notice || notice.status !== "pending")) return false;
-                }
+              // Key Notice filter
+              if (keysNoticeFilter !== "all") {
+                if (keysNoticeFilter === "notified" && notice && notice.status !== "notified") return false;
+                if (keysNoticeFilter === "pending" && (!notice || notice.status !== "pending")) return false;
+              }
 
-                // Handover filter
-                if (keysHandoverFilter !== "all") {
-                  if (keysHandoverFilter === "handed_over" && handover && handover.status === "pending") return false;
-                  if (keysHandoverFilter === "pending" && (!handover || handover.status !== "pending")) return false;
-                }
+              // Handover filter
+              if (keysHandoverFilter !== "all") {
+                if (keysHandoverFilter === "handed_over" && handover && handover.status === "pending") return false;
+                if (keysHandoverFilter === "pending" && (!handover || handover.status !== "pending")) return false;
+              }
 
-                // Check-in filter
-                if (keysCheckInFilter !== "all") {
-                  if (keysCheckInFilter === "checked_in" && checkIn && checkIn.status === "pending") return false;
-                  if (keysCheckInFilter === "pending" && (!checkIn || checkIn.status !== "pending")) return false;
-                }
+              // Check-in filter
+              if (keysCheckInFilter !== "all") {
+                if (keysCheckInFilter === "checked_in" && checkIn && checkIn.status === "pending") return false;
+                if (keysCheckInFilter === "pending" && (!checkIn || checkIn.status !== "pending")) return false;
+              }
 
-                // Search query
-                if (keysSearchQuery.trim()) {
-                  const q = keysSearchQuery.toLowerCase().trim();
-                  const match =
-                    (lease?.tenantName || "").toLowerCase().includes(q) ||
-                    (lease?.property || "").toLowerCase().includes(q) ||
-                    (lease?.unit || "").toLowerCase().includes(q) ||
-                    (lease?.id || "").toLowerCase().includes(q) ||
-                    (lease?.status || "").toLowerCase().includes(q);
-                  if (!match) return false;
-                }
+              // Search query
+              if (keysSearchQuery.trim()) {
+                const q = keysSearchQuery.toLowerCase().trim();
+                const match =
+                  (lease?.tenantName || "").toLowerCase().includes(q) ||
+                  (lease?.property || "").toLowerCase().includes(q) ||
+                  (lease?.unit || "").toLowerCase().includes(q) ||
+                  (lease?.id || "").toLowerCase().includes(q) ||
+                  (lease?.status || "").toLowerCase().includes(q);
+                if (!match) return false;
+              }
 
-                return true;
-              });
+              return true;
+            });
 
-              const isFiltered =
-                keysPropertyFilter !== "all" ||
-                keysUnitFilter !== "all" ||
-                keysStatusFilter !== "all" ||
-                keysNoticeFilter !== "all" ||
-                keysHandoverFilter !== "all" ||
-                keysCheckInFilter !== "all" ||
-                keysSearchQuery.trim() !== "";
+            const isFiltered =
+              keysPropertyFilter !== "all" ||
+              keysUnitFilter !== "all" ||
+              keysStatusFilter !== "all" ||
+              keysNoticeFilter !== "all" ||
+              keysHandoverFilter !== "all" ||
+              keysCheckInFilter !== "all" ||
+              keysSearchQuery.trim() !== "";
 
-              const resetFilters = () => {
-                setKeysPropertyFilter("all");
-                setKeysUnitFilter("all");
-                setKeysStatusFilter("all");
-                setKeysNoticeFilter("all");
-                setKeysHandoverFilter("all");
-                setKeysCheckInFilter("all");
-                setKeysSearchQuery("");
-              };
+            const resetFilters = () => {
+              setKeysPropertyFilter("all");
+              setKeysUnitFilter("all");
+              setKeysStatusFilter("all");
+              setKeysNoticeFilter("all");
+              setKeysHandoverFilter("all");
+              setKeysCheckInFilter("all");
+              setKeysSearchQuery("");
+            };
 
-              return (
-                <Card>
-                  <CardHeader className="pb-3 pt-4 px-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-base font-semibold">Key Issue, Handover &amp; Check-In</CardTitle>
-                          <Badge variant="outline" className="text-[11px] font-normal">
-                            {filteredKeysList.length} {filteredKeysList.length === 1 ? "record" : "records"}
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-xs">
-                          No key issue is allowed unless collection is complete and the lease is fully signed.
-                        </CardDescription>
+            return (
+              <Card>
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold">Key Issue, Handover &amp; Check-In</CardTitle>
+                        <Badge variant="outline" className="text-[11px] font-normal">
+                          {filteredKeysList.length} {filteredKeysList.length === 1 ? "record" : "records"}
+                        </Badge>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isFiltered && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 text-xs text-muted-foreground gap-1"
-                            onClick={resetFilters}
-                          >
-                            <RotateCcw className="h-3 w-3" /> Reset Filters
-                          </Button>
-                        )}
+                      <CardDescription className="text-xs">
+                        No key issue is allowed unless collection is complete and the lease is fully signed.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isFiltered && (
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                          onClick={() => {
-                            exportToExcel(
-                              filteredKeysList.map((lease) => {
-                                const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
-                                const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
-                                const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
-                                return {
-                                  "Customer": lease?.tenantName || "—",
-                                  "Property": lease?.property || "—",
-                                  "Unit": lease?.unit || "—",
-                                  "Lease Status": lease?.status || "—",
-                                  "Notice Status": notice ? notice.status : "Notified",
-                                  "Handover Date": handover?.handoverAt || lease?.startDate || "—",
-                                  "Keys Delivered": handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "2 keys, 2 cards",
-                                  "Check-In Status": checkIn ? "Checked In" : "Checked In",
-                                  "Unit Condition": checkIn?.condition || "Good",
-                                  "Audit Photos Count": checkIn?.photos || 8,
-                                };
-                              }),
-                              `Key_Handover_Checkin_Export_${new Date().toISOString().split("T")[0]}`
-                            );
-                          }}
+                          variant="ghost"
+                          className="h-8 text-xs text-muted-foreground gap-1"
+                          onClick={resetFilters}
                         >
-                          <Download className="h-3.5 w-3.5" /> Export to Excel
+                          <RotateCcw className="h-3 w-3" /> Reset Filters
                         </Button>
-                      </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                        onClick={() => {
+                          exportToExcel(
+                            filteredKeysList.map((lease) => {
+                              const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+                              const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+                              const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+                              return {
+                                "Customer": lease?.tenantName || "—",
+                                "Property": lease?.property || "—",
+                                "Unit": lease?.unit || "—",
+                                "Lease Status": lease?.status || "—",
+                                "Notice Status": notice ? notice.status : "Notified",
+                                "Handover Date": handover?.handoverAt || lease?.startDate || "—",
+                                "Keys Delivered": handover ? `${handover.keys} keys, ${handover.accessCards} cards` : "2 keys, 2 cards",
+                                "Check-In Status": checkIn ? "Checked In" : "Checked In",
+                                "Unit Condition": checkIn?.condition || "Good",
+                                "Audit Photos Count": checkIn?.photos || 8,
+                              };
+                            }),
+                            `Key_Handover_Checkin_Export_${new Date().toISOString().split("T")[0]}`
+                          );
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Multi-Dimensional Filter & Search Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
+                    {/* Search Input */}
+                    <div className="relative md:col-span-2">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search customer, unit, property, lease ID..."
+                        value={keysSearchQuery}
+                        onChange={(e) => setKeysSearchQuery(e.target.value)}
+                        className="pl-8 h-8 text-xs bg-background"
+                      />
                     </div>
 
-                    {/* Multi-Dimensional Filter & Search Bar */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5 pt-3">
-                      {/* Search Input */}
-                      <div className="relative md:col-span-2">
+                    {/* Property Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={keysPropertyFilter}
+                        onValueChange={(val) => {
+                          setKeysPropertyFilter(val);
+                          if (val !== "all" && keysUnitFilter !== "all") {
+                            const unitMatches = allLeases.some((l) => l.property === val && l.unit === keysUnitFilter);
+                            if (!unitMatches) setKeysUnitFilter("all");
+                          }
+                        }}
+                        placeholder={`All Properties (${uniqueProps.length})`}
+                        emptyText="No properties found"
+                        options={[
+                          { label: `All Properties (${uniqueProps.length})`, value: "all" },
+                          ...uniqueProps.map((p) => ({ label: p, value: p })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Unit Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={keysUnitFilter}
+                        onValueChange={(val) => {
+                          setKeysUnitFilter(val);
+                          if (val !== "all") {
+                            const matchLease = allLeases.find((l) => l.unit === val);
+                            if (matchLease && keysPropertyFilter === "all" && matchLease.property) {
+                              setKeysPropertyFilter(matchLease.property);
+                            }
+                          }
+                        }}
+                        placeholder={`All Units (${uniqueUnits.length})`}
+                        emptyText="No units found"
+                        options={[
+                          { label: `All Units (${uniqueUnits.length})`, value: "all" },
+                          ...uniqueUnits.map((u) => ({ label: u, value: u })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Lease Status Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={keysStatusFilter}
+                        onValueChange={setKeysStatusFilter}
+                        placeholder="All Statuses"
+                        emptyText="No statuses found"
+                        options={[
+                          { label: "All Statuses", value: "all" },
+                          ...uniqueStatuses.map((s) => ({
+                            label: s.charAt(0).toUpperCase() + s.slice(1),
+                            value: s,
+                          })),
+                        ]}
+                      />
+                    </div>
+
+                    {/* Key Notice Filter */}
+                    <div>
+                      <SearchableSelect
+                        value={keysNoticeFilter}
+                        onValueChange={setKeysNoticeFilter}
+                        placeholder="All Notices"
+                        emptyText="No notice status found"
+                        options={[
+                          { label: "All Notices", value: "all" },
+                          { label: "Notified", value: "notified" },
+                          { label: "Pending Notice", value: "pending" },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4">
+                  <DataTable
+                    key={`keys-${keysPropertyFilter}-${keysUnitFilter}-${keysStatusFilter}-${keysNoticeFilter}-${keysHandoverFilter}-${keysCheckInFilter}-${keysSearchQuery}`}
+                    columns={["Customer", "Property / Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
+                    rows={filteredKeysList.map((lease) => {
+                      const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
+                      const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
+                      const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
+                      return [
+                        <div key="cust" className="flex flex-col">
+                          <span className="font-semibold text-foreground text-xs">{lease?.tenantName || "Tenant"}</span>
+                          <span className="text-[10px] text-muted-foreground">{lease?.id?.slice(0, 8)}</span>
+                        </div>,
+                        <div key="prop" className="flex flex-col">
+                          <span className="font-mono text-xs font-bold text-foreground">{lease?.unit || "—"}</span>
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{lease?.property || "—"}</span>
+                        </div>,
+                        <StatusBadge key="status" value={lease?.status} />,
+                        notice ? (
+                          <div key="notice" className="flex flex-col gap-0.5">
+                            <StatusBadge value={notice.status} />
+                            <span className="text-[10px] text-muted-foreground">
+                              {notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <div key="notice" className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">
+                              ✉️ Notified
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">{lease?.startDate || "-"}</span>
+                          </div>
+                        ),
+                        handover ? (
+                          <div key="handover" className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
+                              ✅ Handed Over
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {handover.keys || 2}× keys · {handover.accessCards || 2} cards
+                            </span>
+                          </div>
+                        ) : (
+                          <div key="handover" className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
+                              ✅ Handed Over
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">2× keys · 2 cards</span>
+                          </div>
+                        ),
+                        checkIn ? (
+                          <div key="checkin" className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
+                              🏠 Checked In
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {checkIn.condition || "Good"} · {checkIn.photos || 8} photos
+                            </span>
+                          </div>
+                        ) : (
+                          <div key="checkin" className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
+                              🏠 Checked In
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">Good · 8 photos</span>
+                          </div>
+                        ),
+                        <div key="actions" className="flex items-center justify-end gap-1.5 flex-nowrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!!notice}
+                            className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${notice ? "opacity-50" : ""}`}
+                            onClick={() => {
+                              setKeysWorkflowLease(lease);
+                              setKeyNotifyForm({
+                                handoverAt: lease?.startDate || addDays(today, 1),
+                                handoverTime: "10:00",
+                                recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"],
+                                authorizedCollector: lease?.tenantName || "",
+                                keysSummary: "2 metal keys, 2 access cards, 1 parking remote",
+                                staffContact: "Property Manager - +974 4400 2200",
+                                outstandingRequirements: "None",
+                                note: "",
+                              });
+                              setKeyNotifyOpen(true);
+                            }}
+                          >
+                            {notice ? "Notified ✓" : "Send Notice"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px] font-medium whitespace-nowrap border-green-300 text-green-700 hover:bg-green-50"
+                            onClick={() => {
+                              if (handover) {
+                                setSelectedHandover(handover);
+                              } else {
+                                setSelectedHandover({
+                                  id: `hnd-${lease?.id}`,
+                                  leaseId: lease?.id,
+                                  handoverAt: lease?.startDate ? `${lease.startDate} 10:00 AM` : "2026-04-01 10:00 AM",
+                                  keys: 2,
+                                  keyType: "Metal door keys (Master & Duplicate)",
+                                  accessCards: 2,
+                                  parkingRemotes: 1,
+                                  parkingDeviceDetails: "Remote #R-402, RFID Gate Tag #GT-881, Bay P1-14",
+                                  electricityMeterReading: "12,450 kWh",
+                                  waterMeterReading: "840 m³",
+                                  unitCondition: "Good",
+                                  cleanliness: "Clean",
+                                  acWorking: true,
+                                  plumbingOk: true,
+                                  electricalOk: true,
+                                  doorsWindowsOk: true,
+                                  idVerified: true,
+                                  photosTaken: 6,
+                                  acknowledged: true,
+                                  issuedBy: "Property Manager",
+                                  collectorName: lease?.tenantName || "Tenant",
+                                  collectorIdNumber: "29463401928 (QID Verified)",
+                                  tenantAcknowledgement:
+                                    "I hereby confirm receipt of the above keys, access cards, and devices in good working order. I accept the property in the documented condition with all meter readings verified.",
+                                  assetsSnapshot: [
+                                    { id: "a1", name: "Split Air Conditioning Units (x3)", code: "HVAC-SPL-01", condition: "Excellent", remarks: "Serviced, clean filters, cooling tested OK ✓" },
+                                    { id: "a2", name: "Built-in Gas Cooktop & Oven", code: "APP-KIT-02", condition: "Good", remarks: "Ignition and all burners verified working ✓" },
+                                    { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", code: "APP-REF-03", condition: "Good", remarks: "Clean, defrosted, temperature tested ✓" },
+                                    { id: "a4", name: "Electric Water Heater (80L)", code: "PLM-WTR-01", condition: "Excellent", remarks: "Thermostat and safety valve inspected ✓" },
+                                    { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", code: "FUR-WRD-01", condition: "Excellent", remarks: "Hinges and sliding tracks aligned ✓" },
+                                  ],
+                                } as any);
+                              }
+                              setHandoverViewOpen(true);
+                            }}
+                          >
+                            View Receipt
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!notice}
+                            className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}
+                            onClick={() => {
+                              setKeysWorkflowLease(lease);
+                              setHandoverActiveTab("details");
+                              setHandoverOpen(true);
+                            }}
+                          >
+                            Complete Handover
+                          </Button>
+                        </div>,
+                      ];
+                    })}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
+        </TabsContent>
+
+        <TabsContent value="renewals" className="space-y-4">
+          {(() => {
+            // Gather lease objects for renewals
+            const renewalLeases = (renewals || []).map(r => {
+              const lease = (leases || []).find(l => l.id === r.leaseId);
+              return { renewal: r, lease };
+            });
+
+            // Apply filters
+            const filteredList = renewalLeases.filter(({ renewal, lease }) => {
+              const prop = lease?.property || "";
+              const unit = lease?.unit || "";
+              const tenant = lease?.tenantName || "";
+              const status = renewal?.status || "";
+              const start = lease?.startDate ? String(lease.startDate).split("T")[0] : "";
+              const end = lease?.endDate ? String(lease.endDate).split("T")[0] : "";
+              const rent = renewal?.proposedRent || lease?.monthlyRent || 0;
+              const annualRent = rent * 12;
+              const ref = (renewal.leaseId || "").toLowerCase();
+
+              // Quick search
+              if (renewalSearchQuery.trim()) {
+                const q = renewalSearchQuery.toLowerCase().trim();
+                const match =
+                  ref.includes(q) ||
+                  prop.toLowerCase().includes(q) ||
+                  unit.toLowerCase().includes(q) ||
+                  tenant.toLowerCase().includes(q);
+                if (!match) return false;
+              }
+
+              // Property filter
+              if (renewalPropertyFilter !== "all" && prop !== renewalPropertyFilter) return false;
+
+              // Unit filter
+              if (renewalUnitFilter !== "all") {
+                if (renewalUnitFilter.includes("||")) {
+                  const [fp, fu] = renewalUnitFilter.split("||");
+                  if (prop !== fp || unit !== fu) return false;
+                } else if (unit.toLowerCase() !== renewalUnitFilter.toLowerCase()) {
+                  return false;
+                }
+              }
+
+              // Customer filter
+              if (renewalCustomerFilter !== "all" && tenant.toLowerCase() !== renewalCustomerFilter.toLowerCase()) {
+                return false;
+              }
+
+              // Status filter
+              if (renewalStatusFilter !== "all") {
+                if (renewalStatusFilter === "expired" && status !== "expired") return false;
+                if (renewalStatusFilter === "awaiting_response" && status !== "awaiting_response") return false;
+                if (renewalStatusFilter === "under_discussion" && status !== "under_discussion") return false;
+                if (renewalStatusFilter === "renewal_confirmed" && status !== "renewal_confirmed") return false;
+                if (renewalStatusFilter === "non_renewal_confirmed" && status !== "non_renewal_confirmed") return false;
+                if (renewalStatusFilter === "renewal_declined" && status !== "renewal_declined") return false;
+              }
+
+              // Date ranges
+              if (renewalStartFrom && start && start < renewalStartFrom) return false;
+              if (renewalStartTo && start && start > renewalStartTo) return false;
+              if (renewalEndFrom && end && end < renewalEndFrom) return false;
+              if (renewalEndTo && end && end > renewalEndTo) return false;
+
+              // Rent ranges (Annual QAR)
+              if (renewalRentMin && annualRent < Number(renewalRentMin)) return false;
+              if (renewalRentMax && annualRent > Number(renewalRentMax)) return false;
+
+              return true;
+            });
+
+            // Options for dropdowns
+            const uniqueProps = Array.from(new Set(renewalLeases.map(rl => rl.lease?.property).filter(Boolean))).sort() as string[];
+            const uniqueUnits = Array.from(new Set(
+              renewalLeases
+                .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
+                .map(rl => rl.lease?.unit)
+                .filter(Boolean)
+            )).sort() as string[];
+            const uniqueCustomers = Array.from(new Set(
+              renewalLeases
+                .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
+                .map(rl => rl.lease?.tenantName)
+                .filter(Boolean)
+            )).sort() as string[];
+
+            const isFiltered =
+              renewalPropertyFilter !== "all" ||
+              renewalUnitFilter !== "all" ||
+              renewalCustomerFilter !== "all" ||
+              renewalStatusFilter !== "all" ||
+              renewalSearchQuery.trim() !== "" ||
+              renewalStartFrom !== "" ||
+              renewalStartTo !== "" ||
+              renewalEndFrom !== "" ||
+              renewalEndTo !== "" ||
+              renewalRentMin !== "" ||
+              renewalRentMax !== "";
+
+            const activeFilterCount = [
+              renewalPropertyFilter !== "all",
+              renewalUnitFilter !== "all",
+              renewalCustomerFilter !== "all",
+              renewalStatusFilter !== "all",
+              renewalSearchQuery.trim() !== "",
+              renewalStartFrom !== "",
+              renewalStartTo !== "",
+              renewalEndFrom !== "",
+              renewalEndTo !== "",
+              renewalRentMin !== "",
+              renewalRentMax !== "",
+            ].filter(Boolean).length;
+
+            const clearRenewalFilters = () => {
+              setRenewalPropertyFilter("all");
+              setRenewalUnitFilter("all");
+              setRenewalCustomerFilter("all");
+              setRenewalStatusFilter("all");
+              setRenewalSearchQuery("");
+              setRenewalStartFrom("");
+              setRenewalStartTo("");
+              setRenewalEndFrom("");
+              setRenewalEndTo("");
+              setRenewalRentMin("");
+              setRenewalRentMax("");
+            };
+
+            return (
+              <Card>
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base font-semibold">Lease Renewal Notification &amp; Process</CardTitle>
+                      <CardDescription className="text-xs">
+                        Detect leases due for renewal or expired, track negotiation status, and dispatch renewal terms.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Quick search input */}
+                      <div className="relative w-56 sm:w-64">
                         <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
-                          placeholder="Search customer, unit, property, lease ID..."
-                          value={keysSearchQuery}
-                          onChange={(e) => setKeysSearchQuery(e.target.value)}
+                          placeholder="Search ref, property, unit, tenant…"
+                          value={renewalSearchQuery}
+                          onChange={(e) => setRenewalSearchQuery(e.target.value)}
                           className="pl-8 h-8 text-xs bg-background"
                         />
                       </div>
 
-                      {/* Property Filter */}
-                      <div>
-                        <SearchableSelect
-                          value={keysPropertyFilter}
-                          onValueChange={(val) => {
-                            setKeysPropertyFilter(val);
-                            if (val !== "all" && keysUnitFilter !== "all") {
-                              const unitMatches = allLeases.some((l) => l.property === val && l.unit === keysUnitFilter);
-                              if (!unitMatches) setKeysUnitFilter("all");
-                            }
-                          }}
-                          placeholder={`All Properties (${uniqueProps.length})`}
-                          emptyText="No properties found"
-                          options={[
-                            { label: `All Properties (${uniqueProps.length})`, value: "all" },
-                            ...uniqueProps.map((p) => ({ label: p, value: p })),
-                          ]}
-                        />
-                      </div>
+                      {/* Filters Toggle Button */}
+                      <Button
+                        variant={showRenewalFilters ? "default" : "outline"}
+                        size="sm"
+                        className="gap-1.5 text-xs h-8 relative"
+                        onClick={() => setShowRenewalFilters((p) => !p)}
+                      >
+                        <Filter className="h-3.5 w-3.5" />
+                        Filters
+                        {activeFilterCount > 0 && (
+                          <span className="ml-1 rounded-full bg-primary-foreground text-primary px-1.5 py-0.2 text-[10px] font-bold">
+                            {activeFilterCount}
+                          </span>
+                        )}
+                      </Button>
 
-                      {/* Unit Filter */}
-                      <div>
-                        <SearchableSelect
-                          value={keysUnitFilter}
-                          onValueChange={(val) => {
-                            setKeysUnitFilter(val);
-                            if (val !== "all") {
-                              const matchLease = allLeases.find((l) => l.unit === val);
-                              if (matchLease && keysPropertyFilter === "all" && matchLease.property) {
-                                setKeysPropertyFilter(matchLease.property);
-                              }
-                            }
-                          }}
-                          placeholder={`All Units (${uniqueUnits.length})`}
-                          emptyText="No units found"
-                          options={[
-                            { label: `All Units (${uniqueUnits.length})`, value: "all" },
-                            ...uniqueUnits.map((u) => ({ label: u, value: u })),
-                          ]}
-                        />
-                      </div>
+                      {/* Clear button if filtered */}
+                      {isFiltered && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-muted-foreground gap-1"
+                          onClick={clearRenewalFilters}
+                        >
+                          <X className="h-3.5 w-3.5" /> Clear
+                        </Button>
+                      )}
 
-                      {/* Lease Status Filter */}
-                      <div>
-                        <SearchableSelect
-                          value={keysStatusFilter}
-                          onValueChange={setKeysStatusFilter}
-                          placeholder="All Statuses"
-                          emptyText="No statuses found"
-                          options={[
-                            { label: "All Statuses", value: "all" },
-                            ...uniqueStatuses.map((s) => ({
-                              label: s.charAt(0).toUpperCase() + s.slice(1),
-                              value: s,
+                      {/* Export to Excel */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
+                        onClick={() => {
+                          exportToExcel(
+                            filteredList.map(({ renewal, lease }) => ({
+                              "Lease ID": renewal.leaseId,
+                              "Customer / Tenant": lease?.tenantName || "—",
+                              "Property": lease?.property || "—",
+                              "Unit": lease?.unit || "—",
+                              "Current Expiry": lease?.endDate || "—",
+                              "Proposed Period": renewal?.proposedPeriod || "—",
+                              "Proposed Rent (QAR)": renewal?.proposedRent || 0,
+                              "Revised Terms": renewal?.revisedTerms || "—",
+                              "Last Confirmation Date": renewal?.lastConfirmationDate || "—",
+                              "Outstanding Obligations": renewal?.outstandingObligations || "—",
+                              "Status": renewal?.status === "expired" ? "Expired" : renewal?.status,
+                              "Recipients": renewal?.recipients || "—",
                             })),
-                          ]}
-                        />
-                      </div>
-
-                      {/* Key Notice Filter */}
-                      <div>
-                        <SearchableSelect
-                          value={keysNoticeFilter}
-                          onValueChange={setKeysNoticeFilter}
-                          placeholder="All Notices"
-                          emptyText="No notice status found"
-                          options={[
-                            { label: "All Notices", value: "all" },
-                            { label: "Notified", value: "notified" },
-                            { label: "Pending Notice", value: "pending" },
-                          ]}
-                        />
-                      </div>
+                            `Lease_Renewals_Export_${new Date().toISOString().split("T")[0]}`
+                          );
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
                     </div>
-                  </CardHeader>
-                  <CardContent className="px-4 pb-4">
-                    <DataTable
-                      key={`keys-${keysPropertyFilter}-${keysUnitFilter}-${keysStatusFilter}-${keysNoticeFilter}-${keysHandoverFilter}-${keysCheckInFilter}-${keysSearchQuery}`}
-                      columns={["Customer", "Property / Unit", "Status", "Key Notice", "Handover", "Check-In", "Actions"]}
-                      rows={filteredKeysList.map((lease) => {
-                        const notice = (keyNotices || []).find((item) => item.leaseId === lease?.id);
-                        const handover = (handovers || []).find((item) => item.leaseId === lease?.id);
-                        const checkIn = (inspections || []).find((item) => item.leaseId === lease?.id && item.type === "check_in");
-                        return [
-                          <div key="cust" className="flex flex-col">
-                            <span className="font-semibold text-foreground text-xs">{lease?.tenantName || "Tenant"}</span>
-                            <span className="text-[10px] text-muted-foreground">{lease?.id?.slice(0, 8)}</span>
-                          </div>,
-                          <div key="prop" className="flex flex-col">
-                            <span className="font-mono text-xs font-bold text-foreground">{lease?.unit || "—"}</span>
-                            <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{lease?.property || "—"}</span>
-                          </div>,
-                          <StatusBadge key="status" value={lease?.status} />,
-                          notice ? (
-                            <div key="notice" className="flex flex-col gap-0.5">
-                              <StatusBadge value={notice.status} />
-                              <span className="text-[10px] text-muted-foreground">
-                                {notice.handoverAt || lease?.startDate || ""} {notice.handoverTime || ""}
-                              </span>
-                            </div>
-                          ) : (
-                            <div key="notice" className="flex flex-col gap-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-950/40 rounded-full px-2 py-0.5 w-fit">
-                                ✉️ Notified
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">{lease?.startDate || "-"}</span>
-                            </div>
-                          ),
-                          handover ? (
-                            <div key="handover" className="flex flex-col gap-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
-                                ✅ Handed Over
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {handover.keys || 2}× keys · {handover.accessCards || 2} cards
-                              </span>
-                            </div>
-                          ) : (
-                            <div key="handover" className="flex flex-col gap-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-100 dark:bg-green-950/40 rounded-full px-2 py-0.5 w-fit">
-                                ✅ Handed Over
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">2× keys · 2 cards</span>
-                            </div>
-                          ),
-                          checkIn ? (
-                            <div key="checkin" className="flex flex-col gap-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
-                                🏠 Checked In
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {checkIn.condition || "Good"} · {checkIn.photos || 8} photos
-                              </span>
-                            </div>
-                          ) : (
-                            <div key="checkin" className="flex flex-col gap-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-100 dark:bg-indigo-950/40 rounded-full px-2 py-0.5 w-fit">
-                                🏠 Checked In
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">Good · 8 photos</span>
-                            </div>
-                          ),
-                          <div key="actions" className="flex items-center justify-end gap-1.5 flex-nowrap">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!!notice}
-                              className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${notice ? "opacity-50" : ""}`}
-                              onClick={() => {
-                                setKeysWorkflowLease(lease);
-                                setKeyNotifyForm({
-                                  handoverAt: lease?.startDate || addDays(today, 1),
-                                  handoverTime: "10:00",
-                                  recipients: ["Tenant", "Property Manager", "Concerned Property Staff", "Security", "Maintenance"],
-                                  authorizedCollector: lease?.tenantName || "",
-                                  keysSummary: "2 metal keys, 2 access cards, 1 parking remote",
-                                  staffContact: "Property Manager - +974 4400 2200",
-                                  outstandingRequirements: "None",
-                                  note: "",
-                                });
-                                setKeyNotifyOpen(true);
-                              }}
-                            >
-                              {notice ? "Notified ✓" : "Send Notice"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-[11px] font-medium whitespace-nowrap border-green-300 text-green-700 hover:bg-green-50"
-                              onClick={() => {
-                                if (handover) {
-                                  setSelectedHandover(handover);
-                                } else {
-                                  setSelectedHandover({
-                                    id: `hnd-${lease?.id}`,
-                                    leaseId: lease?.id,
-                                    handoverAt: lease?.startDate ? `${lease.startDate} 10:00 AM` : "2026-04-01 10:00 AM",
-                                    keys: 2,
-                                    keyType: "Metal door keys (Master & Duplicate)",
-                                    accessCards: 2,
-                                    parkingRemotes: 1,
-                                    parkingDeviceDetails: "Remote #R-402, RFID Gate Tag #GT-881, Bay P1-14",
-                                    electricityMeterReading: "12,450 kWh",
-                                    waterMeterReading: "840 m³",
-                                    unitCondition: "Good",
-                                    cleanliness: "Clean",
-                                    acWorking: true,
-                                    plumbingOk: true,
-                                    electricalOk: true,
-                                    doorsWindowsOk: true,
-                                    idVerified: true,
-                                    photosTaken: 6,
-                                    acknowledged: true,
-                                    issuedBy: "Property Manager",
-                                    collectorName: lease?.tenantName || "Tenant",
-                                    collectorIdNumber: "29463401928 (QID Verified)",
-                                    tenantAcknowledgement:
-                                      "I hereby confirm receipt of the above keys, access cards, and devices in good working order. I accept the property in the documented condition with all meter readings verified.",
-                                    assetsSnapshot: [
-                                      { id: "a1", name: "Split Air Conditioning Units (x3)", code: "HVAC-SPL-01", condition: "Excellent", remarks: "Serviced, clean filters, cooling tested OK ✓" },
-                                      { id: "a2", name: "Built-in Gas Cooktop & Oven", code: "APP-KIT-02", condition: "Good", remarks: "Ignition and all burners verified working ✓" },
-                                      { id: "a3", name: "Double-Door Refrigerator (Frost-Free)", code: "APP-REF-03", condition: "Good", remarks: "Clean, defrosted, temperature tested ✓" },
-                                      { id: "a4", name: "Electric Water Heater (80L)", code: "PLM-WTR-01", condition: "Excellent", remarks: "Thermostat and safety valve inspected ✓" },
-                                      { id: "a5", name: "Master Bedroom Wardrobes (Built-in)", code: "FUR-WRD-01", condition: "Excellent", remarks: "Hinges and sliding tracks aligned ✓" },
-                                    ],
-                                  } as any);
-                                }
-                                setHandoverViewOpen(true);
-                              }}
-                            >
-                              View Receipt
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!notice}
-                              className={`h-7 px-2 text-[11px] font-medium whitespace-nowrap ${!notice ? "border-slate-200 text-muted-foreground opacity-50" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}
-                              onClick={() => {
-                                setKeysWorkflowLease(lease);
-                                setHandoverActiveTab("details");
-                                setHandoverOpen(true);
-                              }}
-                            >
-                              Complete Handover
-                            </Button>
-                          </div>,
-                        ];
-                      })}
-                    />
-                  </CardContent>
-                </Card>
-              );
-            })()}
-          </TabsContent>
+                  </div>
 
-          <TabsContent value="renewals" className="space-y-4">
-            {(() => {
-              // Gather lease objects for renewals
-              const renewalLeases = (renewals || []).map(r => {
-                const lease = (leases || []).find(l => l.id === r.leaseId);
-                return { renewal: r, lease };
-              });
-
-              // Apply filters
-              const filteredList = renewalLeases.filter(({ renewal, lease }) => {
-                const prop = lease?.property || "";
-                const unit = lease?.unit || "";
-                const tenant = lease?.tenantName || "";
-                const status = renewal?.status || "";
-                const start = lease?.startDate ? String(lease.startDate).split("T")[0] : "";
-                const end = lease?.endDate ? String(lease.endDate).split("T")[0] : "";
-                const rent = renewal?.proposedRent || lease?.monthlyRent || 0;
-                const annualRent = rent * 12;
-                const ref = (renewal.leaseId || "").toLowerCase();
-
-                // Quick search
-                if (renewalSearchQuery.trim()) {
-                  const q = renewalSearchQuery.toLowerCase().trim();
-                  const match =
-                    ref.includes(q) ||
-                    prop.toLowerCase().includes(q) ||
-                    unit.toLowerCase().includes(q) ||
-                    tenant.toLowerCase().includes(q);
-                  if (!match) return false;
-                }
-
-                // Property filter
-                if (renewalPropertyFilter !== "all" && prop !== renewalPropertyFilter) return false;
-
-                // Unit filter
-                if (renewalUnitFilter !== "all") {
-                  if (renewalUnitFilter.includes("||")) {
-                    const [fp, fu] = renewalUnitFilter.split("||");
-                    if (prop !== fp || unit !== fu) return false;
-                  } else if (unit.toLowerCase() !== renewalUnitFilter.toLowerCase()) {
-                    return false;
-                  }
-                }
-
-                // Customer filter
-                if (renewalCustomerFilter !== "all" && tenant.toLowerCase() !== renewalCustomerFilter.toLowerCase()) {
-                  return false;
-                }
-
-                // Status filter
-                if (renewalStatusFilter !== "all") {
-                  if (renewalStatusFilter === "expired" && status !== "expired") return false;
-                  if (renewalStatusFilter === "awaiting_response" && status !== "awaiting_response") return false;
-                  if (renewalStatusFilter === "under_discussion" && status !== "under_discussion") return false;
-                  if (renewalStatusFilter === "renewal_confirmed" && status !== "renewal_confirmed") return false;
-                  if (renewalStatusFilter === "non_renewal_confirmed" && status !== "non_renewal_confirmed") return false;
-                  if (renewalStatusFilter === "renewal_declined" && status !== "renewal_declined") return false;
-                }
-
-                // Date ranges
-                if (renewalStartFrom && start && start < renewalStartFrom) return false;
-                if (renewalStartTo && start && start > renewalStartTo) return false;
-                if (renewalEndFrom && end && end < renewalEndFrom) return false;
-                if (renewalEndTo && end && end > renewalEndTo) return false;
-
-                // Rent ranges (Annual QAR)
-                if (renewalRentMin && annualRent < Number(renewalRentMin)) return false;
-                if (renewalRentMax && annualRent > Number(renewalRentMax)) return false;
-
-                return true;
-              });
-
-              // Options for dropdowns
-              const uniqueProps = Array.from(new Set(renewalLeases.map(rl => rl.lease?.property).filter(Boolean))).sort() as string[];
-              const uniqueUnits = Array.from(new Set(
-                renewalLeases
-                  .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
-                  .map(rl => rl.lease?.unit)
-                  .filter(Boolean)
-              )).sort() as string[];
-              const uniqueCustomers = Array.from(new Set(
-                renewalLeases
-                  .filter(rl => renewalPropertyFilter === "all" || rl.lease?.property === renewalPropertyFilter)
-                  .map(rl => rl.lease?.tenantName)
-                  .filter(Boolean)
-              )).sort() as string[];
-
-              const isFiltered =
-                renewalPropertyFilter !== "all" ||
-                renewalUnitFilter !== "all" ||
-                renewalCustomerFilter !== "all" ||
-                renewalStatusFilter !== "all" ||
-                renewalSearchQuery.trim() !== "" ||
-                renewalStartFrom !== "" ||
-                renewalStartTo !== "" ||
-                renewalEndFrom !== "" ||
-                renewalEndTo !== "" ||
-                renewalRentMin !== "" ||
-                renewalRentMax !== "";
-
-              const activeFilterCount = [
-                renewalPropertyFilter !== "all",
-                renewalUnitFilter !== "all",
-                renewalCustomerFilter !== "all",
-                renewalStatusFilter !== "all",
-                renewalSearchQuery.trim() !== "",
-                renewalStartFrom !== "",
-                renewalStartTo !== "",
-                renewalEndFrom !== "",
-                renewalEndTo !== "",
-                renewalRentMin !== "",
-                renewalRentMax !== "",
-              ].filter(Boolean).length;
-
-              const clearRenewalFilters = () => {
-                setRenewalPropertyFilter("all");
-                setRenewalUnitFilter("all");
-                setRenewalCustomerFilter("all");
-                setRenewalStatusFilter("all");
-                setRenewalSearchQuery("");
-                setRenewalStartFrom("");
-                setRenewalStartTo("");
-                setRenewalEndFrom("");
-                setRenewalEndTo("");
-                setRenewalRentMin("");
-                setRenewalRentMax("");
-              };
-
-              return (
-                <Card>
-                  <CardHeader className="pb-3 pt-4 px-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <CardTitle className="text-base font-semibold">Lease Renewal Notification &amp; Process</CardTitle>
-                        <CardDescription className="text-xs">
-                          Detect leases due for renewal or expired, track negotiation status, and dispatch renewal terms.
-                        </CardDescription>
+                  {/* Advanced Filter Panel */}
+                  {showRenewalFilters && (
+                    <div className="mt-3 p-3.5 rounded-lg border border-border bg-muted/10 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Advanced Filters
+                        </p>
+                        <span className="text-xs text-muted-foreground">
+                          Showing <span className="font-semibold text-foreground">{filteredList.length}</span> of{" "}
+                          <span className="font-semibold text-foreground">{renewals.length}</span> renewal contracts
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* Quick search input */}
-                        <div className="relative w-56 sm:w-64">
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {/* Property Name */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Property Name</label>
+                          <select
+                            value={renewalPropertyFilter}
+                            onChange={(e) => {
+                              setRenewalPropertyFilter(e.target.value);
+                              setRenewalUnitFilter("all");
+                            }}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          >
+                            <option value="all">All Properties ({uniqueProps.length})</option>
+                            {uniqueProps.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Unit */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Unit</label>
                           <Input
-                            placeholder="Search ref, property, unit, tenant…"
-                            value={renewalSearchQuery}
-                            onChange={(e) => setRenewalSearchQuery(e.target.value)}
-                            className="pl-8 h-8 text-xs bg-background"
+                            placeholder="e.g. Flat 101"
+                            value={renewalUnitFilter === "all" ? "" : renewalUnitFilter}
+                            onChange={(e) => setRenewalUnitFilter(e.target.value.trim() ? e.target.value : "all")}
+                            className="h-8 text-xs"
                           />
                         </div>
 
-                        {/* Filters Toggle Button */}
-                        <Button
-                          variant={showRenewalFilters ? "default" : "outline"}
-                          size="sm"
-                          className="gap-1.5 text-xs h-8 relative"
-                          onClick={() => setShowRenewalFilters((p) => !p)}
-                        >
-                          <Filter className="h-3.5 w-3.5" />
-                          Filters
-                          {activeFilterCount > 0 && (
-                            <span className="ml-1 rounded-full bg-primary-foreground text-primary px-1.5 py-0.2 text-[10px] font-bold">
-                              {activeFilterCount}
-                            </span>
-                          )}
-                        </Button>
+                        {/* Tenant Name */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Tenant Name</label>
+                          <Input
+                            placeholder="Tenant name…"
+                            value={renewalCustomerFilter === "all" ? "" : renewalCustomerFilter}
+                            onChange={(e) => setRenewalCustomerFilter(e.target.value.trim() ? e.target.value : "all")}
+                            className="h-8 text-xs"
+                          />
+                        </div>
 
-                        {/* Clear button if filtered */}
-                        {isFiltered && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs text-muted-foreground gap-1"
-                            onClick={clearRenewalFilters}
+                        {/* Status - including Expired */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Status</label>
+                          <select
+                            value={renewalStatusFilter}
+                            onChange={(e) => setRenewalStatusFilter(e.target.value)}
+                            className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                           >
-                            <X className="h-3.5 w-3.5" /> Clear
-                          </Button>
-                        )}
+                            <option value="all">All Statuses</option>
+                            <option value="expired">Expired</option>
+                            <option value="awaiting_response">Awaiting Response</option>
+                            <option value="under_discussion">Under Discussion</option>
+                            <option value="renewal_confirmed">Renewal Confirmed</option>
+                            <option value="non_renewal_confirmed">Non-Renewal Confirmed</option>
+                            <option value="renewal_declined">Renewal Declined</option>
+                          </select>
+                        </div>
 
-                        {/* Export to Excel */}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 self-start sm:self-auto shrink-0"
-                          onClick={() => {
-                            exportToExcel(
-                              filteredList.map(({ renewal, lease }) => ({
-                                "Lease ID": renewal.leaseId,
-                                "Customer / Tenant": lease?.tenantName || "—",
-                                "Property": lease?.property || "—",
-                                "Unit": lease?.unit || "—",
-                                "Current Expiry": lease?.endDate || "—",
-                                "Proposed Period": renewal?.proposedPeriod || "—",
-                                "Proposed Rent (QAR)": renewal?.proposedRent || 0,
-                                "Revised Terms": renewal?.revisedTerms || "—",
-                                "Last Confirmation Date": renewal?.lastConfirmationDate || "—",
-                                "Outstanding Obligations": renewal?.outstandingObligations || "—",
-                                "Status": renewal?.status === "expired" ? "Expired" : renewal?.status,
-                                "Recipients": renewal?.recipients || "—",
-                              })),
-                              `Lease_Renewals_Export_${new Date().toISOString().split("T")[0]}`
-                            );
-                          }}
-                        >
-                          <Download className="h-3.5 w-3.5" /> Export to Excel
-                        </Button>
+                        {/* Start Date - From */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Start Date — From</label>
+                          <Input
+                            type="date"
+                            value={renewalStartFrom}
+                            onChange={(e) => setRenewalStartFrom(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* Start Date - To */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Start Date — To</label>
+                          <Input
+                            type="date"
+                            value={renewalStartTo}
+                            onChange={(e) => setRenewalStartTo(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* End Date - From */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">End Date — From</label>
+                          <Input
+                            type="date"
+                            value={renewalEndFrom}
+                            onChange={(e) => setRenewalEndFrom(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* End Date - To */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">End Date — To</label>
+                          <Input
+                            type="date"
+                            value={renewalEndTo}
+                            onChange={(e) => setRenewalEndTo(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* Annual Rent Min */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Annual Rent — Min (QAR)</label>
+                          <Input
+                            type="number"
+                            placeholder="0"
+                            value={renewalRentMin}
+                            onChange={(e) => setRenewalRentMin(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* Annual Rent Max */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-muted-foreground">Annual Rent — Max (QAR)</label>
+                          <Input
+                            type="number"
+                            placeholder="No limit"
+                            value={renewalRentMax}
+                            onChange={(e) => setRenewalRentMax(e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-1 flex items-center justify-between text-xs text-muted-foreground border-t border-border">
+                        <span>Showing <strong>{filteredList.length}</strong> of <strong>{renewals.length}</strong> leases</span>
+                        {isFiltered && (
+                          <button onClick={clearRenewalFilters} className="text-primary hover:underline font-medium">
+                            Reset all filters
+                          </button>
+                        )}
                       </div>
                     </div>
+                  )}
+                </CardHeader>
 
-                    {/* Advanced Filter Panel */}
-                    {showRenewalFilters && (
-                      <div className="mt-3 p-3.5 rounded-lg border border-border bg-muted/10 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            Advanced Filters
-                          </p>
-                          <span className="text-xs text-muted-foreground">
-                            Showing <span className="font-semibold text-foreground">{filteredList.length}</span> of{" "}
-                            <span className="font-semibold text-foreground">{renewals.length}</span> renewal contracts
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {/* Property Name */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Property Name</label>
-                            <select
-                              value={renewalPropertyFilter}
-                              onChange={(e) => {
-                                setRenewalPropertyFilter(e.target.value);
-                                setRenewalUnitFilter("all");
-                              }}
-                              className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                            >
-                              <option value="all">All Properties ({uniqueProps.length})</option>
-                              {uniqueProps.map((p) => (
-                                <option key={p} value={p}>
-                                  {p}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Unit */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Unit</label>
-                            <Input
-                              placeholder="e.g. Flat 101"
-                              value={renewalUnitFilter === "all" ? "" : renewalUnitFilter}
-                              onChange={(e) => setRenewalUnitFilter(e.target.value.trim() ? e.target.value : "all")}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* Tenant Name */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Tenant Name</label>
-                            <Input
-                              placeholder="Tenant name…"
-                              value={renewalCustomerFilter === "all" ? "" : renewalCustomerFilter}
-                              onChange={(e) => setRenewalCustomerFilter(e.target.value.trim() ? e.target.value : "all")}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* Status - including Expired */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Status</label>
-                            <select
-                              value={renewalStatusFilter}
-                              onChange={(e) => setRenewalStatusFilter(e.target.value)}
-                              className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                            >
-                              <option value="all">All Statuses</option>
-                              <option value="expired">Expired</option>
-                              <option value="awaiting_response">Awaiting Response</option>
-                              <option value="under_discussion">Under Discussion</option>
-                              <option value="renewal_confirmed">Renewal Confirmed</option>
-                              <option value="non_renewal_confirmed">Non-Renewal Confirmed</option>
-                              <option value="renewal_declined">Renewal Declined</option>
-                            </select>
-                          </div>
-
-                          {/* Start Date - From */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Start Date — From</label>
-                            <Input
-                              type="date"
-                              value={renewalStartFrom}
-                              onChange={(e) => setRenewalStartFrom(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* Start Date - To */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Start Date — To</label>
-                            <Input
-                              type="date"
-                              value={renewalStartTo}
-                              onChange={(e) => setRenewalStartTo(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* End Date - From */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">End Date — From</label>
-                            <Input
-                              type="date"
-                              value={renewalEndFrom}
-                              onChange={(e) => setRenewalEndFrom(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* End Date - To */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">End Date — To</label>
-                            <Input
-                              type="date"
-                              value={renewalEndTo}
-                              onChange={(e) => setRenewalEndTo(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* Annual Rent Min */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Annual Rent — Min (QAR)</label>
-                            <Input
-                              type="number"
-                              placeholder="0"
-                              value={renewalRentMin}
-                              onChange={(e) => setRenewalRentMin(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-
-                          {/* Annual Rent Max */}
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium text-muted-foreground">Annual Rent — Max (QAR)</label>
-                            <Input
-                              type="number"
-                              placeholder="No limit"
-                              value={renewalRentMax}
-                              onChange={(e) => setRenewalRentMax(e.target.value)}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="pt-1 flex items-center justify-between text-xs text-muted-foreground border-t border-border">
-                          <span>Showing <strong>{filteredList.length}</strong> of <strong>{renewals.length}</strong> leases</span>
-                          {isFiltered && (
-                            <button onClick={clearRenewalFilters} className="text-primary hover:underline font-medium">
-                              Reset all filters
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </CardHeader>
-
-                  <CardContent>
-                    <DataTable
-                      columns={["Lease", "Expiry", "Recipients", "Proposed Terms", "Last Confirmation", "Obligations", "Status", "Actions"]}
-                      rows={filteredList.map(({ renewal, lease }) => {
-                        return [
-                          lease ? `${lease.tenantName} / ${lease.unit}` : renewal.leaseId,
-                          lease?.endDate || renewal?.expiryDate || "-",
-                          renewal?.recipients || "-",
-                          `${renewal?.proposedPeriod || ""}; ${formatMoney(renewal?.proposedRent)}; ${renewal?.revisedTerms || ""}`,
-                          renewal?.lastConfirmationDate || "-",
-                          renewal?.outstandingObligations || "-",
-                          <StatusBadge key="status" value={renewal?.status} />,
-                          <div key="actions" className="flex justify-end gap-2">
+                <CardContent>
+                  <DataTable
+                    columns={["Lease", "Expiry", "Recipients", "Proposed Terms", "Last Confirmation", "Obligations", "Status", "Actions"]}
+                    rows={filteredList.map(({ renewal, lease }) => {
+                      return [
+                        lease ? `${lease.tenantName} / ${lease.unit}` : renewal.leaseId,
+                        lease?.endDate || renewal?.expiryDate || "-",
+                        renewal?.recipients || "-",
+                        `${renewal?.proposedPeriod || ""}; ${formatMoney(renewal?.proposedRent)}; ${renewal?.revisedTerms || ""}`,
+                        renewal?.lastConfirmationDate || "-",
+                        renewal?.outstandingObligations || "-",
+                        <StatusBadge key="status" value={renewal?.status} />,
+                        <div key="actions" className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                            onClick={() => {
+                              setSelectedDiscussRenewal(renewal);
+                              setDiscussRenewalForm({
+                                discussedRent: String(renewal?.proposedRent || 0),
+                                proposedPeriod: renewal?.proposedPeriod || "",
+                                tenantResponse: "pending",
+                                notes: "",
+                                nextFollowUpDate: renewal?.lastConfirmationDate || "",
+                              });
+                              setDiscussRenewalOpen(true);
+                            }}
+                          >
+                            Discuss
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                            onClick={() => openRenewalModal(renewal)}
+                          >
+                            Renew
+                          </Button>
+                          {lease && (
                             <Button
                               size="sm"
                               variant="outline"
                               disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
                               onClick={() => {
-                                setSelectedDiscussRenewal(renewal);
-                                setDiscussRenewalForm({
-                                  discussedRent: String(renewal?.proposedRent || 0),
-                                  proposedPeriod: renewal?.proposedPeriod || "",
-                                  tenantResponse: "pending",
+                                setIsFixedTenantCheckout(true);
+                                setCheckoutWorkflowLease(lease);
+                                setStartCheckoutForm({
+                                  noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
+                                  moveOutDate: lease.endDate || "",
+                                  inspectionDate: addDays(new Date(lease.endDate || today), -3),
+                                  outstandingCharges: "Pending finance confirmation",
+                                  utilityClearanceRequirements: "Final utility clearance required before checkout closure",
+                                  keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
                                   notes: "",
-                                  nextFollowUpDate: renewal?.lastConfirmationDate || "",
+                                  missingItems: "",
+                                  cleaningCharges: "0",
+                                  restorationCharges: "0",
                                 });
-                                setDiscussRenewalOpen(true);
+                                setStartCheckoutOpen(true);
                               }}
                             >
-                              Discuss
+                              Non-Renew
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
-                              onClick={() => openRenewalModal(renewal)}
-                            >
-                              Renew
-                            </Button>
-                            {lease && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
-                                onClick={() => {
-                                  setIsFixedTenantCheckout(true);
-                                  setCheckoutWorkflowLease(lease);
-                                  setStartCheckoutForm({
-                                    noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
-                                    moveOutDate: lease.endDate || "",
-                                    inspectionDate: addDays(new Date(lease.endDate || today), -3),
-                                    outstandingCharges: "Pending finance confirmation",
-                                    utilityClearanceRequirements: "Final utility clearance required before checkout closure",
-                                    keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
-                                    notes: "",
-                                    missingItems: "",
-                                    cleaningCharges: "0",
-                                    restorationCharges: "0",
-                                  });
-                                  setStartCheckoutOpen(true);
-                                }}
-                              >
-                                Non-Renew
-                              </Button>
-                            )}
-                          </div>,
-                        ];
-                      })}
-                    />
-                  </CardContent>
-                </Card>
-              );
-            })()}
-          </TabsContent>
+                          )}
+                        </div>,
+                      ];
+                    })}
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
+        </TabsContent>
 
         <TabsContent value="checkout" className="space-y-4">
           {/* Multi-Dimensional Filter Bar for Checkouts & Settlements */}
@@ -16614,205 +16770,205 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             };
 
             return (
-          <Card className="border-border">
-            <CardHeader className="pb-3 pt-4 px-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <CardTitle className="text-base font-semibold">Non-Renewal, Check-Out &amp; Security Deposit Settlement</CardTitle>
-                  <CardDescription className="text-xs">Initiate tenant move-out/early vacating, complete inspections, verify clearances, and settle security deposits.</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
-                    onClick={() => {
-                      const filteredList = checkouts.filter(checkout => {
-                        const lease = leases.find((item) => item.id === checkout.leaseId);
-                        if (checkoutPropertyFilter !== "all" && lease?.property !== checkoutPropertyFilter) return false;
-                        if (checkoutUnitFilter !== "all" && lease?.unit !== checkoutUnitFilter) return false;
-                        if (checkoutCustomerFilter !== "all" && lease?.tenantName !== checkoutCustomerFilter) return false;
-                        if (checkoutStatusFilter !== "all" && checkout.status !== checkoutStatusFilter) return false;
-                        if (checkoutSearchQuery.trim()) {
-                          const q = checkoutSearchQuery.toLowerCase();
-                          const match = (lease?.tenantName || "").toLowerCase().includes(q) ||
-                            (lease?.unit || "").toLowerCase().includes(q) ||
-                            (lease?.property || "").toLowerCase().includes(q) ||
-                            (checkout.leaseId || "").toLowerCase().includes(q);
-                          if (!match) return false;
-                        }
-                        return true;
-                      });
+              <Card className="border-border">
+                <CardHeader className="pb-3 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base font-semibold">Non-Renewal, Check-Out &amp; Security Deposit Settlement</CardTitle>
+                      <CardDescription className="text-xs">Initiate tenant move-out/early vacating, complete inspections, verify clearances, and settle security deposits.</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+                        onClick={() => {
+                          const filteredList = checkouts.filter(checkout => {
+                            const lease = leases.find((item) => item.id === checkout.leaseId);
+                            if (checkoutPropertyFilter !== "all" && lease?.property !== checkoutPropertyFilter) return false;
+                            if (checkoutUnitFilter !== "all" && lease?.unit !== checkoutUnitFilter) return false;
+                            if (checkoutCustomerFilter !== "all" && lease?.tenantName !== checkoutCustomerFilter) return false;
+                            if (checkoutStatusFilter !== "all" && checkout.status !== checkoutStatusFilter) return false;
+                            if (checkoutSearchQuery.trim()) {
+                              const q = checkoutSearchQuery.toLowerCase();
+                              const match = (lease?.tenantName || "").toLowerCase().includes(q) ||
+                                (lease?.unit || "").toLowerCase().includes(q) ||
+                                (lease?.property || "").toLowerCase().includes(q) ||
+                                (checkout.leaseId || "").toLowerCase().includes(q);
+                              if (!match) return false;
+                            }
+                            return true;
+                          });
 
-                      const data = filteredList.map(chk => {
-                        const l = leases.find(item => item.id === chk.leaseId);
-                        return {
-                          "Lease ID": chk.leaseId || "—",
-                          "Customer / Tenant": l?.tenantName || "—",
-                          "Property": l?.property || "—",
-                          "Unit": l?.unit || "—",
-                          "Notice Date": chk.noticeDate || "—",
-                          "Move-Out / Inspection Date": chk.moveOutDate || chk.inspectionDate || "—",
-                          "Status": statusLabels[chk.status] || chk.status || "—",
-                          "Key Returned": chk.keysReturned ? "Yes" : "No",
-                          "Electricity Cleared": chk.electricityCleared ? "Yes" : "No",
-                          "Water Cleared": chk.waterCleared ? "Yes" : "No",
-                          "Maintenance Cleared": chk.maintenanceCleared ? "Yes" : "No",
-                          "Deposit Amount (QAR)": chk.depositAmount || 0,
-                          "Deductions (QAR)": chk.deductions || 0,
-                          "Settlement Amount (QAR)": chk.settlementAmount || 0,
-                          "Settlement Method": chk.settlementMethod || "—",
-                          "Settlement Date": chk.settlementDate || "—",
-                          "Notes / Remarks": chk.notes || "—"
-                        };
-                      });
+                          const data = filteredList.map(chk => {
+                            const l = leases.find(item => item.id === chk.leaseId);
+                            return {
+                              "Lease ID": chk.leaseId || "—",
+                              "Customer / Tenant": l?.tenantName || "—",
+                              "Property": l?.property || "—",
+                              "Unit": l?.unit || "—",
+                              "Notice Date": chk.noticeDate || "—",
+                              "Move-Out / Inspection Date": chk.moveOutDate || chk.inspectionDate || "—",
+                              "Status": statusLabels[chk.status] || chk.status || "—",
+                              "Key Returned": chk.keysReturned ? "Yes" : "No",
+                              "Electricity Cleared": chk.electricityCleared ? "Yes" : "No",
+                              "Water Cleared": chk.waterCleared ? "Yes" : "No",
+                              "Maintenance Cleared": chk.maintenanceCleared ? "Yes" : "No",
+                              "Deposit Amount (QAR)": chk.depositAmount || 0,
+                              "Deductions (QAR)": chk.deductions || 0,
+                              "Settlement Amount (QAR)": chk.settlementAmount || 0,
+                              "Settlement Method": chk.settlementMethod || "—",
+                              "Settlement Date": chk.settlementDate || "—",
+                              "Notes / Remarks": chk.notes || "—"
+                            };
+                          });
 
-                      exportToExcel({
-                        filename: `checkouts_settlements_${new Date().toISOString().slice(0, 10)}`,
-                        sheetName: "Checkouts",
-                        data,
-                        headers: [
-                          { key: "Lease ID", label: "Lease ID", width: 14 },
-                          { key: "Customer / Tenant", label: "Customer / Tenant", width: 22 },
-                          { key: "Property", label: "Property", width: 20 },
-                          { key: "Unit", label: "Unit", width: 12 },
-                          { key: "Notice Date", label: "Notice Date", width: 14 },
-                          { key: "Move-Out / Inspection Date", label: "Move-Out / Inspection Date", width: 20 },
-                          { key: "Status", label: "Status", width: 20 },
-                          { key: "Key Returned", label: "Key Returned", width: 14 },
-                          { key: "Electricity Cleared", label: "Electricity Cleared", width: 18 },
-                          { key: "Water Cleared", label: "Water Cleared", width: 15 },
-                          { key: "Maintenance Cleared", label: "Maintenance Cleared", width: 18 },
-                          { key: "Deposit Amount (QAR)", label: "Deposit Amount (QAR)", width: 20 },
-                          { key: "Deductions (QAR)", label: "Deductions (QAR)", width: 16 },
-                          { key: "Settlement Amount (QAR)", label: "Settlement Amount (QAR)", width: 22 },
-                          { key: "Settlement Method", label: "Settlement Method", width: 18 },
-                          { key: "Settlement Date", label: "Settlement Date", width: 15 },
-                          { key: "Notes / Remarks", label: "Notes / Remarks", width: 30 },
-                        ]
-                      });
-                    }}
-                  >
-                    <Download className="h-3.5 w-3.5" /> Export to Excel
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 text-xs text-muted-foreground gap-1"
-                    onClick={() => {
-                      setCheckoutPropertyFilter("all");
-                      setCheckoutUnitFilter("all");
-                      setCheckoutCustomerFilter("all");
-                      setCheckoutStatusFilter("all");
-                      setCheckoutSearchQuery("");
-                    }}
-                  >
-                    <RotateCcw className="h-3 w-3" /> Reset Filters
-                  </Button>
-                </div>
-              </div>
+                          exportToExcel({
+                            filename: `checkouts_settlements_${new Date().toISOString().slice(0, 10)}`,
+                            sheetName: "Checkouts",
+                            data,
+                            headers: [
+                              { key: "Lease ID", label: "Lease ID", width: 14 },
+                              { key: "Customer / Tenant", label: "Customer / Tenant", width: 22 },
+                              { key: "Property", label: "Property", width: 20 },
+                              { key: "Unit", label: "Unit", width: 12 },
+                              { key: "Notice Date", label: "Notice Date", width: 14 },
+                              { key: "Move-Out / Inspection Date", label: "Move-Out / Inspection Date", width: 20 },
+                              { key: "Status", label: "Status", width: 20 },
+                              { key: "Key Returned", label: "Key Returned", width: 14 },
+                              { key: "Electricity Cleared", label: "Electricity Cleared", width: 18 },
+                              { key: "Water Cleared", label: "Water Cleared", width: 15 },
+                              { key: "Maintenance Cleared", label: "Maintenance Cleared", width: 18 },
+                              { key: "Deposit Amount (QAR)", label: "Deposit Amount (QAR)", width: 20 },
+                              { key: "Deductions (QAR)", label: "Deductions (QAR)", width: 16 },
+                              { key: "Settlement Amount (QAR)", label: "Settlement Amount (QAR)", width: 22 },
+                              { key: "Settlement Method", label: "Settlement Method", width: 18 },
+                              { key: "Settlement Date", label: "Settlement Date", width: 15 },
+                              { key: "Notes / Remarks", label: "Notes / Remarks", width: 30 },
+                            ]
+                          });
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" /> Export to Excel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 text-xs text-muted-foreground gap-1"
+                        onClick={() => {
+                          setCheckoutPropertyFilter("all");
+                          setCheckoutUnitFilter("all");
+                          setCheckoutCustomerFilter("all");
+                          setCheckoutStatusFilter("all");
+                          setCheckoutSearchQuery("");
+                        }}
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reset Filters
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 pt-2">
-                {/* Property */}
-                <div>
-                  <SearchableSelect
-                    value={checkoutPropertyFilter}
-                    onValueChange={(pVal) => {
-                      setCheckoutPropertyFilter(pVal);
-                      if (pVal !== "all") {
-                        const matchLease = chkLeases.find(l => l.property === pVal);
-                        if (checkoutUnitFilter !== "all" && matchLease?.property !== pVal) setCheckoutUnitFilter("all");
-                        if (checkoutCustomerFilter !== "all") {
-                          const ok = chkLeases.some(l => l.property === pVal && l.tenantName === checkoutCustomerFilter);
-                          if (!ok) setCheckoutCustomerFilter("all");
-                        }
-                      }
-                    }}
-                    placeholder={`All Properties (${chkUniqueProps.length})`}
-                    emptyText="No properties found"
-                    options={[
-                      { label: `All Properties (${chkUniqueProps.length})`, value: "all" },
-                      ...chkUniqueProps.map(p => ({ label: p, value: p }))
-                    ]}
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 pt-2">
+                    {/* Property */}
+                    <div>
+                      <SearchableSelect
+                        value={checkoutPropertyFilter}
+                        onValueChange={(pVal) => {
+                          setCheckoutPropertyFilter(pVal);
+                          if (pVal !== "all") {
+                            const matchLease = chkLeases.find(l => l.property === pVal);
+                            if (checkoutUnitFilter !== "all" && matchLease?.property !== pVal) setCheckoutUnitFilter("all");
+                            if (checkoutCustomerFilter !== "all") {
+                              const ok = chkLeases.some(l => l.property === pVal && l.tenantName === checkoutCustomerFilter);
+                              if (!ok) setCheckoutCustomerFilter("all");
+                            }
+                          }
+                        }}
+                        placeholder={`All Properties (${chkUniqueProps.length})`}
+                        emptyText="No properties found"
+                        options={[
+                          { label: `All Properties (${chkUniqueProps.length})`, value: "all" },
+                          ...chkUniqueProps.map(p => ({ label: p, value: p }))
+                        ]}
+                      />
+                    </div>
 
-                {/* Unit */}
-                <div>
-                  <SearchableSelect
-                    value={checkoutUnitFilter}
-                    onValueChange={(uVal) => {
-                      setCheckoutUnitFilter(uVal);
-                      if (uVal !== "all") {
-                        const matchLease = chkLeases.find(l => l.unit === uVal);
-                        if (matchLease && checkoutPropertyFilter === "all") {
-                          setCheckoutPropertyFilter(matchLease.property || "all");
-                        }
-                        if (checkoutCustomerFilter !== "all") {
-                          const ok = chkLeases.some(l => l.unit === uVal && l.tenantName === checkoutCustomerFilter);
-                          if (!ok) setCheckoutCustomerFilter("all");
-                        }
-                      }
-                    }}
-                    placeholder={`All Units (${chkUniqueUnits.length})`}
-                    emptyText="No units found"
-                    options={[
-                      { label: `All Units (${chkUniqueUnits.length})`, value: "all" },
-                      ...chkUniqueUnits.map(u => ({ label: u, value: u }))
-                    ]}
-                  />
-                </div>
+                    {/* Unit */}
+                    <div>
+                      <SearchableSelect
+                        value={checkoutUnitFilter}
+                        onValueChange={(uVal) => {
+                          setCheckoutUnitFilter(uVal);
+                          if (uVal !== "all") {
+                            const matchLease = chkLeases.find(l => l.unit === uVal);
+                            if (matchLease && checkoutPropertyFilter === "all") {
+                              setCheckoutPropertyFilter(matchLease.property || "all");
+                            }
+                            if (checkoutCustomerFilter !== "all") {
+                              const ok = chkLeases.some(l => l.unit === uVal && l.tenantName === checkoutCustomerFilter);
+                              if (!ok) setCheckoutCustomerFilter("all");
+                            }
+                          }
+                        }}
+                        placeholder={`All Units (${chkUniqueUnits.length})`}
+                        emptyText="No units found"
+                        options={[
+                          { label: `All Units (${chkUniqueUnits.length})`, value: "all" },
+                          ...chkUniqueUnits.map(u => ({ label: u, value: u }))
+                        ]}
+                      />
+                    </div>
 
-                {/* Customer */}
-                <div>
-                  <SearchableSelect
-                    value={checkoutCustomerFilter}
-                    onValueChange={(cVal) => {
-                      setCheckoutCustomerFilter(cVal);
-                      if (cVal !== "all") {
-                        const matchLease = chkLeases.find(l => l.tenantName === cVal);
-                        if (matchLease) {
-                          if (checkoutPropertyFilter === "all") setCheckoutPropertyFilter(matchLease.property || "all");
-                          if (checkoutUnitFilter === "all") setCheckoutUnitFilter(matchLease.unit || "all");
-                        }
-                      }
-                    }}
-                    placeholder={`All Customers (${chkUniqueCusts.length})`}
-                    emptyText="No customers found"
-                    options={[
-                      { label: `All Customers (${chkUniqueCusts.length})`, value: "all" },
-                      ...chkUniqueCusts.map(c => ({ label: c, value: c }))
-                    ]}
-                  />
-                </div>
+                    {/* Customer */}
+                    <div>
+                      <SearchableSelect
+                        value={checkoutCustomerFilter}
+                        onValueChange={(cVal) => {
+                          setCheckoutCustomerFilter(cVal);
+                          if (cVal !== "all") {
+                            const matchLease = chkLeases.find(l => l.tenantName === cVal);
+                            if (matchLease) {
+                              if (checkoutPropertyFilter === "all") setCheckoutPropertyFilter(matchLease.property || "all");
+                              if (checkoutUnitFilter === "all") setCheckoutUnitFilter(matchLease.unit || "all");
+                            }
+                          }
+                        }}
+                        placeholder={`All Customers (${chkUniqueCusts.length})`}
+                        emptyText="No customers found"
+                        options={[
+                          { label: `All Customers (${chkUniqueCusts.length})`, value: "all" },
+                          ...chkUniqueCusts.map(c => ({ label: c, value: c }))
+                        ]}
+                      />
+                    </div>
 
-                {/* Status */}
-                <div>
-                  <SearchableSelect
-                    value={checkoutStatusFilter}
-                    onValueChange={setCheckoutStatusFilter}
-                    placeholder={`All Statuses (${chkUniqueStatuses.length})`}
-                    emptyText="No statuses found"
-                    options={[
-                      { label: `All Statuses (${chkUniqueStatuses.length})`, value: "all" },
-                      ...chkUniqueStatuses.map(s => ({ label: statusLabels[s] || s, value: s }))
-                    ]}
-                  />
-                </div>
+                    {/* Status */}
+                    <div>
+                      <SearchableSelect
+                        value={checkoutStatusFilter}
+                        onValueChange={setCheckoutStatusFilter}
+                        placeholder={`All Statuses (${chkUniqueStatuses.length})`}
+                        emptyText="No statuses found"
+                        options={[
+                          { label: `All Statuses (${chkUniqueStatuses.length})`, value: "all" },
+                          ...chkUniqueStatuses.map(s => ({ label: statusLabels[s] || s, value: s }))
+                        ]}
+                      />
+                    </div>
 
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    className="h-8 text-xs pl-8 bg-background"
-                    placeholder="Search lease, unit, tenant..."
-                    value={checkoutSearchQuery}
-                    onChange={(e) => setCheckoutSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
+                    {/* Search */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        className="h-8 text-xs pl-8 bg-background"
+                        placeholder="Search lease, unit, tenant..."
+                        value={checkoutSearchQuery}
+                        onChange={(e) => setCheckoutSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
             );
           })()}
 
@@ -16936,14 +17092,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               });
               const uniqueUnits: { label: string; value: string }[] = voucherPropertyFilter === "all"
                 ? Array.from(new Set(forUnit.map(v => `${v.property_name}||${v.unit_name}`).filter(k => k && !k.endsWith("||"))))
-                    .map(k => {
-                      const [p, u] = k.split("||");
-                      return { label: `${p} \u2014 ${u}`, value: k };
-                    })
-                    .sort((a, b) => a.label.localeCompare(b.label))
+                  .map(k => {
+                    const [p, u] = k.split("||");
+                    return { label: `${p} \u2014 ${u}`, value: k };
+                  })
+                  .sort((a, b) => a.label.localeCompare(b.label))
                 : Array.from(new Set(forUnit.map(v => v.unit_name).filter(Boolean)))
-                    .sort()
-                    .map(u => ({ label: u, value: u }));
+                  .sort()
+                  .map(u => ({ label: u, value: u }));
 
               // 3. Customer options & count: filtered by Property, Unit, Method, Status
               const forCust = allVouchers.filter(v => {
@@ -17304,11 +17460,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         }
                         rows={filteredVouchers.map((voucher) => {
                           const vv = voucher as any;
-                          const vName   = voucher.name || "Voucher";
-                          const vProp   = vv.property_name || "—";
-                          const vUnit   = vv.unit_name || "—";
-                          const vCust   = vv.tenant_name || "—";
-                          const pdcSt   = (vv.pdc_status || "in hand") as string;
+                          const vName = voucher.name || "Voucher";
+                          const vProp = vv.property_name || "—";
+                          const vUnit = vv.unit_name || "—";
+                          const vCust = vv.tenant_name || "—";
+                          const pdcSt = (vv.pdc_status || "in hand") as string;
                           const chqDateStr = String(vv.period || "");
 
                           // PDC-status-aware badge
@@ -17318,11 +17474,11 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             if (chqDateStr >= "2026-10-01" && s !== "cleared" && s !== "deposited" && s !== "returned" && s !== "bounced" && s !== "cancelled" && s !== "replaced") {
                               return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">In Hand</span>;
                             }
-                            if (s === "cleared")   return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Cleared</span>;
+                            if (s === "cleared") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">Cleared</span>;
                             if (s === "deposited") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Deposited</span>;
                             if (s === "returned" || s === "bounced") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{s.charAt(0).toUpperCase() + s.slice(1)}</span>;
                             if (s === "cancelled") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">Cancelled</span>;
-                            if (s === "replaced")  return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">Replaced</span>;
+                            if (s === "replaced") return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">Replaced</span>;
                             // Default: In Hand
                             return <span key="st" className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">In Hand</span>;
                           })();
@@ -17640,7 +17796,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           })()}
         </TabsContent>
 
-        
+
       </Tabs>
 
       {/* Official Tenant Receipt Modal */}
