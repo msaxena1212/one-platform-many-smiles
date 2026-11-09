@@ -146,3 +146,6 @@ migration_coa_hierarchy.sql
 .netlify/
 scratch/
 
+
+# Credential exports - never commit
+*_CREDENTIALS.csv
