@@ -396,16 +396,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const mappedUnits: PmsUnit[] = (unitsRes.data || []).map((u: any) => {
         const propTitle = u.properties?.title || propMap.get(u.property_id) || u.property_id || "Property";
         const unitName = u.unit_ref || u.unit_name || u.unit_code || "Unit";
-        const cleanName = unitName.toUpperCase().trim();
-        // OA24-10 is a live, leased unit (Mr. Devadas Pappu) — only OA22-10 remains a vacated test unit.
-        const isVacatedTestUnit = cleanName.includes("OA22-10");
 
         return {
           id: u.id,
           property: propTitle,
           unit: unitName,
           type: u.unit_type || u.type || u.layout || "",
-          status: isVacatedTestUnit ? ("Available" as UnitStatus) : (() => {
+          status: (() => {
             const ls = (u.lease_status || "").toUpperCase();
             const st = (u.status || "").toLowerCase();
             // Units explicitly vacated/closed — always show as Available regardless of stale fields
@@ -416,7 +413,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
             if (st.includes("maintenance")) return "Vacant - Under Maintenance" as UnitStatus;
             return (u.status as UnitStatus) || "Available";
           })(),
-          rent: isVacatedTestUnit ? 0 : Number(u.current_rent || u.price || 0),
+          rent: Number(u.current_rent || u.price || 0),
         };
       });
 
@@ -556,10 +553,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           const uKey = uIdentifier.toUpperCase().trim();
           const rawExcel = (excelLeaseMasterData as Record<string, any>)[uKey];
 
-          if (uKey.includes("OA22-10")) {
-            return null as any;
-          }
-
           // The Excel master marks some units "Vacant". That placeholder only applies while the
           // database has no live lease for the unit; a live DB lease (e.g. OA24-10) always wins.
           const excelIsVacant = rawExcel?.tenant === "Vacant";
@@ -619,7 +612,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       (unitsRes.data || []).forEach((u: any, idx: number) => {
         const unitIdentifier = u.unit_ref || u.unit_name || u.unit_code || "Unit";
         const uKey = unitIdentifier.toUpperCase().trim();
-        if (uKey.includes("OA22-10")) return;
         const rawExcel = (excelLeaseMasterData as Record<string, any>)[uKey];
         const excelIsVacant = Boolean(rawExcel && (rawExcel.tenant === "Vacant" || rawExcel.rent === 0));
         // Excel "Vacant" is overridden when the unit record itself carries a real tenant and rent.
@@ -826,37 +818,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
               pdcCount: o.pdc_count ?? l.pdcCount,
             };
           });
-
-          const keysToDelete = [
-            "OA22-10", "OA2210", "L-OA2210",
-            "DEVADAS MELITTA", "devadas melitta"
-          ];
-          keysToDelete.forEach(k => {
-            delete storedOverrides[k];
-            delete storedOverrides[k.toUpperCase()];
-          });
-          localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(storedOverrides));
         }
       } catch (err) {
         console.warn("Could not load local lease overrides/renewals:", err);
-      }
-
-      // Asynchronously ensure test unit OA22-10 is vacant in Supabase database.
-      // (OA24-10 is a live leased unit and must never be vacated/purged here.)
-      try {
-        void supabase.from("units").update({
-          status: "available",
-          lease_status: "vacant",
-          current_tenant: null,
-          contract_no: null,
-          contract_start_date: null,
-          contract_end_date: null,
-          current_rent: 0,
-        }).or("unit_number.ilike.%OA22-10%,unit_ref.ilike.%OA22-10%");
-
-        void supabase.from("leases").delete().or("lease_number.ilike.%OA2210%");
-      } catch (e) {
-        console.warn("Vacate unit in Supabase:", e);
       }
 
       // Step A: Primary dataset is pdcs table (authoritative for property, unit, tenant, date, amount)

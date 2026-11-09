@@ -717,18 +717,14 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         const cleaned = list.filter(v => {
           const vNo = (v.voucher_no || "").toUpperCase();
           const vName = (v.name || "").toLowerCase();
-          const uRef = (v.unit_ref || "").toUpperCase();
 
-          // Purge testing transactions for OA22-10 / Cheque 35 and legacy auto-generated Cash->Bank contra deposits on PDC cash replacement
+          // Exclude known stale vouchers and legacy auto-generated Cash->Bank contra deposits on PDC cash replacement
           if (
-            vNo.includes("TRF-35") || vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
-            vNo.includes("TRF-CNL-35") ||
+            vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
+            vNo === "VCH-TRF-35" || vNo === "VCH-TRF-CNL-35" ||
             vNo.startsWith("VCH-CSH-DEP-") ||
             vNo.startsWith("BNK-DEP-") ||
-            vName.includes("bank deposit of replaced pdc cash till") ||
-            uRef.includes("OA22-10") ||
-            vName.includes("oa22-10") ||
-            vName.includes("devadas melitta")
+            vName.includes("bank deposit of replaced pdc cash till")
           ) {
             return false;
           }
@@ -891,12 +887,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         .order("voucher_date", { ascending: false });
 
       if (!vError && vData) {
-        // Asynchronously purge testing vouchers for OA22-10 / Cheque 35
-        void supabase
-          .from("fin_vouchers")
-          .delete()
-          .or("voucher_number.ilike.%TRF-35%,voucher_number.ilike.%TRF-CNL-35%,description.ilike.%OA22-10%,description.ilike.%Devadas Melitta%");
-
         // Normalize processed salary amount from 115,250 to 96,820 in backend tables
         void supabase
           .from("fin_vouchers")
@@ -918,13 +908,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               const vNo = (r.voucher_number || "").toUpperCase();
               const desc = (r.description || "").toLowerCase();
               if (
-                vNo.includes("TRF-35") || vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
-                vNo.includes("TRF-CNL-35") ||
+                vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
+                vNo === "VCH-TRF-35" || vNo === "VCH-TRF-CNL-35" ||
                 vNo.startsWith("VCH-CSH-DEP-") ||
                 vNo.startsWith("BNK-DEP-") ||
-                desc.includes("bank deposit of replaced pdc cash till") ||
-                desc.includes("oa22-10") ||
-                desc.includes("devadas melitta")
+                desc.includes("bank deposit of replaced pdc cash till")
               ) {
                 return false;
               }
@@ -3128,18 +3116,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     vouchers.forEach(vch => {
       const vchNo = (vch.voucher_no || "").toUpperCase();
       const vchDesc = (vch.name || "").toLowerCase();
-      const vchUnit = (vch.unit_ref || "").toUpperCase();
 
-      // Purge/exclude test transactions for OA22-10 / Cheque 35
-      if (
-        vchNo.includes("TRF-35") ||
-        vchNo.includes("TRF-CNL-35") ||
-        vchUnit.includes("OA22-10") ||
-        vchDesc.includes("oa22-10") ||
-        vchDesc.includes("devadas melitta")
-      ) {
-        return;
-      }
+      // Stale test vouchers still present in the database (pending permanent deletion).
+      if (vchNo === "VCH-TRF-35" || vchNo === "VCH-TRF-CNL-35") return;
 
       let debitCode = vch.debit_code || "12000001";
       let debitName = vch.debit || "Bank Operating Account";
