@@ -192,6 +192,7 @@ const FINANCE_NAV = [
       { key: "trial_balance", label: "Trial Balance", icon: Scale },
       { key: "profit_and_loss", label: "Profit & Loss", icon: Activity },
       { key: "property_pnl", label: "Property Profit & Loss", icon: Building2 },
+      { key: "vehicle_expense_report", label: "Vehicle-Wise Expense Report", icon: Layers },
       { key: "balance_sheet", label: "Balance Sheet", icon: Landmark },
       { key: "general_ledger", label: "General Ledger", icon: BookOpen },
       { key: "cash_flow_statement", label: "Cash Flow Statement", icon: DollarSign },
@@ -341,6 +342,7 @@ function FinanceSubModuleRouter({ subKey, role }: { subKey: string; role: Financ
     case "trial_balance": return <TrialBalanceFullSubModule />;
     case "profit_and_loss": return <ProfitAndLossSubModule />;
     case "property_pnl": return <PropertyWiseProfitAndLossSubModule />;
+    case "vehicle_expense_report": return <VehicleExpenseReportSubModule />;
     case "balance_sheet": return <BalanceSheetSubModule />;
     case "general_ledger": return <GeneralLedgerReportSubModule />;
     case "cash_flow_statement": return <CashFlowSubModule />;
@@ -716,11 +718,38 @@ function CustomerListSubModule() {
   );
 }
 
+export interface CompanyVehicleCostCenter {
+  sno: number;
+  vehicleNo: string;
+  code: string;
+  vehicleName: string;
+  model: string;
+  brandName: string;
+  name: string;
+  type: "Vehicle";
+  manager: string;
+}
+
+export const COMPANY_VEHICLE_COST_CENTERS: CompanyVehicleCostCenter[] = [
+  { sno: 1, vehicleNo: "230064", code: "230064", vehicleName: "Pickup", model: "2012", brandName: "Nissan", name: "230064 - Pickup (2012 Nissan)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 2, vehicleNo: "573213", code: "573213", vehicleName: "Sentra", model: "2013", brandName: "Nissan", name: "573213 - Sentra (2013 Nissan)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 3, vehicleNo: "257654", code: "257654", vehicleName: "Pickup", model: "2014", brandName: "Nissan", name: "257654 - Pickup (2014 Nissan)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 4, vehicleNo: "632368", code: "632368", vehicleName: "Sentra", model: "2016", brandName: "Nissan", name: "632368 - Sentra (2016 Nissan)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 5, vehicleNo: "21464", code: "21464", vehicleName: "Pickup", model: "2016", brandName: "Nissan", name: "21464 - Pickup (2016 Nissan)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 6, vehicleNo: "768589", code: "768589", vehicleName: "Pajero", model: "2017", brandName: "Mitsubishi", name: "768589 - Pajero (2017 Mitsubishi)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 7, vehicleNo: "900886", code: "900886", vehicleName: "Raize", model: "2023", brandName: "Toyota", name: "900886 - Raize (2023 Toyota)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 8, vehicleNo: "218943", code: "218943", vehicleName: "Pickup", model: "2024", brandName: "Mitsubishi", name: "218943 - Pickup (2024 Mitsubishi)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 9, vehicleNo: "215517", code: "215517", vehicleName: "Lexus", model: "—", brandName: "Toyota", name: "215517 - Lexus (Toyota)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 10, vehicleNo: "30115", code: "30115", vehicleName: "Range Rover", model: "—", brandName: "Land Rover", name: "30115 - Range Rover (Land Rover)", type: "Vehicle", manager: "Fleet & Transport" },
+  { sno: 11, vehicleNo: "52130", code: "52130", vehicleName: "Dodge", model: "—", brandName: "Chrysler", name: "52130 - Dodge (Chrysler)", type: "Vehicle", manager: "Fleet & Transport" },
+];
+
 function CostCenterSubModule() {
   const { units: sharedUnits } = useAppData();
   const [data, setData] = useState<FinCostCenter[]>([]);
+  const [filterType, setFilterType] = useState<"ALL" | "Vehicle" | "Property">("ALL");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "CC-PROP-SALATA", name: "Old Salata Residence 23", manager: "Eng. Fahad", property_id: "", unit_id: "", type: "Property" });
+  const [form, setForm] = useState({ code: "230064", name: "230064 - Pickup (2012 Nissan)", manager: "Fleet & Transport", property_id: "", unit_id: "", type: "Vehicle", vehicleName: "", model: "", brandName: "" });
 
   const sharedProperties = Array.from(new Set((sharedUnits || []).map(u => String((u as any).propertyName || (u as any).property || (u as any).buildingName || ""))))
     .filter(p => Boolean(p && p.trim())).map((p, i) => ({ id: String(i), title: String(p) }));
@@ -729,14 +758,57 @@ function CostCenterSubModule() {
   async function load() {
     try {
       const dbData = await FinCostCentersApi.fetchAll();
-      const existing = new Set(dbData.map((d: any) => d.code));
+      const existing = new Set(dbData.map((d: any) => String(d.code).trim()));
       const autoSeeds: any[] = [];
+
+      // 1. Seed Company Vehicles based on their "Vehicle No" as Cost Centers
+      for (const v of COMPANY_VEHICLE_COST_CENTERS) {
+        if (!existing.has(v.code) && !existing.has(`CC-VEH-${v.code}`)) {
+          autoSeeds.push({
+            code: v.code,
+            name: v.name,
+            manager: v.manager,
+            type: "Vehicle",
+            vehicleNo: v.vehicleNo,
+            vehicleName: v.vehicleName,
+            model: v.model,
+            brandName: v.brandName,
+          });
+          // Best-effort persist to DB so all modules see vehicle cost centers
+          FinCostCentersApi.create({
+            code: v.code,
+            name: v.name,
+            manager: v.manager,
+            type: "Vehicle",
+          } as any).catch(() => {});
+        }
+      }
+
+      // 2. Enrich existing DB vehicle cost centers with metadata if matched by Vehicle No
+      const enrichedDbData = dbData.map((d: any) => {
+        const matchedVeh = COMPANY_VEHICLE_COST_CENTERS.find(
+          v => v.code === String(d.code).trim() || `CC-VEH-${v.code}` === String(d.code).trim()
+        );
+        if (matchedVeh) {
+          return {
+            ...d,
+            type: "Vehicle",
+            vehicleNo: matchedVeh.vehicleNo,
+            vehicleName: matchedVeh.vehicleName,
+            model: matchedVeh.model,
+            brandName: matchedVeh.brandName,
+          };
+        }
+        return d;
+      });
+
+      // 3. Seed Property Cost Centers
       for (const prop of sharedProperties) {
         if (!prop || !prop.title) continue;
         const code = `CC-PROP-${prop.title.slice(0, 8).toUpperCase().replace(/\s/g, '-')}`;
         if (!existing.has(code)) autoSeeds.push({ code, name: prop.title, manager: 'Site Manager', type: 'Property' });
       }
-      setData([...dbData, ...autoSeeds.map((s, i) => ({ ...s, id: String(-1000 - i) }))]);
+      setData([...enrichedDbData, ...autoSeeds.map((s, i) => ({ ...s, id: String(-1000 - i) }))]);
     } catch { }
   }
   async function handleAdd() {
@@ -746,28 +818,80 @@ function CostCenterSubModule() {
     setOpen(false);
   }
 
+  const filteredData = data.filter((row: any) => {
+    if (filterType === "ALL") return true;
+    const rowType = row.type || (COMPANY_VEHICLE_COST_CENTERS.some(v => v.code === String(row.code)) ? "Vehicle" : "Property");
+    return rowType === filterType;
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Cost Center Matrix</h3>
-          <p className="text-xs text-muted-foreground">Cost Centers for project, property, and department level expense tracking.</p>
+          <h3 className="text-sm font-semibold">Cost Center Matrix (Properties & Company Vehicles)</h3>
+          <p className="text-xs text-muted-foreground">Allocate expenses directly to specific Company Vehicles (by Vehicle No) or Property Cost Centers.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Cost Center</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setFilterType("ALL")}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${filterType === "ALL" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              All ({data.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType("Vehicle")}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${filterType === "Vehicle" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Company Vehicles ({COMPANY_VEHICLE_COST_CENTERS.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType("Property")}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${filterType === "Property" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Properties
+            </button>
+          </div>
+          <Button size="sm" onClick={() => setOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Add Cost Center</Button>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden bg-card">
         <Table>
-          <TableHeader><TableRow className="bg-muted/50 text-xs"><TableHead className="font-bold">Code</TableHead><TableHead className="font-bold">Name</TableHead><TableHead className="font-bold">Type</TableHead><TableHead className="font-bold">Manager</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Cost Center / Vehicle No</TableHead>
+              <TableHead className="font-bold">Name / Vehicle Description</TableHead>
+              <TableHead className="font-bold">Vehicle Name</TableHead>
+              <TableHead className="font-bold">Model</TableHead>
+              <TableHead className="font-bold">Brand Name</TableHead>
+              <TableHead className="font-bold">Type</TableHead>
+              <TableHead className="font-bold">Department / Manager</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {data.map((row) => (
-              <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono font-bold text-primary">{(row as any).code}</TableCell>
-                <TableCell className="font-medium">{(row as any).name}</TableCell>
-                <TableCell><Badge variant="outline" className="text-[10px]">{(row as any).type || 'Property'}</Badge></TableCell>
-                <TableCell className="text-xs">{row.manager || 'Site Manager'}</TableCell>
-              </TableRow>
-            ))}
+            {filteredData.map((row: any) => {
+              const veh = COMPANY_VEHICLE_COST_CENTERS.find(v => v.code === String(row.code));
+              const isVehicle = row.type === "Vehicle" || Boolean(veh);
+              return (
+                <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
+                  <TableCell className="font-mono font-bold text-primary">{row.code}</TableCell>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell>{row.vehicleName || veh?.vehicleName || "—"}</TableCell>
+                  <TableCell>{row.model || veh?.model || "—"}</TableCell>
+                  <TableCell>{row.brandName || veh?.brandName || "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={isVehicle ? "default" : "outline"} className="text-[10px]">
+                      {isVehicle ? "Company Vehicle" : (row.type || "Property")}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs">{row.manager || (isVehicle ? "Fleet & Transport" : "Site Manager")}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -776,9 +900,27 @@ function CostCenterSubModule() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Cost Center</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2 text-xs">
-            <div><Label>Code</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
-            <div><Label>Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div><Label>Manager</Label><Input value={form.manager} onChange={e => setForm({ ...form, manager: e.target.value })} /></div>
+            <div>
+              <Label>Cost Center Type</Label>
+              <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Vehicle">Company Vehicle (by Vehicle No)</SelectItem>
+                  <SelectItem value="Property">Property / Building</SelectItem>
+                  <SelectItem value="Department">Department</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div><Label>{form.type === "Vehicle" ? "Vehicle No (Cost Center Code)" : "Code"}</Label><Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            <div><Label>Cost Center Name</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            {form.type === "Vehicle" && (
+              <div className="grid grid-cols-3 gap-2">
+                <div><Label>Vehicle Name</Label><Input placeholder="e.g. Pickup" value={form.vehicleName} onChange={e => setForm({ ...form, vehicleName: e.target.value })} /></div>
+                <div><Label>Model</Label><Input placeholder="e.g. 2024" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} /></div>
+                <div><Label>Brand Name</Label><Input placeholder="e.g. Nissan" value={form.brandName} onChange={e => setForm({ ...form, brandName: e.target.value })} /></div>
+              </div>
+            )}
+            <div><Label>Manager / Department</Label><Input value={form.manager} onChange={e => setForm({ ...form, manager: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -1805,6 +1947,16 @@ function ChartOfAccountsSubModule() {
         fetchPropertyCoaMappings().catch(() => [])
       ]);
 
+      // ── Merge Custom User-Added COA Accounts from localStorage ──
+      let customCoas: ERPChartOfAccount[] = [];
+      try {
+        const rawCustom = localStorage.getItem("fin_custom_coa_accounts_v1");
+        if (rawCustom) {
+          const parsed = JSON.parse(rawCustom);
+          if (Array.isArray(parsed)) customCoas = parsed;
+        }
+      } catch {}
+
       // ── Clean Master COA ──
       const masterMap = new Map<string, ERPChartOfAccount>();
       (accs || []).forEach(a => {
@@ -1817,7 +1969,28 @@ function ChartOfAccountsSubModule() {
           });
         }
       });
+      customCoas.forEach(c => {
+        const key = c.code || c.gl_code || c.name;
+        masterMap.set(key, c);
+      });
       const cleanMaster = Array.from(masterMap.values());
+
+      // Merge custom accounts into tree.gls so they also show in Hierarchy Tree
+      const existingGlCodes = new Set((tree.gls || []).map((g: any) => g.code));
+      const mergedGls = [...(tree.gls || [])];
+      customCoas.forEach(c => {
+        if (c.code && !existingGlCodes.has(c.code)) {
+          existingGlCodes.add(c.code);
+          mergedGls.push({
+            id: c.id || `custom-gl-${c.code}`,
+            code: String(c.code || ""),
+            name: String(c.name || c.gl_name || ""),
+            class_code: String(c.class_code || (tree.classes?.[0]?.code ?? "111")),
+            group_code: String(c.group_code || (tree.groups?.[0]?.code ?? "11")),
+            type_code: String(c.type_code || "1"),
+          } as any);
+        }
+      });
 
       // ── Clean Unit Sub-Ledgers ──
       const distinctUnitMap = new Map<string, UnitCOA>();
@@ -1831,7 +2004,7 @@ function ChartOfAccountsSubModule() {
 
       setErpAccounts(cleanMaster);
       setUnitCoas(cleanUnits);
-      setHierarchyData(tree);
+      setHierarchyData({ ...tree, gls: mergedGls });
       setPropertyMappings(propMaps);
     } catch (e: any) {
       toast.error("Failed to load Chart of Accounts: " + e.message);
@@ -1878,13 +2051,57 @@ function ChartOfAccountsSubModule() {
   };
 
   async function handleCreate() {
+    if (!form.code.trim() || !form.name.trim()) {
+      toast.error("Please enter both Account Code and Account Name.");
+      return;
+    }
     try {
-      await createGLAccount({ code: form.code, name_en: form.name, type: form.type.toLowerCase() as any });
-      toast.success("Account created successfully!");
+      const codeTrimmed = form.code.trim();
+      const nameTrimmed = form.name.trim();
+      const typeMap: Record<string, { type_code: string; group_name: string; class_name: string }> = {
+        Assets: { type_code: "1", group_name: "Current Assets", class_name: "General Assets" },
+        Liabilities: { type_code: "2", group_name: "Current Liabilities", class_name: "General Liabilities" },
+        Capital: { type_code: "3", group_name: "Equity & Reserves", class_name: "Owner Capital" },
+        Revenue: { type_code: "4", group_name: "Operating Revenue", class_name: "Rental & Service Income" },
+        Expenditure: { type_code: "5", group_name: "Operating Expenses", class_name: "Direct & Admin Expenses" },
+        Expenses: { type_code: "5", group_name: "Operating Expenses", class_name: "Direct & Admin Expenses" },
+      };
+      const meta = typeMap[form.type] || typeMap.Expenditure;
+      const newCustomAcc: ERPChartOfAccount = {
+        id: `custom-coa-${Date.now()}`,
+        code: codeTrimmed,
+        name: nameTrimmed,
+        type: (form.type === "Expenses" ? "Expenditure" : form.type) as any,
+        type_code: meta.type_code,
+        group_code: `${meta.type_code}1`,
+        group_name: form.group_name || meta.group_name,
+        class_code: `${meta.type_code}101`,
+        class_name: form.class_name || meta.class_name,
+        gl_code: codeTrimmed,
+        gl_name: nameTrimmed,
+      } as ERPChartOfAccount;
+
+      try {
+        const rawCustom = localStorage.getItem("fin_custom_coa_accounts_v1");
+        const existing: ERPChartOfAccount[] = rawCustom ? JSON.parse(rawCustom) : [];
+        const filtered = existing.filter(a => a.code !== codeTrimmed);
+        filtered.push(newCustomAcc);
+        localStorage.setItem("fin_custom_coa_accounts_v1", JSON.stringify(filtered));
+        window.dispatchEvent(new Event("fin_custom_coa_updated"));
+      } catch {}
+
+      try {
+        await createGLAccount({ code: codeTrimmed, name_en: nameTrimmed, type: form.type.toLowerCase() as any });
+      } catch {
+        // Persist in localStorage even if remote DB table constraint rejects custom format
+      }
+
+      toast.success(`Ledger Account ${codeTrimmed} - ${nameTrimmed} added to Chart of Accounts!`);
+      setForm({ code: "", name: "", type: "Expenditure", type_code: "5", group_name: "Operating Expenses", class_name: "Direct & Admin Expenses", gl_name: "" });
       setOpen(false);
-      loadData();
+      await loadData();
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || "Failed to create ledger account");
     }
   }
 
@@ -3381,15 +3598,57 @@ function GrnCostMappingSubModule() {
 
 const EXPENSE_GL_ACCOUNTS = [
   "51004001 - Repair and Maintenance Cost",
+  "51004002 - Electrical & Plumbing Maintenance",
+  "51004003 - HVAC & AC Servicing Expenses",
+  "51004004 - Civil, Painting & Carpentry Works",
+  "51004005 - Pest Control & Fumigation Charges",
   "51004006 - Cost of CMEP Materials",
+  "51004007 - Cleaning & Sanitation Services",
+  "51004008 - Waste Management & Skip Removal",
+  "51004009 - Security & Guarding Services",
+  "51004010 - Fire Alarm & Firefighting Maintenance",
+  "51004011 - Elevator / Lift Maintenance AMC",
+  "51004012 - Swimming Pool & Gym Maintenance",
+  "51004013 - Landscaping & Gardening Expenses",
   "51002001 - CMEP-Facilities Mgt AMC",
   "51001001 - CMEP-Labor Cost-Facilities Mgt",
-  "51003001 - Electricity & Water-Common Area",
-  "51004007 - Cleaning & Sanitation Services",
+  "51003001 - Electricity & Water-Common Area (Kahramaa)",
+  "51003002 - Chilled Water / District Cooling Charges",
+  "51003003 - Internet, Telecom & Ooredoo/Vodafone Charges",
   "51101001 - Staff Basic Salary",
-  "51102014 - IT Expenses",
+  "51101002 - Staff Housing & Transportation Allowance",
+  "51101003 - Staff End of Service Gratuity & Leave Pay",
+  "51101004 - Staff Medical, Visa & RP Renewal Expenses",
   "51102001 - Vehicles & Other Insurance Expenses",
+  "51102002 - Vehicle Fuel, Maintenance & Running Expenses",
+  "51102003 - Vehicle Registration (Istimara) & Traffic Fines",
+  "51102004 - Office Rent & Head Office Overheads",
+  "51102005 - Printing, Stationery & Office Supplies",
+  "51102006 - Legal, Municipality & Attestation Fees",
+  "51102007 - Audit, Consultancy & Professional Fees",
+  "51102008 - Marketing, Brokerage & Leasing Commissions",
+  "51102009 - Bank Charges & POS Commission",
+  "51102010 - Hospitality, Pantry & Refreshments",
+  "51102014 - IT Expenses & Software Subscriptions",
+  "51102099 - Miscellaneous General & Admin Expenses",
 ];
+
+function getAvailableExpenseGlAccounts(): string[] {
+  const set = new Set<string>(EXPENSE_GL_ACCOUNTS);
+  try {
+    const rawCustom = localStorage.getItem("fin_custom_coa_accounts_v1");
+    if (rawCustom) {
+      const parsed: ERPChartOfAccount[] = JSON.parse(rawCustom);
+      parsed.forEach(acc => {
+        const t = (acc.type || "").toLowerCase();
+        if (t.includes("exp") || String(acc.code || "").startsWith("5")) {
+          set.add(`${acc.code} - ${acc.name || acc.gl_name}`);
+        }
+      });
+    }
+  } catch {}
+  return Array.from(set);
+}
 
 function supplierCreditDays(paymentTerms?: string): number | null {
   if (!paymentTerms) return null;
@@ -3406,11 +3665,20 @@ function dateAfterDays(date: string, days: number): string {
 }
 
 function PayableInvoiceSubModule() {
-  const { addVoucher, payableInvoices: storePayableInvoices, addPayableInvoice } = useFinanceStore();
+  const { addVoucher, payableInvoices: storePayableInvoices, addPayableInvoice, markPayableInvoicePaid } = useFinanceStore() as any;
   const { leases, units } = useAppData();
   const [open, setOpen] = useState(false);
   const [procInvoices, setProcInvoices] = useState<ProcApInvoice[]>([]);
-  const [supplierMaster, setSupplierMaster] = useState<FinVendor[]>([]);
+  const [supplierMaster, setSupplierMaster] = useState<FinVendor[]>(() =>
+    DEFAULT_VENDORS.map((dv, idx) => ({
+      id: dv.id,
+      code: `VND-00${idx + 1}`,
+      name: dv.name,
+      payment_terms: "30 Days",
+      status: "Active" as const,
+    }))
+  );
+  const [expenseAccountOptions, setExpenseAccountOptions] = useState<string[]>(() => getAvailableExpenseGlAccounts());
   const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceipt | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState<any | null>(null);
@@ -3464,12 +3732,51 @@ function PayableInvoiceSubModule() {
   }, [loadInvoices]);
 
   useEffect(() => {
+    const refreshCoa = () => setExpenseAccountOptions(getAvailableExpenseGlAccounts());
+    window.addEventListener("fin_custom_coa_updated", refreshCoa);
+    const defaultFinVendors: FinVendor[] = DEFAULT_VENDORS.map((dv, idx) => ({
+      id: dv.id,
+      code: `VND-00${idx + 1}`,
+      name: dv.name,
+      payment_terms: "30 Days",
+      status: "Active" as const,
+    }));
     FinVendorsApi.fetchAll()
-      .then(setSupplierMaster)
-      .catch(error => {
-        console.error("[PayableInvoice] Failed to load supplier payment terms:", error);
-        toast.error("Supplier master payment terms could not be loaded.");
+      .then(fetched => {
+        const map = new Map<string, FinVendor>();
+        defaultFinVendors.forEach(v => map.set(v.name.toLowerCase(), v));
+        (fetched || []).forEach(v => {
+          if (v && v.name) map.set(v.name.toLowerCase(), v);
+        });
+        try {
+          const rawProcVendors = localStorage.getItem("pms_vendors");
+          if (rawProcVendors) {
+            const parsed = JSON.parse(rawProcVendors);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((pv: any, idx: number) => {
+                const vName = pv.name || pv.vendor_name || pv.company_name;
+                if (vName && !map.has(String(vName).toLowerCase())) {
+                  map.set(String(vName).toLowerCase(), {
+                    id: String(pv.id || `proc-v-${idx}`),
+                    code: pv.code || pv.vendor_code || `VND-${100 + idx}`,
+                    name: String(vName),
+                    contact_person: pv.contact_person || "Accounts Dept",
+                    phone: pv.phone || "44000000",
+                    email: pv.email || "accounts@vendor.qa",
+                    payment_terms: pv.payment_terms || "30 Days",
+                    status: "Active",
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+        setSupplierMaster(Array.from(map.values()));
+      })
+      .catch(() => {
+        setSupplierMaster(defaultFinVendors);
       });
+    return () => window.removeEventListener("fin_custom_coa_updated", refreshCoa);
   }, []);
 
   // Merge Store AP invoices and Procurement AP invoices
@@ -3695,8 +4002,11 @@ function PayableInvoiceSubModule() {
         }
       } catch {}
 
-      // Update local storage for zyno-pms-finance-data-v1-ap
+      // Update local storage for zyno-pms-finance-data-v1-ap and finance-store state
       try {
+        if (typeof markPayableInvoicePaid === "function") {
+          markPayableInvoicePaid(payTarget.invoice_no);
+        }
         const finApRaw = localStorage.getItem("zyno-pms-finance-data-v1-ap");
         if (finApRaw) {
           const finApList: any[] = JSON.parse(finApRaw);
@@ -3876,25 +4186,50 @@ function PayableInvoiceSubModule() {
               </div>
               <div>
                 <Label className="text-[11px] font-semibold">Vendor / Supplier *</Label>
-                <Input
-                  className="h-8 text-xs"
-                  list="ap-supplier-options"
-                  value={form.vendor}
-                  onChange={e => {
-                    const vendorName = e.target.value;
-                    const supplier = supplierMaster.find(v => v.name.trim().toLowerCase() === vendorName.trim().toLowerCase());
-                    const creditDays = supplierCreditDays(supplier?.payment_terms);
-                    setForm(current => ({
-                      ...current,
-                      vendor: vendorName,
-                      ...(creditDays !== null ? { due_date: dateAfterDays(current.date, creditDays) } : {}),
-                    }));
-                  }}
-                  placeholder="Vendor / Supplier Name"
-                />
-                <datalist id="ap-supplier-options">
-                  {supplierMaster.filter(v => v.status === "Active").map(v => <option key={v.id} value={v.name} />)}
-                </datalist>
+                <div className="space-y-1.5">
+                  <Select
+                    value={supplierMaster.some(v => v.name === form.vendor) ? form.vendor : "__custom__"}
+                    onValueChange={val => {
+                      if (val === "__custom__") return;
+                      const supplier = supplierMaster.find(v => v.name.trim().toLowerCase() === val.trim().toLowerCase());
+                      const creditDays = supplierCreditDays(supplier?.payment_terms);
+                      setForm(current => ({
+                        ...current,
+                        vendor: val,
+                        ...(creditDays !== null ? { due_date: dateAfterDays(current.date, creditDays) } : {}),
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select Supplier / Vendor..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {supplierMaster.filter(v => v.status !== "Inactive").map(v => (
+                        <SelectItem key={v.id || v.name} value={v.name} className="text-xs">
+                          {v.name} {v.code ? `(${v.code})` : ""}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__custom__" className="text-xs font-semibold text-primary">
+                        + Type Custom Supplier Name Below...
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="h-7 text-xs"
+                    value={form.vendor}
+                    onChange={e => {
+                      const vendorName = e.target.value;
+                      const supplier = supplierMaster.find(v => v.name.trim().toLowerCase() === vendorName.trim().toLowerCase());
+                      const creditDays = supplierCreditDays(supplier?.payment_terms);
+                      setForm(current => ({
+                        ...current,
+                        vendor: vendorName,
+                        ...(creditDays !== null ? { due_date: dateAfterDays(current.date, creditDays) } : {}),
+                      }));
+                    }}
+                    placeholder="Or type Supplier / Vendor Name..."
+                  />
+                </div>
               </div>
               <div>
                 <Label className="text-[11px] font-semibold">Supplier Invoice Date *</Label>
@@ -3976,8 +4311,8 @@ function PayableInvoiceSubModule() {
                             <SelectTrigger className="h-8 text-xs font-mono w-full">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent>
-                              {EXPENSE_GL_ACCOUNTS.map(acc => (
+                            <SelectContent className="max-h-72">
+                              {expenseAccountOptions.map(acc => (
                                 <SelectItem key={acc} value={acc} className="text-xs font-mono">
                                   {acc}
                                 </SelectItem>
@@ -3993,12 +4328,17 @@ function PayableInvoiceSubModule() {
                             }
                           >
                             <SelectTrigger className="h-8 text-xs w-full">
-                              <SelectValue placeholder="Select Property" />
+                              <SelectValue placeholder="Select Property / Vehicle Cost Center" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Al Ameen Real Estate Head Office" className="font-semibold text-purple-700">
                                 🏢 Al Ameen Real Estate Head Office
                               </SelectItem>
+                              {COMPANY_VEHICLE_COST_CENTERS.map(veh => (
+                                <SelectItem key={veh.code} value={veh.name} className="text-xs font-medium text-blue-700">
+                                  🚗 Vehicle No: {veh.vehicleNo} — {veh.vehicleName} ({veh.brandName}{veh.model && veh.model !== "—" ? ` ${veh.model}` : ""})
+                                </SelectItem>
+                              ))}
                               {propertiesList.map(propName => (
                                 <SelectItem key={propName} value={propName} className="text-xs">
                                   {propName}
@@ -4652,16 +4992,21 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
               </div>
               <div>
                 <Label className="text-[11px] font-semibold flex items-center gap-1">
-                  <Building2 className="h-3.5 w-3.5 text-primary" /> Related Property
+                  <Building2 className="h-3.5 w-3.5 text-primary" /> Related Property / Vehicle Cost Center
                 </Label>
                 <Select
                   value={form.property}
                   onValueChange={v => setForm({ ...form, property: v })}
                   disabled={type === "Receipt Voucher" && !!selectedReceiptLease}
                 >
-                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Property" /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs bg-background"><SelectValue placeholder="Select Property or Vehicle Cost Center" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="All / Corporate">All / Corporate Office</SelectItem>
+                    {COMPANY_VEHICLE_COST_CENTERS.map(veh => (
+                      <SelectItem key={veh.code} value={veh.name}>
+                        🚗 Vehicle No: {veh.vehicleNo} — {veh.vehicleName} ({veh.brandName}{veh.model && veh.model !== "—" ? ` ${veh.model}` : ""})
+                      </SelectItem>
+                    ))}
                     {propertiesList.map(p => (
                       <SelectItem key={p} value={p}>{p}</SelectItem>
                     ))}
@@ -5068,6 +5413,24 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
       return;
     }
 
+    const targetUnit = (form.unit || "").trim().toUpperCase();
+    const targetPeriod = (form.date || "").slice(0, 7);
+    if (targetUnit && targetPeriod) {
+      const duplicateInv = allInvoices.find(inv => {
+        const st = String(inv.status || "");
+        if (st === "Cancelled" || st === "Void") return false;
+        const invUnit = (inv.unit || "").trim().toUpperCase();
+        const invPeriod = (inv.billingPeriod || (inv as any).billing_month || (inv.date || "").slice(0, 7)).trim();
+        return invUnit === targetUnit && invPeriod === targetPeriod;
+      });
+      if (duplicateInv) {
+        toast.error(
+          `Duplicate Restricted: Unit ${form.unit} already has an invoice (${duplicateInv.invoice_no}) generated for period ${targetPeriod}.`
+        );
+        return;
+      }
+    }
+
     const newInv: ReceivableInvoice = {
       id: `ar-${Date.now()}`,
       invoice_no: form.invoice_no,
@@ -5076,6 +5439,7 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
       unit: form.unit,
       date: form.date,
       due_date: form.due_date,
+      billingPeriod: targetPeriod || undefined,
       stream: form.stream,
       account_code: form.stream.split(/\s+/)[0] || "41100",
       amount: amt,
@@ -5091,7 +5455,7 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
     setOpen(false);
   }
 
-  // Combined Invoices
+  // Combined Invoices (strictly real store + user-created invoices; no synthetic seed rows)
   const allInvoices = useMemo(() => {
     const list = [...storeReceivables];
     data.forEach(d => {
@@ -5100,27 +5464,8 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
       }
     });
 
-    if (list.length === 0 && leases.length > 0) {
-      leases.slice(0, 10).forEach((l, idx) => {
-        const amt = Number(l.monthlyRent) || 5500;
-        list.push({
-          id: `seed-ar-${idx + 1}`,
-          invoice_no: `INV-2026-AR-${1001 + idx}`,
-          tenant: l.tenantName || `Tenant ${l.unit}`,
-          property: l.property || "MANSOURA - BLDG06",
-          unit: l.unit || `Unit ${idx + 1}`,
-          date: new Date(Date.now() - (idx % 3) * 30 * 86400000).toISOString().split("T")[0],
-          due_date: new Date(Date.now() - (idx % 3) * 30 * 86400000 + 30 * 86400000).toISOString().split("T")[0],
-          stream: "41100 - Rental Revenue",
-          account_code: "41100",
-          amount: amt,
-          status: idx % 3 === 0 ? "Paid" : idx % 3 === 1 ? "Pending" : "Overdue",
-        });
-      });
-    }
-
     return list.sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime());
-  }, [storeReceivables, data, leases]);
+  }, [storeReceivables, data]);
 
   // Filtered Invoices
   const filteredInvoices = useMemo(() => {
@@ -8521,13 +8866,41 @@ function ProfitAndLossSubModule() {
     };
   }, [selectedPeriod, plOverall, allLedgerTransactions]);
 
+  const exportPnLToCSV = () => {
+    const rows = [
+      ["Profit and Loss Statement (Vertical Format)", selectedPeriod === "all" ? "All Periods (Consolidated)" : selectedPeriod],
+      [],
+      ["Category / GL Account", "Section", "Amount (QAR)"],
+      ["Residential & Commercial Tenancy Leases (41100)", "Operating Revenue", pl.rentalRevenue.toFixed(2)],
+      ["Service, Parking & Utility Recovery Charges", "Operating Revenue", pl.otherRevenue.toFixed(2)],
+      ["TOTAL OPERATING REVENUE", "Revenue Subtotal", pl.totalRevenue.toFixed(2)],
+      [],
+      ["Repairs, CMEP & Property Maintenance (51004)", "Operating Expenses", pl.maintenanceExpense.toFixed(2)],
+      ["Staff Salaries & Site Operations (51101)", "Operating Expenses", pl.payrollExpense.toFixed(2)],
+      ["Electricity & Water — Kahramaa (51003)", "Operating Expenses", pl.utilitiesExpense.toFixed(2)],
+      ["Cleaning & Sanitation Services (51004007)", "Operating Expenses", pl.cleaningExpense.toFixed(2)],
+      ["TOTAL OPERATING EXPENSES", "Expense Subtotal", (-pl.totalExpenses).toFixed(2)],
+      [],
+      [pl.netProfit >= 0 ? "NET OPERATING PROFIT" : "NET OPERATING LOSS", "Net Result", pl.netProfit.toFixed(2)],
+    ];
+    const csv = "\uFEFF" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Profit_And_Loss_${selectedPeriod}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Profit & Loss Statement exported to Excel/CSV");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center gap-3 flex-wrap">
         <div>
-          <h3 className="text-sm font-semibold">Profit and Loss Statement (P&L) — Live</h3>
+          <h3 className="text-sm font-semibold">Profit and Loss Statement (P&amp;L — Vertical Statement Format)</h3>
           <p className="text-xs text-muted-foreground">
-            {selectedPeriod === "all" ? "Consolidated financial performance across all periods" : `Performance report for month: ${selectedPeriod === "2026-10" ? "Oct-26 (October 2026)" : selectedPeriod}`}
+            {selectedPeriod === "all" ? "Consolidated vertical financial performance across all periods" : `Performance report for month: ${selectedPeriod === "2026-10" ? "Oct-26 (October 2026)" : selectedPeriod}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -8547,6 +8920,14 @@ function ProfitAndLossSubModule() {
           <Button
             size="sm"
             variant="outline"
+            onClick={exportPnLToCSV}
+            className="h-7 text-xs gap-1.5 border-emerald-500/40 text-emerald-700 hover:bg-emerald-50"
+          >
+            <Download className="h-3 w-3" /> Export Excel / CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={refreshFinanceData}
             disabled={isSyncing}
             className="h-7 text-xs gap-1.5"
@@ -8557,30 +8938,75 @@ function ProfitAndLossSubModule() {
           </Button>
         </div>
       </div>
-      <Card className="p-5 space-y-3 text-xs shadow-sm bg-card">
-        <div className="flex justify-between items-center font-bold text-sm border-b pb-2">
-          <span>Gross Rental & Property Operating Revenue</span>
-          <span className="text-emerald-600 font-mono text-base">QR {pl.totalRevenue?.toLocaleString() ?? '0'}</span>
-        </div>
-        <div className="space-y-1.5 pl-2 text-muted-foreground">
-          <div className="flex justify-between"><span>Residential Tenancy Leases (41100)</span><span className="font-mono">QR {pl.rentalRevenue.toLocaleString()}</span></div>
-          <div className="flex justify-between"><span>Service & Parking Recovery Charges</span><span className="font-mono">QR {pl.otherRevenue.toLocaleString()}</span></div>
+
+      {/* Vertically Aligned P&L Statement */}
+      <Card className="p-0 overflow-hidden text-xs shadow-sm bg-card border">
+        <div className="bg-muted/50 px-5 py-3 border-b flex justify-between items-center">
+          <span className="font-bold uppercase tracking-wider text-[11px] text-muted-foreground">Particulars / Ledger Head (Vertical Statement)</span>
+          <span className="font-bold uppercase tracking-wider text-[11px] text-muted-foreground font-mono">Amount (QAR)</span>
         </div>
 
-        <div className="flex justify-between items-center font-bold text-sm border-t pt-3 pb-1 text-rose-600">
-          <span>Total Operating Expenses</span>
-          <span className="font-mono text-base">-QR {pl.totalExpenses.toLocaleString()}</span>
-        </div>
-        <div className="space-y-1.5 pl-2 text-muted-foreground">
-          <div className="flex justify-between"><span>Repairs & HVAC Maintenance (50200)</span><span className="font-mono">QR {pl.maintenanceExpense.toLocaleString()}</span></div>
-          <div className="flex justify-between"><span>Staff Salaries & Site Operations (50100)</span><span className="font-mono">QR {pl.payrollExpense.toLocaleString()}</span></div>
-          <div className="flex justify-between"><span>Electricity & Water — Kahramaa (50500)</span><span className="font-mono">QR {pl.utilitiesExpense.toLocaleString()}</span></div>
-          <div className="flex justify-between"><span>Cleaning & Sanitation Services (50300)</span><span className="font-mono">QR {pl.cleaningExpense.toLocaleString()}</span></div>
-        </div>
+        <div className="p-5 space-y-6">
+          {/* SECTION I: OPERATING REVENUE */}
+          <div className="space-y-2">
+            <div className="font-bold text-xs uppercase tracking-wider text-emerald-700 bg-emerald-500/10 px-3 py-1.5 rounded border border-emerald-500/20">
+              I. Gross Rental &amp; Property Operating Revenue
+            </div>
+            <div className="divide-y border rounded-lg bg-background">
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Residential &amp; Commercial Tenancy Leases (41100)</span>
+                <span className="font-mono font-medium">QAR {pl.rentalRevenue.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Service, Parking &amp; Utility Recovery Charges</span>
+                <span className="font-mono font-medium">QAR {pl.otherRevenue.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5 bg-emerald-50/60 dark:bg-emerald-950/20 font-bold text-sm">
+                <span>Total Operating Revenue (A)</span>
+                <span className="text-emerald-600 font-mono text-base">QAR {pl.totalRevenue?.toLocaleString() ?? '0'}</span>
+              </div>
+            </div>
+          </div>
 
-        <div className={`flex justify-between items-center font-bold text-base border-t-2 pt-3 p-3 rounded-lg border ${pl.netProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20'}`}>
-          <span className="text-foreground">Net Operating {pl.netProfit >= 0 ? 'Profit' : 'Loss'}</span>
-          <span className={`font-mono text-lg ${pl.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>QR {Math.abs(pl.netProfit).toLocaleString()}</span>
+          {/* SECTION II: OPERATING EXPENSES (STACKED VERTICALLY BELOW REVENUE) */}
+          <div className="space-y-2">
+            <div className="font-bold text-xs uppercase tracking-wider text-rose-700 bg-rose-500/10 px-3 py-1.5 rounded border border-rose-500/20">
+              II. Less: Operating, Maintenance &amp; Administrative Expenses
+            </div>
+            <div className="divide-y border rounded-lg bg-background">
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Repairs, CMEP &amp; Property Maintenance (51004)</span>
+                <span className="font-mono font-medium">QAR {pl.maintenanceExpense.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Staff Salaries &amp; Site Operations (51101)</span>
+                <span className="font-mono font-medium">QAR {pl.payrollExpense.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Electricity &amp; Water — Kahramaa (51003)</span>
+                <span className="font-mono font-medium">QAR {pl.utilitiesExpense.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5">
+                <span>Cleaning &amp; Sanitation Services (51004007)</span>
+                <span className="font-mono font-medium">QAR {pl.cleaningExpense.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center px-4 py-2.5 bg-rose-50/60 dark:bg-rose-950/20 font-bold text-sm text-rose-600">
+                <span>Total Operating Expenses (B)</span>
+                <span className="font-mono text-base">(QAR {pl.totalExpenses.toLocaleString()})</span>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION III: NET OPERATING PROFIT / LOSS */}
+          <div className={`flex justify-between items-center font-bold text-base p-4 rounded-lg border-2 ${pl.netProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
+            <div>
+              <span className="text-foreground block">III. Net Operating {pl.netProfit >= 0 ? 'Profit' : 'Loss'} (A − B)</span>
+              <span className="text-[11px] font-normal text-muted-foreground">Transferred to Retained Earnings / Balance Sheet</span>
+            </div>
+            <span className={`font-mono text-xl ${pl.netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {pl.netProfit < 0 ? "-" : ""}QAR {Math.abs(pl.netProfit).toLocaleString()}
+            </span>
+          </div>
         </div>
       </Card>
     </div>
@@ -8590,11 +9016,49 @@ function ProfitAndLossSubModule() {
 function BalanceSheetSubModule() {
   const { balanceSheetReport: bs, isSyncing, refreshFinanceData } = useFinanceStore();
 
+  const exportBalanceSheetToCSV = () => {
+    const rows = [
+      ["Balance Sheet Statement — Al Ameen Real Estate", `Generated: ${formatDateDDMMYYYY(new Date().toISOString().slice(0, 10))}`],
+      [],
+      ["Section", "Line Item / Ledger Group", "Amount (QAR)"],
+      ["Assets", "Bank Operating & Escrow Balances", bs.bankCashAssets.toFixed(2)],
+      ["Assets", "Post-Dated Cheques In Hand", bs.pdcInHandAssets.toFixed(2)],
+      ["Assets", "Tenant Receivables (AR Ledger)", bs.arReceivablesAssets.toFixed(2)],
+      ["Assets", "Legal Receivables (Defaulted)", bs.legalReceivablesAssets.toFixed(2)],
+      ["Assets", "Property & Fixed Assets Portfolio", bs.fixedAssets.toFixed(2)],
+      ["Assets Subtotal", "TOTAL ASSETS", (bs.totalAssets ?? 0).toFixed(2)],
+      [],
+      ["Liabilities", "Accounts Payable (Vendors)", bs.apLiabilities.toFixed(2)],
+      ["Liabilities", "PDC Received — Customer Liability", bs.pdcCustomerLiabilities.toFixed(2)],
+      ["Liabilities", "Tenant Security Deposits Held", bs.securityDepositLiabilities.toFixed(2)],
+      ["Equity", "Owner Capital & Reserves", bs.ownerCapital.toFixed(2)],
+      ["Equity", "Current Period Net Profit / Retained Earnings", bs.retainedNetProfit.toFixed(2)],
+      ["Liabilities & Equity Subtotal", "TOTAL LIABILITIES & EQUITY", bs.totalLiabilitiesAndEquity.toFixed(2)],
+    ];
+    const csv = "\uFEFF" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Balance_Sheet_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Balance Sheet exported to Excel/CSV");
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <h3 className="text-sm font-semibold">Balance Sheet Statement — Live</h3>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportBalanceSheetToCSV}
+            className="h-7 text-xs gap-1.5 border-emerald-500/40 text-emerald-700 hover:bg-emerald-50"
+          >
+            <Download className="h-3 w-3" /> Export Excel / CSV
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -8656,6 +9120,7 @@ function GeneralLedgerReportSubModule() {
   const [selectedVoucherForCorrection, setSelectedVoucherForCorrection] = useState<{
     reference: string;
     currentDate: string;
+    accountCode?: string;
     accountName?: string;
     property?: string;
     unit?: string;
@@ -8663,26 +9128,45 @@ function GeneralLedgerReportSubModule() {
     amount?: number;
   } | null>(null);
   const [correctionNewDate, setCorrectionNewDate] = useState("");
+  const [correctionNewBankCode, setCorrectionNewBankCode] = useState("unchanged");
   const [correctionReason, setCorrectionReason] = useState("");
   const [isSavingCorrection, setIsSavingCorrection] = useState(false);
 
+  const BANK_CORRECTION_OPTIONS: Array<{ code: string; name: string }> = [
+    { code: "12000001", name: "Commercial Bank of Qatar (CBQ)" },
+    { code: "12000002", name: "Al Ameen Dukhan Bank" },
+    { code: "12000003", name: "Bank Operating Account (QNB)" },
+    { code: "12000004", name: "Doha Bank Operating Account" },
+    { code: "12000005", name: "Qatar Islamic Bank (QIB)" },
+    { code: "12000006", name: "Al Ameen (Oryx) - Dukhan Bank" },
+    { code: "12100001", name: "Cash in Hand / Operating Cash" },
+  ];
+
   async function handleSaveDateCorrection() {
-    if (!selectedVoucherForCorrection?.reference || !correctionNewDate) {
-      toast.error("Please enter a valid reference and new date.");
+    const targetDate = correctionNewDate || selectedVoucherForCorrection?.currentDate || new Date().toISOString().split("T")[0];
+    if (!selectedVoucherForCorrection?.reference) {
+      toast.error("Please enter a valid voucher / transaction reference.");
       return;
     }
     setIsSavingCorrection(true);
     try {
+      const chosenBank = correctionNewBankCode && correctionNewBankCode !== "unchanged"
+        ? BANK_CORRECTION_OPTIONS.find(b => b.code === correctionNewBankCode)
+        : undefined;
       await correctVoucherDate({
         voucherNo: selectedVoucherForCorrection.reference,
-        newDate: correctionNewDate,
-        reason: correctionReason || "Date correction by finance administrator",
+        newDate: targetDate,
+        newBankCode: chosenBank?.code,
+        newBankName: chosenBank?.name,
+        reason: correctionReason || (chosenBank ? `Bank account corrected to ${chosenBank.code} (${chosenBank.name})` : "Date correction by finance administrator"),
       });
       setDateCorrectionModalOpen(false);
       setSelectedVoucherForCorrection(null);
+      setCorrectionNewBankCode("unchanged");
+      setCorrectionNewDate("");
       setCorrectionReason("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to update date");
+      toast.error(err.message || "Failed to update transaction");
     } finally {
       setIsSavingCorrection(false);
     }
@@ -8923,6 +9407,42 @@ function GeneralLedgerReportSubModule() {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => {
+              const rows = [
+                ["Date", "Account Code", "Account Name", "Account Type", "Property", "Unit", "Customer / Tenant", "Reference", "Source", "Debit (QAR)", "Credit (QAR)", "Description"],
+                ...filtered.map(tx => [
+                  formatDateDDMMYYYY(tx.date),
+                  tx.account_code,
+                  tx.account_name,
+                  tx.account_type || "",
+                  tx.property_name || "",
+                  tx.unit_ref || "",
+                  tx.tenant_name || "",
+                  tx.reference || "",
+                  tx.source || "",
+                  (tx.debit || 0).toFixed(2),
+                  (tx.credit || 0).toFixed(2),
+                  tx.description || "",
+                ]),
+              ];
+              const csv = "\uFEFF" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `General_Ledger_${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success(`Exported ${filtered.length} General Ledger postings to Excel/CSV`);
+            }}
+            className="h-7 text-xs gap-1.5 border-emerald-500/40 text-emerald-700 hover:bg-emerald-50"
+            title="Export filtered General Ledger transactions to Excel / CSV"
+          >
+            <Download className="h-3 w-3" /> Export GL (Excel / CSV)
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={refreshFinanceData}
             disabled={isSyncing}
             className="h-7 text-xs gap-1.5"
@@ -8941,13 +9461,14 @@ function GeneralLedgerReportSubModule() {
                 amount: 0,
               });
               setCorrectionNewDate("");
+              setCorrectionNewBankCode("unchanged");
               setCorrectionReason("");
               setDateCorrectionModalOpen(true);
             }}
             className="h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5 font-medium"
-            title="Correct the posted date of any voucher or PDC with audit tracking"
+            title="Correct the posted date or receiving bank account of any direct transfer, receipt, or PDC"
           >
-            <Calendar className="h-3 w-3" /> Correct Voucher Date
+            <Calendar className="h-3 w-3" /> Correct Date / Bank Account
           </Button>
           <Badge variant="outline" className="font-mono bg-blue-50 text-blue-700 border-blue-200 text-xs">
             DR: {totalDebit.toLocaleString()} QAR
@@ -9269,7 +9790,7 @@ function GeneralLedgerReportSubModule() {
             ) : (
               paginated.map(tx => (
                 <TableRow key={tx.id} className="hover:bg-muted/40 transition-colors border-b border-border/40">
-                  <TableCell className="py-1.5 px-2.5 font-mono whitespace-nowrap font-medium">{formatDDMMMYYYY(tx.date)}</TableCell>
+                  <TableCell className="py-1.5 px-2.5 font-mono whitespace-nowrap font-medium">{formatDateDDMMYYYY(tx.date)}</TableCell>
                   <TableCell className="py-1.5 px-2 font-mono font-bold text-primary whitespace-nowrap">{tx.account_code}</TableCell>
                   <TableCell className="py-1.5 px-2.5 font-medium">{tx.account_name}</TableCell>
                   <TableCell className="py-1.5 px-2 text-muted-foreground">{tx.property_name || "—"}</TableCell>
@@ -9292,11 +9813,12 @@ function GeneralLedgerReportSubModule() {
                       size="sm"
                       variant="ghost"
                       className="h-6 w-6 p-0 hover:bg-muted text-muted-foreground hover:text-foreground inline-flex items-center justify-center rounded"
-                      title={`Correct date for voucher ${tx.reference}`}
+                      title={`Correct date or bank account for voucher ${tx.reference}`}
                       onClick={() => {
                         setSelectedVoucherForCorrection({
                           reference: tx.reference,
                           currentDate: tx.date,
+                          accountCode: tx.account_code,
                           accountName: tx.account_name,
                           property: tx.property_name,
                           unit: tx.unit_ref,
@@ -9304,6 +9826,11 @@ function GeneralLedgerReportSubModule() {
                           amount: tx.debit > 0 ? tx.debit : tx.credit,
                         });
                         setCorrectionNewDate(tx.date);
+                        setCorrectionNewBankCode(
+                          BANK_CORRECTION_OPTIONS.some(b => b.code === tx.account_code)
+                            ? tx.account_code
+                            : "unchanged"
+                        );
                         setCorrectionReason("");
                         setDateCorrectionModalOpen(true);
                       }}
@@ -9343,31 +9870,46 @@ function GeneralLedgerReportSubModule() {
           </div>
         </div>
       )}
-          {/* ── Transaction / Voucher Date Correction Dialog ─────────────────────── */}
+      {/* ── Transaction / Voucher Date & Bank Account Correction Dialog ───────── */}
       <Dialog open={dateCorrectionModalOpen} onOpenChange={setDateCorrectionModalOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Calendar className="h-4 w-4 text-primary" />
-              Correct Transaction / Voucher Date
+              Correct Transaction Date / Bank Account
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Change the posted accounting date of any voucher or PDC deposit.
-              This immediately re-indexes the General Ledger, Trial Balance, and Financial Statements with an immutable audit entry.
+              Change the posted accounting date and/or receiving Bank / Cash account of any Direct Transfer, Receipt Voucher, or PDC deposit.
+              This immediately updates the General Ledger, Trial Balance, Cash Book, and Financial Statements with an audit entry.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3.5 py-2">
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Voucher / PDC Reference</Label>
+              <Label className="text-xs font-semibold">Voucher / Direct Transfer / PDC Reference</Label>
               <Input
-                placeholder="e.g. VCH-DEP-f9773c03-95fb-44bc-8642-dff034d46d72"
+                placeholder="e.g. VCH-TRF-..., RV-..., or VCH-DEP-..."
                 value={selectedVoucherForCorrection?.reference || ""}
-                onChange={e => setSelectedVoucherForCorrection(prev => ({
-                  reference: e.target.value.trim(),
-                  currentDate: prev?.currentDate || "",
-                  amount: prev?.amount || 0
-                }))}
+                onChange={e => {
+                  const ref = e.target.value.trim();
+                  const match = (allLedgerTransactions || []).find((tx: any) =>
+                    tx.reference?.toLowerCase() === ref.toLowerCase() ||
+                    tx.id?.toLowerCase() === ref.toLowerCase()
+                  );
+                  setSelectedVoucherForCorrection({
+                    reference: ref,
+                    currentDate: match?.date || selectedVoucherForCorrection?.currentDate || "",
+                    accountCode: match?.account_code,
+                    accountName: match?.account_name,
+                    tenant: match?.tenant_name,
+                    unit: match?.unit_ref,
+                    amount: match ? (match.debit > 0 ? match.debit : match.credit) : (selectedVoucherForCorrection?.amount || 0)
+                  });
+                  if (match?.date) setCorrectionNewDate(match.date);
+                  if (match?.account_code && BANK_CORRECTION_OPTIONS.some(b => b.code === match.account_code)) {
+                    setCorrectionNewBankCode(match.account_code);
+                  }
+                }}
                 className="font-mono text-xs"
               />
             </div>
@@ -9382,6 +9924,15 @@ function GeneralLedgerReportSubModule() {
                   <span className="text-muted-foreground block text-[10px] uppercase font-bold">Amount</span>
                   <span className="font-mono font-semibold">QAR {(selectedVoucherForCorrection.amount || 0).toLocaleString()}</span>
                 </div>
+                {selectedVoucherForCorrection.accountName && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">Current Ledger Account</span>
+                    <span className="font-mono font-medium">
+                      {selectedVoucherForCorrection.accountCode ? `${selectedVoucherForCorrection.accountCode} — ` : ""}
+                      {selectedVoucherForCorrection.accountName}
+                    </span>
+                  </div>
+                )}
                 {selectedVoucherForCorrection.tenant && (
                   <div>
                     <span className="text-muted-foreground block text-[10px] uppercase font-bold">Customer</span>
@@ -9425,11 +9976,41 @@ function GeneralLedgerReportSubModule() {
               />
             </div>
 
+            <div className="space-y-1.5 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Landmark className="h-3.5 w-3.5 text-primary" />
+                  Receiving Bank / Cash Account (12000001 - 12100001)
+                </Label>
+                {correctionNewBankCode !== "unchanged" && (
+                  <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30">
+                    Target: {correctionNewBankCode}
+                  </Badge>
+                )}
+              </div>
+              <Select value={correctionNewBankCode} onValueChange={setCorrectionNewBankCode}>
+                <SelectTrigger className="h-8 text-xs bg-background">
+                  <SelectValue placeholder="Keep existing bank / cash account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unchanged">(Keep Existing Bank / Cash Account)</SelectItem>
+                  {BANK_CORRECTION_OPTIONS.map(bank => (
+                    <SelectItem key={bank.code} value={bank.code}>
+                      {bank.code} — {bank.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Select from CBQ, Al Ameen Dukhan, QNB, Doha Bank, QIB, Al Ameen (Oryx), or Cash in Hand to correct the receiving account.
+              </p>
+            </div>
+
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Reason for Date Correction (Required for Audit Trail)</Label>
+              <Label className="text-xs font-semibold">Reason for Correction (Required for Audit Trail)</Label>
               <Textarea
                 rows={2}
-                placeholder="e.g. Cheque actually deposited on 04-10-2026; entered as 02-11-2026 in error."
+                placeholder="e.g. Direct transfer was received in Al Ameen Dukhan Bank (12000002) on 04-10-2026."
                 value={correctionReason}
                 onChange={e => setCorrectionReason(e.target.value)}
                 className="text-xs"
@@ -9440,19 +10021,24 @@ function GeneralLedgerReportSubModule() {
             {voucherDateCorrections && Object.keys(voucherDateCorrections).length > 0 && (
               <div className="pt-2 border-t space-y-1.5">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
-                  Logged Date Corrections ({Object.keys(voucherDateCorrections).length})
+                  Logged Corrections ({Object.keys(voucherDateCorrections).length})
                 </span>
                 <div className="max-h-28 overflow-y-auto space-y-1 text-[11px] pr-1">
                   {Object.entries(voucherDateCorrections).map(([vNo, corr]) => (
                     <div key={vNo} className="flex items-center justify-between p-1.5 rounded bg-muted/40 border text-[11px]">
-                      <div className="truncate max-w-[280px]">
+                      <div className="truncate max-w-[260px]">
                         <span className="font-mono font-bold block truncate">{vNo}</span>
                         <span className="text-muted-foreground text-[10px] truncate block">{(corr as any)?.reason}</span>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
                         <Badge variant="outline" className="font-mono text-[10px] bg-emerald-50 text-emerald-700">
                           {(corr as any)?.newDate}
                         </Badge>
+                        {(corr as any)?.newBankCode && (
+                          <span className="text-[9px] font-mono text-blue-700">
+                            {(corr as any)?.newBankCode} ({(corr as any)?.newBankName})
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -9475,12 +10061,12 @@ function GeneralLedgerReportSubModule() {
             </Button>
             <Button
               size="sm"
-              disabled={isSavingCorrection || !selectedVoucherForCorrection?.reference || !correctionNewDate}
+              disabled={isSavingCorrection || !selectedVoucherForCorrection?.reference}
               onClick={handleSaveDateCorrection}
               className="gap-1.5"
             >
               {isSavingCorrection ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-              Apply Date Correction
+              Apply Correction (Date &amp; Bank Account)
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -11114,6 +11700,784 @@ function CreditNoteSubModule() {
           )}
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setViewNote(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLE-WISE EXPENSE REPORT & COST CENTER ALLOCATION SUB-MODULE
+// ─────────────────────────────────────────────────────────────────────────────
+
+function VehicleExpenseReportSubModule() {
+  const { journalEntries, payableInvoices: payables, vouchers, addJournalEntry } = useFinanceStore() as any;
+  const [selectedVehicleNo, setSelectedVehicleNo] = useState<string>("ALL");
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState<string>("ALL");
+  const [dateFrom, setDateFrom] = useState<string>("2026-01-01");
+  const [dateTo, setDateTo] = useState<string>("2026-12-31");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [allocateOpen, setAllocateOpen] = useState(false);
+
+  const [allocForm, setAllocForm] = useState({
+    vehicleNo: COMPANY_VEHICLE_COST_CENTERS[0].vehicleNo,
+    date: new Date().toISOString().slice(0, 10),
+    reference: `VEXP-${Date.now().toString().slice(-5)}`,
+    expenseGl: "51102002 - Vehicle Fuel, Maintenance & Running Expenses",
+    paymentGl: "1010 - Cash on Hand / Petty Cash",
+    vendor: "",
+    category: "Fuel & Running",
+    description: "",
+    amount: "",
+  });
+
+  // Match any text/property/cost-center string to one of the 11 Company Vehicles by Vehicle No
+  const matchVehicleFromText = (rawText?: string): CompanyVehicleCostCenter | undefined => {
+    if (!rawText) return undefined;
+    const text = String(rawText).trim();
+    if (!text) return undefined;
+    return COMPANY_VEHICLE_COST_CENTERS.find(v => {
+      if (text === v.vehicleNo || text === v.code || text === v.name || text === `CC-VEH-${v.vehicleNo}`) return true;
+      // Word-boundary match on the Vehicle No (e.g. "230064 - Pickup (2012 Nissan)" or "Vehicle No: 230064")
+      const regex = new RegExp(`\\b${v.vehicleNo}\\b`, "i");
+      return regex.test(text);
+    });
+  };
+
+  interface VehicleExpenseRow {
+    id: string;
+    date: string;
+    reference: string;
+    sourceType: "AP Bill" | "Payment Voucher" | "Journal Entry";
+    vehicleNo: string;
+    vehicleName: string;
+    model: string;
+    brandName: string;
+    costCenterName: string;
+    glAccount: string;
+    category: string;
+    vendorOrPayee: string;
+    description: string;
+    amount: number;
+  }
+
+  const allVehicleExpenses = useMemo<VehicleExpenseRow[]>(() => {
+    const rows: VehicleExpenseRow[] = [];
+    const seenRefs = new Set<string>();
+
+    // 1. Scan Journal Entries (authoritative double-entry ledger lines)
+    (journalEntries || []).forEach((je: any) => {
+      if (je.status === "Voided") return;
+      (je.lines || []).forEach((line: any, idx: number) => {
+        const debitAmt = Number(line.debit ?? line.debit_amount ?? 0);
+        if (debitAmt <= 0) return;
+        const accCode = String(line.accountCode || line.account_code || "");
+        const accName = String(line.accountName || line.account_name || "");
+        // Match vehicle cost center from line.property, line.description, je.description, je.narration, or je.reference
+        const matchedVeh =
+          matchVehicleFromText(line.property || line.property_name) ||
+          matchVehicleFromText(line.description) ||
+          matchVehicleFromText(je.description || je.narration);
+        if (!matchedVeh) return;
+
+        // Ensure it is an expense debit line (5xxxx) or explicitly tagged to a vehicle cost center
+        const isCreditSide = accCode.startsWith("10") || accCode.startsWith("21");
+        if (isCreditSide) return;
+
+        seenRefs.add(je.reference);
+
+        const descLower = `${accName} ${line.description || je.description || je.narration || ""}`.toLowerCase();
+        const cat = descLower.includes("insur")
+          ? "Insurance & Istimara"
+          : descLower.includes("fuel") || descLower.includes("petrol") || descLower.includes("diesel")
+          ? "Fuel & Running"
+          : descLower.includes("tyre") || descLower.includes("tire") || descLower.includes("battery") || descLower.includes("oil") || descLower.includes("service") || descLower.includes("repair") || descLower.includes("maint")
+          ? "Repair & Maintenance"
+          : "Vehicle Expense";
+
+        rows.push({
+          id: `je-${je.id}-${idx}`,
+          date: je.date || je.posting_date || "",
+          reference: je.reference,
+          sourceType: String(je.reference || "").startsWith("PV") ? "Payment Voucher" : String(je.reference || "").startsWith("BILL") || String(je.reference || "").startsWith("AP") ? "AP Bill" : "Journal Entry",
+          vehicleNo: matchedVeh.vehicleNo,
+          vehicleName: matchedVeh.vehicleName,
+          model: matchedVeh.model,
+          brandName: matchedVeh.brandName,
+          costCenterName: matchedVeh.name,
+          glAccount: `${accCode} - ${accName}`,
+          category: cat,
+          vendorOrPayee: je.tenant || je.tenant_name || "Fleet Vendor / Direct",
+          description: line.description || je.description || je.narration || "",
+          amount: debitAmt,
+        });
+      });
+    });
+
+    // 2. Scan Payable Invoices (if not already captured via JE reference)
+    (payables || []).forEach((bill: any) => {
+      const refNo = bill.invoice_no || bill.bill_no;
+      if (seenRefs.has(refNo)) return;
+      const matchedVeh = matchVehicleFromText(bill.property) || matchVehicleFromText(bill.category || bill.account);
+      if (!matchedVeh) return;
+      rows.push({
+        id: `ap-${bill.id}`,
+        date: bill.date,
+        reference: refNo,
+        sourceType: "AP Bill",
+        vehicleNo: matchedVeh.vehicleNo,
+        vehicleName: matchedVeh.vehicleName,
+        model: matchedVeh.model,
+        brandName: matchedVeh.brandName,
+        costCenterName: matchedVeh.name,
+        glAccount: bill.account_code ? `${bill.account_code} - ${bill.category || bill.account || ""}` : (bill.account || bill.category || ""),
+        category: bill.category || "Repair & Maintenance",
+        vendorOrPayee: bill.vendor,
+        description: `Vendor Bill (${bill.vendor}) allocated to Cost Center ${matchedVeh.vehicleNo}`,
+        amount: Number(bill.amount || 0),
+      });
+    });
+
+    // 3. Scan Vouchers (if not already captured via JE reference)
+    (vouchers || []).forEach((v: any) => {
+      if (v.voucher_type === "Receipt Voucher" || v.type === "Receipt Voucher") return;
+      if (seenRefs.has(v.voucher_no)) return;
+      const matchedVeh = matchVehicleFromText(v.property_name || v.property) || matchVehicleFromText(v.name || v.description);
+      if (!matchedVeh) return;
+      rows.push({
+        id: `vch-${v.id || v.voucher_no}`,
+        date: v.date,
+        reference: v.voucher_no,
+        sourceType: "Payment Voucher",
+        vehicleNo: matchedVeh.vehicleNo,
+        vehicleName: matchedVeh.vehicleName,
+        model: matchedVeh.model,
+        brandName: matchedVeh.brandName,
+        costCenterName: matchedVeh.name,
+        glAccount: v.debit || v.account || "51102002 - Vehicle Running Expenses",
+        category: "Vehicle Expense",
+        vendorOrPayee: v.tenant_name || v.party || "Fleet Vendor",
+        description: v.name || v.description || "",
+        amount: Number(v.amount || 0),
+      });
+    });
+
+    return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [journalEntries, payables, vouchers]);
+
+  // Filtered expense rows
+  const filteredRows = useMemo(() => {
+    return allVehicleExpenses.filter(r => {
+      if (selectedVehicleNo !== "ALL" && r.vehicleNo !== selectedVehicleNo) return false;
+      if (expenseCategoryFilter !== "ALL" && r.category !== expenseCategoryFilter) return false;
+      if (dateFrom && r.date < dateFrom) return false;
+      if (dateTo && r.date > dateTo) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          r.vehicleNo.toLowerCase().includes(q) ||
+          r.vehicleName.toLowerCase().includes(q) ||
+          r.brandName.toLowerCase().includes(q) ||
+          r.reference.toLowerCase().includes(q) ||
+          r.description.toLowerCase().includes(q) ||
+          r.vendorOrPayee.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [allVehicleExpenses, selectedVehicleNo, expenseCategoryFilter, dateFrom, dateTo, searchQuery]);
+
+  // Summary per Vehicle Cost Center (all 11 Company Vehicles)
+  const vehicleSummaryList = useMemo(() => {
+    const totalAll = filteredRows.reduce((s, r) => s + r.amount, 0);
+    return COMPANY_VEHICLE_COST_CENTERS.map(v => {
+      const vehRows = filteredRows.filter(r => r.vehicleNo === v.vehicleNo);
+      const totalExpense = vehRows.reduce((s, r) => s + r.amount, 0);
+      const fuelTotal = vehRows.filter(r => r.category === "Fuel & Running").reduce((s, r) => s + r.amount, 0);
+      const maintTotal = vehRows.filter(r => r.category === "Repair & Maintenance").reduce((s, r) => s + r.amount, 0);
+      const insTotal = vehRows.filter(r => r.category === "Insurance & Istimara").reduce((s, r) => s + r.amount, 0);
+      const otherTotal = totalExpense - fuelTotal - maintTotal - insTotal;
+      return {
+        ...v,
+        txCount: vehRows.length,
+        fuelTotal,
+        maintTotal,
+        insTotal,
+        otherTotal,
+        totalExpense,
+        sharePct: totalAll > 0 ? (totalExpense / totalAll) * 100 : 0,
+      };
+    });
+  }, [filteredRows]);
+
+  const grandTotalExpense = useMemo(() => filteredRows.reduce((s, r) => s + r.amount, 0), [filteredRows]);
+
+  function handleAllocateExpense() {
+    const amt = parseFloat(allocForm.amount) || 0;
+    if (amt <= 0) {
+      toast.error("Please enter a valid expense amount greater than 0.");
+      return;
+    }
+    const veh = COMPANY_VEHICLE_COST_CENTERS.find(v => v.vehicleNo === allocForm.vehicleNo);
+    if (!veh) {
+      toast.error("Please select a valid Company Vehicle Cost Center.");
+      return;
+    }
+
+    const expCode = allocForm.expenseGl.split(" - ")[0]?.trim() || "51102002";
+    const expName = allocForm.expenseGl.split(" - ").slice(1).join(" - ").trim() || "Vehicle Fuel, Maintenance & Running Expenses";
+    const payCode = allocForm.paymentGl.split(" - ")[0]?.trim() || "1010";
+    const payName = allocForm.paymentGl.split(" - ").slice(1).join(" - ").trim() || "Cash on Hand / Petty Cash";
+
+    const desc = `[Cost Center: ${veh.vehicleNo}] ${allocForm.category}: ${allocForm.description || `${veh.vehicleName} (${veh.brandName})`}`;
+
+    addJournalEntry({
+      posting_date: allocForm.date,
+      reference: allocForm.reference,
+      narration: desc,
+      dr_account: `${expCode} - ${expName}`,
+      cr_account: `${payCode} - ${payName}`,
+      amount: amt,
+      property_name: veh.name,
+      tenant_name: allocForm.vendor || "Fleet Vendor",
+      status: "Posted",
+      lines: [
+        {
+          account_code: expCode,
+          account_name: expName,
+          debit_amount: amt,
+          credit_amount: 0,
+          description: desc,
+        },
+        {
+          account_code: payCode,
+          account_name: payName,
+          debit_amount: 0,
+          credit_amount: amt,
+          description: `Payment / Payable for Vehicle No ${veh.vehicleNo}`,
+        },
+      ],
+    });
+
+    toast.success(`Allocated QAR ${amt.toLocaleString()} exclusively to Cost Center ${veh.vehicleNo} (${veh.vehicleName} - ${veh.brandName}).`);
+    setAllocateOpen(false);
+    setAllocForm(prev => ({
+      ...prev,
+      reference: `VEXP-${Date.now().toString().slice(-5)}`,
+      description: "",
+      amount: "",
+    }));
+  }
+
+  function exportVehicleExpenseCsv() {
+    const headers = [
+      "S No",
+      "Vehicle No (Cost Center)",
+      "Vehicle Name",
+      "Model",
+      "Brand Name",
+      "Transactions",
+      "Fuel & Running (QAR)",
+      "Repair & Maintenance (QAR)",
+      "Insurance & Istimara (QAR)",
+      "Other Expense (QAR)",
+      "Total Allocated Expense (QAR)",
+    ];
+    const summaryCsvRows = vehicleSummaryList
+      .filter(v => selectedVehicleNo === "ALL" || v.vehicleNo === selectedVehicleNo)
+      .map(v =>
+        [
+          v.sno,
+          `"${v.vehicleNo}"`,
+          `"${v.vehicleName}"`,
+          `"${v.model}"`,
+          `"${v.brandName}"`,
+          v.txCount,
+          v.fuelTotal.toFixed(2),
+          v.maintTotal.toFixed(2),
+          v.insTotal.toFixed(2),
+          v.otherTotal.toFixed(2),
+          v.totalExpense.toFixed(2),
+        ].join(",")
+      );
+
+    const detailHeaders = [
+      "Date",
+      "Ref #",
+      "Source",
+      "Vehicle No (Cost Center)",
+      "Vehicle Name",
+      "Model",
+      "Brand Name",
+      "Category",
+      "GL Account",
+      "Vendor / Payee",
+      "Description",
+      "Amount (QAR)",
+    ];
+    const detailCsvRows = filteredRows.map(r =>
+      [
+        r.date,
+        `"${r.reference}"`,
+        `"${r.sourceType}"`,
+        `"${r.vehicleNo}"`,
+        `"${r.vehicleName}"`,
+        `"${r.model}"`,
+        `"${r.brandName}"`,
+        `"${r.category}"`,
+        `"${r.glAccount}"`,
+        `"${r.vendorOrPayee.replace(/"/g, '""')}"`,
+        `"${r.description.replace(/"/g, '""')}"`,
+        r.amount.toFixed(2),
+      ].join(",")
+    );
+
+    const csvContent = [
+      "COMPANY VEHICLE-WISE COST CENTER EXPENSE SUMMARY",
+      headers.join(","),
+      ...summaryCsvRows,
+      "",
+      "ITEMIZED VEHICLE EXPENSE LEDGER",
+      detailHeaders.join(","),
+      ...detailCsvRows,
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vehicle_wise_expense_report_${selectedVehicleNo}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-blue-600 text-white text-[10px]">Cost Center Expense Report</Badge>
+            <h2 className="text-lg font-bold tracking-tight">Company Vehicle-Wise Expense Report</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Dedicated Cost Center tracking by <strong>Vehicle No</strong> for all 11 company vehicles — allocate expenses per vehicle and generate vehicle-wise expense statements.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportVehicleExpenseCsv} className="gap-1.5 text-xs">
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 text-xs">
+            <Printer className="h-3.5 w-3.5" /> Print Report
+          </Button>
+          <Button size="sm" onClick={() => setAllocateOpen(true)} className="gap-1.5 text-xs bg-primary">
+            <Plus className="h-3.5 w-3.5" /> Allocate Vehicle Expense
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 p-4 rounded-xl border bg-muted/20">
+        <div>
+          <Label className="text-[11px] font-semibold mb-1 block">Vehicle Cost Center (Vehicle No)</Label>
+          <Select value={selectedVehicleNo} onValueChange={setSelectedVehicleNo}>
+            <SelectTrigger className="h-8 text-xs bg-background">
+              <SelectValue placeholder="All Company Vehicles (11)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Company Vehicles (11 Cost Centers)</SelectItem>
+              {COMPANY_VEHICLE_COST_CENTERS.map(v => (
+                <SelectItem key={v.vehicleNo} value={v.vehicleNo} className="text-xs">
+                  {v.vehicleNo} — {v.vehicleName} ({v.brandName}{v.model !== "—" ? ` ${v.model}` : ""})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="text-[11px] font-semibold mb-1 block">Expense Category</Label>
+          <Select value={expenseCategoryFilter} onValueChange={setExpenseCategoryFilter}>
+            <SelectTrigger className="h-8 text-xs bg-background">
+              <SelectValue placeholder="All Categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Categories</SelectItem>
+              <SelectItem value="Fuel & Running">Fuel & Running</SelectItem>
+              <SelectItem value="Repair & Maintenance">Repair & Maintenance</SelectItem>
+              <SelectItem value="Insurance & Istimara">Insurance & Istimara</SelectItem>
+              <SelectItem value="Vehicle Expense">General Vehicle Expense</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label className="text-[11px] font-semibold mb-1 block">From Date</Label>
+          <Input type="date" className="h-8 text-xs bg-background" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+        </div>
+
+        <div>
+          <Label className="text-[11px] font-semibold mb-1 block">To Date</Label>
+          <Input type="date" className="h-8 text-xs bg-background" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+        </div>
+
+        <div>
+          <Label className="text-[11px] font-semibold mb-1 block">Search Vehicle / Ref / Vendor</Label>
+          <Input
+            placeholder="Vehicle No, brand, voucher..."
+            className="h-8 text-xs bg-background"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <Card className="p-4 border-border/60">
+          <p className="text-[11px] font-semibold uppercase text-muted-foreground">Registered Vehicle Cost Centers</p>
+          <p className="text-2xl font-bold mt-1">{COMPANY_VEHICLE_COST_CENTERS.length}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Tracked individually by Vehicle No</p>
+        </Card>
+        <Card className="p-4 border-border/60">
+          <p className="text-[11px] font-semibold uppercase text-muted-foreground">Active Filter Scope</p>
+          <p className="text-lg font-bold mt-1 text-primary">
+            {selectedVehicleNo === "ALL"
+              ? "All 11 Vehicles"
+              : COMPANY_VEHICLE_COST_CENTERS.find(v => v.vehicleNo === selectedVehicleNo)?.name || selectedVehicleNo}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{filteredRows.length} allocated expense entries</p>
+        </Card>
+        <Card className="p-4 border-border/60">
+          <p className="text-[11px] font-semibold uppercase text-muted-foreground">Fuel & Maintenance Split</p>
+          <p className="text-lg font-bold mt-1 text-amber-600">
+            QAR{" "}
+            {filteredRows
+              .filter(r => r.category === "Fuel & Running" || r.category === "Repair & Maintenance")
+              .reduce((s, r) => s + r.amount, 0)
+              .toLocaleString()}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Direct fleet operating expenses</p>
+        </Card>
+        <Card className="p-4 border-rose-500/30 bg-rose-500/5">
+          <p className="text-[11px] font-semibold uppercase text-rose-600">Total Vehicle Expenses</p>
+          <p className="text-2xl font-bold mt-1 text-rose-600">QAR {grandTotalExpense.toLocaleString()}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Period: {dateFrom} to {dateTo}</p>
+        </Card>
+      </div>
+
+      {/* Vehicle-Wise Cost Center Matrix Table */}
+      <div className="border rounded-xl overflow-hidden bg-card shadow-xs">
+        <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold">Vehicle-Wise Cost Center Expense Summary</h3>
+            <p className="text-[11px] text-muted-foreground">Click any vehicle row to filter its itemized ledger entries below.</p>
+          </div>
+          {selectedVehicleNo !== "ALL" && (
+            <Button variant="ghost" size="sm" onClick={() => setSelectedVehicleNo("ALL")} className="h-7 text-xs">
+              Show All 11 Vehicles
+            </Button>
+          )}
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="w-14 font-bold">S No</TableHead>
+              <TableHead className="font-bold">Vehicle Name</TableHead>
+              <TableHead className="font-bold">Vehicle No (Cost Center)</TableHead>
+              <TableHead className="font-bold">Model</TableHead>
+              <TableHead className="font-bold">Brand Name</TableHead>
+              <TableHead className="text-right font-bold">Entries</TableHead>
+              <TableHead className="text-right font-bold">Fuel & Running</TableHead>
+              <TableHead className="text-right font-bold">Repair & Maint.</TableHead>
+              <TableHead className="text-right font-bold">Insurance / Other</TableHead>
+              <TableHead className="text-right font-bold">Total Expense (QAR)</TableHead>
+              <TableHead className="text-right font-bold">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {vehicleSummaryList
+              .filter(v => selectedVehicleNo === "ALL" || v.vehicleNo === selectedVehicleNo)
+              .map(v => {
+                const isSelected = selectedVehicleNo === v.vehicleNo;
+                return (
+                  <TableRow
+                    key={v.vehicleNo}
+                    className={`text-xs cursor-pointer transition-colors ${isSelected ? "bg-primary/10 font-medium" : "hover:bg-muted/30"}`}
+                    onClick={() => setSelectedVehicleNo(isSelected ? "ALL" : v.vehicleNo)}
+                  >
+                    <TableCell className="font-mono text-muted-foreground">{v.sno}</TableCell>
+                    <TableCell className="font-semibold">{v.vehicleName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono font-bold text-primary border-primary/30">
+                        {v.vehicleNo}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{v.model}</TableCell>
+                    <TableCell>{v.brandName}</TableCell>
+                    <TableCell className="text-right font-mono">{v.txCount}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {v.fuelTotal > 0 ? v.fuelTotal.toLocaleString() : "0.00"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {v.maintTotal > 0 ? v.maintTotal.toLocaleString() : "0.00"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {v.insTotal + v.otherTotal > 0 ? (v.insTotal + v.otherTotal).toLocaleString() : "0.00"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono font-bold text-rose-600">
+                      QAR {v.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        onClick={() => {
+                          setAllocForm(prev => ({ ...prev, vehicleNo: v.vehicleNo }));
+                          setAllocateOpen(true);
+                        }}
+                      >
+                        + Add Expense
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            <TableRow className="bg-muted/60 font-bold text-xs border-t-2">
+              <TableCell colSpan={5}>TOTAL COMPANY FLEET EXPENSES</TableCell>
+              <TableCell className="text-right font-mono">{filteredRows.length}</TableCell>
+              <TableCell className="text-right font-mono">
+                {vehicleSummaryList
+                  .filter(v => selectedVehicleNo === "ALL" || v.vehicleNo === selectedVehicleNo)
+                  .reduce((s, v) => s + v.fuelTotal, 0)
+                  .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {vehicleSummaryList
+                  .filter(v => selectedVehicleNo === "ALL" || v.vehicleNo === selectedVehicleNo)
+                  .reduce((s, v) => s + v.maintTotal, 0)
+                  .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {vehicleSummaryList
+                  .filter(v => selectedVehicleNo === "ALL" || v.vehicleNo === selectedVehicleNo)
+                  .reduce((s, v) => s + v.insTotal + v.otherTotal, 0)
+                  .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </TableCell>
+              <TableCell className="text-right font-mono text-rose-600">
+                QAR {grandTotalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Itemized Vehicle Expense Ledger */}
+      <div className="border rounded-xl overflow-hidden bg-card shadow-xs">
+        <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold">
+              Itemized Vehicle Expense Ledger{" "}
+              {selectedVehicleNo !== "ALL" && `(Filtered by Vehicle No: ${selectedVehicleNo})`}
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              Showing all AP Bills, Payment Vouchers, and Journal Entries allocated to company vehicle cost centers.
+            </p>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Date</TableHead>
+              <TableHead className="font-bold">Reference #</TableHead>
+              <TableHead className="font-bold">Source</TableHead>
+              <TableHead className="font-bold">Vehicle No (Cost Center)</TableHead>
+              <TableHead className="font-bold">Vehicle Details</TableHead>
+              <TableHead className="font-bold">Category</TableHead>
+              <TableHead className="font-bold">GL Account</TableHead>
+              <TableHead className="font-bold">Vendor / Payee</TableHead>
+              <TableHead className="font-bold">Description</TableHead>
+              <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-8 text-xs text-muted-foreground">
+                  No expenses recorded for the selected vehicle cost center / period yet. Click <strong>"Allocate Vehicle Expense"</strong> or select a Vehicle Cost Center in Payable Invoices / Payment Vouchers.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredRows.map(row => (
+                <TableRow key={row.id} className="text-xs hover:bg-muted/30">
+                  <TableCell className="font-mono">{row.date}</TableCell>
+                  <TableCell className="font-mono font-bold text-primary">{row.reference}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-[10px]">{row.sourceType}</Badge>
+                  </TableCell>
+                  <TableCell className="font-mono font-bold">{row.vehicleNo}</TableCell>
+                  <TableCell>
+                    {row.vehicleName} ({row.brandName}{row.model !== "—" ? ` ${row.model}` : ""})
+                  </TableCell>
+                  <TableCell>{row.category}</TableCell>
+                  <TableCell className="font-mono text-[11px]">{row.glAccount}</TableCell>
+                  <TableCell>{row.vendorOrPayee}</TableCell>
+                  <TableCell className="max-w-xs truncate" title={row.description}>{row.description}</TableCell>
+                  <TableCell className="text-right font-mono font-bold text-rose-600">
+                    QAR {row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Allocate Vehicle Expense Modal */}
+      <Dialog open={allocateOpen} onOpenChange={setAllocateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">Allocate Expense to Vehicle Cost Center</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <Label className="font-semibold">Company Vehicle Cost Center (by Vehicle No) *</Label>
+              <Select
+                value={allocForm.vehicleNo}
+                onValueChange={v => setAllocForm({ ...allocForm, vehicleNo: v })}
+              >
+                <SelectTrigger className="h-9 text-xs mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMPANY_VEHICLE_COST_CENTERS.map(v => (
+                    <SelectItem key={v.vehicleNo} value={v.vehicleNo} className="text-xs">
+                      Vehicle No: {v.vehicleNo} — {v.vehicleName} ({v.brandName}{v.model !== "—" ? ` ${v.model}` : ""})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="font-semibold">Expense Date *</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs mt-1"
+                  value={allocForm.date}
+                  onChange={e => setAllocForm({ ...allocForm, date: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="font-semibold">Voucher / Bill Reference # *</Label>
+                <Input
+                  className="h-8 text-xs font-mono mt-1"
+                  value={allocForm.reference}
+                  onChange={e => setAllocForm({ ...allocForm, reference: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="font-semibold">Expense Category *</Label>
+                <Select
+                  value={allocForm.category}
+                  onValueChange={v => setAllocForm({ ...allocForm, category: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Fuel & Running">Fuel & Running</SelectItem>
+                    <SelectItem value="Repair & Maintenance">Repair & Maintenance</SelectItem>
+                    <SelectItem value="Insurance & Istimara">Insurance & Istimara</SelectItem>
+                    <SelectItem value="Vehicle Expense">General Vehicle Expense</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="font-semibold">Amount (QAR) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="h-8 text-xs font-mono mt-1"
+                  value={allocForm.amount}
+                  onChange={e => setAllocForm({ ...allocForm, amount: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="font-semibold">Expense GL Account (Debit) *</Label>
+              <Select
+                value={allocForm.expenseGl}
+                onValueChange={v => setAllocForm({ ...allocForm, expenseGl: v })}
+              >
+                <SelectTrigger className="h-8 text-xs mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="51102002 - Vehicle Fuel, Maintenance & Running Expenses">
+                    51102002 - Vehicle Fuel, Maintenance & Running Expenses
+                  </SelectItem>
+                  <SelectItem value="51102001 - Vehicles & Other Insurance Expenses">
+                    51102001 - Vehicles & Other Insurance Expenses
+                  </SelectItem>
+                  <SelectItem value="51004001 - Repair and Maintenance Cost">
+                    51004001 - Repair and Maintenance Cost
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="font-semibold">Payment / Payable Account (Credit) *</Label>
+              <Select
+                value={allocForm.paymentGl}
+                onValueChange={v => setAllocForm({ ...allocForm, paymentGl: v })}
+              >
+                <SelectTrigger className="h-8 text-xs mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1010 - Cash on Hand / Petty Cash">1010 - Cash on Hand / Petty Cash</SelectItem>
+                  <SelectItem value="1020 - Main Operating Bank Account">1020 - Main Operating Bank Account</SelectItem>
+                  <SelectItem value="21100 - Trade Accounts Payable">21100 - Trade Accounts Payable</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="font-semibold">Vendor / Workshop / Station</Label>
+              <Input
+                placeholder="e.g. Woqod Fuel Station / Nissan Service Center"
+                className="h-8 text-xs mt-1"
+                value={allocForm.vendor}
+                onChange={e => setAllocForm({ ...allocForm, vendor: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label className="font-semibold">Description / Particulars</Label>
+              <Input
+                placeholder="e.g. Full tank petrol, periodic oil change, brake pads..."
+                className="h-8 text-xs mt-1"
+                value={allocForm.description}
+                onChange={e => setAllocForm({ ...allocForm, description: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAllocateOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={handleAllocateExpense}>Post to Vehicle Cost Center</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

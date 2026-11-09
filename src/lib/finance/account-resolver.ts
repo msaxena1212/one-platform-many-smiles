@@ -880,10 +880,6 @@ export async function resolveGlOnlyAccount(
 ): Promise<ResolvedAccount> {
   // Alias mapping for standard HRMS and payroll GLs if exact code is absent
   const codeAliases: Record<string, string[]> = {
-    '50100': ['50100', '51101001', '51101', '50100001'],
-    '50100001': ['50100001', '51101001', '51101', '50100'],
-    '21900': ['21900', '22005001', '221401', '22005', '21900001'],
-    '21900001': ['21900001', '22005001', '221401', '22005', '21900'],
     '50100': ['50100', '51101001', '51101', '50100001', '52300'],
     '50100001': ['50100001', '51101001', '51101', '50100', '52300'],
     '50120': ['50120', '51101008', '50100', '52300'],
@@ -965,7 +961,7 @@ export async function resolveGlOnlyAccount(
         slName: fb.account_name,
         groupName: fb.group_name,
         className: fb.class_name,
-        isLeaf: true,
+        accountId: `fallback-${fb.account_code}`,
       };
     }
     throw new Error(`GL account ${glCode} not found or inactive in fin_coa_accounts`);

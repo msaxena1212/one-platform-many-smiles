@@ -7,12 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Building2, Users, Calendar, DollarSign, CheckCircle2,
-  AlertCircle, Download, Printer, Plus, Trash2, ArrowRight,
-  Layers, FileText, Sparkles, Filter, CheckSquare, Square,
+  Building2, Users, Calendar, CheckCircle2,
+  Download, Printer, Sparkles, CheckSquare, Square,
   Building, UserCheck
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +46,8 @@ interface BatchItem {
   status: "ready" | "generated";
   isRentFree?: boolean;
   concessionNote?: string;
+  alreadyBilled?: boolean;
+  existingInvoiceNo?: string;
 }
 
 function getConcessionBillingStatus(
@@ -145,7 +145,7 @@ function formatQarAmount(amount: number): string {
   return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-function extractTargetMonthKey(billingPeriodStr?: string, issueDateStr?: string): string {
+export function extractTargetMonthKey(billingPeriodStr?: string, issueDateStr?: string): string {
   if (billingPeriodStr) {
     const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     const parts = billingPeriodStr.toLowerCase().split(/\s+/);
@@ -182,10 +182,54 @@ export function BulkInvoiceDialog({
   initialCustomerId = "",
   onSuccess,
 }: BulkInvoiceDialogProps) {
-  const { leases, units, customers } = useAppData();
-  const { receivableInvoices, addReceivableInvoice, addBulkReceivableInvoices } = useFinanceStore();
+  const { leases, units, customers, vouchers: appVouchers } = useAppData();
+  const { receivableInvoices, vouchers: storeVouchers, addReceivableInvoice, addBulkReceivableInvoices } = useFinanceStore();
   const branding = useMemo(() => getDocumentBranding(), []);
   const bannerUrl = branding.headerImageUrl || AL_AMEEN_PAGE1_HEADER_BASE64;
+
+  const findExistingInvoiceForUnitPeriod = React.useCallback((unitStr: string, propertyStr: string, targetMonthKey: string): { alreadyBilled: boolean; existingRef?: string } => {
+    const cleanU = (unitStr || "").trim().toLowerCase();
+    const cleanP = (propertyStr || "").trim().toLowerCase();
+    if (!cleanU || !targetMonthKey) return { alreadyBilled: false };
+
+    const matchingInv = receivableInvoices.find(inv => {
+      const invU = (inv.unit || "").trim().toLowerCase();
+      const invP = (inv.property || "").trim().toLowerCase();
+      if (invU !== cleanU) return false;
+      if (cleanP && invP && invP !== cleanP) return false;
+      const invPeriod = extractTargetMonthKey(inv.billingPeriod, inv.date);
+      return invPeriod === targetMonthKey || inv.billingPeriod === targetMonthKey || (inv.date || "").startsWith(targetMonthKey);
+    });
+    if (matchingInv) {
+      return { alreadyBilled: true, existingRef: matchingInv.invoice_no };
+    }
+
+    const combinedVouchers = [...(storeVouchers || []), ...(appVouchers || [])];
+    const matchingVch = combinedVouchers.find((v: any) => {
+      const vNo = String(v.voucher_no || v.receiptNo || "").trim();
+      const vCredit = String(v.credit_code || v.credit || "").toLowerCase();
+      const vName = String(v.name || "").toLowerCase();
+      const isRentInvoiceOrRev =
+        vNo.toUpperCase().startsWith("INV-") ||
+        vCredit.includes("41100") ||
+        vCredit.includes("rental revenue") ||
+        (vName.includes("monthly rental") && vName.includes("invoice"));
+      if (!isRentInvoiceOrRev) return false;
+
+      const vUnit = String(v.unit_ref || v.unit || "").trim().toLowerCase();
+      const unitMatched = vUnit ? vUnit === cleanU : vName.includes(`(${cleanU})`) || vName.includes(` ${cleanU}`);
+      if (!unitMatched) return false;
+
+      const vDateStr = String(v.date || v.period || "");
+      const vPeriod = extractTargetMonthKey(undefined, vDateStr);
+      return vPeriod === targetMonthKey || vDateStr.startsWith(targetMonthKey);
+    });
+    if (matchingVch) {
+      return { alreadyBilled: true, existingRef: String((matchingVch as any).voucher_no || (matchingVch as any).receiptNo || "Ledger Invoice") };
+    }
+
+    return { alreadyBilled: false };
+  }, [receivableInvoices, storeVouchers, appVouchers]);
 
   const [activeTab, setActiveTab] = useState<"property" | "customer">(defaultMode);
 
@@ -237,7 +281,6 @@ export function BulkInvoiceDialog({
   // CUSTOMER-WISE STATE
   // ──────────────────────────────────────────────────────────────────────────
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(initialCustomerId || "");
-  const [customerSearchTerm, setCustomerSearchTerm] = useState<string>("");
   const [customerStream, setCustomerStream] = useState<string>("41100 - Rental Revenue (Residential/Commercial)");
   const [customerPricingMode, setCustomerPricingMode] = useState<"lease" | "fixed">("lease");
   const [customerFixedAmount, setCustomerFixedAmount] = useState<string>("500");
@@ -269,12 +312,12 @@ export function BulkInvoiceDialog({
 
     const items: BatchItem[] = [];
     const usedUnits = new Set<string>();
+    const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
 
     // First use leases (has tenant, rent, lease #)
     propLeases.forEach((l, idx) => {
       usedUnits.add(l.unit);
       const baseRent = Number(l.monthlyRent) || 0;
-      const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
       const concession = getConcessionBillingStatus(l, `${targetMonthKey}-01`);
       const isConcession = concession.isFree && propertyPricingMode === "lease";
       const proration = calculateContractPeriodMonthlyRevenue({
@@ -306,11 +349,7 @@ export function BulkInvoiceDialog({
       const unitClean = l.unit.replace(/[^\w]/g, "").slice(-4);
       const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
       const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 101}`;
-      const alreadyBilled = receivableInvoices.some(inv =>
-        inv.property.trim().toLowerCase() === selectedProperty.trim().toLowerCase() &&
-        inv.unit.trim().toLowerCase() === l.unit.trim().toLowerCase() &&
-        (inv.billingPeriod === targetMonthKey || inv.date.startsWith(targetMonthKey))
-      );
+      const { alreadyBilled, existingRef } = findExistingInvoiceForUnitPeriod(l.unit, selectedProperty, targetMonthKey);
 
       items.push({
         id: `prop-batch-${l.id || idx}`,
@@ -328,7 +367,9 @@ export function BulkInvoiceDialog({
         invoiceNo: invNo,
         status: "ready",
         isRentFree: isConcession,
-        concessionNote: !proration ? "Outside selected billing month" : alreadyBilled ? `Already Invoiced for ${targetMonthKey}` : (prorationNote || concession.note),
+        alreadyBilled,
+        existingInvoiceNo: existingRef,
+        concessionNote: !proration ? "Outside selected billing month" : alreadyBilled ? `Already Invoiced (${existingRef || targetMonthKey})` : (prorationNote || concession.note),
       });
     });
 
@@ -340,10 +381,11 @@ export function BulkInvoiceDialog({
         const unitClean = u.unit.replace(/[^\w]/g, "").slice(-4);
         const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
         const invNo = `INV-${new Date().getFullYear()}-${propCode}-${unitClean || idx + 201}`;
+        const { alreadyBilled, existingRef } = findExistingInvoiceForUnitPeriod(u.unit, selectedProperty, targetMonthKey);
 
         items.push({
           id: `prop-unit-batch-${u.id || idx}`,
-          selected: true,
+          selected: !alreadyBilled,
           unit: u.unit,
           tenant: (u as any).currentTenant || "Resident Tenant",
           property: selectedProperty,
@@ -353,40 +395,21 @@ export function BulkInvoiceDialog({
           accountCode: propertyStream.split(/\s+/)[0] || "41100",
           invoiceNo: invNo,
           status: "ready",
+          alreadyBilled,
+          existingInvoiceNo: existingRef,
+          concessionNote: alreadyBilled ? `Already Invoiced (${existingRef || targetMonthKey})` : undefined,
         });
       }
     });
 
-    // Strict: No fake demo units to prevent data leakage
-    if (false) {
-      for (let i = 1; i <= 5; i++) {
-        const unitName = `Unit ${100 + i}`;
-        const baseRent = 4500 + i * 500;
-        const amt = propertyPricingMode === "lease" ? baseRent : (parseFloat(propertyFixedAmount) || baseRent);
-        const propCode = selectedProperty.slice(0, 4).toUpperCase().replace(/\s/g, "");
-        items.push({
-          id: `prop-demo-batch-${i}`,
-          selected: true,
-          unit: unitName,
-          tenant: `Tenant ${unitName}`,
-          property: selectedProperty,
-          baseRent,
-          amount: amt,
-          stream: propertyStream,
-          accountCode: propertyStream.split(/\s+/)[0] || "41100",
-          invoiceNo: `INV-${new Date().getFullYear()}-${propCode}-${100 + i}`,
-          status: "ready",
-        });
-      }
-    }
-
     setPropertyBatchItems(items);
-  }, [selectedProperty, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount, billingPeriod, issueDate, receivableInvoices]);
+  }, [selectedProperty, units, leases, propertyStream, propertyPricingMode, propertyFixedAmount, billingPeriod, issueDate, receivableInvoices, findExistingInvoiceForUnitPeriod]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // BUILD CUSTOMER ITEMS
   // ──────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
     // If a specific customer is chosen, find all their units/leases
     if (selectedCustomerId) {
       const cust = customers.find(c => String(c.id) === selectedCustomerId || c.name === selectedCustomerId || c.customerId === selectedCustomerId);
@@ -396,7 +419,6 @@ export function BulkInvoiceDialog({
 
       const items: BatchItem[] = [];
       if (custLeases.length > 0) {
-        const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
         custLeases.forEach((l, idx) => {
           const baseRent = Number(l.monthlyRent) || 0;
           const proration = calculateContractPeriodMonthlyRevenue({
@@ -426,11 +448,7 @@ export function BulkInvoiceDialog({
             effectiveRent = proration ? Math.round(monthlyAmount * proration.applicableDays / 30 * 100) / 100 : 0;
           }
           const amt = effectiveRent;
-          const alreadyBilled = receivableInvoices.some(inv =>
-            inv.property.trim().toLowerCase() === (l.property || "").trim().toLowerCase() &&
-            inv.unit.trim().toLowerCase() === l.unit.trim().toLowerCase() &&
-            (inv.billingPeriod === targetMonthKey || inv.date.startsWith(targetMonthKey))
-          );
+          const { alreadyBilled, existingRef } = findExistingInvoiceForUnitPeriod(l.unit, l.property || "", targetMonthKey);
           const stream = isConcession ? "41100 - Rental Revenue (Rent-Free Concession Period)" : customerStream;
           const custCode = (cust?.customerId || cust?.id || idx).toString().slice(-4).toUpperCase();
           const invNo = `INV-CUST-${custCode}-${idx + 101}`;
@@ -451,7 +469,9 @@ export function BulkInvoiceDialog({
             invoiceNo: invNo,
             status: "ready",
             isRentFree: isConcession,
-            concessionNote: !proration ? "Outside selected billing month" : alreadyBilled ? `Already Invoiced for ${targetMonthKey}` : (prorationNote || concession.note),
+            alreadyBilled,
+            existingInvoiceNo: existingRef,
+            concessionNote: !proration ? "Outside selected billing month" : alreadyBilled ? `Already Invoiced (${existingRef || targetMonthKey})` : (prorationNote || concession.note),
           });
         });
       } else {
@@ -459,11 +479,12 @@ export function BulkInvoiceDialog({
         const custProp = (cust as any)?.property;
         const custUnit = (cust as any)?.unit;
         if (custProp && custUnit) {
+          const { alreadyBilled, existingRef } = findExistingInvoiceForUnitPeriod(custUnit, custProp, targetMonthKey);
           const baseRent = Number((cust as any)?.rent) || 0;
           const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
           items.push({
             id: `cust-default-${Date.now()}`,
-            selected: true,
+            selected: !alreadyBilled,
             unit: custUnit,
             tenant: custName,
             customerId: cust?.customerId || cust?.id,
@@ -474,78 +495,78 @@ export function BulkInvoiceDialog({
             accountCode: customerStream.split(/\s+/)[0] || "41100",
             invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
             status: "ready",
+            alreadyBilled,
+            existingInvoiceNo: existingRef,
+            concessionNote: alreadyBilled ? `Already Invoiced (${existingRef || targetMonthKey})` : undefined,
           });
         }
-        if (false) {
-          const baseRent = 6500;
-          const amt = customerPricingMode === "lease" ? baseRent : (parseFloat(customerFixedAmount) || baseRent);
-          items.push({
-            id: `cust-default-${Date.now()}`,
-            selected: true,
-            unit: "Flat 16",
-            tenant: custName,
-            customerId: cust?.customerId || cust?.id,
-            property: "Old Salata - Residence No:23",
-            baseRent,
-            amount: amt,
-            stream: customerStream,
-            accountCode: customerStream.split(/\s+/)[0] || "41100",
-            invoiceNo: `INV-CUST-${Math.floor(1000 + Math.random() * 9000)}`,
-            status: "ready",
-          });
       }
-        }
-        setCustomerBatchItems(items);
-      } else {
-        // All customers batch (multi-customer billing)
-        const activeCustomers = customers.filter(c => leases.some(l => l.customerId === c.id || l.tenantName === c.name) || Boolean((c as any).property && (c as any).unit)).slice(0, 15);
-        const items: BatchItem[] = activeCustomers.map((c, idx) => {
-          const lease = leases.find(l => l.customerId === c.id || l.tenantName === c.name);
-          const baseRent = lease ? Number(lease.monthlyRent) : 0;
-          const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
-          const proration = lease ? calculateContractPeriodMonthlyRevenue({
-            startDate: lease.startDate,
-            rentFreeDays: getDayBasedRentFreeDays(lease),
-            endDate: lease.endDate,
-            monthlyRent: baseRent,
-            targetMonth: targetMonthKey,
-          }) : null;
-          const amt = lease && proration
-            ? customerPricingMode === "lease"
-              ? proration.recognizedRevenue
-              : Math.round((parseFloat(customerFixedAmount) || baseRent) * proration.applicableDays / 30 * 100) / 100
-            : 0;
-          const custCode = (c.customerId || c.id || idx).toString().slice(-4).toUpperCase();
-          return {
-            id: `cust-multi-${c.id || idx}`,
-            selected: Boolean(proration),
-            unit: lease?.unit || (c as any).unit || "Unit 1",
-            tenant: c.name,
-            customerId: c.customerId || c.id,
-            leaseId: lease?.id,
-            property: lease?.property || (c as any).property || "",
-            leaseNumber: lease?.contractNumber || `LS-${idx + 101}`,
-            baseRent,
-            amount: amt,
-            stream: customerStream,
-            accountCode: customerStream.split(/\s+/)[0] || "41100",
-            invoiceNo: `INV-CUST-${custCode}-${idx + 101}`,
-            status: "ready",
-          };
-        });
-        setCustomerBatchItems(items);
-      }
-    }, [selectedCustomerId, customers, leases, customerStream, customerPricingMode, customerFixedAmount, billingPeriod, issueDate, receivableInvoices]);
+      setCustomerBatchItems(items);
+    } else {
+      // All customers batch (multi-customer billing)
+      const activeCustomers = customers.filter(c => leases.some(l => l.customerId === c.id || l.tenantName === c.name) || Boolean((c as any).property && (c as any).unit)).slice(0, 15);
+      const items: BatchItem[] = activeCustomers.map((c, idx) => {
+        const lease = leases.find(l => l.customerId === c.id || l.tenantName === c.name);
+        const baseRent = lease ? Number(lease.monthlyRent) : 0;
+        const unitVal = lease?.unit || (c as any).unit || "Unit 1";
+        const propVal = lease?.property || (c as any).property || "";
+        const { alreadyBilled, existingRef } = findExistingInvoiceForUnitPeriod(unitVal, propVal, targetMonthKey);
+        const proration = lease ? calculateContractPeriodMonthlyRevenue({
+          startDate: lease.startDate,
+          rentFreeDays: getDayBasedRentFreeDays(lease),
+          endDate: lease.endDate,
+          monthlyRent: baseRent,
+          targetMonth: targetMonthKey,
+        }) : null;
+        const amt = lease && proration
+          ? customerPricingMode === "lease"
+            ? proration.recognizedRevenue
+            : Math.round((parseFloat(customerFixedAmount) || baseRent) * proration.applicableDays / 30 * 100) / 100
+          : 0;
+        const custCode = (c.customerId || c.id || idx).toString().slice(-4).toUpperCase();
+        return {
+          id: `cust-multi-${c.id || idx}`,
+          selected: Boolean(proration) && !alreadyBilled,
+          unit: unitVal,
+          tenant: c.name,
+          customerId: c.customerId || c.id,
+          leaseId: lease?.id,
+          property: propVal,
+          leaseNumber: lease?.contractNumber || `LS-${idx + 101}`,
+          baseRent,
+          amount: amt,
+          stream: customerStream,
+          accountCode: customerStream.split(/\s+/)[0] || "41100",
+          invoiceNo: `INV-CUST-${custCode}-${idx + 101}`,
+          status: "ready",
+          alreadyBilled,
+          existingInvoiceNo: existingRef,
+          concessionNote: !proration ? "Outside selected billing month" : alreadyBilled ? `Already Invoiced (${existingRef || targetMonthKey})` : undefined,
+        };
+      });
+      setCustomerBatchItems(items);
+    }
+  }, [selectedCustomerId, customers, leases, customerStream, customerPricingMode, customerFixedAmount, billingPeriod, issueDate, receivableInvoices, findExistingInvoiceForUnitPeriod]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // TOGGLES & AMOUNTS
   // ──────────────────────────────────────────────────────────────────────────
   const toggleSelectAllProperty = (checked: boolean) => {
-    setPropertyBatchItems(prev => prev.map(item => ({ ...item, selected: checked })));
+    setPropertyBatchItems(prev => prev.map(item => ({
+      ...item,
+      selected: item.alreadyBilled ? false : checked,
+    })));
   };
 
   const toggleSelectPropertyItem = (id: string) => {
-    setPropertyBatchItems(prev => prev.map(item => item.id === id ? { ...item, selected: !item.selected } : item));
+    setPropertyBatchItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      if (item.alreadyBilled) {
+        toast.error(`Cannot select ${item.unit}: Invoice (${item.existingInvoiceNo || "Existing"}) already generated for ${billingPeriodLabel}.`);
+        return { ...item, selected: false };
+      }
+      return { ...item, selected: !item.selected };
+    }));
   };
 
   const updatePropertyItemAmount = (id: string, newAmt: number) => {
@@ -553,11 +574,21 @@ export function BulkInvoiceDialog({
   };
 
   const toggleSelectAllCustomer = (checked: boolean) => {
-    setCustomerBatchItems(prev => prev.map(item => ({ ...item, selected: checked })));
+    setCustomerBatchItems(prev => prev.map(item => ({
+      ...item,
+      selected: item.alreadyBilled ? false : checked,
+    })));
   };
 
   const toggleSelectCustomerItem = (id: string) => {
-    setCustomerBatchItems(prev => prev.map(item => item.id === id ? { ...item, selected: !item.selected } : item));
+    setCustomerBatchItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      if (item.alreadyBilled) {
+        toast.error(`Cannot select ${item.unit}: Invoice (${item.existingInvoiceNo || "Existing"}) already generated for ${billingPeriodLabel}.`);
+        return { ...item, selected: false };
+      }
+      return { ...item, selected: !item.selected };
+    }));
   };
 
   const updateCustomerItemAmount = (id: string, newAmt: number) => {
@@ -569,7 +600,8 @@ export function BulkInvoiceDialog({
   // ──────────────────────────────────────────────────────────────────────────
   const currentItems = (activeTab === "property" ? propertyBatchItems : customerBatchItems)
     .filter((item) => item.concessionNote !== "Outside selected billing month");
-  const selectedItems = useMemo(() => currentItems.filter(i => i.selected), [currentItems]);
+  const billableItemsCount = useMemo(() => currentItems.filter(i => !i.alreadyBilled).length, [currentItems]);
+  const selectedItems = useMemo(() => currentItems.filter(i => i.selected && !i.alreadyBilled), [currentItems]);
   const totalAmountSelected = useMemo(
     () => selectedItems.reduce((totalCents, item) => totalCents + Math.round((Number(item.amount) || 0) * 100), 0) / 100,
     [selectedItems],
@@ -584,12 +616,19 @@ export function BulkInvoiceDialog({
       toast.error(`Cannot generate invoices: Accounting period ${periodCheck.periodName} is CLOSED.`);
       return;
     }
-    if (selectedItems.length === 0) {
-      toast.error("Please select at least one unit/customer to generate invoices.");
+    const targetMonthKey = extractTargetMonthKey(billingPeriod, issueDate);
+    const eligibleItems = selectedItems.filter(item => {
+      if (item.alreadyBilled) return false;
+      const check = findExistingInvoiceForUnitPeriod(item.unit, item.property, targetMonthKey);
+      return !check.alreadyBilled;
+    });
+
+    if (eligibleItems.length === 0) {
+      toast.error("All selected units have already been invoiced for this period, or no eligible units are selected.");
       return;
     }
 
-    const newInvoices: Omit<ReceivableInvoice, "id" | "status">[] = selectedItems.map(item => ({
+    const newInvoices: Omit<ReceivableInvoice, "id" | "status">[] = eligibleItems.map(item => ({
       invoice_no: item.invoiceNo,
       tenant: item.tenant,
       property: item.property,
@@ -611,6 +650,8 @@ export function BulkInvoiceDialog({
       newInvoices.forEach(inv => addReceivableInvoice(inv));
     }
 
+    const totalEligibleAmount = eligibleItems.reduce((s, i) => s + Math.round((Number(i.amount) || 0) * 100), 0) / 100;
+
     const createdList: ReceivableInvoice[] = newInvoices.map((inv, idx) => ({
       ...inv,
       id: `ar-bulk-${Date.now()}-${idx}`,
@@ -618,15 +659,15 @@ export function BulkInvoiceDialog({
     }));
 
     setBatchResult({
-      count: selectedItems.length,
-      totalAmount: totalAmountSelected,
+      count: eligibleItems.length,
+      totalAmount: totalEligibleAmount,
       invoices: createdList,
     });
 
-    toast.success(`Successfully generated ${selectedItems.length} invoices amounting to QAR ${formatQarAmount(totalAmountSelected)}!`);
+    toast.success(`Successfully generated ${eligibleItems.length} invoices amounting to QAR ${formatQarAmount(totalEligibleAmount)}!`);
 
     if (onSuccess) {
-      onSuccess(selectedItems.length, totalAmountSelected);
+      onSuccess(eligibleItems.length, totalEligibleAmount);
     }
   };
 
@@ -924,7 +965,7 @@ export function BulkInvoiceDialog({
                   onClick={() => activeTab === "property" ? toggleSelectAllProperty(true) : toggleSelectAllCustomer(true)}
                   className="h-7 text-xs gap-1"
                 >
-                  <CheckSquare className="h-3 w-3" /> Select All ({currentItems.length})
+                  <CheckSquare className="h-3 w-3" /> Select All Eligible ({billableItemsCount})
                 </Button>
                 <Button
                   variant="outline"
@@ -937,7 +978,7 @@ export function BulkInvoiceDialog({
               </div>
 
               <div className="text-xs text-muted-foreground font-medium">
-                Amounts in the grid can be edited directly prior to batch generation.
+                Units already invoiced for {billingPeriodLabel} are locked to prevent duplicate billing.
               </div>
             </div>
 
@@ -968,19 +1009,28 @@ export function BulkInvoiceDialog({
                     currentItems.map((item, idx) => (
                       <TableRow
                         key={item.id}
-                        className={`text-xs hover:bg-muted/30 transition-colors ${item.selected ? "bg-background" : "opacity-50 bg-muted/10"}`}
+                        className={`text-xs hover:bg-muted/30 transition-colors ${item.alreadyBilled ? "opacity-60 bg-rose-50/30 dark:bg-rose-950/10" : item.selected ? "bg-background" : "opacity-50 bg-muted/10"}`}
                       >
                         <TableCell className="text-center font-mono text-muted-foreground">{idx + 1}</TableCell>
                         <TableCell className="text-center">
                           <Checkbox
-                            checked={item.selected}
+                            checked={item.selected && !item.alreadyBilled}
+                            disabled={Boolean(item.alreadyBilled)}
                             onCheckedChange={() => activeTab === "property" ? toggleSelectPropertyItem(item.id) : toggleSelectCustomerItem(item.id)}
                           />
                         </TableCell>
                         <TableCell className="font-mono font-bold text-foreground">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span>{item.unit}</span>
-                            {item.isRentFree && (
+                            {item.alreadyBilled && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-600 border border-rose-500/30 whitespace-nowrap"
+                                title={item.concessionNote || `Already invoiced for ${billingPeriodLabel}`}
+                              >
+                                Already Invoiced {item.existingInvoiceNo ? `(${item.existingInvoiceNo})` : ""}
+                              </span>
+                            )}
+                            {item.isRentFree && !item.alreadyBilled && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 whitespace-nowrap"
                                 title={item.concessionNote || "Rent-Free Concession Period"}
@@ -997,13 +1047,16 @@ export function BulkInvoiceDialog({
                           {item.property}
                         </TableCell>
                         <TableCell className="font-mono text-[11px] text-muted-foreground">{item.leaseNumber || "—"}</TableCell>
-                        <TableCell className="font-mono text-xs text-primary font-bold">{item.invoiceNo}</TableCell>
+                        <TableCell className="font-mono text-xs text-primary font-bold">
+                          {item.alreadyBilled ? (item.existingInvoiceNo || item.invoiceNo) : item.invoiceNo}
+                        </TableCell>
                         <TableCell className="text-right font-mono text-muted-foreground">
                           {formatQarAmount(item.baseRent)}
                         </TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number"
+                            disabled={Boolean(item.alreadyBilled)}
                             className="h-7 w-28 text-right font-mono font-bold text-xs bg-background inline-block"
                             value={item.amount}
                             onChange={e => {

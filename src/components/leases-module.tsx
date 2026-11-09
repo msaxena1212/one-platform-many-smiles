@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { useAppData } from "@/lib/app-data-context";
-import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2, ShieldAlert, FileCheck2, Scale, Building2, RefreshCw } from "lucide-react";
+import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2, ShieldAlert, FileCheck2, Scale, Building2, RefreshCw, Trash2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -520,7 +520,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       try {
         const { data, error } = await supabase
           .from('leases')
-          .select('*, properties(title, property_code), units(unit_number, unit_ref), customers(full_name, name)')
+          .select('*, properties(id, title, property_code), units:unit_id(unit_ref, unit_name, unit_code), customers:customer_id(full_name)')
           .order('created_at', { ascending: false });
         if (!error && data) dbLeases = data;
       } catch (e) {
@@ -536,12 +536,17 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         const statusVal = isRenewed
           ? 'RENEWED'
           : isExpired
-          ? 'EXPIRED'
-          : cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed'
-          ? 'ACTIVE'
-          : cl.status === 'renewal_due'
-          ? 'EXPIRING'
-          : 'DRAFT';
+            ? 'EXPIRED'
+            : cl.status === 'active' || cl.status === 'fully_signed' || cl.status === 'collection_completed'
+              ? 'ACTIVE'
+              : cl.status === 'renewal_due'
+                ? 'EXPIRING'
+                : 'DRAFT';
+
+        const periodMonths = Number((cl as any).leasePeriodMonths || (cl as any).lease_period_months || 0);
+        const totalRent = cl.monthlyRent
+          ? cl.monthlyRent * (periodMonths > 0 ? periodMonths : 12)
+          : 60000;
 
         return {
           id: cl.id,
@@ -553,7 +558,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           unit_code: (cl as any).unit || '',
           commencement_date: cl.startDate,
           expiry_date: cl.endDate,
-          rental_amount: cl.monthlyRent ? cl.monthlyRent * 12 : 60000,
+          monthlyRent: cl.monthlyRent || 0,
+          rental_amount: totalRent,
+          lease_period_months: periodMonths || undefined,
           lease_status: statusVal,
           has_rent_free: (cl as any).hasRentFree,
           rent_free_days: (cl as any).rentFreeDays,
@@ -570,10 +577,77 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         }
       }
 
+      // Also merge any newly created leases from Leasing Module localStorage ('pms_leasing_v2_leases')
+      try {
+        const rawV2Leases = localStorage.getItem('pms_leasing_v2_leases');
+        if (rawV2Leases) {
+          const parsedV2: any[] = JSON.parse(rawV2Leases);
+          if (Array.isArray(parsedV2)) {
+            for (const vl of parsedV2) {
+              const vlId = vl.id || vl.lease_number;
+              const vlNum = vl.lease_number || vl.id;
+              if (!allLeases.some(l => l.id === vlId || l.lease_number === vlNum)) {
+                const sDate = vl.startDate || vl.commencement_date || '';
+                const eDate = vl.endDate || vl.expiry_date || '';
+                const mRent = Number(vl.monthlyRent || 0);
+                let pMonths = Number(vl.lease_period_months || 0);
+                if (!pMonths && sDate && eDate) {
+                  const sd = new Date(sDate);
+                  const ed = new Date(eDate);
+                  if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+                    pMonths = Math.max(1, Math.round((ed.getTime() - sd.getTime()) / (1000 * 60 * 60 * 24 * 30)));
+                  }
+                }
+                const totalRent = Number(vl.rental_amount || (mRent * (pMonths > 0 ? pMonths : 12)));
+                allLeases.unshift({
+                  id: vlId,
+                  lease_number: vlNum,
+                  properties: { title: vl.property || vl.property_name || '' },
+                  units: null,
+                  customers: null,
+                  tenant_name: vl.tenantName || vl.tenant_name || '',
+                  unit_code: vl.unit || vl.unit_code || '',
+                  commencement_date: sDate,
+                  expiry_date: eDate,
+                  monthlyRent: mRent,
+                  rental_amount: totalRent,
+                  lease_period_months: pMonths || 12,
+                  lease_status: String(vl.status || vl.lease_status || 'ACTIVE').toUpperCase(),
+                  pdc_count: vl.pdcCount || vl.pdc_count || 12,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error reading v2 leases:', err);
+      }
+
       // Load persistent local renewals (e.g. L-OA2204-R1) and ensure prior leases are marked RENEWED
+      const deletedLeasesSet = new Set<string>(
+        (() => {
+          try {
+            return JSON.parse(localStorage.getItem('pms_deleted_leases_v1') || '["SLT-OS41-14-R3", "SLT-OS4114-R3"]').map((s: string) => String(s).toUpperCase());
+          } catch {
+            return ["SLT-OS41-14-R3", "SLT-OS4114-R3"];
+          }
+        })()
+      );
+      deletedLeasesSet.add("SLT-OS41-14-R3");
+      deletedLeasesSet.add("SLT-OS4114-R3");
+
       try {
         const rawRenewals = localStorage.getItem('pms_renewed_leases_v1');
         let localRenewals: any[] = rawRenewals ? JSON.parse(rawRenewals) : [];
+        const beforeLen = localRenewals.length;
+        localRenewals = localRenewals.filter(r => {
+          const rId = String(r.id || '').toUpperCase();
+          const rNum = String(r.lease_number || '').toUpperCase();
+          return !deletedLeasesSet.has(rId) && !deletedLeasesSet.has(rNum);
+        });
+        if (localRenewals.length !== beforeLen) {
+          localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(localRenewals));
+        }
         const hasOA2204 = localRenewals.some(r => r.unit === 'OA22-04' || r.id === 'L-OA2204-R1' || r.lease_number === 'L-OA2204-R1');
         if (!hasOA2204) {
           localRenewals.push({
@@ -651,7 +725,12 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         .filter((leaseItem) => {
           const u = getUnitName(leaseItem)?.toUpperCase()?.trim();
           const t = getTenantName(leaseItem)?.toLowerCase()?.trim();
-          if (u.includes("OA22-10") || u.includes("OA24-10") || t.includes("devadas melitta") || t.includes("devadas pappu")) {
+          const lNum = String(leaseItem.lease_number || '').toUpperCase().trim();
+          const lId = String(leaseItem.id || '').toUpperCase().trim();
+          if (u.includes("OA22-10") || t.includes("devadas pappu")) {
+            return false;
+          }
+          if (deletedLeasesSet.has(lNum) || deletedLeasesSet.has(lId)) {
             return false;
           }
           return true;
@@ -739,11 +818,11 @@ export function LeasesModule({ role }: LeasesModuleProps) {
   }
 
   // ── Derived counts (based on ALL leases, not filtered) ────────────────────
-  const activeCount   = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
-  const renewedCount  = leases.filter(l => l.lease_status?.toUpperCase() === 'RENEWED').length;
-  const draftCount    = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
+  const activeCount = leases.filter(l => l.lease_status?.toUpperCase() === 'ACTIVE').length;
+  const renewedCount = leases.filter(l => l.lease_status?.toUpperCase() === 'RENEWED').length;
+  const draftCount = leases.filter(l => l.lease_status?.toUpperCase() === 'DRAFT').length;
   const expiringCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRING').length;
-  const expiredCount  = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRED').length;
+  const expiredCount = leases.filter(l => l.lease_status?.toUpperCase() === 'EXPIRED').length;
 
   // ── Unique property options for dropdown ──────────────────────────────────
   const propertyOptions = useMemo(() => {
@@ -758,29 +837,29 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     const f = filters;
     const q = f.search.toLowerCase().trim();
     return leases.filter(lease => {
-      const prop   = getPropertyName(lease);
-      const unit   = getUnitName(lease);
+      const prop = getPropertyName(lease);
+      const unit = getUnitName(lease);
       const tenant = getTenantName(lease);
-      const start  = toRawDate(lease.commencement_date);
-      const end    = toRawDate(lease.expiry_date);
-      const rent   = lease.rental_amount ?? 0;
+      const start = toRawDate(lease.commencement_date);
+      const end = toRawDate(lease.expiry_date);
+      const rent = lease.rental_amount ?? 0;
       const status = (lease.lease_status || 'DRAFT').toUpperCase();
-      const ref    = (lease.lease_number || '').toLowerCase();
+      const ref = (lease.lease_number || '').toLowerCase();
 
       // Global quick-search across ref, property, unit, tenant
       if (q && ![ref, prop.toLowerCase(), unit.toLowerCase(), tenant.toLowerCase()].some(v => v.includes(q))) return false;
 
       // Field-level filters
       if (f.property && !prop.toLowerCase().includes(f.property.toLowerCase())) return false;
-      if (f.unit     && !unit.toLowerCase().includes(f.unit.toLowerCase())) return false;
-      if (f.tenant   && !tenant.toLowerCase().includes(f.tenant.toLowerCase())) return false;
-      if (f.status   && status !== f.status) return false;
+      if (f.unit && !unit.toLowerCase().includes(f.unit.toLowerCase())) return false;
+      if (f.tenant && !tenant.toLowerCase().includes(f.tenant.toLowerCase())) return false;
+      if (f.status && status !== f.status) return false;
 
       // Date range filters
       if (f.startFrom && start && start < f.startFrom) return false;
-      if (f.startTo   && start && start > f.startTo)   return false;
-      if (f.endFrom   && end   && end   < f.endFrom)   return false;
-      if (f.endTo     && end   && end   > f.endTo)     return false;
+      if (f.startTo && start && start > f.startTo) return false;
+      if (f.endFrom && end && end < f.endFrom) return false;
+      if (f.endTo && end && end > f.endTo) return false;
 
       // Rent range filters
       if (f.rentMin && rent < Number(f.rentMin)) return false;
@@ -810,16 +889,25 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
   // ── Excel export (uses filteredLeases so export = what you see) ───────────
   function exportToExcel() {
-    const rows = filteredLeases.map((lease) => ({
-      'Ref':               lease.lease_number || '',
-      'Property':          getPropertyName(lease),
-      'Unit':              getUnitName(lease),
-      'Tenant Name':       getTenantName(lease),
-      'Start Date':        formatQatarDate(lease.commencement_date),
-      'End Date':          formatQatarDate(lease.expiry_date),
-      'Annual Rent (QAR)': lease.rental_amount ?? 0,
-      'Status':            lease.lease_status || 'DRAFT',
-    }));
+    const rows = filteredLeases.map((lease) => {
+      const monthlyRent = Number(
+        lease.monthlyRent ||
+        (lease.rental_amount
+          ? Math.round(lease.rental_amount / (lease.lease_period_months || 12))
+          : 0)
+      );
+      return {
+        'Ref': lease.lease_number || '',
+        'Property': getPropertyName(lease),
+        'Unit': getUnitName(lease),
+        'Tenant Name': getTenantName(lease),
+        'Start Date': formatQatarDate(lease.commencement_date),
+        'End Date': formatQatarDate(lease.expiry_date),
+        'Monthly Rent (QAR)': monthlyRent,
+        'Annual Rent (QAR)': lease.rental_amount ?? (monthlyRent * 12),
+        'Status': lease.lease_status || 'DRAFT',
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const colWidths = Object.keys(rows[0] || {}).map((k) => ({
@@ -1138,7 +1226,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                   </tr>
                 ) : (
                   paginatedLeases.map((lease) => {
-                    const monthlyRent = lease.monthlyRent || (lease.rental_amount ? Math.round((lease.rental_amount / 12) * 100) / 100 : 0);
+                    const periodMonths = Number(lease.lease_period_months || 0);
+                    const rawRental = Number(lease.rental_amount || 0);
+                    const monthlyRent = lease.monthlyRent || (rawRental > 0 ? (rawRental <= 20000 ? rawRental : Math.round((rawRental / (periodMonths > 0 ? periodMonths : 12)) * 100) / 100) : 0);
                     return (
                     <tr key={lease.id} className="hover:bg-muted/10 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{lease.lease_number || 'N/A'}</td>
@@ -1187,6 +1277,50 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                             onClick={() => { setSelectedLease(lease); setSnagModalOpen(true); }}
                           >
                             <CheckSquare className="h-3 w-3 text-indigo-600" /> Snagging
+                          </Button>
+                          <Button
+                            variant="outline" size="sm" className="h-7 text-xs gap-1 border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                            title="Delete duplicate or erroneous lease contract"
+                            onClick={async () => {
+                              const refNo = lease.lease_number || lease.id;
+                              if (!window.confirm(`Are you sure you want to delete contract ${refNo} for unit ${getUnitName(lease)}?`)) return;
+                              try {
+                                const deletedList: string[] = JSON.parse(localStorage.getItem('pms_deleted_leases_v1') || '["SLT-OS41-14-R3", "SLT-OS4114-R3"]');
+                                if (lease.id) deletedList.push(String(lease.id).toUpperCase());
+                                if (lease.lease_number) deletedList.push(String(lease.lease_number).toUpperCase());
+                                localStorage.setItem('pms_deleted_leases_v1', JSON.stringify(Array.from(new Set(deletedList))));
+
+                                const rawRenewals = localStorage.getItem('pms_renewed_leases_v1');
+                                if (rawRenewals) {
+                                  const filteredRen = JSON.parse(rawRenewals).filter((r: any) => r.id !== lease.id && r.lease_number !== lease.lease_number);
+                                  localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(filteredRen));
+                                }
+                                const rawV2 = localStorage.getItem('pms_leasing_v2_leases');
+                                if (rawV2) {
+                                  const filteredV2 = JSON.parse(rawV2).filter((r: any) => r.id !== lease.id && r.lease_number !== lease.lease_number);
+                                  localStorage.setItem('pms_leasing_v2_leases', JSON.stringify(filteredV2));
+                                }
+                                const rawOverrides = localStorage.getItem('pms_custom_lease_overrides');
+                                if (rawOverrides) {
+                                  const ov = JSON.parse(rawOverrides);
+                                  if (lease.id) delete ov[lease.id];
+                                  if (lease.lease_number) delete ov[lease.lease_number];
+                                  localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(ov));
+                                }
+                                if (lease.lease_number) {
+                                  await supabase.from('leases').delete().eq('lease_number', lease.lease_number);
+                                }
+                                if (lease.id) {
+                                  await supabase.from('leases').delete().eq('id', lease.id);
+                                }
+                                setLeases(prev => prev.filter(l => l.id !== lease.id && l.lease_number !== lease.lease_number));
+                                toast.success(`Contract ${refNo} deleted successfully.`);
+                              } catch (err: any) {
+                                toast.error(err?.message || 'Failed to delete contract');
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
                           </Button>
                         </div>
                       </td>
@@ -1272,8 +1406,8 @@ export function LeasesModule({ role }: LeasesModuleProps) {
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold">Tenant Name</Label>
-                <Input 
-                  value={editForm.tenant_name} 
+                <Input
+                  value={editForm.tenant_name}
                   onChange={e => setEditForm({ ...editForm, tenant_name: e.target.value })}
                   className="h-8"
                 />
@@ -1294,18 +1428,18 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold">Commencement Date</Label>
-                <Input 
-                  type="date" 
-                  value={editForm.commencement_date} 
+                <Input
+                  type="date"
+                  value={editForm.commencement_date}
                   onChange={e => setEditForm({ ...editForm, commencement_date: e.target.value })}
                   className="h-8 font-mono"
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold">Expiry Date</Label>
-                <Input 
-                  type="date" 
-                  value={editForm.expiry_date} 
+                <Input
+                  type="date"
+                  value={editForm.expiry_date}
                   onChange={e => setEditForm({ ...editForm, expiry_date: e.target.value })}
                   className="h-8 font-mono"
                 />
@@ -1315,9 +1449,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold">Monthly Rent (QAR)</Label>
-                <Input 
-                  type="number" 
-                  value={editForm.monthlyRent} 
+                <Input
+                  type="number"
+                  value={editForm.monthlyRent}
                   onChange={e => {
                     const m = e.target.value;
                     const parsed = parseFloat(m) || 0;
@@ -1328,9 +1462,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] font-semibold">Annual Rent (QAR)</Label>
-                <Input 
-                  type="number" 
-                  value={editForm.rental_amount} 
+                <Input
+                  type="number"
+                  value={editForm.rental_amount}
                   onChange={e => setEditForm({ ...editForm, rental_amount: e.target.value })}
                   className="h-8 font-mono"
                 />

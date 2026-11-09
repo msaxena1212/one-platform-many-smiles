@@ -304,8 +304,10 @@ type Pdc = {
   amount: number;
   status: PdcStatus;
   payerName?: string;
+  tenantName?: string;
   period?: string;
   file?: string;
+  dueDate?: string;
   tenureStart?: string;
   tenureEnd?: string;
 };
@@ -1495,12 +1497,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         ]);
 
         const dbCustomerMap = new Map<string, any>();
+        const normKeyToMapId = new Map<string, string>();
         const seenNames = new Set<string>();
 
         const normalizeCustKey = (name: string): string => {
           if (!name) return "";
           let n = name.toLowerCase().trim();
-          n = n.replace(/^m\s*\/\s*s\.?\s*/i, "m/s ");
+          n = n.replace(/^(m\s*\/\s*s\.?|mr\.?|mrs\.?|ms\.?|miss\.?|dr\.?|prof\.?|eng\.?|sheikh|shk\.?)\s+/i, "");
           n = n.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
           return n;
         };
@@ -1518,7 +1521,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             l.includes("glamour") || l.includes("alfanet") || l.includes("axiom") ? "company" : "individual";
         };
 
-        // Source 1: customers table — full KYC profile rows
+        // Source 1: customers table — full KYC profile rows (deduplicated by normalized name so duplicate "-" rows are eliminated)
         for (const c of (customersRes.data || [])) {
           const name =
             c.first_name || c.full_name || c.display_name || c.name || c.tenant_name || c.customer_name ||
@@ -1526,29 +1529,54 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             c.last_name || "";
           if (!name || name.toLowerCase().includes("abc trading")) continue;
           const normKey = normalizeCustKey(name);
-          const customerId = c.customer_code || c.tax_identification_no ||
+          const rawCustomerId = (c.customer_code || c.tax_identification_no ||
             (c.remarks && typeof c.remarks === 'string' && c.remarks.startsWith('CUSTOMER_ID:') ? c.remarks.replace('CUSTOMER_ID:', '') : '') ||
-            c.customer_id || '';
-          dbCustomerMap.set(String(c.id), {
+            c.customer_id || '').trim();
+          const customerId = rawCustomerId === "-" ? "" : rawCustomerId;
+          const candidate = {
             id: c.id,
             customerId,
-            customer_code: c.customer_code || customerId,
+            customer_code: (c.customer_code || customerId) === "-" ? "" : (c.customer_code || customerId),
             name,
             displayName: c.display_name || name,
             firstName: c.first_name || name,
             middleName: c.middle_name || "",
             lastName: c.last_name || "",
             type: (c.customer_type?.toLowerCase() === "company" || c.type?.toLowerCase() === "company" || guessType(name) === "company" ? "company" : "individual") as any,
-            qatarId: c.qatar_id || c.qatarId || "",
-            passport: c.passport_number || c.passport || "",
-            crNumber: c.commercial_registration || c.cr_number || c.crNumber || "",
-            mobile: c.mobile_number || c.mobile || c.phone || "",
-            email: c.email_address || c.email || "",
-            nationality: c.nationality || "",
+            qatarId: (c.qatar_id || c.qatarId || "") === "-" ? "" : (c.qatar_id || c.qatarId || ""),
+            passport: (c.passport_number || c.passport || "") === "-" ? "" : (c.passport_number || c.passport || ""),
+            crNumber: (c.commercial_registration || c.cr_number || c.crNumber || "") === "-" ? "" : (c.commercial_registration || c.cr_number || c.crNumber || ""),
+            mobile: (c.mobile_number || c.mobile || c.phone || "") === "-" ? "" : (c.mobile_number || c.mobile || c.phone || ""),
+            email: (c.email_address || c.email || "") === "-" ? "" : (c.email_address || c.email || ""),
+            nationality: (c.nationality || "") === "—" || (c.nationality || "") === "-" ? "" : (c.nationality || ""),
             customerStatus: c.customer_status || "Active",
             status: "active" as any, _source: "db",
-          });
-          if (normKey) seenNames.add(normKey);
+          };
+
+          if (normKey && normKeyToMapId.has(normKey)) {
+            const existingMapId = normKeyToMapId.get(normKey)!;
+            const existing = dbCustomerMap.get(existingMapId);
+            if (existing) {
+              if (!existing.customerId && candidate.customerId) {
+                existing.id = candidate.id;
+                existing.customerId = candidate.customerId;
+                existing.customer_code = candidate.customer_code;
+              }
+              if (!existing.qatarId && candidate.qatarId) existing.qatarId = candidate.qatarId;
+              if (!existing.passport && candidate.passport) existing.passport = candidate.passport;
+              if (!existing.crNumber && candidate.crNumber) existing.crNumber = candidate.crNumber;
+              if (!existing.mobile && candidate.mobile) existing.mobile = candidate.mobile;
+              if (!existing.email && candidate.email) existing.email = candidate.email;
+              if (!existing.nationality && candidate.nationality) existing.nationality = candidate.nationality;
+            }
+            continue;
+          }
+
+          dbCustomerMap.set(String(c.id), candidate);
+          if (normKey) {
+            normKeyToMapId.set(normKey, String(c.id));
+            seenNames.add(normKey);
+          }
         }
 
         // Source 2: tenants of occupied units that have no customers-table row (lease-master imports).
@@ -1811,6 +1839,46 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   // Synchronize renewals for upcoming expiring & expired leases (due for renewal or expired)
   useEffect(() => {
     if (!leases || leases.length === 0) return;
+
+    // Helper to identify if a lease has already been renewed
+    const isLeaseRenewed = (l: Lease): boolean => {
+      const rawStatus = String(l.status || (l as any).lease_status || "").toLowerCase();
+      if (rawStatus === "renewed") return true;
+
+      // Check persistent localStorage overrides
+      try {
+        const stored = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+        const ov = stored[l.id] || stored[l.contractNumber || ""] || stored[(l as any).lease_number || ""];
+        if (ov?.lease_status?.toUpperCase() === "RENEWED" || ov?.status?.toLowerCase() === "renewed") return true;
+      } catch {}
+
+      // Check renewed leases register
+      try {
+        const renList = JSON.parse(localStorage.getItem("pms_renewed_leases_v1") || "[]");
+        if (renList.some((r: any) => r.oldLeaseId === l.id || r.oldLeaseNumber === l.contractNumber || r.unit_name === l.unit || r.unit === l.unit)) {
+          return true;
+        }
+      } catch {}
+
+      // Check if another active lease exists for the same unit with overlapping/subsequent period
+      const hasSuccessor = (leases || []).some(other =>
+        other.id !== l.id &&
+        other.unit === l.unit &&
+        (other.status === "active" || other.status === "fully_signed" || (other as any).lease_status === "ACTIVE") &&
+        other.startDate && l.endDate &&
+        new Date(other.startDate).getTime() >= new Date(l.endDate).getTime() - 86400000 * 30
+      );
+      if (hasSuccessor) return true;
+
+      // Check explicit renewalOf pointer
+      const isPredecessor = (leases || []).some(other =>
+        (other as any).renewalOf === l.id || (other as any).renewal_of === l.id
+      );
+      if (isPredecessor) return true;
+
+      return false;
+    };
+
     const expiringLeases = leases.filter((lease) => {
       if (!lease?.endDate) return false;
       const endTime = new Date(lease.endDate).getTime();
@@ -1827,16 +1895,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       let changed = filtered.length !== prev.length;
 
       expiringLeases.forEach((lease, idx) => {
-        const exists = updated.some((r) => r.leaseId === lease.id);
-        if (!exists) {
-          const endTime = new Date(lease.endDate).getTime();
-          const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
-          const days = Math.ceil((endTime - todayTime) / 86400000);
-          const isExpired = days < 0;
-          const proposedRent = Math.round((lease.monthlyRent || 6000) * 1.05);
-          const noticeDate = today instanceof Date ? today.toISOString().split("T")[0] : "2026-09-01";
-          const lastConfDate = lease.endDate ? addDays(new Date(lease.endDate), -30) : "2026-11-30";
-          const status = isExpired
+        const renewed = isLeaseRenewed(lease);
+        const endTime = new Date(lease.endDate).getTime();
+        const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
+        const days = Math.ceil((endTime - todayTime) / 86400000);
+        const isExpired = !renewed && days < 0;
+        const proposedRent = Math.round(lease.monthlyRent || 6000);
+        const noticeDate = today instanceof Date ? today.toISOString().split("T")[0] : "2026-09-01";
+        const lastConfDate = lease.endDate ? addDays(new Date(lease.endDate), -30) : "2026-11-30";
+        const status = renewed
+          ? "renewal_confirmed"
+          : isExpired
             ? "expired"
             : idx % 3 === 0
               ? "awaiting_response"
@@ -1844,6 +1913,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 ? "under_discussion"
                 : "renewal_confirmed";
 
+        const existingIdx = updated.findIndex((r) => r.leaseId === lease.id);
+        if (existingIdx >= 0) {
+          // If already in list but marked expired when it's actually renewed, fix to renewal_confirmed
+          if (renewed && updated[existingIdx].status === "expired") {
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              status: "renewal_confirmed",
+              proposedRent,
+              revisedTerms: "Contract renewed at current rental terms (0% revision); active renewal contract in place",
+              outstandingObligations: "Contract successfully renewed (Active renewal contract in place)",
+            };
+            changed = true;
+          }
+        } else {
           updated.push({
             id: `rnw-${lease.id}`,
             leaseId: lease.id,
@@ -1851,11 +1934,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             status: status,
             proposedRent: proposedRent,
             proposedPeriod: "12 Months (1 Year Extension)",
-            revisedTerms: "5% rent revision; notice period 60 days retained",
+            revisedTerms: renewed
+              ? "Contract renewed at current rental terms (0% revision); active renewal contract in place"
+              : "Same previous monthly rent retained (0% revision); notice period 60 days retained",
             expiryDate: lease.endDate || "2026-12-31",
             requiredNoticePeriod: "60 Days",
             lastConfirmationDate: lastConfDate,
-            outstandingObligations: isExpired ? "Pending contract renewal / renewal overdue" : "None - All PDCs cleared to date",
+            outstandingObligations: renewed
+              ? "Contract successfully renewed (Active renewal contract in place)"
+              : isExpired
+                ? "Pending contract renewal / renewal overdue"
+                : "None - All PDCs cleared to date",
             recipients: `${lease.tenantName} (Primary), leasing@property.qa`,
             followUpOwner: "Leasing Department",
           });
@@ -2164,12 +2253,19 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           chequeNo: chqNo || `CHQ-${Math.floor(100000 + Math.random() * 900000)}`,
           bank: bank || "QNB",
           date: mDate || today.toISOString().split("T")[0],
+          dueDate: mDate || today.toISOString().split("T")[0],
           amount: Number(amt) || 5000,
           payerName: payer || "Tenant Customer",
+          tenantName: payer || "Tenant Customer",
           status: "received",
         });
       });
       setPdcs(prev => [...newItems, ...prev]);
+      try {
+        const existingStored = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+        localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...newItems, ...existingStored]));
+        window.dispatchEvent(new Event("pdcs_updated"));
+      } catch { /* ignore */ }
       toast.success(`Successfully imported ${newItems.length} PDC cheques!`);
       setBulkPdcOpen(false);
       setBulkPdcCsv("");
@@ -2266,8 +2362,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [renewalNoticeOpen, setRenewalNoticeOpen] = useState(false);
   const [renewalNoticeForm, setRenewalNoticeForm] = useState({
     selectedLeaseId: "",
-    rentIncreasePercent: "5",
-    revisedTerms: "5% rent revision; notice period retained",
+    rentIncreasePercent: "0",
+    revisedTerms: "Same monthly rent retained (0% revision); notice period retained",
     proposedRenewalPeriod: "12 months",
     lastConfirmationDays: "30",
     additionalRecipients: "",
@@ -2440,6 +2536,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   // Collect Rent/PDC
   const [collectOpen, setCollectOpen] = useState(false);
   const [collectForm, setCollectForm] = useState({
+    collectionScope: "both" as "both" | "deposit_only" | "rent_only",
     paymentMode: "PDC" as "PDC" | "Cash" | "Cheque" | "Bank Transfer" | "Guarantee Cheque",
     chequeBank: "QNB",
     payerName: "",
@@ -2762,6 +2859,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   const [checkoutWorkflowLease, setCheckoutWorkflowLease] = useState<Lease | null>(null);
   const [isFixedTenantCheckout, setIsFixedTenantCheckout] = useState(false);
   const [startCheckoutForm, setStartCheckoutForm] = useState({
+    checkoutType: "standard_checkout" as "standard_checkout" | "early_termination" | "lease_cancellation",
+    cancelUnpresentedPdcs: true,
     noticeDate: today.toISOString().split("T")[0],
     moveOutDate: "",
     inspectionDate: "",
@@ -2801,6 +2900,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     financeClearance: false,
     utilityClearance: false,
     keysReturned: false,
+    cancelRemainingPdcs: true,
     unitDisposition: "Vacant - Under Maintenance" as Unit["status"],
   });
 
@@ -2992,7 +3092,19 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         if (isNaN(endTime)) return false;
         const todayTime = today instanceof Date ? today.getTime() : new Date().getTime();
         const days = Math.ceil((endTime - todayTime) / 86400000);
-        return days <= 77 && lease.status !== "closed";
+        if (days > 77 || lease.status === "closed") return false;
+
+        const rawStatus = String(lease.status || (lease as any).lease_status || "").toLowerCase();
+        if (rawStatus === "renewed") return false;
+
+        const hasSuccessor = (leases || []).some(other =>
+          other.id !== lease.id &&
+          other.unit === lease.unit &&
+          (other.status === "active" || other.status === "fully_signed" || (other as any).lease_status === "ACTIVE") &&
+          other.startDate && lease.endDate &&
+          new Date(other.startDate).getTime() >= new Date(lease.endDate).getTime() - 86400000 * 30
+        );
+        return !hasSuccessor;
       }),
     [leases],
   );
@@ -3016,7 +3128,263 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     ]);
   }
 
+  function getUnpresentedPdcsForLease(lease: Lease | null | undefined, effectiveDate?: string, cancelAllUnpresented = false) {
+    if (!lease) return { matchingPdcs: [] as Pdc[], matchingVouchers: [] as Voucher[] };
+    const unitNorm = (lease.unit || "").trim().toLowerCase();
+    const unitAlpha = (lease.unit || "").replace(/\W/g, "").toLowerCase();
+    const tenantNorm = (lease.tenantName || "").trim().toLowerCase();
+
+    const matchingPdcs = (pdcs || []).filter((p) => {
+      const st = String(p.status || "").toLowerCase().trim();
+      if (!["received", "in_hand", "in hand", "replaced", "partial_cash"].includes(st)) return false;
+      const matchesLease =
+        p.leaseId === lease.id ||
+        (unitAlpha && String(p.chequeNo || "").toLowerCase().includes(unitAlpha)) ||
+        (tenantNorm && String(p.payerName || "").trim().toLowerCase() === tenantNorm);
+      if (!matchesLease) return false;
+      if (!cancelAllUnpresented && effectiveDate && p.date) {
+        return new Date(p.date).getTime() >= new Date(effectiveDate).getTime();
+      }
+      return true;
+    });
+
+    const matchingVouchers = (vouchers || []).filter((v) => {
+      const vv = v as any;
+      const isPdc = Boolean(
+        vv.pdc_id ||
+        vv.cheque_number ||
+        (v.method && v.method.toUpperCase().includes("PDC")) ||
+        (v.name && v.name.includes("PDC")) ||
+        (v.receiptNo && v.receiptNo.includes("PDC"))
+      );
+      if (!isPdc) return false;
+      const st = String(vv.pdc_status || v.status || "in hand").toLowerCase().trim();
+      if (["cleared", "deposited", "cancelled", "returned", "bounced"].includes(st)) return false;
+      const vUnit = String(vv.unit_name || vv.raw_pdc?.unit_name || "").trim().toLowerCase();
+      const vTenant = String(vv.tenant_name || vv.raw_pdc?.tenant_name || "").trim().toLowerCase();
+      const matchesLease =
+        v.leaseId === lease.id ||
+        (unitNorm && vUnit === unitNorm) ||
+        (tenantNorm && vTenant === tenantNorm);
+      if (!matchesLease) return false;
+      const chqDateStr = String(vv.period || vv.cheque_date || "");
+      if (!cancelAllUnpresented && effectiveDate && /^\d{4}-\d{2}-\d{2}/.test(chqDateStr)) {
+        return chqDateStr.slice(0, 10) >= effectiveDate;
+      }
+      return true;
+    });
+
+    return { matchingPdcs, matchingVouchers };
+  }
+
+  async function cancelLeasePdcs(
+    lease: Lease,
+    options?: {
+      effectiveDate?: string;
+      cancelAllUnpresented?: boolean;
+      reason?: string;
+      terminateLease?: boolean;
+      disposition?: Unit["status"];
+      silent?: boolean;
+    }
+  ) {
+    const effectiveDate = options?.effectiveDate || today.toISOString().split("T")[0];
+    const cancelAll = options?.cancelAllUnpresented ?? true;
+    const reasonText = options?.reason || "Checkout / Lease Termination PDC Cancellation";
+
+    const { matchingPdcs, matchingVouchers } = getUnpresentedPdcsForLease(lease, effectiveDate, cancelAll);
+    const pdcIds = new Set(matchingPdcs.map((p) => p.id));
+    const voucherIds = new Set(matchingVouchers.map((v) => v.id));
+    const chequeNumbers = new Set<string>([
+      ...matchingPdcs.map((p) => p.chequeNo).filter(Boolean),
+      ...matchingVouchers.map((v: any) => v.cheque_number || v.receiptNo).filter(Boolean),
+    ]);
+
+    if (pdcIds.size > 0) {
+      setPdcs((items) =>
+        items.map((item) => (pdcIds.has(item.id) ? { ...item, status: "cancelled" as PdcStatus } : item))
+      );
+    }
+
+    if (voucherIds.size > 0) {
+      setVouchers((items) =>
+        items.map((item) =>
+          voucherIds.has(item.id)
+            ? ({ ...item, status: "cancelled" as any, pdc_status: "cancelled" } as any)
+            : item
+        )
+      );
+    }
+
+    // Calculate total cancelled PDC amount for GL reversal
+    const cancelledFromPdcs = matchingPdcs.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const cancelledFromVouchers = matchingVouchers.reduce((sum, v) => sum + (Number(v.amount) || 0), 0);
+    const totalCancelledAmount = cancelledFromPdcs > 0 ? cancelledFromPdcs : cancelledFromVouchers;
+    const cancelledCount = Math.max(matchingPdcs.length, matchingVouchers.length);
+
+    if (totalCancelledAmount > 0) {
+      const cnlVoucherNo = `JV-PDC-CNL-${lease.unit.replace(/\W/g, "")}-${Date.now().toString().slice(-4)}`;
+      const reversalVoucher: Voucher = {
+        id: `v-cnl-${Date.now()}`,
+        leaseId: lease.id,
+        name: `Journal Voucher - PDC Cancellation (${cancelledCount} Cheque${cancelledCount === 1 ? "" : "s"}) [${reasonText}]`,
+        receiptNo: cnlVoucherNo,
+        method: "PDC Cancellation",
+        period: effectiveDate,
+        debit: `Customer(PDC)-${lease.unit} (21400)`,
+        credit: "PDC In Hand (12900001)",
+        amount: totalCancelledAmount,
+        status: "posted",
+      };
+      setVouchers((items) => [reversalVoucher, ...items]);
+
+      addFinanceStoreVoucher({
+        voucher_no: cnlVoucherNo,
+        voucher_type: "Journal Voucher",
+        date: effectiveDate,
+        name: `PDC Cancellation (${cancelledCount} Cheque${cancelledCount === 1 ? "" : "s"}): ${lease.tenantName} (${lease.unit}) — ${reasonText}`,
+        debit: `Customer PDC Liability - ${lease.unit}`,
+        debit_code: "21400",
+        credit: "PDC In Hand",
+        credit_code: "12900",
+        amount: totalCancelledAmount,
+        method: "PDC Cancellation",
+        property_name: lease.property,
+        unit_ref: lease.unit,
+        tenant_name: lease.tenantName,
+      });
+
+      void supabase
+        .from("fin_vouchers")
+        .insert({
+          voucher_number: cnlVoucherNo,
+          voucher_date: effectiveDate,
+          voucher_type: "JV",
+          description: `PDC Cancellation (${cancelledCount} cheques) — ${lease.tenantName} (${lease.unit}): ${reasonText}`,
+          total_amount: totalCancelledAmount,
+          status: "posted",
+          posted_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+        .then(({ data: vData, error: vErr }) => {
+          if (!vErr && vData?.id) {
+            void supabase.from("fin_voucher_lines").insert([
+              {
+                voucher_id: vData.id,
+                account_code: "21400001",
+                account_name: `Customer PDC Liability - ${lease.unit}`,
+                debit: totalCancelledAmount,
+                credit: 0,
+                description: `PDC Cancelled — ${lease.tenantName}`,
+              },
+              {
+                voucher_id: vData.id,
+                account_code: "12900001",
+                account_name: "Rent PDC In Hand",
+                debit: 0,
+                credit: totalCancelledAmount,
+                description: `PDC Cancelled — ${lease.tenantName}`,
+              },
+            ]);
+          }
+        });
+    }
+
+    // Update Supabase pdcs and fin_pdc_register tables
+    try {
+      const chqArr = Array.from(chequeNumbers);
+      if (chqArr.length > 0) {
+        await supabase
+          .from("pdcs")
+          .update({ status: "cancelled", status_pdc: "Cancelled" } as any)
+          .in("cheque_no", chqArr);
+        await supabase
+          .from("fin_pdc_register")
+          .update({ status: "Cancelled" } as any)
+          .in("cheque_number", chqArr);
+      }
+      if (lease.unit) {
+        let q = supabase
+          .from("pdcs")
+          .update({ status: "cancelled", status_pdc: "Cancelled" } as any)
+          .eq("unit_name", lease.unit)
+          .in("status_pdc", ["In Hand", "in hand", "Received", "received"]);
+        if (!cancelAll && effectiveDate) {
+          q = q.gte("cheque_date", effectiveDate);
+        }
+        await q;
+      }
+    } catch (dbErr) {
+      console.warn("[cancelLeasePdcs] Supabase PDC status update notice:", dbErr);
+    }
+
+    if (options?.terminateLease) {
+      const targetDisp = options.disposition || "Available";
+      setLeases((items) =>
+        items.map((item) =>
+          item.id === lease.id
+            ? {
+              ...item,
+              status: "closed" as LeaseStatus,
+              actualVacateDate: effectiveDate,
+              earlyVacate: true,
+              earlyVacateReason: reasonText,
+            }
+            : item
+        )
+      );
+      setUnits((items) => items.map((u) => (u.unit === lease.unit ? { ...u, status: targetDisp } : u)));
+      setRealUnits((items) => items.map((u) => (u.unit === lease.unit ? { ...u, status: targetDisp } : u)));
+      void supabase
+        .from("units")
+        .update({
+          status: targetDisp,
+          lease_status: "VACANT",
+          current_tenant: null,
+          contract_no: null,
+          contract_start_date: null,
+          contract_end_date: null,
+          current_rent: null,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .or(`unit_ref.eq.${lease.unit},unit_code.eq.${lease.unit},unit_name.eq.${lease.unit}`);
+    }
+
+    recordAudit({
+      stage: options?.terminateLease ? "Lease Termination & PDC Cancellation" : "Checkout PDC Cancellation",
+      owner: "Finance / Leasing Department",
+      input: `${lease.tenantName} (${lease.unit}), Effective: ${effectiveDate}, Reason: ${reasonText}`,
+      approval: "PDC Cancellation & Reversal",
+      status: "completed",
+      output: `Cancelled ${cancelledCount} unpresented PDC(s) totaling ${formatMoney(totalCancelledAmount)}. GL reversal posted (Dr 21400 / Cr 12900001).`,
+    });
+
+    window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
+    window.dispatchEvent(new Event("pms_data_updated"));
+
+    if (!options?.silent) {
+      if (cancelledCount > 0) {
+        toast.success(
+          `Cancelled ${cancelledCount} unpresented PDC(s) (${formatMoney(totalCancelledAmount)}) for ${lease.tenantName} (${lease.unit}).`
+        );
+      } else {
+        toast.info(`All unpresented PDCs for ${lease.tenantName} (${lease.unit}) are now marked cancelled.`);
+      }
+    }
+
+    return { cancelledCount, totalCancelledAmount };
+  }
+
   async function releaseFuturePdcExposure(lease: Lease, vacateDate: string) {
+    // Always cancel/return unpresented PDCs in local state, FinanceStore, and Supabase first
+    const localCancel = await cancelLeasePdcs(lease, {
+      effectiveDate: vacateDate,
+      cancelAllUnpresented: true,
+      reason: `Checkout / Vacate effective ${vacateDate}`,
+      silent: true,
+    });
+
     try {
       const propId = String((lease as any).propertyId || "");
       const unitId = String((lease as any).unitId || "");
@@ -3030,36 +3398,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         leaseEndDate: lease.endDate,
       });
 
-      // 1. Identify and mark all future PDCs returned
-      const futurePdcList = pdcs.filter(
-        (p) => p.leaseId === lease.id && new Date(p.date).getTime() > new Date(vacateDate).getTime() && ["received", "replaced", "in_hand", "partial_cash"].includes(p.status)
-      );
-      const returnedIds = new Set(futurePdcList.map((p) => p.id));
-
-      if (returnedIds.size > 0) {
-        setPdcs((items) => items.map((item) => returnedIds.has(item.id) ? { ...item, status: "returned" as PdcStatus } : item));
-      }
-
-      // 2. Post GL / SL vouchers to Finance Store so General Ledger, Trial Balance, P&L and Balance Sheet reflect the reversal
-      for (const fp of futurePdcList) {
-        addFinanceStoreVoucher({
-          voucher_no: `VCH-PDC-RET-${fp.chequeNo || fp.id}`,
-          voucher_type: "Journal Voucher",
-          date: vacateDate,
-          name: `Early Vacate: Return Future PDC #${fp.chequeNo} (${lease.tenantName} - ${lease.unit})`,
-          debit: "Customer PDC Liability",
-          debit_code: "21400",
-          credit: "PDC In Hand",
-          credit_code: "12900",
-          amount: fp.amount,
-          method: "Cheque Return",
-          property_name: lease.property,
-          unit_ref: lease.unit,
-          tenant_name: lease.tenantName,
-        });
-      }
-
-      // 3. Post unearned future rent reversal voucher if future rent was recognized
+      // Post unearned future rent reversal voucher if future rent was recognized
       if (result.reversedRentAmount > 0) {
         addFinanceStoreVoucher({
           voucher_no: `VCH-RENT-REV-${lease.id}`,
@@ -3078,32 +3417,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         });
       }
 
-      recordAudit({
-        stage: "Early Vacate Finance Normalization",
-        owner: "Finance Department",
-        input: `${lease.tenantName} / ${lease.unit}; vacate ${vacateDate}; contractual expiry ${lease.endDate}`,
-        approval: "Lease early termination settlement",
-        status: "completed",
-        output: `Reversed ${result.reversedInvoiceCount} future rent invoice(s) for ${formatMoney(result.reversedRentAmount)} and returned ${Math.max(result.returnedPdcCount, futurePdcList.length)} eligible future PDC(s) for ${formatMoney(result.returnedPdcAmount || futurePdcList.reduce((s, p) => s + p.amount, 0))}. GL/SL updated.`,
-      });
-
       return {
-        returnedCount: Math.max(result.returnedPdcCount, futurePdcList.length),
-        returnedAmount: result.returnedPdcAmount || futurePdcList.reduce((s, p) => s + p.amount, 0),
+        returnedCount: Math.max(result.returnedPdcCount, localCancel.cancelledCount),
+        returnedAmount: result.returnedPdcAmount || localCancel.totalCancelledAmount,
         reversedInvoiceCount: result.reversedInvoiceCount,
         reversedRentAmount: result.reversedRentAmount,
       };
     } catch (error) {
       console.warn("[Early Vacate Finance] supplementary normalization notice:", error);
-      recordAudit({
-        stage: "Early Vacate Finance Normalization",
-        owner: "Finance Department",
-        input: `${lease.tenantName} / ${lease.unit}; vacate ${vacateDate}`,
-        approval: "Partial – primary settlement posted successfully",
-        status: "completed",
-        output: `Primary settlement posted. Supplementary PDC normalization notice: ${error instanceof Error ? error.message : String(error)}. Finance team should verify any remaining future PDCs manually.`,
-      });
-      return { returnedCount: 0, returnedAmount: 0, reversedInvoiceCount: 0, reversedRentAmount: 0 };
+      return {
+        returnedCount: localCancel.cancelledCount,
+        returnedAmount: localCancel.totalCancelledAmount,
+        reversedInvoiceCount: 0,
+        reversedRentAmount: 0,
+      };
     }
   }
 
@@ -3698,13 +4025,22 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     setEditTermsOpen(false);
   }
 
+  function computeOneYearEndDate(startDateStr: string, months = 12): string {
+    if (!startDateStr) return addDays(new Date(), 364);
+    const d = new Date(startDateStr);
+    if (isNaN(d.getTime())) return addDays(new Date(), 364);
+    d.setMonth(d.getMonth() + months);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split("T")[0];
+  }
+
   function openCreateLeaseDialog(reservation: Reservation) {
     setSelectedReservationForLease(reservation);
     const tokenAdv = reservation.tokenAmount || 0;
     setCreateLeaseForm(f => ({
       ...f,
       startDate: reservation.startDate,
-      endDate: addDays(new Date(reservation.startDate), 365),
+      endDate: computeOneYearEndDate(reservation.startDate, 12),
       monthlyRent: String(reservation.rent),
       securityDeposit: String(reservation.rent),
       specialConditions: reservation.remarks || (tokenAdv > 0 ? `Token Advance of QR ${tokenAdv.toLocaleString()} applied from reservation hold.` : ""),
@@ -3789,7 +4125,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       unit: reservation.unit,
       tenantName: customer.name,
       startDate: form.startDate || reservation.startDate,
-      endDate: form.endDate || addDays(new Date(reservation.startDate), 365),
+      endDate: form.endDate || computeOneYearEndDate(form.startDate || reservation.startDate, 12),
       monthlyRent: Number(form.monthlyRent) || reservation.rent,
       securityDeposit: Number(form.securityDeposit) || reservation.rent,
       pdcCount: Number(form.pdcCount) || 12,
@@ -3805,7 +4141,30 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       collectionCompleted: false,
       ...(tokenAdv > 0 ? { appliedTokenAdvance: tokenAdv } : {}),
     };
-    setLeases((items) => [lease, ...items]);
+    setLeases((items) => {
+      const next = [lease, ...items];
+      try {
+        const storedLeases = JSON.parse(localStorage.getItem("pms_leasing_v2_leases") || "[]");
+        localStorage.setItem("pms_leasing_v2_leases", JSON.stringify([lease, ...storedLeases.filter((x: any) => x.id !== lease.id)]));
+        const overrides = JSON.parse(localStorage.getItem("pms_custom_lease_overrides") || "{}");
+        if (lease.unit) {
+          overrides[lease.unit.toUpperCase().trim()] = {
+            tenantName: lease.tenantName,
+            property: lease.property,
+            unit: lease.unit,
+            startDate: lease.startDate,
+            endDate: lease.endDate,
+            monthlyRent: lease.monthlyRent,
+            securityDeposit: lease.securityDeposit,
+            contractNumber: lease.contractNumber || lease.id,
+            status: "active",
+          };
+          localStorage.setItem("pms_custom_lease_overrides", JSON.stringify(overrides));
+        }
+      } catch { /* ignore */ }
+      return next;
+    });
+    setUnits((items) => items.map((u) => (u.unit === lease.unit || (u as any).unit_number === lease.unit) ? { ...u, status: "Occupied", tenant: lease.tenantName, rent: lease.monthlyRent } : u));
     setReservations((items) => items.map((item) => (item.id === reservation.id ? { ...item, status: "converted" } : item)));
     setCreateLeaseOpen(false);
     setSelectedReservationForLease(null);
@@ -3825,26 +4184,54 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       status: "pending_approval",
       output: "Lease package forwarded to Property Manager for operational review",
     });
-    // Persist to Supabase
-    try {
-      void supabase.from("leases").insert({
-        contract_number: `LS-${lease.id.toUpperCase()}`,
-        tenant_name: lease.tenantName,
-        property_name: lease.property,
-        unit_number: lease.unit,
-        start_date: lease.startDate,
-        end_date: lease.endDate,
-        monthly_rent: lease.monthlyRent,
-        rental_amount: lease.monthlyRent * 12,
-        security_deposit: lease.securityDeposit,
-        status: "active",
-        customer_id: customer?.id,
-      });
-      void supabase.from("units").update({ status: "Occupied" }).eq("unit_number", lease.unit);
-      void supabase.from("reservations").update({ status: "converted" }).eq("id", reservation.id);
-    } catch (e) {
-      console.warn("Supabase lease sync:", e);
-    }
+    // Persist to Supabase using valid schema columns
+    void (async () => {
+      try {
+        const { data: uRow } = await supabase
+          .from("units")
+          .select("id, property_id")
+          .or(`unit_ref.eq.${lease.unit},unit_code.eq.${lease.unit},unit_name.eq.${lease.unit}`)
+          .maybeSingle();
+
+        const startMs = new Date(lease.startDate).getTime();
+        const endMs = new Date(lease.endDate).getTime();
+        const monthsDiff = (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs)
+          ? Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24 * 30)))
+          : (lease.pdcCount || 12);
+
+        await supabase.from("leases").insert({
+          lease_number: `LS-${lease.id.toUpperCase()}`,
+          commencement_date: lease.startDate,
+          expiry_date: lease.endDate,
+          rental_amount: lease.monthlyRent * monthsDiff,
+          security_deposit: lease.securityDeposit,
+          lease_status: "ACTIVE",
+          number_of_pdc: lease.pdcCount || monthsDiff,
+          payment_frequency: lease.paymentFrequency || "Monthly",
+          unit_id: uRow?.id || undefined,
+          property_id: uRow?.property_id || undefined,
+          customer_id: customer?.id && customer.id.length === 36 ? customer.id : undefined,
+        } as any);
+
+        await supabase
+          .from("units")
+          .update({
+            status: "Occupied",
+            lease_status: "Leased",
+            current_tenant: lease.tenantName,
+            contract_no: `LS-${lease.id.toUpperCase()}`,
+            contract_start_date: lease.startDate,
+            contract_end_date: lease.endDate,
+            current_rent: lease.monthlyRent,
+          } as any)
+          .or(`unit_ref.eq.${lease.unit},unit_code.eq.${lease.unit},unit_name.eq.${lease.unit}`);
+
+        await supabase.from("reservations").update({ status: "converted" }).eq("id", reservation.id);
+        window.dispatchEvent(new Event("pms_data_updated"));
+      } catch (e) {
+        console.warn("Supabase lease sync:", e);
+      }
+    })();
 
     toast.success(`Lease agreement created successfully for ${lease.tenantName} (${lease.unit})!`);
 
@@ -3924,242 +4311,267 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   async function submitCollect() {
     if (!signatureWorkflowLease) return;
     const lease = signatureWorkflowLease;
+    const scope = collectForm.collectionScope || "both";
+    const includeRent = scope === "both" || scope === "rent_only";
+    const includeDeposit = scope === "both" || scope === "deposit_only";
     const isPdcMode = collectForm.paymentMode === "PDC";
 
     // ── Filter only rows that have both cheque no and amount filled for PDC mode ──
     let nextPdcs: Pdc[] = [];
     let rentTotal = 0;
 
-    if (isPdcMode) {
-      if (collectForm.customCheques && collectForm.customCheques.length > 0) {
-        nextPdcs = collectForm.customCheques
-          .filter(c => (c.chequeNo && c.chequeNo.trim() !== "") && Number(c.amount) > 0)
-          .map((c, index) => ({
-            id: `p${pdcs.length + index + 1}`,
-            leaseId: lease.id,
-            chequeNo: c.chequeNo,
-            bank: c.bank || collectForm.chequeBank || "Tenant Bank",
-            date: c.date,
-            amount: Number(c.amount),
-            payerName: collectForm.payerName || lease.tenantName,
-            period: c.period || (c.tenureStart && c.tenureEnd ? `${c.tenureStart} to ${c.tenureEnd}` : `PDC ${index + 1}`),
-            tenureStart: c.tenureStart,
-            tenureEnd: c.tenureEnd,
-            status: "received" as PdcStatus,
-          }));
-      } else {
-        const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
-        const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
-        const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
-        const firstChequeStr = collectForm.firstChequeDate || collectForm.startDate || lease.startDate;
-        const leaseStartStr = lease.startDate || firstChequeStr;
+    if (includeRent) {
+      if (isPdcMode) {
+        if (collectForm.customCheques && collectForm.customCheques.length > 0) {
+          nextPdcs = collectForm.customCheques
+            .filter(c => (c.chequeNo && c.chequeNo.trim() !== "") && Number(c.amount) > 0)
+            .map((c, index) => ({
+              id: `p${pdcs.length + index + 1}`,
+              leaseId: lease.id,
+              chequeNo: c.chequeNo,
+              chequeNumber: c.chequeNo,
+              bank: c.bank || collectForm.chequeBank || "Tenant Bank",
+              date: c.date,
+              dueDate: c.date,
+              amount: Number(c.amount),
+              payerName: collectForm.payerName || lease.tenantName,
+              tenantName: lease.tenantName,
+              unit: lease.unit,
+              property: lease.property,
+              period: c.period || (c.tenureStart && c.tenureEnd ? `${c.tenureStart} to ${c.tenureEnd}` : `PDC ${index + 1}`),
+              tenureStart: c.tenureStart,
+              tenureEnd: c.tenureEnd,
+              status: "received" as PdcStatus,
+            } as any));
+        } else {
+          const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
+          const totalRent = (lease.monthlyRent || 0) * (lease.pdcCount || 12);
+          const regularAmt = Number(collectForm.regularChequeAmount) || lease.monthlyRent;
+          const firstChequeStr = collectForm.firstChequeDate || collectForm.startDate || lease.startDate;
+          const leaseStartStr = lease.startDate || firstChequeStr;
 
-        nextPdcs = Array.from({ length: count }, (_, index) => {
-          let amount = regularAmt;
-          if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
-            amount = totalRent - regularAmt * (count - 1);
-          }
-          // Month-increment maturity date (same day, next month)
-          const bd = new Date(firstChequeStr);
-          const day = bd.getDate();
-          const rawMonth = bd.getMonth() + index;
-          const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
-          const mo = ((rawMonth % 12) + 12) % 12;
-          const lastDay = new Date(yr, mo + 1, 0).getDate();
-          const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
-          // Tenure anchored to lease start date
-          const tsDate = new Date(leaseStartStr); tsDate.setMonth(tsDate.getMonth() + index);
-          const teDate = new Date(leaseStartStr); teDate.setMonth(teDate.getMonth() + index + 1); teDate.setDate(teDate.getDate() - 1);
-          return {
-            id: `p${pdcs.length + index + 1}`,
-            leaseId: lease.id,
-            chequeNo: `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`,
-            bank: collectForm.chequeBank || "Tenant Bank",
-            date: maturityStr,
-            amount: Math.max(0, amount),
-            payerName: collectForm.payerName || lease.tenantName,
-            period: `Cheque ${index + 1} of ${count}`,
-            tenureStart: tsDate.toISOString().split("T")[0],
-            tenureEnd: teDate.toISOString().split("T")[0],
-            status: "received" as PdcStatus,
-          };
-        });
+          nextPdcs = Array.from({ length: count }, (_, index) => {
+            let amount = regularAmt;
+            if (index === count - 1 && count > 1 && regularAmt * (count - 1) < totalRent) {
+              amount = totalRent - regularAmt * (count - 1);
+            }
+            // Month-increment maturity date (same day, next month)
+            const bd = new Date(firstChequeStr);
+            const day = bd.getDate();
+            const rawMonth = bd.getMonth() + index;
+            const yr = bd.getFullYear() + Math.floor(rawMonth / 12);
+            const mo = ((rawMonth % 12) + 12) % 12;
+            const lastDay = new Date(yr, mo + 1, 0).getDate();
+            const maturityStr = `${yr}-${String(mo + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+            // Tenure anchored to lease start date
+            const tsDate = new Date(leaseStartStr); tsDate.setMonth(tsDate.getMonth() + index);
+            const teDate = new Date(leaseStartStr); teDate.setMonth(teDate.getMonth() + index + 1); teDate.setDate(teDate.getDate() - 1);
+            const chqNo = `PDC-${lease.unit.replace(/\W/g, "")}-${String(index + 1).padStart(3, "0")}`;
+            return {
+              id: `p${pdcs.length + index + 1}`,
+              leaseId: lease.id,
+              chequeNo: chqNo,
+              chequeNumber: chqNo,
+              bank: collectForm.chequeBank || "Tenant Bank",
+              date: maturityStr,
+              dueDate: maturityStr,
+              amount: Math.max(0, amount),
+              payerName: collectForm.payerName || lease.tenantName,
+              tenantName: lease.tenantName,
+              unit: lease.unit,
+              property: lease.property,
+              period: `Cheque ${index + 1} of ${count}`,
+              tenureStart: tsDate.toISOString().split("T")[0],
+              tenureEnd: teDate.toISOString().split("T")[0],
+              status: "received" as PdcStatus,
+            } as any;
+          });
+        }
+        rentTotal = nextPdcs.reduce((sum, pdc) => sum + pdc.amount, 0);
+      } else {
+        // Non-PDC Modes (Cash, Bank Transfer, Guarantee Cheque)
+        const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
+        rentTotal = Number(collectForm.regularChequeAmount) || (lease.monthlyRent * count);
       }
-      rentTotal = nextPdcs.reduce((sum, pdc) => sum + pdc.amount, 0);
-    } else {
-      // Non-PDC Modes (Cash, Bank Transfer, Guarantee Cheque)
-      const count = Number(collectForm.pdcCount) || lease.pdcCount || 12;
-      rentTotal = Number(collectForm.regularChequeAmount) || (lease.monthlyRent * count);
     }
 
     const agencyAmt = Number(collectForm.agencyCommission) || 0;
     const adminAmt = Number(collectForm.adminCharges) || 0;
-    const utilityAmt = Number(collectForm.utilityDeposit) || 0;
-    const qatarCoolAmt = Number(collectForm.qatarCoolDeposit) || 0;
-    const reservationAmt = Number(collectForm.reservationDeposit) || 0;
-    const serviceFeeAmt = Number(collectForm.serviceFeeDeposit) || 0;
-    const guaranteeChequeAmt = Number(collectForm.guaranteeChequeDeposit) || 0;
+    const utilityAmt = includeDeposit ? (Number(collectForm.utilityDeposit) || 0) : 0;
+    const qatarCoolAmt = includeDeposit ? (Number(collectForm.qatarCoolDeposit) || 0) : 0;
+    const reservationAmt = includeDeposit ? (Number(collectForm.reservationDeposit) || 0) : 0;
+    const serviceFeeAmt = includeDeposit ? (Number(collectForm.serviceFeeDeposit) || 0) : 0;
+    const guaranteeChequeAmt = includeDeposit ? (Number(collectForm.guaranteeChequeDeposit) || 0) : 0;
     const today_str = today.toISOString().split("T")[0];
 
     // ── Calculate Security Deposit Items (Split vs Single) ──
-    const splitCash = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
-    const splitBank = collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
-    const splitCheque = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
-    const appliedToken = Number(collectForm.appliedTokenAdvance) || 0;
+    const splitCash = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
+    const splitBank = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
+    const splitCheque = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
+    const appliedToken = includeDeposit ? (Number(collectForm.appliedTokenAdvance) || 0) : 0;
 
     let depAmt = 0;
     const depositVouchers: Voucher[] = [];
 
-    if (collectForm.depositIsSplit) {
-      depAmt = splitCash + splitBank + splitCheque + appliedToken;
-      if (splitCash > 0) {
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}-csh`,
-          leaseId: lease.id,
-          name: "Receipts Voucher - Security Deposit (Cash)",
-          receiptNo: `RV-${lease.id}-SD-CSH`,
-          method: "Cash",
-          period: "Security Deposit Split (Cash)",
-          debit: "Cash In Hand (12100)",
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: splitCash,
-          status: "posted",
-        });
-      }
-      if (splitBank > 0) {
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}-bnk`,
-          leaseId: lease.id,
-          name: `Receipts Voucher - Security Deposit (Bank Ref: ${collectForm.depositSplitBankRef || "Transfer"})`,
-          receiptNo: `RV-${lease.id}-SD-BNK`,
-          method: "Bank Transfer",
-          period: "Security Deposit Split (Bank)",
-          debit: "Bank Operating Account (12000)",
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: splitBank,
-          status: "posted",
-        });
-      }
-      if (splitCheque > 0) {
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}-chq`,
-          leaseId: lease.id,
-          name: `Receipts Voucher - Security Deposit (Cheque: ${collectForm.depositSplitChequeNo || "PDC"})`,
-          receiptNo: `RV-${lease.id}-SD-CHQ`,
-          method: "PDC",
-          period: "Security Deposit Split (Cheque)",
-          debit: "PDC In Hand (12900001)",
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: splitCheque,
-          status: "posted",
-        });
-      }
-      if (appliedToken > 0) {
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}-tok`,
-          leaseId: lease.id,
-          name: "Journal Voucher - Token Advance Applied to Deposit",
-          receiptNo: `JV-${lease.id}-TOK-DEP`,
-          method: "Adjustment",
-          period: "Token Advance Conversion",
-          debit: "Reservation Advance Liability (21100001)",
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: appliedToken,
-          status: "posted",
-        });
-      }
-    } else {
-      const fullDeposit = Number(collectForm.depositAmount) || lease.securityDeposit;
-      depAmt = fullDeposit;
-      const directDepAmt = Math.max(0, fullDeposit - appliedToken);
+    if (includeDeposit) {
+      if (collectForm.depositIsSplit) {
+        depAmt = splitCash + splitBank + splitCheque + appliedToken;
+        if (splitCash > 0) {
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}-csh`,
+            leaseId: lease.id,
+            name: "Receipts Voucher - Security Deposit (Cash)",
+            receiptNo: `RV-${lease.id}-SD-CSH`,
+            method: "Cash",
+            period: "Security Deposit Split (Cash)",
+            debit: "Cash In Hand (12100)",
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: splitCash,
+            status: "posted",
+          });
+        }
+        if (splitBank > 0) {
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}-bnk`,
+            leaseId: lease.id,
+            name: `Receipts Voucher - Security Deposit (Bank Ref: ${collectForm.depositSplitBankRef || "Transfer"})`,
+            receiptNo: `RV-${lease.id}-SD-BNK`,
+            method: "Bank Transfer",
+            period: "Security Deposit Split (Bank)",
+            debit: "Bank Operating Account (12000)",
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: splitBank,
+            status: "posted",
+          });
+        }
+        if (splitCheque > 0) {
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}-chq`,
+            leaseId: lease.id,
+            name: `Receipts Voucher - Security Deposit (Cheque: ${collectForm.depositSplitChequeNo || "PDC"})`,
+            receiptNo: `RV-${lease.id}-SD-CHQ`,
+            method: "PDC",
+            period: "Security Deposit Split (Cheque)",
+            debit: "PDC In Hand (12900001)",
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: splitCheque,
+            status: "posted",
+          });
+        }
+        if (appliedToken > 0) {
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}-tok`,
+            leaseId: lease.id,
+            name: "Journal Voucher - Token Advance Applied to Deposit",
+            receiptNo: `JV-${lease.id}-TOK-DEP`,
+            method: "Adjustment",
+            period: "Token Advance Conversion",
+            debit: "Reservation Advance Liability (21100001)",
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: appliedToken,
+            status: "posted",
+          });
+        }
+      } else {
+        const fullDeposit = Number(collectForm.depositAmount) || lease.securityDeposit;
+        depAmt = fullDeposit;
+        const directDepAmt = Math.max(0, fullDeposit - appliedToken);
 
-      if (directDepAmt > 0) {
-        const depDebit = collectForm.depositMode === "Cash" ? "Cash In Hand (12100)" :
-          collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account (12000)" : "PDC In Hand (12900001)";
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}`,
-          leaseId: lease.id,
-          name: `Receipts Voucher - Security Deposit (${collectForm.depositMode})`,
-          receiptNo: `RV-${lease.id}-SD`,
-          method: collectForm.depositMode,
-          period: "Security Deposit",
-          debit: depDebit,
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: directDepAmt,
-          status: "posted",
-        });
-      }
+        if (directDepAmt > 0) {
+          const depDebit = collectForm.depositMode === "Cash" ? "Cash In Hand (12100)" :
+            collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account (12000)" : "PDC In Hand (12900001)";
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}`,
+            leaseId: lease.id,
+            name: `Receipts Voucher - Security Deposit (${collectForm.depositMode})`,
+            receiptNo: `RV-${lease.id}-SD`,
+            method: collectForm.depositMode,
+            period: "Security Deposit",
+            debit: depDebit,
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: directDepAmt,
+            status: "posted",
+          });
+        }
 
-      if (appliedToken > 0) {
-        depositVouchers.push({
-          id: `v${vouchers.length + 2}-tok`,
-          leaseId: lease.id,
-          name: "Journal Voucher - Token Advance Applied to Deposit",
-          receiptNo: `JV-${lease.id}-TOK-DEP`,
-          method: "Adjustment",
-          period: "Token Advance Conversion",
-          debit: "Reservation Advance Liability (21100001)",
-          credit: `Security Deposit Liability - ${lease.unit} (21500)`,
-          amount: appliedToken,
-          status: "posted",
-        });
+        if (appliedToken > 0) {
+          depositVouchers.push({
+            id: `v${vouchers.length + 2}-tok`,
+            leaseId: lease.id,
+            name: "Journal Voucher - Token Advance Applied to Deposit",
+            receiptNo: `JV-${lease.id}-TOK-DEP`,
+            method: "Adjustment",
+            period: "Token Advance Conversion",
+            debit: "Reservation Advance Liability (21100001)",
+            credit: `Security Deposit Liability - ${lease.unit} (21500)`,
+            amount: appliedToken,
+            status: "posted",
+          });
+        }
       }
+    }
+
+    if (scope === "deposit_only" && (depAmt + utilityAmt + qatarCoolAmt + reservationAmt + serviceFeeAmt + guaranteeChequeAmt) <= 0) {
+      toast.error("Please enter a Security Deposit amount to collect.");
+      return;
     }
 
     // ── Rent Vouchers by Payment Mode ──
     const rentVouchers: Voucher[] = [];
-    if (collectForm.paymentMode === "PDC") {
-      rentVouchers.push({
-        id: `v${vouchers.length + 1}`,
-        leaseId: lease.id,
-        name: "Receipts Voucher - Rent PDC",
-        receiptNo: `RV-${lease.id}-RENT-PDC`,
-        method: "PDC",
-        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
-        debit: "PDC In Hand (12900001)",
-        credit: `Customer(PDC)-${lease.unit} (21400)`,
-        amount: rentTotal,
-        status: "posted",
-      });
-    } else if (collectForm.paymentMode === "Cash") {
-      rentVouchers.push({
-        id: `v${vouchers.length + 1}`,
-        leaseId: lease.id,
-        name: "Receipts Voucher - Rent Cash",
-        receiptNo: collectForm.rentPaymentReceiptNo || `RV-${lease.id}-RENT-CSH`,
-        method: "Cash",
-        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
-        debit: "Cash In Hand (12100)",
-        credit: `Rental Income - ${lease.unit} (41100)`,
-        amount: rentTotal,
-        status: "posted",
-      });
-    } else if (collectForm.paymentMode === "Bank Transfer") {
-      rentVouchers.push({
-        id: `v${vouchers.length + 1}`,
-        leaseId: lease.id,
-        name: `Receipts Voucher - Rent Bank Transfer (Ref: ${collectForm.rentPaymentReference || "Direct"})`,
-        receiptNo: `RV-${lease.id}-RENT-BT`,
-        method: "Bank Transfer",
-        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
-        debit: "Bank Operating Account (12000)",
-        credit: `Rental Income - ${lease.unit} (41100)`,
-        amount: rentTotal,
-        status: "posted",
-      });
-    } else if (collectForm.paymentMode === "Guarantee Cheque") {
-      rentVouchers.push({
-        id: `v${vouchers.length + 1}`,
-        leaseId: lease.id,
-        name: `Receipts Voucher - Rent Guarantee Cheque (${collectForm.rentGuaranteeChequeNo || "GNT"})`,
-        receiptNo: `RV-${lease.id}-RENT-GNT`,
-        method: "Guarantee Cheque",
-        period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
-        debit: "Guarantee Cheque In Hand (12900002)",
-        credit: `Guarantee Cheque Received (21200001)`,
-        amount: rentTotal,
-        status: "posted",
-      });
+    if (includeRent && rentTotal > 0) {
+      if (collectForm.paymentMode === "PDC") {
+        rentVouchers.push({
+          id: `v${vouchers.length + 1}`,
+          leaseId: lease.id,
+          name: "Receipts Voucher - Rent PDC",
+          receiptNo: `RV-${lease.id}-RENT-PDC`,
+          method: "PDC",
+          period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+          debit: "PDC In Hand (12900001)",
+          credit: `Customer(PDC)-${lease.unit} (21400)`,
+          amount: rentTotal,
+          status: "posted",
+        });
+      } else if (collectForm.paymentMode === "Cash") {
+        rentVouchers.push({
+          id: `v${vouchers.length + 1}`,
+          leaseId: lease.id,
+          name: "Receipts Voucher - Rent Cash",
+          receiptNo: collectForm.rentPaymentReceiptNo || `RV-${lease.id}-RENT-CSH`,
+          method: "Cash",
+          period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+          debit: "Cash In Hand (12100)",
+          credit: `Rental Income - ${lease.unit} (41100)`,
+          amount: rentTotal,
+          status: "posted",
+        });
+      } else if (collectForm.paymentMode === "Bank Transfer") {
+        rentVouchers.push({
+          id: `v${vouchers.length + 1}`,
+          leaseId: lease.id,
+          name: `Receipts Voucher - Rent Bank Transfer (Ref: ${collectForm.rentPaymentReference || "Direct"})`,
+          receiptNo: `RV-${lease.id}-RENT-BT`,
+          method: "Bank Transfer",
+          period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+          debit: "Bank Operating Account (12000)",
+          credit: `Rental Income - ${lease.unit} (41100)`,
+          amount: rentTotal,
+          status: "posted",
+        });
+      } else if (collectForm.paymentMode === "Guarantee Cheque") {
+        rentVouchers.push({
+          id: `v${vouchers.length + 1}`,
+          leaseId: lease.id,
+          name: `Receipts Voucher - Rent Guarantee Cheque (${collectForm.rentGuaranteeChequeNo || "GNT"})`,
+          receiptNo: `RV-${lease.id}-RENT-GNT`,
+          method: "Guarantee Cheque",
+          period: `${collectForm.startDate || lease.startDate} to ${collectForm.endDate || lease.endDate}`,
+          debit: "Guarantee Cheque In Hand (12900002)",
+          credit: `Guarantee Cheque Received (21200001)`,
+          amount: rentTotal,
+          status: "posted",
+        });
+      }
     }
 
     const newVouchers: Voucher[] = [
@@ -4238,9 +4650,40 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       console.warn("Authoritative finance posting skipped for in-memory/demo record:", err);
     }
 
-    // Publish the PDCs to shared state
+    // Publish the PDCs to shared state, localStorage, and Supabase pdcs / fin_pdc_register so PDC Register & Customer SOA always reflect them
     if (nextPdcs.length > 0) {
       setPdcs((items) => [...nextPdcs, ...items]);
+      try {
+        const existingStored = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+        localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...nextPdcs, ...existingStored]));
+        window.dispatchEvent(new Event("pdcs_updated"));
+      } catch { /* ignore */ }
+      void (async () => {
+        for (const pdc of nextPdcs) {
+          try {
+            await supabase.from("pdcs").insert({
+              cheque_number: pdc.chequeNo,
+              maturity_date: pdc.date,
+              amount: pdc.amount,
+              property_code: lease.property,
+              unit_name: lease.unit,
+              tenant_name: lease.tenantName,
+              bank: pdc.bank || "Qatar National Bank (QNB)",
+              status: "In Hand",
+            });
+            await supabase.from("fin_pdc_register").insert({
+              cheque_number: pdc.chequeNo,
+              cheque_date: pdc.date,
+              amount: pdc.amount,
+              property_name: lease.property,
+              unit_ref: lease.unit,
+              tenant_name: lease.tenantName,
+              bank_name: pdc.bank || "Qatar National Bank (QNB)",
+              status: "In Hand",
+            });
+          } catch { /* ignore duplicate or schema notice */ }
+        }
+      })();
     }
 
     setVouchers((items) => [...newVouchers, ...items]);
@@ -4295,26 +4738,47 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     if (reservationAmt > 0) addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-RES`, description: `Reservation Advance — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: reservationAmt });
     if (serviceFeeAmt > 0) addCashBookEntry({ date: today_str, voucher: `RV-${lease.id}-SVC`, description: `Service Fee Deposit — ${lease.tenantName} / ${lease.unit}`, type: "in", amount: serviceFeeAmt });
 
-    advanceLease(lease, "collection_completed", {
-      collectionCompleted: true,
-      pdcCount: nextPdcs.length > 0 ? nextPdcs.length : (Number(collectForm.pdcCount) || 12),
-      startDate: collectForm.startDate || lease.startDate,
-      endDate: collectForm.endDate || lease.endDate,
-    });
+    const isDepositNowCollected = includeDeposit ? true : Boolean((lease as any).depositCollected);
+    const isRentNowCollected = includeRent ? true : Boolean((lease as any).rentCollected);
+    const isFullCollectionDone = (isDepositNowCollected && isRentNowCollected) || scope === "both";
+
+    if (isFullCollectionDone) {
+      advanceLease(lease, "collection_completed", {
+        collectionCompleted: true,
+        ...(includeDeposit ? { depositCollected: true, securityDeposit: depAmt || lease.securityDeposit } : {}),
+        ...(includeRent ? { rentCollected: true } : {}),
+        pdcCount: nextPdcs.length > 0 ? nextPdcs.length : (Number(collectForm.pdcCount) || lease.pdcCount || 12),
+        startDate: collectForm.startDate || lease.startDate,
+        endDate: collectForm.endDate || lease.endDate,
+      } as any);
+    } else {
+      // Security Deposit Only (or Rent Only before deposit) — record on lease without locking remaining collection
+      setLeases((items) =>
+        items.map((item) =>
+          item.id === lease.id
+            ? ({
+              ...item,
+              ...(includeDeposit ? { depositCollected: true, securityDeposit: depAmt || item.securityDeposit } : {}),
+              ...(includeRent ? { rentCollected: true } : {}),
+            } as any)
+            : item
+        )
+      );
+    }
 
     recordAudit({
-      stage: "Collection & Receipt Generation",
+      stage: scope === "deposit_only" ? "Security Deposit Collection" : scope === "rent_only" ? "Rent / PDC Collection" : "Collection & Receipt Generation",
       owner: `Finance Cashier${collectForm.cashierName ? " – " + collectForm.cashierName : ""}`,
-      input: `Rent: ${collectForm.paymentMode} (${formatMoney(rentTotal)}), Deposit: ${collectForm.depositIsSplit ? "Split [Cash: " + formatMoney(splitCash) + ", Bank: " + formatMoney(splitBank) + ", Cheque: " + formatMoney(splitCheque) + ", Token: " + formatMoney(appliedToken) + "]" : collectForm.depositMode + " (" + formatMoney(depAmt) + ")"}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
+      input: `${scope === "deposit_only" ? "Security Deposit Only" : `Rent: ${collectForm.paymentMode} (${formatMoney(rentTotal)})`}${includeDeposit ? `, Deposit: ${collectForm.depositIsSplit ? "Split [Cash: " + formatMoney(splitCash) + ", Bank: " + formatMoney(splitBank) + ", Cheque: " + formatMoney(splitCheque) + ", Token: " + formatMoney(appliedToken) + "]" : collectForm.depositMode + " (" + formatMoney(depAmt) + ")"}` : ""}${agencyAmt > 0 ? ", agency commission " + formatMoney(agencyAmt) : ""}${adminAmt > 0 ? ", admin charges " + formatMoney(adminAmt) : ""}${utilityAmt > 0 ? ", utility deposit " + formatMoney(utilityAmt) : ""}`,
       approval: "Cashier receipt posting",
-      status: "collection_completed",
-      output: (collectForm.notes || "Rent, security deposit and ancillary collection receipts posted") + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
+      status: isFullCollectionDone ? "collection_completed" : "deposit_collected",
+      output: (collectForm.notes || (scope === "deposit_only" ? "Security deposit receipt posted to Finance GL (21500)" : "Rent, security deposit and ancillary collection receipts posted")) + (collectForm.receiptFile ? ` (Proof: ${collectForm.receiptFile})` : ""),
     });
 
     // Auto-generate official printable receipt
     const totalCollectedAmt = rentTotal + depAmt + agencyAmt + adminAmt + utilityAmt + qatarCoolAmt + reservationAmt + serviceFeeAmt + guaranteeChequeAmt;
     const generatedReceipt: TenantReceiptDetails = {
-      receiptNo: `REC-${Date.now().toString().slice(-6)}`,
+      receiptNo: scope === "deposit_only" ? `REC-SD-${Date.now().toString().slice(-6)}` : `REC-${Date.now().toString().slice(-6)}`,
       acknowledgementNo: `ACK-${lease.id.toUpperCase()}`,
       date: today.toISOString().split("T")[0],
       tenantName: lease.tenantName,
@@ -4329,7 +4793,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       monthlyRent: lease.monthlyRent,
       totalContractRent: rentTotal,
       depositAmount: depAmt,
-      depositMode: collectForm.depositIsSplit ? "Split Payment (Cash / Bank / Cheque / Token)" : collectForm.depositMode,
+      depositMode: includeDeposit ? (collectForm.depositIsSplit ? "Split Payment (Cash / Bank / Cheque / Token)" : collectForm.depositMode) : "Not Included",
       pdcCount: nextPdcs.length,
       pdcs: nextPdcs.map((p) => ({
         chequeNo: p.chequeNo,
@@ -4353,8 +4817,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       utilityDeposit: utilityAmt,
       totalCollected: totalCollectedAmt,
       cashierName: collectForm.cashierName || "Finance Cashier",
-      notes: collectForm.notes || (collectForm.depositIsSplit ? `Split security deposit & ${collectForm.paymentMode} rent collection processed.` : "Official receipt acknowledged for rent, security deposit, and applicable fees."),
+      notes: collectForm.notes || (scope === "deposit_only"
+        ? `Official Security Deposit Receipt (${collectForm.depositIsSplit ? "Split Payment" : collectForm.depositMode}). Rent schedule to be collected separately.`
+        : collectForm.depositIsSplit
+          ? `Split security deposit & ${collectForm.paymentMode} rent collection processed.`
+          : "Official receipt acknowledged for rent, security deposit, and applicable fees."),
     };
+
+    toast.success(
+      scope === "deposit_only"
+        ? `Security Deposit of ${formatMoney(depAmt)} collected for ${lease.tenantName} (${lease.unit})!`
+        : scope === "rent_only"
+          ? `Rent collection (${formatMoney(rentTotal)}) completed for ${lease.tenantName} (${lease.unit})!`
+          : `Security Deposit & Rent collection completed for ${lease.tenantName} (${lease.unit})!`
+    );
 
     setReceiptModalData(generatedReceipt);
     setReceiptModalOpen(true);
@@ -4383,27 +4859,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       printBilingualLeaseContract({
         ...lease,
-        contractNumber: undefined,
-        tenantNameEn: lease.tenantName,
-        tenantQid: customer?.qid || (lease as any).tenantQid || "28235644351",
-        tenantMobile: customer?.phone || customer?.mobile || (lease as any).tenantMobile || "66965239",
-        tenantPoBox: customer?.poBox || "200360",
-        tenantAddressEn: customer?.address || "Doha – Qatar",
+        contractNumber: lease.contractNumber || String(lease.id || "").toUpperCase(),
+        tenantNameEn: lease.tenantName || customer?.name || "Valued Tenant",
+        tenantQid: (customer as any)?.qatarId || customer?.qid || (customer as any)?.crNumber || (lease as any).tenantQid || "—",
+        tenantMobile: customer?.mobile || customer?.phone || (lease as any).tenantMobile || "—",
+        tenantPoBox: customer?.poBox || "24901",
+        tenantAddressEn: customer?.address || `${lease.property} - Unit ${lease.unit}, Doha - Qatar`,
         propertyAddressEn: lease.property,
-        zoneEn: lease.property,
-        zoneAr: lease.property,
+        zoneEn: (lease as any).zone || lease.property,
+        zoneAr: (lease as any).zoneAr || lease.property,
         propertyUnitNumber: lease.unit,
-        monthlyRent: lease.monthlyRent,
-        securityDepositAmount: lease.securityDeposit || lease.monthlyRent,
+        monthlyRent: Number(lease.monthlyRent) || 0,
+        securityDepositAmount: Number(lease.securityDeposit) || Number(lease.monthlyRent) || 0,
         leaseStartDate: lease.startDate,
         leaseEndDate: lease.endDate,
         pdcCount: lease.pdcCount || 12,
-        paymentFrequency: lease.paymentFrequency,
-        gracePeriodDays: lease.gracePeriodDays || 7,
-        penalties: lease.penalties || "5%",
-        maintenanceResponsibility: lease.maintenanceResponsibility || "Landlord",
+        paymentFrequency: lease.paymentFrequency || "monthly",
+        gracePeriodDays: lease.gracePeriodDays || 5,
+        penalties: lease.penalties || "Standard late payment & dishonored cheque terms apply",
+        maintenanceResponsibility: lease.maintenanceResponsibility || "Landlord for major repairs; Tenant for minor upkeep",
         utilityResponsibility: lease.utilityResponsibility || "Tenant",
-        parkingDetails: lease.parkingDetails || "Dedicated parking",
+        parkingDetails: lease.parkingDetails || "Dedicated covered parking",
         specialConditionsEn: lease.specialConditions || "Standard Tenancy Agreement",
         noticePeriodDays: lease.noticePeriodDays || 60,
       });
@@ -4567,6 +5043,73 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       }
     }, (err: any) => console.warn("[addSecurityDeposit] GL posting note:", err));
 
+    // Post to FinanceStore so GL / Trial Balance / Balance Sheet / Cash Book update immediately
+    addFinanceStoreVoucher({
+      voucher_no: voucherRef,
+      voucher_type: "Receipt Voucher",
+      date: postingDate,
+      name: `Security Deposit (${method}) — ${tenantLabel}${unitLabel ? ` (${unitLabel})` : ""}`,
+      debit: drName,
+      debit_code: isPdc ? "12900" : method === "Cash" ? "12100" : "12000",
+      credit: `Security Deposit Liability - ${unitLabel || tenantLabel} (21500)`,
+      credit_code: "21500",
+      amount: numAmount,
+      method,
+      property_name: lease?.property || "",
+      unit_ref: unitLabel,
+      tenant_name: tenantLabel,
+    });
+    if (method === "Cash" && numAmount > 0) {
+      addCashBookEntry({
+        date: postingDate,
+        voucher: voucherRef,
+        description: `Security Deposit Cash Collection — ${tenantLabel} / ${unitLabel}`,
+        type: "in",
+        amount: numAmount,
+      });
+    }
+    setLeases((items) =>
+      items.map((l) => (l.id === leaseId ? ({ ...l, depositCollected: true } as any) : l))
+    );
+
+    if (lease) {
+      setReceiptModalData({
+        receiptNo: voucherRef,
+        acknowledgementNo: `ACK-SD-${lease.id.toUpperCase()}`,
+        date: postingDate,
+        tenantName: tenantLabel,
+        tenantPhone: (lease as any).phone || "",
+        tenantEmail: (lease as any).email || "",
+        tenantQid: (lease as any).qatarId || "",
+        propertyName: lease.property || "",
+        unitRef: unitLabel,
+        leaseNo: `LES-${lease.id.toUpperCase()}`,
+        leaseStartDate: lease.startDate || postingDate,
+        leaseEndDate: lease.endDate || postingDate,
+        monthlyRent: lease.monthlyRent || 0,
+        totalContractRent: 0,
+        depositAmount: numAmount,
+        depositMode: method,
+        pdcCount: 0,
+        pdcs: [],
+        vouchers: [
+          {
+            receiptNo: voucherRef,
+            name: newVoucher.name,
+            amount: numAmount,
+            method,
+            debit: newVoucher.debit,
+            credit: newVoucher.credit,
+          },
+        ],
+        totalCollected: numAmount,
+        cashierName: "Finance Cashier",
+        notes: notes || `Official receipt for Security Deposit collection (${method}).`,
+      });
+      setReceiptModalOpen(true);
+    }
+    toast.success(`Security Deposit of ${formatMoney(numAmount)} collected for ${tenantLabel}!`);
+
     // Notify Finance Store so GL / Trial Balance / Balance Sheet update immediately
     window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
 
@@ -4603,25 +5146,30 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   function generateRenewalNotices(form?: typeof renewalNoticeForm) {
 
     const f = form ?? renewalNoticeForm;
-    const increaseMultiplier = 1 + (Number(f.rentIncreasePercent) || 5) / 100;
+    const pctNum = f.rentIncreasePercent !== undefined && f.rentIncreasePercent !== "" ? Number(f.rentIncreasePercent) : 0;
+    const increaseMultiplier = 1 + (isNaN(pctNum) ? 0 : pctNum) / 100;
     const existing = new Set(renewals.map((item) => item.leaseId));
     const next = upcomingRenewals
       .filter((lease) => !existing.has(lease.id))
-      .map((lease, index) => ({
-        id: `rn${renewals.length + index + 1}`,
-        leaseId: lease.id,
-        noticeDate: today.toISOString().split("T")[0],
-        status: "awaiting_response" as RenewalCase["status"],
-        proposedRent: Math.round(lease.monthlyRent * increaseMultiplier),
-        proposedPeriod: f.proposedRenewalPeriod || `${addDays(new Date(lease.endDate), 1)} to ${addDays(new Date(lease.endDate), 366)}`,
-        revisedTerms: f.revisedTerms || `${f.rentIncreasePercent}% rent revision, ${lease.noticePeriodDays}-day notice period retained`,
-        expiryDate: lease.endDate,
-        requiredNoticePeriod: `${lease.noticePeriodDays} days`,
-        lastConfirmationDate: addDays(new Date(lease.endDate), -(Number(f.lastConfirmationDays) || 30)),
-        outstandingObligations: "Finance to confirm outstanding rent, PDC and maintenance obligations",
-        recipients: `Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord or Authorized Person${f.additionalRecipients ? `, ${f.additionalRecipients}` : ""}`,
-        followUpOwner: "Leasing Department",
-      }));
+      .map((lease, index) => {
+        const nextStart = addDays(new Date(lease.endDate), 1);
+        const nextEnd = computeOneYearEndDate(nextStart, 12);
+        return {
+          id: `rn${renewals.length + index + 1}`,
+          leaseId: lease.id,
+          noticeDate: today.toISOString().split("T")[0],
+          status: "awaiting_response" as RenewalCase["status"],
+          proposedRent: Math.round(lease.monthlyRent * increaseMultiplier),
+          proposedPeriod: f.proposedRenewalPeriod || `${nextStart} to ${nextEnd}`,
+          revisedTerms: f.revisedTerms || `${pctNum}% rent revision, ${lease.noticePeriodDays}-day notice period retained`,
+          expiryDate: lease.endDate,
+          requiredNoticePeriod: `${lease.noticePeriodDays} days`,
+          lastConfirmationDate: addDays(new Date(lease.endDate), -(Number(f.lastConfirmationDays) || 30)),
+          outstandingObligations: "Finance to confirm outstanding rent, PDC and maintenance obligations",
+          recipients: `Tenant, Leasing Department, Marketing Agent, Property Manager, Landlord or Authorized Person${f.additionalRecipients ? `, ${f.additionalRecipients}` : ""}`,
+          followUpOwner: "Leasing Department",
+        };
+      });
     setRenewals((items) => [...next, ...items]);
     setRenewalNoticeOpen(false);
     if (next.length > 0) {
@@ -4647,7 +5195,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const securityDiff = Math.max(0, proposedRent - oldSecurity);
 
     const newStart = lease?.endDate ? addDays(new Date(lease.endDate), 1) : today.toISOString().split("T")[0];
-    const newEnd = lease?.endDate ? addDays(new Date(lease.endDate), 366) : addDays(new Date(), 365);
+    const newEnd = computeOneYearEndDate(newStart, 12);
     const renewalSeq = (leases.filter((l) => l.unit === lease?.unit).length) + 1;
     const contractNo = `${lease?.contractNumber ? lease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (lease?.unit || "").replace(/\s+/g, ""))}-R${renewalSeq}`;
 
@@ -4874,17 +5422,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       id: `p-ren-${Date.now()}-${idx + 1}`,
       leaseId: renewed.id,
       chequeNo: p.chequeNo,
+      chequeNumber: p.chequeNo,
       bank: p.bank,
       date: p.date,
+      dueDate: p.date,
       amount: p.amount,
       payerName: oldLease.tenantName,
+      tenantName: oldLease.tenantName,
+      unit: oldLease.unit,
+      property: oldLease.property,
       period: p.period || `Renewal Cheque ${idx + 1} of ${data.pdcs.length}`,
       tenureStart: p.tenureStart,
       tenureEnd: p.tenureEnd,
       file: p.file || data.pdcBatchFile || undefined,
       status: "received" as PdcStatus,
-    }));
+    } as any));
     setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== renewed.id)]);
+    try {
+      const existingStored = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+      localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...renewalPdcs, ...existingStored]));
+      window.dispatchEvent(new Event("pdcs_updated"));
+    } catch { /* ignore */ }
 
     // Process Security Deposit Top-Up / Payment Voucher
     const newVouchers: Voucher[] = [];
@@ -5247,17 +5805,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           id: `p-ren-${Date.now()}-${index + 1}`,
           leaseId: renewed ? renewed.id : oldLease.id,
           chequeNo: chequeNumber,
+          chequeNumber: chequeNumber,
           bank: bankName,
           date: maturityStr,
+          dueDate: maturityStr,
           amount: baseRentPerCheque,
           payerName: oldLease.tenantName,
+          tenantName: oldLease.tenantName,
+          unit: oldLease.unit,
+          property: oldLease.property,
           period: `Renewal Cheque ${index + 1} of ${pdcCount}`,
           tenureStart: tsDate.toISOString().split("T")[0],
           tenureEnd: teDate.toISOString().split("T")[0],
           status: (renewalResponseForm.pdcStatus || "received") as PdcStatus,
-        });
+        } as any);
       }
       setPdcs((items) => [...renewalPdcs, ...items.filter((item) => item.leaseId !== (renewed ? renewed.id : oldLease.id))]);
+      try {
+        const existingStored = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+        localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...renewalPdcs, ...existingStored]));
+        window.dispatchEvent(new Event("pdcs_updated"));
+      } catch { /* ignore */ }
     }
 
     // Process Increased Rent Payment (Optional)
@@ -6117,18 +6685,20 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   }
 
   function startCheckout(lease: Lease) {
-    const moveOutDate = startCheckoutForm.moveOutDate || lease.endDate;
-    const isEarlyVacate = new Date(moveOutDate).getTime() < new Date(lease.endDate).getTime();
+    const moveOutDate = startCheckoutForm.moveOutDate || lease.endDate || today.toISOString().split("T")[0];
+    const isCancellation = startCheckoutForm.checkoutType === "lease_cancellation";
+    const isEarlyTermination = startCheckoutForm.checkoutType === "early_termination";
+    const isEarlyVacate = isCancellation || isEarlyTermination || new Date(moveOutDate).getTime() < new Date(lease.endDate).getTime();
 
     // 1. Update lease status
     setLeases((items) => items.map((item) => (
       item.id === lease.id
         ? {
           ...item,
-          status: "checkout" as LeaseStatus,
+          status: (isCancellation ? "closed" : "checkout") as LeaseStatus,
           plannedVacateDate: moveOutDate,
           earlyVacate: isEarlyVacate,
-          earlyVacateReason: isEarlyVacate ? (startCheckoutForm.notes || "Tenant requested vacating before lease expiry") : item.earlyVacateReason,
+          earlyVacateReason: isEarlyVacate ? (startCheckoutForm.notes || (isCancellation ? "Lease cancelled" : "Tenant requested vacating before lease expiry")) : item.earlyVacateReason,
         }
         : item
     )));
@@ -6146,16 +6716,16 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         moveOutDate,
         originalLeaseEndDate: lease.endDate,
         earlyVacate: isEarlyVacate,
-        inspectionDate: startCheckoutForm.inspectionDate || addDays(new Date(lease.endDate), -3),
-        comparisonSummary: "Pending final comparison with original check-in report",
-        nonRenewalNotice: startCheckoutForm.notes || (isEarlyVacate ? "Tenant early vacate notice received" : "Tenant non-renewal notice received"),
+        inspectionDate: startCheckoutForm.inspectionDate || addDays(new Date(lease.endDate || today), -3),
+        comparisonSummary: isCancellation ? "Lease cancelled; PDCs returned/cancelled" : "Pending final comparison with original check-in report",
+        nonRenewalNotice: startCheckoutForm.notes || (isCancellation ? "Lease cancellation notice" : isEarlyVacate ? "Tenant early termination notice received" : "Tenant non-renewal notice received"),
         outstandingCharges: startCheckoutForm.outstandingCharges,
         utilityClearanceRequirements: startCheckoutForm.utilityClearanceRequirements,
         keyReturnRequirements: startCheckoutForm.keyReturnRequirements,
-        financeClearance: false,
-        utilityClearance: false,
-        keysReturned: false,
-        status: "planned",
+        financeClearance: isCancellation,
+        utilityClearance: isCancellation,
+        keysReturned: isCancellation,
+        status: isCancellation ? "ready_for_settlement" : "planned",
       };
       if (existing) {
         return items.map(c => c.leaseId === lease.id ? newCheckout : c);
@@ -6163,18 +6733,28 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       return [newCheckout, ...items];
     });
 
+    // 4. Cancel unpresented PDCs immediately if requested (default: true)
+    if (startCheckoutForm.cancelUnpresentedPdcs) {
+      void cancelLeasePdcs(lease, {
+        effectiveDate: isCancellation ? undefined : moveOutDate,
+        cancelAllUnpresented: true,
+        reason: startCheckoutForm.notes || (isCancellation ? "Lease Cancellation" : isEarlyVacate ? `Early Lease Termination (${moveOutDate})` : `Checkout (${moveOutDate})`),
+        terminateLease: isCancellation,
+      });
+    }
+
     recordAudit({
-      stage: isEarlyVacate ? "Early Vacate & Check-Out" : "Non-Renewal & Check-Out",
+      stage: isCancellation ? "Lease Cancellation & PDC Return" : isEarlyVacate ? "Early Termination & Check-Out" : "Non-Renewal & Check-Out",
       owner: "Leasing Department",
       input: `${lease.tenantName}, notice ${startCheckoutForm.noticeDate}, move-out ${moveOutDate}, lease expiry ${lease.endDate}, inspection ${startCheckoutForm.inspectionDate}`,
-      approval: isEarlyVacate ? "Tenant early vacate notice" : "Tenant non-renewal notice",
-      status: "planned",
+      approval: isCancellation ? "Lease cancellation approved" : isEarlyVacate ? "Tenant early vacate notice" : "Tenant non-renewal notice",
+      status: isCancellation ? "completed" : "planned",
       output: startCheckoutForm.notes || (isEarlyVacate
-        ? "Early vacate checkout case opened; future PDCs and deposit settlement will be adjusted at closure"
+        ? "Early termination / checkout case opened; unpresented PDCs cancelled and deposit settlement queued"
         : "Checkout case opened with finance, utility and key-return requirements"),
     });
 
-    toast.success(`${isEarlyVacate ? "Early vacate" : "Non-renewal"} initiated for ${lease.tenantName}. Checkout case opened.`);
+    toast.success(`${isCancellation ? "Lease cancellation" : isEarlyVacate ? "Early lease termination" : "Check-out"} initiated for ${lease.tenantName}.`);
     setStartCheckoutOpen(false);
   }
 
@@ -6276,13 +6856,22 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       });
     toast.success(`Unit ${lease.unit} is now available for a new lease. Deposit settlement remains open.`);
 
+    // Cancel any remaining unpresented PDCs at checkout completion
+    if (completeCheckoutForm.cancelRemainingPdcs !== false) {
+      void cancelLeasePdcs(lease, {
+        effectiveDate: checkout.moveOutDate || today.toISOString().split("T")[0],
+        cancelAllUnpresented: true,
+        reason: `Check-Out Inspection Completed (${checkout.moveOutDate || today.toISOString().split("T")[0]})`,
+      });
+    }
+
     recordAudit({
       stage: "Check-Out Inspection",
       owner: "Property Manager",
-      input: "Condition, meters, keys, utilities, damages, missing items, cleaning/restoration review",
+      input: "Condition, meters, keys, utilities, damages, missing items, cleaning/restoration review, PDC cancellation",
       approval: "Tenant acknowledgement",
       status: "ready_for_settlement",
-      output: `${checkout.earlyVacate ? "Early vacate" : "Checkout"} settlement draft created with damages, cleaning/restoration and refund recommendation`,
+      output: `${checkout.earlyVacate ? "Early vacate" : "Checkout"} settlement draft created with unpresented PDCs cancelled and refund recommendation`,
     });
     setCompleteCheckoutOpen(false);
   }
@@ -9081,519 +9670,572 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
         <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" /> Collect Rent & PDC Schedule</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              {collectForm.collectionScope === "deposit_only"
+                ? "Collect Security Deposit Only"
+                : collectForm.collectionScope === "rent_only"
+                  ? "Collect Rent & PDC Schedule Only"
+                  : "Collect Security Deposit & Rent Schedule"}
+            </DialogTitle>
             <DialogDescription>
-              Record PDC collection, cheque counts, breakdown, and security deposit for {signatureWorkflowLease?.tenantName}.
+              Record Security Deposit alone, Rent/PDC schedule alone, or both together for {signatureWorkflowLease?.tenantName} ({signatureWorkflowLease?.unit}).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Lease Period & Date Overrides */}
-            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lease Period & PDC Count</p>
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Lease Start Date">
-                  <Input type="date" value={collectForm.startDate} onChange={(e) => setCollectForm((f) => ({ ...f, startDate: e.target.value }))} />
-                </Field>
-                <Field label="Lease End Date">
-                  <Input type="date" value={collectForm.endDate} onChange={(e) => setCollectForm((f) => ({ ...f, endDate: e.target.value }))} />
-                </Field>
-                <Field label="PDC Count (No. of Cheques)">
-                  <Input type="number" min={1} max={36} value={collectForm.pdcCount} onChange={(e) => {
-                    const count = Number(e.target.value);
-                    setCollectForm((f) => ({ ...f, pdcCount: count }));
-                  }} />
-                </Field>
-              </div>
-            </div>
-
-            {/* Payment Mode & Bank */}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Rent Payment Mode">
-                <Select value={collectForm.paymentMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, paymentMode: v as any }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PDC">PDC (Post-Dated Cheques)</SelectItem>
-                    <SelectItem value="Cash">Cash</SelectItem>
-                    <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              {collectForm.paymentMode === "PDC" ? (
-                <Field label="Bank Name (for PDCs)">
-                  <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank, CBQ" />
-                </Field>
-              ) : (
-                <Field label="Rent Amount (QAR)">
-                  <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => setCollectForm((f) => ({ ...f, regularChequeAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.monthlyRent || 0}`} />
-                </Field>
-              )}
-            </div>
-
-            {/* Non-PDC Rent Details */}
-            {collectForm.paymentMode !== "PDC" && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-800 p-3.5 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
-                  {collectForm.paymentMode} — Rent Collection Details
-                </p>
-                {collectForm.paymentMode === "Cash" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Receipt No.">
-                      <Input value={collectForm.rentPaymentReceiptNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReceiptNo: e.target.value }))} placeholder="e.g. REC-2024-001" />
-                    </Field>
-                    <Field label="Cashier Name">
-                      <Input value={collectForm.cashierName} onChange={(e) => setCollectForm((f) => ({ ...f, cashierName: e.target.value }))} placeholder="Name of cashier receiving cash" />
-                    </Field>
-                  </div>
-                )}
-                {collectForm.paymentMode === "Bank Transfer" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Bank Transfer Reference No.">
-                      <Input value={collectForm.rentPaymentReference} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReference: e.target.value }))} placeholder="e.g. TRF-QNB-2024-00112" />
-                    </Field>
-                    <Field label="Bank / Account">
-                      <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, QIIB" />
-                    </Field>
-                  </div>
-                )}
-                {collectForm.paymentMode === "Guarantee Cheque" && (
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="Guarantee Cheque No.">
-                      <Input value={collectForm.rentGuaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-44321" />
-                    </Field>
-                    <Field label="Issuing Bank">
-                      <Input value={collectForm.rentGuaranteeChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeBank: e.target.value }))} placeholder="e.g. QNB" />
-                    </Field>
-                    <Field label="Cheque Date">
-                      <Input type="date" value={collectForm.rentGuaranteeChequeDate} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeDate: e.target.value }))} />
-                    </Field>
-                  </div>
-                )}
-                <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-100/60 dark:bg-blue-900/30 rounded px-2.5 py-1.5 flex items-center gap-2">
-                  <span>💡</span>
-                  <span>A Receipt Voucher will be generated with the above details and posted to the Finance Ledger.</span>
-                </div>
-              </div>
-            )}
-
-            {/* Maturity & Amount Breakdown Section */}
-            {collectForm.paymentMode === "PDC" && signatureWorkflowLease && (() => {
-              const totalContractRent = (signatureWorkflowLease.monthlyRent || 0) * (signatureWorkflowLease.pdcCount || 12);
-              const count = Number(collectForm.pdcCount) || signatureWorkflowLease.pdcCount || 12;
-              const regAmount = Number(collectForm.regularChequeAmount) || signatureWorkflowLease.monthlyRent;
-              const finalAmount = count > 1 ? totalContractRent - regAmount * (count - 1) : totalContractRent;
-
-              // Helper: increment month from a base date string keeping day-of-month
-              function addMonthOffset(baseDateStr: string, monthOffset: number): string {
-                const d = new Date(baseDateStr);
-                const day = d.getDate();
-                const targetMonthRaw = d.getMonth() + monthOffset;
-                const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
-                const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
-                const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-                const finalDay = Math.min(day, lastDay);
-                return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
-              }
-
-              const regenerateCheques = (newCount = count, newRegAmt = regAmount, newFirstDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate) => {
-                const leaseStartStr = signatureWorkflowLease.startDate || collectForm.startDate || newFirstDate;
-                const generated = Array.from({ length: newCount }, (_, i) => {
-                  let amount = newRegAmt;
-                  if (i === newCount - 1 && newCount > 1) {
-                    amount = Math.max(0, totalContractRent - newRegAmt * (newCount - 1));
-                  }
-                  // Tenure: anchored to lease.startDate, incrementing month by month
-                  const tsDate = new Date(leaseStartStr);
-                  tsDate.setMonth(tsDate.getMonth() + i);
-                  const tenureStartStr = tsDate.toISOString().split("T")[0];
-                  const teDate = new Date(leaseStartStr);
-                  teDate.setMonth(teDate.getMonth() + i + 1);
-                  teDate.setDate(teDate.getDate() - 1);
-                  const tenureEndStr = teDate.toISOString().split("T")[0];
-                  // Maturity: keep day from firstChequeDate, increment month only
-                  const maturityStr = addMonthOffset(newFirstDate, i);
-                  return {
-                    chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                    bank: collectForm.chequeBank || "QNB",
-                    date: maturityStr,
-                    amount,
-                    period: `Cheque ${i + 1} of ${newCount}`,
-                    tenureStart: tenureStartStr,
-                    tenureEnd: tenureEndStr,
-                    file: "",
-                  };
-                });
-                setCollectForm((f) => ({ ...f, pdcCount: newCount, customCheques: generated }));
-              };
-
-              // Ensure we display up to count rows or customCheques length
-              const displayedRows = collectForm.customCheques && collectForm.customCheques.length > 0
-                ? collectForm.customCheques
-                : Array.from({ length: count }, (_, i) => {
-                  const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
-                  const bd = new Date(baseDate);
-                  const day = bd.getDate();
-                  const targetMonthRaw = bd.getMonth() + i;
-                  const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
-                  const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
-                  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-                  const maturityStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
-                  const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
-                  const tsDate = new Date(leaseStart); tsDate.setMonth(tsDate.getMonth() + i);
-                  const teDate = new Date(leaseStart); teDate.setMonth(teDate.getMonth() + i + 1); teDate.setDate(teDate.getDate() - 1);
-                  return {
-                    chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
-                    bank: collectForm.chequeBank || "QNB",
-                    date: maturityStr,
-                    amount: regAmount,
-                    period: `Cheque ${i + 1}`,
-                    tenureStart: tsDate.toISOString().split("T")[0],
-                    tenureEnd: teDate.toISOString().split("T")[0],
-                    file: "",
-                  };
-                });
-
-              return (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-primary">Enter up to 12 PDC rows</p>
-                      <p className="text-xs text-muted-foreground">Total Rent: <strong>QR {totalContractRent.toLocaleString()}</strong> across <strong>{count}</strong> cheques</p>
-                    </div>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => regenerateCheques()}>
-                      <RefreshCw className="h-3 w-3" /> Refresh / Reset Cheques
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="First PDC Maturity Date">
-                      <Input type="date" value={collectForm.firstChequeDate} onChange={(e) => {
-                        const val = e.target.value;
-                        setCollectForm((f) => ({ ...f, firstChequeDate: val }));
-                        regenerateCheques(count, regAmount, val);
-                      }} />
-                    </Field>
-                    <Field label="Regular Cheque Amount (QR)">
-                      <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
-                        setCollectForm((f) => ({ ...f, regularChequeAmount: String(val) }));
-                        regenerateCheques(count, val, collectForm.firstChequeDate);
-                      }} placeholder={`${signatureWorkflowLease.monthlyRent}`} />
-                    </Field>
-                  </div>
-
-                  {count > 1 && (
-                    <div className="text-xs bg-background/80 p-2.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-muted-foreground">
-                      <span>Breakdown: <strong>{count - 1}</strong> cheque(s) of <strong>QR {regAmount.toLocaleString()}</strong> + <strong>1</strong> final cheque for remaining balance of <strong>QR {Math.max(0, finalAmount).toLocaleString()}</strong></span>
-                      <Badge variant="outline" className="font-mono text-xs font-bold text-primary">Total: QR {((count - 1) * regAmount + finalAmount).toLocaleString()}</Badge>
-                    </div>
-                  )}
-
-                  {/* Individual Cheques Table - Image 1 Form Style */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-muted-foreground">Cheque Schedule Lines ({displayedRows.length})</span>
-                      <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => {
-                        const existing = collectForm.customCheques && collectForm.customCheques.length > 0 ? collectForm.customCheques : displayedRows;
-                        const nextIdx = existing.length + 1;
-                        // Maturity: month-increment from firstChequeDate
-                        const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
-                        const bd = new Date(baseDate);
-                        const day = bd.getDate();
-                        const targetMonthRaw = bd.getMonth() + existing.length;
-                        const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
-                        const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
-                        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-                        const nextMaturity = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
-                        // Tenure: lease-start anchored
-                        const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
-                        const tsDate = new Date(leaseStart);
-                        tsDate.setMonth(tsDate.getMonth() + existing.length);
-                        const tenureStartStr = tsDate.toISOString().split("T")[0];
-                        const teDate = new Date(leaseStart);
-                        teDate.setMonth(teDate.getMonth() + existing.length + 1);
-                        teDate.setDate(teDate.getDate() - 1);
-                        const tenureEndStr = teDate.toISOString().split("T")[0];
-                        setCollectForm(f => ({
-                          ...f,
-                          pdcCount: nextIdx,
-                          customCheques: [
-                            ...existing,
-                            {
-                              chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(nextIdx).padStart(3, "0")}`,
-                              bank: collectForm.chequeBank || "Bank",
-                              date: nextMaturity,
-                              amount: regAmount,
-                              period: `Cheque ${nextIdx}`,
-                              tenureStart: tenureStartStr,
-                              tenureEnd: tenureEndStr,
-                              file: "",
-                            }
-                          ]
-                        }));
-                      }}>
-                        + Add Cheque Row
-                      </Button>
-                    </div>
-
-                    <div className="max-h-72 overflow-y-auto border rounded bg-background">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/60 text-muted-foreground border-b sticky top-0 bg-muted">
-                          <tr>
-                            <th className="px-2 py-2 text-left w-24">Cheque No.</th>
-                            <th className="px-2 py-2 text-left w-24">Bank</th>
-                            <th className="px-2 py-2 text-left w-32">Maturity</th>
-                            <th className="px-2 py-2 text-right w-24">Amount</th>
-                            <th className="px-2 py-2 text-left" colSpan={2}>Tenure (Start & End)</th>
-                            <th className="px-2 py-2 text-left w-36">Document</th>
-                            <th className="px-2 py-2 w-8"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                          {displayedRows.map((c, i) => (
-                            <tr key={i} className="hover:bg-muted/20">
-                              <td className="px-1.5 py-1.5">
-                                <Input
-                                  value={c.chequeNo}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], chequeNo: e.target.value };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs font-mono"
-                                  placeholder={`PDC-${i + 1}`}
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5">
-                                <Input
-                                  value={c.bank}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], bank: e.target.value };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs"
-                                  placeholder="Bank"
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5">
-                                <Input
-                                  type="date"
-                                  value={c.date}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], date: e.target.value };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs font-mono"
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5 text-right">
-                                <Input
-                                  type="number"
-                                  value={c.amount || ""}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], amount: Number(e.target.value) };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs text-right font-mono"
-                                  placeholder="Amount"
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5 w-32">
-                                <Input
-                                  type="date"
-                                  value={c.tenureStart || ""}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], tenureStart: e.target.value };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs font-mono"
-                                  placeholder="Start date"
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5 w-32">
-                                <Input
-                                  type="date"
-                                  value={c.tenureEnd || ""}
-                                  onChange={(e) => {
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], tenureEnd: e.target.value };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-xs font-mono"
-                                  placeholder="End date"
-                                />
-                              </td>
-                              <td className="px-1.5 py-1.5">
-                                <Input
-                                  type="file"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0]?.name || "";
-                                    const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                    rows[i] = { ...rows[i], file };
-                                    setCollectForm((f) => ({ ...f, customCheques: rows }));
-                                  }}
-                                  className="h-8 text-[11px]"
-                                />
-                              </td>
-                              <td className="px-1 py-1.5 text-center">
-                                <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => {
-                                  const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
-                                  setCollectForm(f => ({
-                                    ...f,
-                                    pdcCount: Math.max(1, rows.length - 1),
-                                    customCheques: rows.filter((_, idx) => idx !== i)
-                                  }));
-                                }}>
-                                  ×
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground italic">Leave rows blank to skip them. Only fully completed rows will be saved.</p>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ── Type 1: Security Deposit for Unit (GL 21500) ── */}
-            <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+            {/* Collection Scope Selector */}
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-blue-300">
-                    GL 21500
+                <p className="text-xs font-bold uppercase tracking-wider text-primary">Collection Mode / Scope</p>
+                {(signatureWorkflowLease as any)?.depositCollected && !(signatureWorkflowLease as any)?.collectionCompleted && (
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 text-[10px]">
+                    ✓ Security Deposit Already Collected
                   </Badge>
-                  <p className="text-xs font-bold uppercase tracking-wider text-foreground">Type 1: Security Deposit for Unit</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground">Standard tenancy premise deposit</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                    <div
-                      onClick={() => setCollectForm((f) => ({ ...f, depositIsSplit: !f.depositIsSplit }))}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${collectForm.depositIsSplit ? "bg-primary" : "bg-muted-foreground/30"
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { id: "both", label: "Both Security Deposit & Rent", desc: "Full move-in collection" },
+                  { id: "deposit_only", label: "Security Deposit Only", desc: "Collect deposit now, rent later" },
+                  { id: "rent_only", label: "Rent / PDC Schedule Only", desc: "Collect rent cheques/payment only" },
+                ].map((opt) => {
+                  const active = (collectForm.collectionScope || "both") === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setCollectForm((f) => ({ ...f, collectionScope: opt.id as any }))}
+                      className={`text-left rounded-lg border p-2.5 transition-all ${active
+                        ? "border-primary bg-background shadow-sm ring-1 ring-primary"
+                        : "border-border bg-background/60 hover:bg-background"
                         }`}
                     >
-                      <span
-                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${collectForm.depositIsSplit ? "translate-x-[18px]" : "translate-x-[2px]"
-                          }`}
-                      />
-                    </div>
-                    <span className="text-[11px] font-semibold text-foreground">Split Payment</span>
-                  </label>
-                </div>
+                      <div className="text-xs font-bold text-foreground flex items-center justify-between">
+                        <span>{opt.label}</span>
+                        {active && <span className="text-primary">●</span>}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">{opt.desc}</div>
+                    </button>
+                  );
+                })}
               </div>
+            </div>
 
-              {!collectForm.depositIsSplit ? (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Deposit Payment Mode">
-                      <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
-                          <SelectItem value="Bank Transfer">Bank Operating (12000)</SelectItem>
-                          <SelectItem value="PDC">PDC / Cheque (12900)</SelectItem>
-                          <SelectItem value="Guarantee Cheque">Bank Guarantee Cheque (12900)</SelectItem>
-                        </SelectContent>
-                      </Select>
+            {collectForm.collectionScope !== "deposit_only" && (
+              <>
+                {/* Lease Period & Date Overrides */}
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lease Period & PDC Count</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Lease Start Date">
+                      <Input type="date" value={collectForm.startDate} onChange={(e) => setCollectForm((f) => ({ ...f, startDate: e.target.value }))} />
                     </Field>
-                    <Field label="Unit Deposit Amount (QAR)">
-                      <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit || 5600}`} />
+                    <Field label="Lease End Date">
+                      <Input type="date" value={collectForm.endDate} onChange={(e) => setCollectForm((f) => ({ ...f, endDate: e.target.value }))} />
+                    </Field>
+                    <Field label="PDC Count (No. of Cheques)">
+                      <Input type="number" min={1} max={36} value={collectForm.pdcCount} onChange={(e) => {
+                        const count = Number(e.target.value);
+                        setCollectForm((f) => ({ ...f, pdcCount: count }));
+                      }} />
                     </Field>
                   </div>
-                  {(collectForm.depositMode === "PDC" || collectForm.depositMode === "Guarantee Cheque") && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Deposit Cheque No.">
-                        <Input value={collectForm.depositChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
-                      </Field>
-                      <Field label="Deposit Cheque Bank">
-                        <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, Doha Bank" />
-                      </Field>
+                </div>
+
+                {/* Payment Mode & Bank */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Rent Payment Mode">
+                    <Select value={collectForm.paymentMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, paymentMode: v as any }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PDC">PDC (Post-Dated Cheques)</SelectItem>
+                        <SelectItem value="Cash">Cash</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="Guarantee Cheque">Guarantee Cheque</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {collectForm.paymentMode === "PDC" ? (
+                    <Field label="Bank Name (for PDCs)">
+                      <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, Doha Bank, CBQ" />
+                    </Field>
+                  ) : (
+                    <Field label="Rent Amount (QAR)">
+                      <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => setCollectForm((f) => ({ ...f, regularChequeAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.monthlyRent || 0}`} />
+                    </Field>
+                  )}
+                </div>
+
+                {/* Non-PDC Rent Details */}
+                {collectForm.paymentMode !== "PDC" && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/40 dark:bg-blue-950/20 dark:border-blue-800 p-3.5 space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-800 dark:text-blue-300">
+                      {collectForm.paymentMode} — Rent Collection Details
+                    </p>
+                    {collectForm.paymentMode === "Cash" && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Receipt No.">
+                          <Input value={collectForm.rentPaymentReceiptNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReceiptNo: e.target.value }))} placeholder="e.g. REC-2024-001" />
+                        </Field>
+                        <Field label="Cashier Name">
+                          <Input value={collectForm.cashierName} onChange={(e) => setCollectForm((f) => ({ ...f, cashierName: e.target.value }))} placeholder="Name of cashier receiving cash" />
+                        </Field>
+                      </div>
+                    )}
+                    {collectForm.paymentMode === "Bank Transfer" && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Bank Transfer Reference No.">
+                          <Input value={collectForm.rentPaymentReference} onChange={(e) => setCollectForm((f) => ({ ...f, rentPaymentReference: e.target.value }))} placeholder="e.g. TRF-QNB-2024-00112" />
+                        </Field>
+                        <Field label="Bank / Account">
+                          <Input value={collectForm.chequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, chequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, QIIB" />
+                        </Field>
+                      </div>
+                    )}
+                    {collectForm.paymentMode === "Guarantee Cheque" && (
+                      <div className="grid grid-cols-3 gap-3">
+                        <Field label="Guarantee Cheque No.">
+                          <Input value={collectForm.rentGuaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-44321" />
+                        </Field>
+                        <Field label="Issuing Bank">
+                          <Input value={collectForm.rentGuaranteeChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeBank: e.target.value }))} placeholder="e.g. QNB" />
+                        </Field>
+                        <Field label="Cheque Date">
+                          <Input type="date" value={collectForm.rentGuaranteeChequeDate} onChange={(e) => setCollectForm((f) => ({ ...f, rentGuaranteeChequeDate: e.target.value }))} />
+                        </Field>
+                      </div>
+                    )}
+                    <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-100/60 dark:bg-blue-900/30 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <span>💡</span>
+                      <span>A Receipt Voucher will be generated with the above details and posted to the Finance Ledger.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Maturity & Amount Breakdown Section */}
+                {collectForm.paymentMode === "PDC" && signatureWorkflowLease && (() => {
+                  const totalContractRent = (signatureWorkflowLease.monthlyRent || 0) * (signatureWorkflowLease.pdcCount || 12);
+                  const count = Number(collectForm.pdcCount) || signatureWorkflowLease.pdcCount || 12;
+                  const regAmount = Number(collectForm.regularChequeAmount) || signatureWorkflowLease.monthlyRent;
+                  const finalAmount = count > 1 ? totalContractRent - regAmount * (count - 1) : totalContractRent;
+
+                  // Helper: increment month from a base date string keeping day-of-month
+                  function addMonthOffset(baseDateStr: string, monthOffset: number): string {
+                    const d = new Date(baseDateStr);
+                    const day = d.getDate();
+                    const targetMonthRaw = d.getMonth() + monthOffset;
+                    const targetYear = d.getFullYear() + Math.floor(targetMonthRaw / 12);
+                    const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                    const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                    const finalDay = Math.min(day, lastDay);
+                    return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(finalDay).padStart(2, "0")}`;
+                  }
+
+                  const regenerateCheques = (newCount = count, newRegAmt = regAmount, newFirstDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate) => {
+                    const leaseStartStr = signatureWorkflowLease.startDate || collectForm.startDate || newFirstDate;
+                    const generated = Array.from({ length: newCount }, (_, i) => {
+                      let amount = newRegAmt;
+                      if (i === newCount - 1 && newCount > 1) {
+                        amount = Math.max(0, totalContractRent - newRegAmt * (newCount - 1));
+                      }
+                      // Tenure: anchored to lease.startDate, incrementing month by month
+                      const tsDate = new Date(leaseStartStr);
+                      tsDate.setMonth(tsDate.getMonth() + i);
+                      const tenureStartStr = tsDate.toISOString().split("T")[0];
+                      const teDate = new Date(leaseStartStr);
+                      teDate.setMonth(teDate.getMonth() + i + 1);
+                      teDate.setDate(teDate.getDate() - 1);
+                      const tenureEndStr = teDate.toISOString().split("T")[0];
+                      // Maturity: keep day from firstChequeDate, increment month only
+                      const maturityStr = addMonthOffset(newFirstDate, i);
+                      return {
+                        chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                        bank: collectForm.chequeBank || "QNB",
+                        date: maturityStr,
+                        amount,
+                        period: `Cheque ${i + 1} of ${newCount}`,
+                        tenureStart: tenureStartStr,
+                        tenureEnd: tenureEndStr,
+                        file: "",
+                      };
+                    });
+                    setCollectForm((f) => ({ ...f, pdcCount: newCount, customCheques: generated }));
+                  };
+
+                  // Ensure we display up to count rows or customCheques length
+                  const displayedRows = collectForm.customCheques && collectForm.customCheques.length > 0
+                    ? collectForm.customCheques
+                    : Array.from({ length: count }, (_, i) => {
+                      const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
+                      const bd = new Date(baseDate);
+                      const day = bd.getDate();
+                      const targetMonthRaw = bd.getMonth() + i;
+                      const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
+                      const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                      const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                      const maturityStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+                      const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
+                      const tsDate = new Date(leaseStart); tsDate.setMonth(tsDate.getMonth() + i);
+                      const teDate = new Date(leaseStart); teDate.setMonth(teDate.getMonth() + i + 1); teDate.setDate(teDate.getDate() - 1);
+                      return {
+                        chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(i + 1).padStart(3, "0")}`,
+                        bank: collectForm.chequeBank || "QNB",
+                        date: maturityStr,
+                        amount: regAmount,
+                        period: `Cheque ${i + 1}`,
+                        tenureStart: tsDate.toISOString().split("T")[0],
+                        tenureEnd: teDate.toISOString().split("T")[0],
+                        file: "",
+                      };
+                    });
+
+                  return (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-primary">Enter up to 12 PDC rows</p>
+                          <p className="text-xs text-muted-foreground">Total Rent: <strong>QR {totalContractRent.toLocaleString()}</strong> across <strong>{count}</strong> cheques</p>
+                        </div>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => regenerateCheques()}>
+                          <RefreshCw className="h-3 w-3" /> Refresh / Reset Cheques
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="First PDC Maturity Date">
+                          <Input type="date" value={collectForm.firstChequeDate} onChange={(e) => {
+                            const val = e.target.value;
+                            setCollectForm((f) => ({ ...f, firstChequeDate: val }));
+                            regenerateCheques(count, regAmount, val);
+                          }} />
+                        </Field>
+                        <Field label="Regular Cheque Amount (QR)">
+                          <Input type="number" value={collectForm.regularChequeAmount} onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setCollectForm((f) => ({ ...f, regularChequeAmount: String(val) }));
+                            regenerateCheques(count, val, collectForm.firstChequeDate);
+                          }} placeholder={`${signatureWorkflowLease.monthlyRent}`} />
+                        </Field>
+                      </div>
+
+                      {count > 1 && (
+                        <div className="text-xs bg-background/80 p-2.5 rounded border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-muted-foreground">
+                          <span>Breakdown: <strong>{count - 1}</strong> cheque(s) of <strong>QR {regAmount.toLocaleString()}</strong> + <strong>1</strong> final cheque for remaining balance of <strong>QR {Math.max(0, finalAmount).toLocaleString()}</strong></span>
+                          <Badge variant="outline" className="font-mono text-xs font-bold text-primary">Total: QR {((count - 1) * regAmount + finalAmount).toLocaleString()}</Badge>
+                        </div>
+                      )}
+
+                      {/* Individual Cheques Table - Image 1 Form Style */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-muted-foreground">Cheque Schedule Lines ({displayedRows.length})</span>
+                          <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => {
+                            const existing = collectForm.customCheques && collectForm.customCheques.length > 0 ? collectForm.customCheques : displayedRows;
+                            const nextIdx = existing.length + 1;
+                            // Maturity: month-increment from firstChequeDate
+                            const baseDate = collectForm.firstChequeDate || collectForm.startDate || signatureWorkflowLease.startDate || today.toISOString().split("T")[0];
+                            const bd = new Date(baseDate);
+                            const day = bd.getDate();
+                            const targetMonthRaw = bd.getMonth() + existing.length;
+                            const targetYear = bd.getFullYear() + Math.floor(targetMonthRaw / 12);
+                            const targetMonth = ((targetMonthRaw % 12) + 12) % 12;
+                            const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+                            const nextMaturity = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+                            // Tenure: lease-start anchored
+                            const leaseStart = signatureWorkflowLease.startDate || collectForm.startDate || baseDate;
+                            const tsDate = new Date(leaseStart);
+                            tsDate.setMonth(tsDate.getMonth() + existing.length);
+                            const tenureStartStr = tsDate.toISOString().split("T")[0];
+                            const teDate = new Date(leaseStart);
+                            teDate.setMonth(teDate.getMonth() + existing.length + 1);
+                            teDate.setDate(teDate.getDate() - 1);
+                            const tenureEndStr = teDate.toISOString().split("T")[0];
+                            setCollectForm(f => ({
+                              ...f,
+                              pdcCount: nextIdx,
+                              customCheques: [
+                                ...existing,
+                                {
+                                  chequeNo: `PDC-${signatureWorkflowLease.unit.replace(/\W/g, "")}-${String(nextIdx).padStart(3, "0")}`,
+                                  bank: collectForm.chequeBank || "Bank",
+                                  date: nextMaturity,
+                                  amount: regAmount,
+                                  period: `Cheque ${nextIdx}`,
+                                  tenureStart: tenureStartStr,
+                                  tenureEnd: tenureEndStr,
+                                  file: "",
+                                }
+                              ]
+                            }));
+                          }}>
+                            + Add Cheque Row
+                          </Button>
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto border rounded bg-background">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/60 text-muted-foreground border-b sticky top-0 bg-muted">
+                              <tr>
+                                <th className="px-2 py-2 text-left w-24">Cheque No.</th>
+                                <th className="px-2 py-2 text-left w-24">Bank</th>
+                                <th className="px-2 py-2 text-left w-32">Maturity</th>
+                                <th className="px-2 py-2 text-right w-24">Amount</th>
+                                <th className="px-2 py-2 text-left" colSpan={2}>Tenure (Start & End)</th>
+                                <th className="px-2 py-2 text-left w-36">Document</th>
+                                <th className="px-2 py-2 w-8"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {displayedRows.map((c, i) => (
+                                <tr key={i} className="hover:bg-muted/20">
+                                  <td className="px-1.5 py-1.5">
+                                    <Input
+                                      value={c.chequeNo}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], chequeNo: e.target.value };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs font-mono"
+                                      placeholder={`PDC-${i + 1}`}
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5">
+                                    <Input
+                                      value={c.bank}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], bank: e.target.value };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs"
+                                      placeholder="Bank"
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5">
+                                    <Input
+                                      type="date"
+                                      value={c.date}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], date: e.target.value };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs font-mono"
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5 text-right">
+                                    <Input
+                                      type="number"
+                                      value={c.amount || ""}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], amount: Number(e.target.value) };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs text-right font-mono"
+                                      placeholder="Amount"
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5 w-32">
+                                    <Input
+                                      type="date"
+                                      value={c.tenureStart || ""}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], tenureStart: e.target.value };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs font-mono"
+                                      placeholder="Start date"
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5 w-32">
+                                    <Input
+                                      type="date"
+                                      value={c.tenureEnd || ""}
+                                      onChange={(e) => {
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], tenureEnd: e.target.value };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-xs font-mono"
+                                      placeholder="End date"
+                                    />
+                                  </td>
+                                  <td className="px-1.5 py-1.5">
+                                    <Input
+                                      type="file"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0]?.name || "";
+                                        const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                        rows[i] = { ...rows[i], file };
+                                        setCollectForm((f) => ({ ...f, customCheques: rows }));
+                                      }}
+                                      className="h-8 text-[11px]"
+                                    />
+                                  </td>
+                                  <td className="px-1 py-1.5 text-center">
+                                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:bg-destructive/10" onClick={() => {
+                                      const rows = collectForm.customCheques && collectForm.customCheques.length > 0 ? [...collectForm.customCheques] : [...displayedRows];
+                                      setCollectForm(f => ({
+                                        ...f,
+                                        pdcCount: Math.max(1, rows.length - 1),
+                                        customCheques: rows.filter((_, idx) => idx !== i)
+                                      }));
+                                    }}>
+                                      ×
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground italic">Leave rows blank to skip them. Only fully completed rows will be saved.</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+
+            {collectForm.collectionScope !== "rent_only" && (
+              <>
+                {/* ── Type 1: Security Deposit for Unit (GL 21500) ── */}
+                <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] font-mono bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-blue-300">
+                        GL 21500
+                      </Badge>
+                      <p className="text-xs font-bold uppercase tracking-wider text-foreground">Type 1: Security Deposit for Unit</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted-foreground">Standard tenancy premise deposit</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <div
+                          onClick={() => setCollectForm((f) => ({ ...f, depositIsSplit: !f.depositIsSplit }))}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${collectForm.depositIsSplit ? "bg-primary" : "bg-muted-foreground/30"
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${collectForm.depositIsSplit ? "translate-x-[18px]" : "translate-x-[2px]"
+                              }`}
+                          />
+                        </div>
+                        <span className="text-[11px] font-semibold text-foreground">Split Payment</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {!collectForm.depositIsSplit ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Deposit Payment Mode">
+                          <Select value={collectForm.depositMode} onValueChange={(v) => setCollectForm((f) => ({ ...f, depositMode: v }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Cash">Cash In Hand (12100)</SelectItem>
+                              <SelectItem value="Bank Transfer">Bank Operating (12000)</SelectItem>
+                              <SelectItem value="PDC">PDC / Cheque (12900)</SelectItem>
+                              <SelectItem value="Guarantee Cheque">Bank Guarantee Cheque (12900)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Unit Deposit Amount (QAR)">
+                          <Input type="number" value={collectForm.depositAmount} onChange={(e) => setCollectForm((f) => ({ ...f, depositAmount: e.target.value }))} placeholder={`${signatureWorkflowLease?.securityDeposit || 5600}`} />
+                        </Field>
+                      </div>
+                      {(collectForm.depositMode === "PDC" || collectForm.depositMode === "Guarantee Cheque") && (
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Deposit Cheque No.">
+                            <Input value={collectForm.depositChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
+                          </Field>
+                          <Field label="Deposit Cheque Bank">
+                            <Input value={collectForm.depositChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ, Doha Bank" />
+                          </Field>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="text-xs text-primary font-semibold bg-primary/5 border border-primary/20 rounded px-2.5 py-1.5">
+                        🔀 Split Payment — Enter amounts per payment method. Leave at 0 to skip.
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <Field label="Cash (QAR)">
+                          <Input type="number" value={collectForm.depositSplitCash} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCash: e.target.value }))} placeholder="0" />
+                        </Field>
+                        <Field label="Bank Transfer (QAR)">
+                          <Input type="number" value={collectForm.depositSplitBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBank: e.target.value }))} placeholder="0" />
+                        </Field>
+                        <Field label="Cheque / PDC (QAR)">
+                          <Input type="number" value={collectForm.depositSplitCheque} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCheque: e.target.value }))} placeholder="0" />
+                        </Field>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <Field label="Bank Transfer Ref No.">
+                          <Input value={collectForm.depositSplitBankRef} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBankRef: e.target.value }))} placeholder="e.g. TRF-QNB-001" />
+                        </Field>
+                        <Field label="Cheque No.">
+                          <Input value={collectForm.depositSplitChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
+                        </Field>
+                        <Field label="Cheque Bank">
+                          <Input value={collectForm.depositSplitChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ" />
+                        </Field>
+                      </div>
+                      {(() => {
+                        const total = (Number(collectForm.depositSplitCash) || 0) + (Number(collectForm.depositSplitBank) || 0) + (Number(collectForm.depositSplitCheque) || 0) + (Number(collectForm.appliedTokenAdvance) || 0);
+                        const expected = Number(collectForm.depositAmount) || signatureWorkflowLease?.securityDeposit || 0;
+                        return total > 0 ? (
+                          <div className={`text-xs rounded px-2.5 py-1.5 flex items-center justify-between ${Math.abs(total - expected) < 1 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                            }`}>
+                            <span>Split Total: <strong>QAR {total.toLocaleString()}</strong></span>
+                            {expected > 0 && <span>Expected: <strong>QAR {expected.toLocaleString()}</strong> {Math.abs(total - expected) < 1 ? "✓ Balanced" : `(Difference: QAR ${Math.abs(total - expected).toLocaleString()})`}</span>}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="space-y-3">
-                  <div className="text-xs text-primary font-semibold bg-primary/5 border border-primary/20 rounded px-2.5 py-1.5">
-                    🔀 Split Payment — Enter amounts per payment method. Leave at 0 to skip.
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="Cash (QAR)">
-                      <Input type="number" value={collectForm.depositSplitCash} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCash: e.target.value }))} placeholder="0" />
-                    </Field>
-                    <Field label="Bank Transfer (QAR)">
-                      <Input type="number" value={collectForm.depositSplitBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBank: e.target.value }))} placeholder="0" />
-                    </Field>
-                    <Field label="Cheque / PDC (QAR)">
-                      <Input type="number" value={collectForm.depositSplitCheque} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitCheque: e.target.value }))} placeholder="0" />
-                    </Field>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="Bank Transfer Ref No.">
-                      <Input value={collectForm.depositSplitBankRef} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitBankRef: e.target.value }))} placeholder="e.g. TRF-QNB-001" />
-                    </Field>
-                    <Field label="Cheque No.">
-                      <Input value={collectForm.depositSplitChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeNo: e.target.value }))} placeholder="e.g. CHQ-SEC-01" />
-                    </Field>
-                    <Field label="Cheque Bank">
-                      <Input value={collectForm.depositSplitChequeBank} onChange={(e) => setCollectForm((f) => ({ ...f, depositSplitChequeBank: e.target.value }))} placeholder="e.g. QNB, CBQ" />
-                    </Field>
-                  </div>
-                  {(() => {
-                    const total = (Number(collectForm.depositSplitCash) || 0) + (Number(collectForm.depositSplitBank) || 0) + (Number(collectForm.depositSplitCheque) || 0) + (Number(collectForm.appliedTokenAdvance) || 0);
-                    const expected = Number(collectForm.depositAmount) || signatureWorkflowLease?.securityDeposit || 0;
-                    return total > 0 ? (
-                      <div className={`text-xs rounded px-2.5 py-1.5 flex items-center justify-between ${Math.abs(total - expected) < 1 ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-                        }`}>
-                        <span>Split Total: <strong>QAR {total.toLocaleString()}</strong></span>
-                        {expected > 0 && <span>Expected: <strong>QAR {expected.toLocaleString()}</strong> {Math.abs(total - expected) < 1 ? "✓ Balanced" : `(Difference: QAR ${Math.abs(total - expected).toLocaleString()})`}</span>}
-                      </div>
-                    ) : null;
-                  })()}
                 </div>
-              )}
-            </div>
 
-            {/* ── Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100) ── */}
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/10 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300">
-                    GL 21100 (Default Refundable)
-                  </Badge>
-                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-200">
-                    Type 2: Ancillary Refundable Deposits &amp; Guarantees
-                  </p>
+                {/* ── Type 2: Ancillary Refundable Deposits & Guarantees (GL 21100) ── */}
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/20 dark:bg-emerald-950/10 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300">
+                        GL 21100 (Default Refundable)
+                      </Badge>
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-900 dark:text-emerald-200">
+                        Type 2: Ancillary Refundable Deposits &amp; Guarantees
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400">By-default refundable liabilities</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <Field label="Kahramaa Deposit (21100003)">
+                      <Input type="number" value={collectForm.utilityDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, utilityDeposit: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Qatar Cool Deposit (21100004)">
+                      <Input type="number" value={collectForm.qatarCoolDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, qatarCoolDeposit: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Reservation Advance (21100001)">
+                      <Input type="number" value={collectForm.reservationDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, reservationDeposit: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Service Fee Deposit (21100005)">
+                      <Input type="number" value={collectForm.serviceFeeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, serviceFeeDeposit: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Guarantee Cheque Amount (21100006)">
+                      <Input type="number" value={collectForm.guaranteeChequeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeDeposit: e.target.value }))} placeholder="0" />
+                    </Field>
+                    <Field label="Guarantee Cheque No. / Bank">
+                      <Input value={collectForm.guaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-9988 (CBQ)" />
+                    </Field>
+                  </div>
                 </div>
-                <span className="text-[11px] text-emerald-700 dark:text-emerald-400">By-default refundable liabilities</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Field label="Kahramaa Deposit (21100003)">
-                  <Input type="number" value={collectForm.utilityDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, utilityDeposit: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Qatar Cool Deposit (21100004)">
-                  <Input type="number" value={collectForm.qatarCoolDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, qatarCoolDeposit: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Reservation Advance (21100001)">
-                  <Input type="number" value={collectForm.reservationDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, reservationDeposit: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Service Fee Deposit (21100005)">
-                  <Input type="number" value={collectForm.serviceFeeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, serviceFeeDeposit: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Guarantee Cheque Amount (21100006)">
-                  <Input type="number" value={collectForm.guaranteeChequeDeposit} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeDeposit: e.target.value }))} placeholder="0" />
-                </Field>
-                <Field label="Guarantee Cheque No. / Bank">
-                  <Input value={collectForm.guaranteeChequeNo} onChange={(e) => setCollectForm((f) => ({ ...f, guaranteeChequeNo: e.target.value }))} placeholder="e.g. GNT-9988 (CBQ)" />
-                </Field>
-              </div>
-            </div>
+              </>
+            )}
 
             {/* ── One-Time Non-Refundable Fees ── */}
             <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
@@ -9610,31 +10252,36 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
             {/* ── Finance Impact & Accounts Live Preview ── */}
             {signatureWorkflowLease && (() => {
-              const rentAmt = Number(collectForm.regularChequeAmount) || (signatureWorkflowLease.monthlyRent * (collectForm.pdcCount || 12));
-              const pdcAmt = collectForm.paymentMode === "PDC"
+              const scope = collectForm.collectionScope || "both";
+              const includeRent = scope === "both" || scope === "rent_only";
+              const includeDeposit = scope === "both" || scope === "deposit_only";
+              const rentAmt = includeRent ? (Number(collectForm.regularChequeAmount) || (signatureWorkflowLease.monthlyRent * (collectForm.pdcCount || 12))) : 0;
+              const pdcAmt = includeRent && collectForm.paymentMode === "PDC"
                 ? ((collectForm.customCheques || []).filter(c => Number(c.amount) > 0).reduce((s, c) => s + Number(c.amount), 0) || rentAmt)
                 : 0;
-              const cashRentAmt = collectForm.paymentMode === "Cash" ? rentAmt : 0;
-              const bankRentAmt = collectForm.paymentMode === "Bank Transfer" ? rentAmt : 0;
-              const gntRentAmt = collectForm.paymentMode === "Guarantee Cheque" ? rentAmt : 0;
+              const cashRentAmt = includeRent && collectForm.paymentMode === "Cash" ? rentAmt : 0;
+              const bankRentAmt = includeRent && collectForm.paymentMode === "Bank Transfer" ? rentAmt : 0;
+              const gntRentAmt = includeRent && collectForm.paymentMode === "Guarantee Cheque" ? rentAmt : 0;
 
               // Security deposit
-              const splitCash = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
-              const splitBank = collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
-              const splitCheque = collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
-              const depAmt = collectForm.depositIsSplit
-                ? splitCash + splitBank + splitCheque
-                : (Number(collectForm.depositAmount) || signatureWorkflowLease.securityDeposit);
+              const splitCash = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitCash) || 0) : 0;
+              const splitBank = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitBank) || 0) : 0;
+              const splitCheque = includeDeposit && collectForm.depositIsSplit ? (Number(collectForm.depositSplitCheque) || 0) : 0;
+              const depAmt = includeDeposit
+                ? (collectForm.depositIsSplit
+                  ? splitCash + splitBank + splitCheque
+                  : (Number(collectForm.depositAmount) || signatureWorkflowLease.securityDeposit))
+                : 0;
               const depDrLabel = collectForm.depositIsSplit ? "Multiple (Split)"
                 : (collectForm.depositMode === "Cash" ? "Cash In Hand" : collectForm.depositMode === "Bank Transfer" ? "Bank Operating Account" : "PDC In Hand");
               const depDrCode = collectForm.depositIsSplit ? "*"
                 : (collectForm.depositMode === "Cash" ? "12100" : collectForm.depositMode === "Bank Transfer" ? "12000" : "12900");
 
-              const utilityAmt = Number(collectForm.utilityDeposit) || 0;
-              const qatarCoolAmt = Number(collectForm.qatarCoolDeposit) || 0;
-              const reservationAmt = Number(collectForm.reservationDeposit) || 0;
-              const serviceFeeAmt = Number(collectForm.serviceFeeDeposit) || 0;
-              const guaranteeChequeAmt = Number(collectForm.guaranteeChequeDeposit) || 0;
+              const utilityAmt = includeDeposit ? (Number(collectForm.utilityDeposit) || 0) : 0;
+              const qatarCoolAmt = includeDeposit ? (Number(collectForm.qatarCoolDeposit) || 0) : 0;
+              const reservationAmt = includeDeposit ? (Number(collectForm.reservationDeposit) || 0) : 0;
+              const serviceFeeAmt = includeDeposit ? (Number(collectForm.serviceFeeDeposit) || 0) : 0;
+              const guaranteeChequeAmt = includeDeposit ? (Number(collectForm.guaranteeChequeDeposit) || 0) : 0;
               const agencyAmt = Number(collectForm.agencyCommission) || 0;
               const adminAmt = Number(collectForm.adminCharges) || 0;
 
@@ -9714,7 +10361,14 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCollectOpen(false)}>Cancel</Button>
-            <Button onClick={submitCollect}><Banknote className="mr-2 h-4 w-4" /> Confirm Collection</Button>
+            <Button onClick={submitCollect}>
+              <Banknote className="mr-2 h-4 w-4" />
+              {collectForm.collectionScope === "deposit_only"
+                ? "Confirm Security Deposit Collection"
+                : collectForm.collectionScope === "rent_only"
+                  ? "Confirm Rent Collection"
+                  : "Confirm Collection"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -13330,8 +13984,41 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
             {checkoutWorkflowLease && (() => {
               const customer = customers.find(c => c.id === checkoutWorkflowLease.customerId);
+              const { matchingPdcs, matchingVouchers } = getUnpresentedPdcsForLease(checkoutWorkflowLease, undefined, true);
+              const unpresentedCount = Math.max(matchingPdcs.length, matchingVouchers.length);
+              const unpresentedAmt = matchingPdcs.reduce((s, p) => s + (Number(p.amount) || 0), 0) || matchingVouchers.reduce((s, v) => s + (Number(v.amount) || 0), 0);
               return (
                 <div className="space-y-3 text-xs">
+                  {/* Action Type Selector: Standard Check-Out vs Early Termination vs Lease Cancellation */}
+                  <div className="rounded-lg border border-rose-200 bg-rose-50/40 dark:bg-rose-950/20 p-2.5 space-y-2">
+                    <Label className="text-[10px] font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300">
+                      Workflow Action Type
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "standard_checkout", label: "Check-Out / Non-Renewal", desc: "End-of-term move-out" },
+                        { id: "early_termination", label: "Early Lease Termination", desc: "Mid-term vacate & PDC cancel" },
+                        { id: "lease_cancellation", label: "Lease Cancellation", desc: "Cancel lease & return all PDCs" },
+                      ].map((opt) => {
+                        const active = (startCheckoutForm.checkoutType || "standard_checkout") === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setStartCheckoutForm((f) => ({ ...f, checkoutType: opt.id as any, cancelUnpresentedPdcs: true }))}
+                            className={`text-left rounded-md border p-2 transition-all ${active
+                              ? "border-rose-600 bg-background shadow-xs ring-1 ring-rose-600"
+                              : "border-border bg-background/70 hover:bg-background"
+                              }`}
+                          >
+                            <div className="font-bold text-[11px] text-foreground">{opt.label}</div>
+                            <div className="text-[10px] text-muted-foreground">{opt.desc}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Tenant Overview Card */}
                   <div className="rounded-lg border bg-muted/40 p-3">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -13360,6 +14047,27 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                         <span className="font-mono text-foreground font-medium">QR {checkoutWorkflowLease.monthlyRent?.toLocaleString()}</span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* PDC Cancellation Control */}
+                  <div className="rounded-lg border border-amber-300 bg-amber-50/60 dark:bg-amber-950/30 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer font-semibold text-amber-900 dark:text-amber-200">
+                        <input
+                          type="checkbox"
+                          checked={startCheckoutForm.cancelUnpresentedPdcs !== false}
+                          onChange={(e) => setStartCheckoutForm((f) => ({ ...f, cancelUnpresentedPdcs: e.target.checked }))}
+                          className="h-4 w-4 rounded accent-amber-600"
+                        />
+                        <span>Cancel &amp; Return Unpresented PDCs Automatically</span>
+                      </label>
+                      <Badge variant="outline" className="bg-amber-100 text-amber-900 border-amber-300 text-[10px] font-mono">
+                        {unpresentedCount} PDC(s) In Hand • QR {unpresentedAmt.toLocaleString()}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                      Marks all unpresented PDCs for {checkoutWorkflowLease.unit} as <strong>Cancelled</strong> in the PDC Register and posts the GL reversal voucher (<code>Dr Customer PDC 21400 / Cr PDC In Hand 12900001</code>).
+                    </p>
                   </div>
 
                   {/* Dates */}
@@ -13716,6 +14424,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       <div>
                         <span className="font-semibold block">Key &amp; Access Device Handback</span>
                         <span className="text-[11px] text-muted-foreground">All door keys, building access cards, and parking remotes received.</span>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-2.5 p-2 rounded-md border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-50">
+                      <input type="checkbox" checked={completeCheckoutForm.cancelRemainingPdcs !== false} onChange={e => setCompleteCheckoutForm(f => ({ ...f, cancelRemainingPdcs: e.target.checked }))} className="h-4 w-4 rounded accent-amber-600" />
+                      <div>
+                        <span className="font-semibold block text-amber-900 dark:text-amber-200">Cancel &amp; Return All Unpresented PDCs</span>
+                        <span className="text-[11px] text-amber-800 dark:text-amber-300">Cancels any remaining unpresented PDCs for this lease/unit and posts GL reversal (Dr 21400 / Cr 12900001).</span>
                       </div>
                     </label>
                   </div>
@@ -14112,6 +14827,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                 if (activeLease) {
                   setCheckoutWorkflowLease(activeLease);
                   setStartCheckoutForm({
+                    checkoutType: "early_termination",
+                    cancelUnpresentedPdcs: true,
                     noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
                     moveOutDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
                     inspectionDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
@@ -15711,6 +16428,48 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             <Upload className="mr-2 h-4 w-4" />
                             Upload Agreement
                           </Button>
+                          {!(lease as any)?.depositCollected && !lease?.collectionCompleted && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300"
+                              onClick={() => {
+                                setSignatureWorkflowLease(lease);
+                                setCollectForm((prev) => ({
+                                  ...prev,
+                                  collectionScope: "deposit_only",
+                                  paymentMode: "PDC",
+                                  chequeBank: "QNB",
+                                  payerName: lease?.tenantName || "Tenant",
+                                  depositAmount: String(lease?.securityDeposit || lease?.monthlyRent || 0),
+                                  depositMode: "Cash",
+                                  depositChequeNo: "",
+                                  depositChequeBank: "",
+                                  utilityDeposit: "",
+                                  qatarCoolDeposit: "",
+                                  reservationDeposit: "",
+                                  serviceFeeDeposit: "",
+                                  guaranteeChequeDeposit: "",
+                                  guaranteeChequeNo: "",
+                                  guaranteeChequeBank: "QNB",
+                                  agencyCommission: "",
+                                  adminCharges: "",
+                                  cashierName: "",
+                                  notes: "",
+                                  receiptFile: "",
+                                  pdcCount: lease?.pdcCount || 12,
+                                  startDate: lease?.startDate || "",
+                                  endDate: lease?.endDate || "",
+                                  firstChequeDate: lease?.startDate || "",
+                                  regularChequeAmount: String(lease?.monthlyRent || 0),
+                                  customCheques: [],
+                                }));
+                                setCollectOpen(true);
+                              }}
+                            >
+                              Collect Deposit Only
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
@@ -15758,8 +16517,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                   file: "",
                                 };
                               });
+                              const alreadyHasDeposit = Boolean((lease as any)?.depositCollected);
                               setCollectForm((prev) => ({
                                 ...prev,
+                                collectionScope: alreadyHasDeposit ? "rent_only" : "both",
                                 paymentMode: "PDC",
                                 chequeBank: "QNB",
                                 payerName: lease?.tenantName || "Tenant",
@@ -15794,6 +16555,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 <Lock className="mr-1 h-3 w-3" />
                                 Collected
                               </>
+                            ) : (lease as any)?.depositCollected ? (
+                              "Collect Rent"
                             ) : (
                               "Collect"
                             )}
@@ -15801,9 +16564,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={!lease?.collectionCompleted}
-                            title={!lease?.collectionCompleted ? "Receipt is generated once all PDCs and Security Deposits are collected" : undefined}
-                            className={lease?.collectionCompleted ? "text-primary border-primary/50 gap-1" : "gap-1 opacity-50"}
+                            disabled={!lease?.collectionCompleted && !(lease as any)?.depositCollected}
+                            title={!lease?.collectionCompleted && !(lease as any)?.depositCollected ? "Receipt is generated once Security Deposit or Rent is collected" : undefined}
+                            className={lease?.collectionCompleted || (lease as any)?.depositCollected ? "text-primary border-primary/50 gap-1" : "gap-1 opacity-50"}
                             onClick={() => {
                               if (!lease) return;
                               const leasePdcs = (pdcs || []).filter((p) => p.leaseId === lease.id);
@@ -16682,6 +17445,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                                 setIsFixedTenantCheckout(true);
                                 setCheckoutWorkflowLease(lease);
                                 setStartCheckoutForm({
+                                  checkoutType: "standard_checkout",
+                                  cancelUnpresentedPdcs: true,
                                   noticeDate: today instanceof Date ? today.toISOString().split("T")[0] : "",
                                   moveOutDate: lease.endDate || "",
                                   inspectionDate: addDays(new Date(lease.endDate || today), -3),
@@ -16778,6 +17543,31 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       <CardDescription className="text-xs">Initiate tenant move-out/early vacating, complete inspections, verify clearances, and settle security deposits.</CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
+                        onClick={() => {
+                          setIsFixedTenantCheckout(false);
+                          setCheckoutWorkflowLease(null);
+                          setStartCheckoutForm({
+                            checkoutType: "early_termination",
+                            cancelUnpresentedPdcs: true,
+                            noticeDate: today.toISOString().split("T")[0],
+                            moveOutDate: today.toISOString().split("T")[0],
+                            inspectionDate: today.toISOString().split("T")[0],
+                            outstandingCharges: "Pending finance confirmation",
+                            utilityClearanceRequirements: "Final utility clearance required before checkout closure",
+                            keyReturnRequirements: "Return all keys, access cards, parking remotes and property items",
+                            notes: "",
+                            missingItems: "",
+                            cleaningCharges: "0",
+                            restorationCharges: "0",
+                          });
+                          setStartCheckoutOpen(true);
+                        }}
+                      >
+                        <LogOut className="h-3.5 w-3.5" /> Initiate Check-Out / Cancel PDCs
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -17007,7 +17797,64 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     `Finance ${checkout.financeClearance ? "OK" : "Pending"}, Utility ${checkout.utilityClearance ? "OK" : "Pending"}, Keys ${checkout.keysReturned ? "Returned" : "Pending"}`,
                     checkout.comparisonSummary,
                     <StatusBadge key="status" value={checkout.status} />,
-                    <Button key="action" size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setSelectedCheckout(checkout); setCompleteCheckoutForm({ condition: "Good", electricityMeter: "", waterMeter: "", damages: "", missingItems: "", cleaningCharges: "0", restorationCharges: "0", outstandingRent: "0", damagesAmount: "0", utilityCharges: "0", otherDeductions: "0", daysOccupiedInMonth: "30", totalDaysInMonth: "30", currentMonthPdcDeposited: false, unusedRentRefund: "0", photos: "0", checkoutPhotos: "", checkoutReportFile: "", handoverConditionSummary: "", finalConditionSummary: "", financeClearance: false, utilityClearance: false, keysReturned: false, unitDisposition: "Available" as any }); setCheckoutActiveTab("condition"); setCompleteCheckoutOpen(true); }} disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}>Complete Inspection</Button>,
+                    <div key="action" className="flex items-center justify-end gap-1.5">
+                      {lease && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+                          onClick={() => {
+                            void cancelLeasePdcs(lease, {
+                              effectiveDate: checkout.moveOutDate || today.toISOString().split("T")[0],
+                              cancelAllUnpresented: true,
+                              reason: `PDC Cancellation at Check-Out (${checkout.moveOutDate || today.toISOString().split("T")[0]})`,
+                            });
+                          }}
+                        >
+                          Cancel PDCs
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setSelectedCheckout(checkout);
+                          setCompleteCheckoutForm({
+                            condition: "Good",
+                            electricityMeter: "",
+                            waterMeter: "",
+                            damages: "",
+                            missingItems: "",
+                            cleaningCharges: "0",
+                            restorationCharges: "0",
+                            outstandingRent: "0",
+                            damagesAmount: "0",
+                            utilityCharges: "0",
+                            otherDeductions: "0",
+                            daysOccupiedInMonth: "30",
+                            totalDaysInMonth: "30",
+                            currentMonthPdcDeposited: false,
+                            unusedRentRefund: "0",
+                            photos: "0",
+                            checkoutPhotos: "",
+                            checkoutReportFile: "",
+                            handoverConditionSummary: "",
+                            finalConditionSummary: "",
+                            financeClearance: false,
+                            utilityClearance: false,
+                            keysReturned: false,
+                            cancelRemainingPdcs: true,
+                            unitDisposition: "Available" as any,
+                          });
+                          setCheckoutActiveTab("condition");
+                          setCompleteCheckoutOpen(true);
+                        }}
+                        disabled={checkout.status === "ready_for_settlement" || checkout.status === "closed"}
+                      >
+                        Complete Inspection
+                      </Button>
+                    </div>,
                   ];
                 })}
               />

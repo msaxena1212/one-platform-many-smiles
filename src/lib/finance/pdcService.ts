@@ -768,24 +768,8 @@ export async function cashDepositInPlaceOfPdc(
       ctx.unitCode,
       ctx.pdcType,
     );
-
-    // Step 3: Bank Account (Debit) / Cash In Hand (Credit) [Till to Bank Settlement]
-    const { debit: bankAcct, credit: tillCashAcct } = await resolveAccountingAccounts({
-      transactionType: 'CASH_BANK_DEPOSIT',
-      propertyId: String(ctx.property_id),
-    });
-
-    await postVoucher({
-      voucher_date: dateStr,
-      voucher_type: 'Contra',
-      description: `Deposit counter cash into Bank Account for replaced PDC ${ctx.cheque_number}`,
-      reference_no: `BNK-DEP-${ctx.cheque_number}`,
-      property_id: ctx.property_id,
-      lines: [
-        { account_code: bankAcct.slCode, account_name: `${bankAcct.glName} / ${bankAcct.slName}`, debit: finalAmt, credit: 0, description: `Bank Account – ${bankAcct.slName}` },
-        { account_code: tillCashAcct.slCode, account_name: `${tillCashAcct.glName} / ${tillCashAcct.slName}`, debit: 0, credit: finalAmt, description: `Cash In Hand – ${tillCashAcct.slName}` },
-      ],
-    });
+    // Note: Cash collected in place of a cancelled PDC remains in Cash In Hand (12100001)
+    // and is deposited to the bank separately when cash till deposits are made.
   }
 
   // 3. Update registers strictly for target PDC

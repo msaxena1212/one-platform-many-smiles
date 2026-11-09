@@ -704,6 +704,98 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   const [selectedStockDetail, setSelectedStockDetail] = useState<any | null>(null);
   const [selectedCatalogDetail, setSelectedCatalogDetail] = useState<CatalogItem | null>(null);
 
+  // Material Issue to Job Card (GRN / Maintenance Stock -> Job Card)
+  const [showIssueToJobCardModal, setShowIssueToJobCardModal] = useState(false);
+  const [jobCardIssues, setJobCardIssues] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem("pms_job_card_material_issues_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [issueForm, setIssueForm] = useState({
+    jobCardNo: "JC-2026-001",
+    grnRef: "",
+    property: "",
+    unit: "",
+    itemCode: "ITM-001",
+    itemName: "12w panel lamp",
+    qty: "1",
+    technician: "",
+    issueDate: new Date().toISOString().slice(0, 10),
+    remarks: "",
+  });
+
+  function openIssueToJobCardModal(preset?: { grnRef?: string; itemCode?: string; itemName?: string; property?: string; unit?: string }) {
+    const firstItem = catalog.find(c => c.item_code === preset?.itemCode) || catalog[0];
+    setIssueForm(prev => ({
+      ...prev,
+      jobCardNo: prev.jobCardNo || `JC-2026-${String(jobCardIssues.length + 1).padStart(3, "0")}`,
+      grnRef: preset?.grnRef || prev.grnRef || (grns[0]?.grn_number ?? "GRN-DIRECT"),
+      property: preset?.property || prev.property || ((properties[0] as any)?.property_name || (properties[0] as any)?.name || "Al Ameen Residence 30"),
+      unit: preset?.unit || prev.unit || "",
+      itemCode: preset?.itemCode || firstItem?.item_code || "ITM-001",
+      itemName: preset?.itemName || firstItem?.name || "12w panel lamp",
+      qty: "1",
+    }));
+    setShowIssueToJobCardModal(true);
+  }
+
+  function handleIssueMaterialToJobCard() {
+    const qtyNum = Number(issueForm.qty);
+    if (!issueForm.jobCardNo.trim()) {
+      toast.error("Please enter or select a Job Card / Work Order Number.");
+      return;
+    }
+    if (!issueForm.itemCode || qtyNum <= 0) {
+      toast.error("Please select an item and enter a valid quantity > 0.");
+      return;
+    }
+    const newIssue = {
+      id: `ISS-${Date.now()}`,
+      issueNo: `MIN-${String(Date.now()).slice(-5)}`,
+      jobCardNo: issueForm.jobCardNo.trim(),
+      grnRef: issueForm.grnRef || "GRN-STOCK",
+      property: issueForm.property || "Al Ameen Real Estate",
+      unit: issueForm.unit || "Common Area",
+      itemCode: issueForm.itemCode,
+      itemName: issueForm.itemName,
+      qty: qtyNum,
+      technician: issueForm.technician || "Site Maintenance Technician",
+      issueDate: issueForm.issueDate || new Date().toISOString().slice(0, 10),
+      remarks: issueForm.remarks || "Issued from GRN / Maintenance Store to Job Card",
+    };
+    const updatedIssues = [newIssue, ...jobCardIssues];
+    setJobCardIssues(updatedIssues);
+    try {
+      localStorage.setItem("pms_job_card_material_issues_v1", JSON.stringify(updatedIssues));
+    } catch {}
+
+    // Decrement maintenance stock in localStorage
+    try {
+      const savedStockRaw = localStorage.getItem("pms_maintenance_stock");
+      const savedStock: any[] = savedStockRaw ? JSON.parse(savedStockRaw) : [];
+      const existingIdx = savedStock.findIndex((s: any) => s.code === issueForm.itemCode);
+      if (existingIdx >= 0) {
+        savedStock[existingIdx].onHand = Math.max(0, Number(savedStock[existingIdx].onHand ?? 25) - qtyNum);
+      } else {
+        savedStock.push({
+          code: issueForm.itemCode,
+          name: issueForm.itemName,
+          onHand: Math.max(0, 25 - qtyNum),
+          location: "Facility Store (Rack B-04)",
+        });
+      }
+      localStorage.setItem("pms_maintenance_stock", JSON.stringify(savedStock));
+    } catch {}
+
+    toast.success(`Issued ${qtyNum} x ${issueForm.itemName} (${issueForm.itemCode}) to Job Card ${issueForm.jobCardNo}`);
+    setShowIssueToJobCardModal(false);
+  }
+
   // Detail View Dialog States for PR, PO, Shipment, GRN, AP Invoice
   const [viewPr, setViewPr] = useState<PurchaseRequest | null>(null);
   const [viewPo, setViewPo] = useState<PurchaseOrder | null>(null);
@@ -1933,6 +2025,76 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                 </Table>
               </div>
             )}
+
+            {/* Material Issue Register: GRN -> Job Cards */}
+            <Card className="border shadow-xs">
+              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    Material Issues to Maintenance Job Cards (GRN → Job Card Register)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Issue received GRN materials and spare parts directly into respective Maintenance Job Cards / Work Orders and Units.
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+                  onClick={() => openIssueToJobCardModal()}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Issue Material to Job Card
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 text-xs">
+                      <TableHead className="font-bold">Issue #</TableHead>
+                      <TableHead className="font-bold">Issue Date</TableHead>
+                      <TableHead className="font-bold">Job Card / Work Order #</TableHead>
+                      <TableHead className="font-bold">GRN Ref</TableHead>
+                      <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                      <TableHead className="font-bold">Item Code &amp; Description</TableHead>
+                      <TableHead className="text-right font-bold">Qty Issued</TableHead>
+                      <TableHead className="font-bold">Issued To (Technician)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobCardIssues.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-6 text-xs text-muted-foreground">
+                          No materials issued to Job Cards yet. Click &ldquo;Issue to Job Card&rdquo; on any GRN above or &ldquo;Issue Material to Job Card&rdquo; to allocate received items to a Job Card.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      jobCardIssues.map((iss) => (
+                        <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
+                          <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
+                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
+                              {iss.jobCardNo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">{iss.grnRef}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{iss.property}</div>
+                            <div className="text-[11px] font-mono text-muted-foreground">Unit: {iss.unit}</div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-mono font-bold text-primary mr-1.5">{iss.itemCode}</span>
+                            <span className="font-medium">{iss.itemName}</span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-rose-600">-{iss.qty}</TableCell>
+                          <TableCell className="text-muted-foreground">{iss.technician}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -2078,6 +2240,76 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                 </Table>
               </div>
             )}
+
+            {/* Material Issue Register: GRN -> Job Cards */}
+            <Card className="border shadow-xs">
+              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    Material Issues to Maintenance Job Cards (GRN → Job Card Register)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Issue received GRN materials and spare parts directly into respective Maintenance Job Cards / Work Orders and Units.
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+                  onClick={() => openIssueToJobCardModal()}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Issue Material to Job Card
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 text-xs">
+                      <TableHead className="font-bold">Issue #</TableHead>
+                      <TableHead className="font-bold">Issue Date</TableHead>
+                      <TableHead className="font-bold">Job Card / Work Order #</TableHead>
+                      <TableHead className="font-bold">GRN Ref</TableHead>
+                      <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                      <TableHead className="font-bold">Item Code &amp; Description</TableHead>
+                      <TableHead className="text-right font-bold">Qty Issued</TableHead>
+                      <TableHead className="font-bold">Issued To (Technician)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobCardIssues.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-6 text-xs text-muted-foreground">
+                          No materials issued to Job Cards yet. Click &ldquo;Issue to Job Card&rdquo; on any GRN above or &ldquo;Issue Material to Job Card&rdquo; to allocate received items to a Job Card.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      jobCardIssues.map((iss) => (
+                        <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
+                          <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
+                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
+                              {iss.jobCardNo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">{iss.grnRef}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{iss.property}</div>
+                            <div className="text-[11px] font-mono text-muted-foreground">Unit: {iss.unit}</div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-mono font-bold text-primary mr-1.5">{iss.itemCode}</span>
+                            <span className="font-medium">{iss.itemName}</span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-rose-600">-{iss.qty}</TableCell>
+                          <TableCell className="text-muted-foreground">{iss.technician}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -2220,6 +2452,19 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-primary border-primary/40 hover:bg-primary/10" onClick={() => setViewGrn(g)}>
                                 <Eye className="h-3 w-3" /> View
                               </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 hover:bg-amber-50"
+                                onClick={() =>
+                                  openIssueToJobCardModal({
+                                    grnRef: g.grn_number,
+                                    property: getPropertyName(po?.property_id) || "",
+                                  })
+                                }
+                              >
+                                <Wrench className="h-3 w-3" /> Issue to Job Card
+                              </Button>
                               {!linkedInv && (
                                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
                                   onClick={async () => {
@@ -2250,6 +2495,76 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                 </Table>
               </div>
             )}
+
+            {/* Material Issue Register: GRN -> Job Cards */}
+            <Card className="border shadow-xs">
+              <CardHeader className="py-3 px-4 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    Material Issues to Maintenance Job Cards (GRN → Job Card Register)
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Issue received GRN materials and spare parts directly into respective Maintenance Job Cards / Work Orders and Units.
+                  </CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
+                  onClick={() => openIssueToJobCardModal()}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Issue Material to Job Card
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 text-xs">
+                      <TableHead className="font-bold">Issue #</TableHead>
+                      <TableHead className="font-bold">Issue Date</TableHead>
+                      <TableHead className="font-bold">Job Card / Work Order #</TableHead>
+                      <TableHead className="font-bold">GRN Ref</TableHead>
+                      <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                      <TableHead className="font-bold">Item Code &amp; Description</TableHead>
+                      <TableHead className="text-right font-bold">Qty Issued</TableHead>
+                      <TableHead className="font-bold">Issued To (Technician)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobCardIssues.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-6 text-xs text-muted-foreground">
+                          No materials issued to Job Cards yet. Click &ldquo;Issue to Job Card&rdquo; on any GRN above or &ldquo;Issue Material to Job Card&rdquo; to allocate received items to a Job Card.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      jobCardIssues.map((iss) => (
+                        <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
+                          <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
+                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
+                              {iss.jobCardNo}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">{iss.grnRef}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{iss.property}</div>
+                            <div className="text-[11px] font-mono text-muted-foreground">Unit: {iss.unit}</div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-mono font-bold text-primary mr-1.5">{iss.itemCode}</span>
+                            <span className="font-medium">{iss.itemName}</span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-rose-600">-{iss.qty}</TableCell>
+                          <TableCell className="text-muted-foreground">{iss.technician}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -3003,10 +3318,25 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                             </TableCell>
                             <TableCell className="text-muted-foreground">{storageLoc}</TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
-                                onClick={() => setSelectedStockDetail({ ...item, current_on_hand: onHand, display_location: storageLoc })}>
-                                <Eye className="h-3 w-3" /> Movement History
-                              </Button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1 border-amber-500/40 text-amber-700 hover:bg-amber-50"
+                                  onClick={() =>
+                                    openIssueToJobCardModal({
+                                      itemCode: item.item_code,
+                                      itemName: item.name,
+                                    })
+                                  }
+                                >
+                                  <Wrench className="h-3 w-3" /> Issue to Job Card
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                                  onClick={() => setSelectedStockDetail({ ...item, current_on_hand: onHand, display_location: storageLoc })}>
+                                  <Eye className="h-3 w-3" /> Movement History
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -5800,6 +6130,154 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── ISSUE MATERIALS TO JOB CARD MODAL (GRN / STOCK -> JOB CARD) ─── */}
+      <Dialog open={showIssueToJobCardModal} onOpenChange={setShowIssueToJobCardModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <Wrench className="h-5 w-5 text-amber-600" />
+              Issue Received Materials to Maintenance Job Card
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Allocate materials received via GRN or held in Maintenance Stock directly to a Maintenance Job Card / Work Order, Property, and Unit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[11px] font-semibold">Job Card / Work Order # *</Label>
+                <Input
+                  className="h-8 text-xs font-mono font-bold"
+                  value={issueForm.jobCardNo}
+                  onChange={e => setIssueForm({ ...issueForm, jobCardNo: e.target.value })}
+                  placeholder="e.g. JC-2026-001 or WO-104"
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Source GRN Reference</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={issueForm.grnRef}
+                  onChange={e => setIssueForm({ ...issueForm, grnRef: e.target.value })}
+                  placeholder="e.g. GRN-2026-001"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[11px] font-semibold">Target Property *</Label>
+                <Select
+                  value={issueForm.property}
+                  onValueChange={val => setIssueForm({ ...issueForm, property: val })}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select Property" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {properties.map(p => {
+                      const pName = (p as any).property_name || (p as any).name || String(p.id);
+                      return (
+                        <SelectItem key={p.id} value={pName} className="text-xs">
+                          {pName}
+                        </SelectItem>
+                      );
+                    })}
+                    <SelectItem value="Al Ameen Real Estate Head Office" className="text-xs font-semibold">
+                      Corporate Office / Head Office
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Unit Ref / Location</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  value={issueForm.unit}
+                  onChange={e => setIssueForm({ ...issueForm, unit: e.target.value })}
+                  placeholder="e.g. MN30-01 or Common Area"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-semibold">Select Material / Spare Item *</Label>
+              <Select
+                value={issueForm.itemCode}
+                onValueChange={val => {
+                  const found = catalog.find(c => c.item_code === val);
+                  setIssueForm({
+                    ...issueForm,
+                    itemCode: val,
+                    itemName: found?.name || issueForm.itemName,
+                  });
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs font-mono">
+                  <SelectValue placeholder="Select Item from Master Catalog" />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {catalog.map(item => (
+                    <SelectItem key={item.id || item.item_code} value={item.item_code} className="text-xs font-mono">
+                      {item.item_code} — {item.name} ({item.category})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-[11px] font-semibold">Quantity to Issue *</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  className="h-8 text-xs font-mono font-bold"
+                  value={issueForm.qty}
+                  onChange={e => setIssueForm({ ...issueForm, qty: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Issue Date</Label>
+                <Input
+                  type="date"
+                  className="h-8 text-xs font-mono"
+                  value={issueForm.issueDate}
+                  onChange={e => setIssueForm({ ...issueForm, issueDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-[11px] font-semibold">Technician / Receiver</Label>
+                <Input
+                  className="h-8 text-xs"
+                  value={issueForm.technician}
+                  onChange={e => setIssueForm({ ...issueForm, technician: e.target.value })}
+                  placeholder="Technician Name"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-semibold">Job Card Work Remarks</Label>
+              <Input
+                className="h-8 text-xs"
+                value={issueForm.remarks}
+                onChange={e => setIssueForm({ ...issueForm, remarks: e.target.value })}
+                placeholder="e.g. Replaced faulty unit in apartment..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowIssueToJobCardModal(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5" onClick={handleIssueMaterialToJobCard}>
+              <Wrench className="h-3.5 w-3.5" /> Confirm &amp; Issue to Job Card
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

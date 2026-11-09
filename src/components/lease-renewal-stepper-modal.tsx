@@ -254,11 +254,11 @@ export function LeaseRenewalStepperModal({
     if (open && oldLease) {
       setCurrentStep(1);
       const oldRent = Number(oldLease.monthlyRent) || 0;
-      const proposed = Number(renewal?.proposedRent) || oldRent;
+      const proposed = oldRent > 0 ? oldRent : (Number(renewal?.proposedRent) || 0);
       const oldSecurity = Number(oldLease.securityDeposit) || oldRent;
 
       const calcStart = oldLease.endDate ? addDaysHelper(oldLease.endDate, 1) : new Date().toISOString().split("T")[0];
-      const calcEnd = addMonthsHelper(calcStart, 12);
+      const calcEnd = addDaysHelper(addMonthsHelper(calcStart, 12), -1);
       const renewalSeq = existingLeasesCount + 1;
       const contractRef = `${oldLease.contractNumber ? oldLease.contractNumber.replace(/-R\d+$/, "") : ("SLT-" + (oldLease.unit || "Unit").replace(/\s+/g, ""))}-R${renewalSeq}`;
 
@@ -371,7 +371,7 @@ export function LeaseRenewalStepperModal({
   ) {
     const durMonths = dur === "6" ? 6 : dur === "24" ? 24 : dur === "custom" ? 12 : 12;
     const sDate = customStart || startDate || new Date().toISOString().split("T")[0];
-    const eDate = dur === "custom" ? (customEnd || endDate) : addMonthsHelper(sDate, durMonths);
+    const eDate = dur === "custom" ? (customEnd || endDate) : addDaysHelper(addMonthsHelper(sDate, durMonths), -1);
 
     setTermDuration(dur);
     setStartDate(sDate);

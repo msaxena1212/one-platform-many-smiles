@@ -611,7 +611,7 @@ export async function returnGuaranteeCheque(params: {
 export async function returnFuturePdcsForLease(
   leaseId: string | number,
   vacateDate?: string,
-  extra?: { tenantId?: string; propertyId?: string; unitId?: string; unitCode?: string },
+  extra?: { tenantId?: string; propertyId?: string; unitId?: string; unitCode?: string; cancelAllUnpresented?: boolean },
 ) {
   const returned: any[] = [];
   const processedChequeNos = new Set<string>();
@@ -624,13 +624,14 @@ export async function returnFuturePdcsForLease(
       .or(`lease_id.eq.${String(leaseId)}${extra?.tenantId ? `,tenant_id.eq.${extra.tenantId}` : ''}`)
       .in('status', ['In Hand', 'Received', 'IN_HAND', 'RECEIVED', 'in hand', 'received']);
 
-    if (vacateDate) query = query.gt('cheque_date', vacateDate);
+    if (vacateDate && !extra?.cancelAllUnpresented) query = query.gte('cheque_date', vacateDate);
     const { data: pdcs } = await query;
 
     for (const pdc of pdcs ?? []) {
       if (pdc.cheque_number && processedChequeNos.has(pdc.cheque_number)) continue;
       try {
         await returnPdc(pdc.id, pdc.cheque_number);
+        await supabase.from('fin_pdc_register').update({ status: 'Cancelled' }).eq('id', pdc.id);
         returned.push(pdc);
         if (pdc.cheque_number) processedChequeNos.add(pdc.cheque_number);
       } catch (e: any) {
@@ -649,15 +650,15 @@ export async function returnFuturePdcsForLease(
       .or(`lease_id.eq.${String(leaseId)}${extra?.unitCode ? `,unit_name.ilike.%${extra.unitCode}%` : ''}`)
       .in('status', ['received', 'replaced', 'in_hand', 'in hand', 'In Hand']);
 
-    if (vacateDate) query2 = query2.gt('cheque_date', vacateDate);
+    if (vacateDate && !extra?.cancelAllUnpresented) query2 = query2.gte('cheque_date', vacateDate);
     const { data: legacyPdcs } = await query2;
 
     for (const pdc of legacyPdcs ?? []) {
       const chq = pdc.cheque_number || pdc.cheque_no;
       if (chq && processedChequeNos.has(chq)) continue;
       try {
-        await returnPdc(pdc.id, chq);
-        await supabase.from('pdcs').update({ status: 'returned', status_pdc: 'Returned' }).eq('id', pdc.id);
+        await returnPdc(pdc.id, chq).catch(() => {});
+        await supabase.from('pdcs').update({ status: 'cancelled', status_pdc: 'Cancelled' }).eq('id', pdc.id);
         returned.push(pdc);
         if (chq) processedChequeNos.add(chq);
       } catch (e: any) {

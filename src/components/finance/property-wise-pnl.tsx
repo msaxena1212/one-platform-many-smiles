@@ -59,12 +59,39 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December"
 ];
 
+const CORPORATE_HEAD_OFFICE_LABEL = "Corporate Office / Head Office";
+
 function normalizePropertyName(name?: string): string {
   return (name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function matchesPropertyName(candidate: string, property: string): boolean {
+function isCorporateOrHeadOfficeProperty(candidate?: string): boolean {
+  const raw = (candidate || "").trim().toLowerCase();
+  if (!raw) return true;
+  return (
+    raw.includes("head office") ||
+    raw.includes("corporate") ||
+    raw === "unassigned" ||
+    raw === "general" ||
+    raw.startsWith("vehicle no:") ||
+    raw.startsWith("cc-veh-")
+  );
+}
+
+function matchesPropertyName(candidate: string, property: string, knownBuildingKeys?: Set<string>): boolean {
+  if (property === CORPORATE_HEAD_OFFICE_LABEL) {
+    if (isCorporateOrHeadOfficeProperty(candidate)) return true;
+    if (knownBuildingKeys && !knownBuildingKeys.has(normalizePropertyName(candidate))) return true;
+    return false;
+  }
   return normalizePropertyName(candidate) === normalizePropertyName(property);
+}
+
+function formatDateDDMMYYYY(dateStr?: string): string {
+  if (!dateStr || dateStr === "—") return dateStr || "—";
+  const m = String(dateStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return dateStr;
 }
 
 export function PropertyWiseProfitAndLossSubModule() {
@@ -109,17 +136,30 @@ export function PropertyWiseProfitAndLossSubModule() {
     return list;
   }, [allLedgerTransactions]);
 
-  // Master property list
+  // Master property list (Always includes "Corporate Office / Head Office" plus all buildings)
   const propertiesList = useMemo(() => {
     const properties = new Map<string, string>();
     units.forEach((unit) => {
-      if (unit.property?.trim()) properties.set(normalizePropertyName(unit.property), unit.property.trim());
+      if (unit.property?.trim() && !isCorporateOrHeadOfficeProperty(unit.property)) {
+        properties.set(normalizePropertyName(unit.property), unit.property.trim());
+      }
     });
     leases.forEach((lease) => {
-      if (lease.property?.trim()) properties.set(normalizePropertyName(lease.property), lease.property.trim());
+      if (lease.property?.trim() && !isCorporateOrHeadOfficeProperty(lease.property)) {
+        properties.set(normalizePropertyName(lease.property), lease.property.trim());
+      }
     });
-    return Array.from(properties.values()).sort((a, b) => a.localeCompare(b));
+    const sortedBuildings = Array.from(properties.values()).sort((a, b) => a.localeCompare(b));
+    return [CORPORATE_HEAD_OFFICE_LABEL, ...sortedBuildings];
   }, [units, leases]);
+
+  const knownBuildingKeys = useMemo(() => {
+    const set = new Set<string>();
+    propertiesList.forEach(p => {
+      if (p !== CORPORATE_HEAD_OFFICE_LABEL) set.add(normalizePropertyName(p));
+    });
+    return set;
+  }, [propertiesList]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // COMPUTE PROPERTY-WISE P&L (STRICTLY INVOICED / LEDGER-POSTED REVENUE + EXPENSES)
@@ -250,9 +290,9 @@ export function PropertyWiseProfitAndLossSubModule() {
       let otherExpense = 0;
 
       allLedgerTransactions.forEach((tx) => {
-        // Match by property name
+        // Match by property name (Corporate Office / Head Office captures Head Office, Vehicle Cost Centers & Unassigned GL entries so TB and Property-Wise P&L reconcile 100%)
         const txProp = (tx.property_name || "").trim();
-        if (!matchesPropertyName(txProp, propName)) return;
+        if (!matchesPropertyName(txProp, propName, knownBuildingKeys)) return;
 
         // Date period filtering
         if (selectedPeriod !== "all" && tx.date) {
@@ -319,7 +359,10 @@ export function PropertyWiseProfitAndLossSubModule() {
   // Filtered view by property dropdown or search
   const filteredMetricsList = useMemo(() => {
     return propertyMetricsList.filter(m => {
+      const isCorpOffice = m.property === CORPORATE_HEAD_OFFICE_LABEL;
       if (
+        !isCorpOffice &&
+        selectedPropertyFilter !== m.property &&
         m.totalRevenue === 0 &&
         m.totalExpenses === 0 &&
         m.contractRentMonth === 0 &&
@@ -865,7 +908,7 @@ export function PropertyWiseProfitAndLossSubModule() {
                             <TableCell className="font-mono font-bold">{ts.unit}</TableCell>
                             <TableCell className="font-medium text-foreground">{ts.tenant}</TableCell>
                             <TableCell className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">
-                              {ts.contractStart} → {ts.contractEnd}
+                              {formatDateDDMMYYYY(ts.contractStart)} → {formatDateDDMMYYYY(ts.contractEnd)}
                             </TableCell>
                             <TableCell className="text-center">
                               <Badge variant="outline" className="text-[10px] font-mono">
@@ -929,7 +972,8 @@ export function PropertyWiseProfitAndLossSubModule() {
       )}
 
       {/* ── PRINTABLE TEMPLATE (A4 Landscape) ── */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @media print {
           @page {
             size: A4 landscape;

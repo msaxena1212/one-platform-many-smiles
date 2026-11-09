@@ -192,6 +192,13 @@ function isSameUnit(u1?: string, u2?: string): boolean {
   return false;
 }
 
+function formatDateDDMMYYYY(dateStr?: string): string {
+  if (!dateStr || dateStr === "—") return dateStr || "—";
+  const m = String(dateStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return dateStr;
+}
+
 export function UnbilledUnitsReportSubModule() {
   const { units, leases, syncing, refetchData } = useAppData();
   const {
@@ -1018,7 +1025,7 @@ export function UnbilledUnitsReportSubModule() {
                 Click any property card to filter property-wise
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
               {propertyBreakdown.map((pb) => {
                 const isSelected = propertyFilter === pb.property;
                 return (

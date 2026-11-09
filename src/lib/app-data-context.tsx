@@ -2,6 +2,12 @@ import { createContext, useContext, useEffect, useMemo, useState, useRef, useCal
 import { supabase } from "@/lib/supabase";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
+import {
+  GUARANTEE_CHEQUE_DATE,
+  SECURITY_DEPOSIT_GUARANTEE_ENTRIES,
+  KAHRAMAA_DEPOSIT_ENTRIES,
+  resolvePropertyFromUnitCode,
+} from "@/lib/finance/kahramaa-deposits-data";
 
 const today = new Date();
 
@@ -120,6 +126,9 @@ export interface PmsPdc {
   property?: string;
   tenureStart?: string;
   tenureEnd?: string;
+  isGuaranteeCheque?: boolean;
+  notes?: string;
+  type?: string;
 }
 
 export interface PmsVoucher {
@@ -906,26 +915,153 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      const mappedPdcs: PmsPdc[] = allRawPdcs.map((p: any) => ({
-        id: String(p.id),
-        leaseId: p.lease_id || "",
-        chequeNo: p.cheque_number || "",
-        bank: p.bank || p.bank_name || "",
-        propertyName: p.property_name || p.property_code || "",
-        unitName: p.unit_name || p.unit_ref || "",
-        tenantName: p.tenant_name || p.drawer_name || "",
-        date: p.maturity_date || p.cheque_date || "",
-        chequeNumber: p.cheque_number || p.chequeNo || "",
-        dueDate: p.maturity_date || p.cheque_date || "",
-        depositDate: p.deposit_date || "",
-        unit: p.unit_name || p.unit_ref || "",
-        property: p.property_name || p.property_code || "",
-        tenureStart: p.rent_from_date || p.tenureStart || "",
-        tenureEnd: p.rent_to_date || p.tenureEnd || "",
-        amount: Number(p.amount || 0),
-        status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
-        payerName: p.tenant_name || p.drawer_name || "Tenant",
-      }));
+      const mappedPdcs: PmsPdc[] = allRawPdcs.map((p: any) => {
+        const isGChq =
+          p.isGuaranteeCheque ||
+          p.maturity_date?.startsWith("2036-12-31") ||
+          p.cheque_date?.startsWith("2036-12-31") ||
+          String(p.bank || p.bank_name || "").toLowerCase().includes("guarantee") ||
+          String(p.notes || "").toLowerCase().includes("guarantee cheque");
+        const dt = isGChq ? GUARANTEE_CHEQUE_DATE : (p.maturity_date || p.cheque_date || "");
+        return {
+          id: String(p.id),
+          leaseId: p.lease_id || "",
+          chequeNo: p.cheque_number || "",
+          bank: isGChq ? (p.bank || p.bank_name || "Guarantee Cheque (Undated / In Hand)") : (p.bank || p.bank_name || ""),
+          propertyName: p.property_name || p.property_code || "",
+          unitName: p.unit_name || p.unit_ref || "",
+          tenantName: p.tenant_name || p.drawer_name || "",
+          date: dt,
+          chequeNumber: p.cheque_number || p.chequeNo || "",
+          dueDate: dt,
+          depositDate: p.deposit_date || "",
+          unit: p.unit_name || p.unit_ref || "",
+          property: p.property_name || p.property_code || "",
+          tenureStart: p.rent_from_date || p.tenureStart || "",
+          tenureEnd: p.rent_to_date || p.tenureEnd || "",
+          amount: Number(p.amount || 0),
+          status: (p.status?.toLowerCase().replace(/ /g, "_") as PdcStatus) || "received",
+          payerName: p.tenant_name || p.drawer_name || "Tenant",
+          isGuaranteeCheque: isGChq,
+          notes: p.notes || (isGChq ? "Guarantee Cheque" : undefined),
+        };
+      });
+
+      // Merge locally stored renewal PDCs if present
+      try {
+        const localRenewalPdcs = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+        if (Array.isArray(localRenewalPdcs)) {
+          localRenewalPdcs.forEach((lp: any, idx: number) => {
+            const chq = String(lp.chequeNo || lp.chequeNumber || lp.cheque_number || "");
+            if (chq && !mappedPdcs.some(mp => mp.chequeNo === chq)) {
+              const linkedLease = mappedLeases.find(l => l.id === lp.leaseId || (lp.unit && l.unit === lp.unit));
+              mappedPdcs.unshift({
+                id: String(lp.id || `local-pdc-${idx}`),
+                leaseId: lp.leaseId || linkedLease?.id || "",
+                chequeNo: chq,
+                chequeNumber: chq,
+                bank: lp.bank || "Qatar National Bank (QNB)",
+                propertyName: lp.property || linkedLease?.property || "",
+                unitName: lp.unit || linkedLease?.unit || "",
+                tenantName: lp.tenantName || lp.payerName || linkedLease?.tenantName || "Tenant",
+                date: lp.date || lp.dueDate || "",
+                dueDate: lp.dueDate || lp.date || "",
+                depositDate: lp.depositDate || "",
+                unit: lp.unit || linkedLease?.unit || "",
+                property: lp.property || linkedLease?.property || "",
+                tenureStart: lp.tenureStart || "",
+                tenureEnd: lp.tenureEnd || "",
+                amount: Number(lp.amount || 0),
+                status: ((lp.status || "received").toLowerCase().replace(/ /g, "_") as PdcStatus),
+                payerName: lp.payerName || lp.tenantName || linkedLease?.tenantName || "Tenant",
+              });
+            }
+          });
+        }
+      } catch { /* ignore */ }
+
+      // Guarantee Cheques Integration (Security Deposit & Kahramaa Deposits dated 31.12.2036)
+      // 1. Security Deposit Guarantee Cheques (90 entries)
+      for (const sd of SECURITY_DEPOSIT_GUARANTEE_ENTRIES) {
+        if (!sd.unitCode || Number(sd.amount) <= 0) continue;
+        const uUpper = sd.unitCode.trim().toUpperCase();
+        const chqRef = (sd.chequeRef || `GCHQ-${uUpper}`).trim();
+        const exists = mappedPdcs.some(mp => {
+          const mChq = String(mp.chequeNo || mp.chequeNumber || "").trim().toLowerCase();
+          const mUnit = String(mp.unit || mp.unitName || "").trim().toUpperCase();
+          return (mChq === chqRef.toLowerCase()) || (mUnit === uUpper && (mp.isGuaranteeCheque || mp.notes?.toLowerCase().includes("guarantee cheque")));
+        });
+        if (!exists) {
+          const linkedLease = mappedLeases.find(l => String(l.unit).toUpperCase() === uUpper);
+          const tName = sd.tenantName || linkedLease?.tenantName || "Tenant";
+          const pName = sd.property || linkedLease?.property || resolvePropertyFromUnitCode(uUpper);
+          mappedPdcs.push({
+            id: `pdc-sd-gchq-${uUpper.toLowerCase()}`,
+            leaseId: linkedLease?.id || "",
+            chequeNo: chqRef,
+            chequeNumber: chqRef,
+            bank: "Guarantee Cheque (Undated / In Hand)",
+            propertyName: pName,
+            unitName: sd.unitCode,
+            tenantName: tName,
+            date: GUARANTEE_CHEQUE_DATE,
+            dueDate: GUARANTEE_CHEQUE_DATE,
+            depositDate: "",
+            unit: sd.unitCode,
+            property: pName,
+            tenureStart: "2026-10-01",
+            tenureEnd: GUARANTEE_CHEQUE_DATE,
+            amount: Number(sd.amount),
+            status: "received",
+            payerName: tName,
+            period: "Tenancy Security Deposit (Guarantee Cheque)",
+            isGuaranteeCheque: true,
+            notes: `Guarantee Cheque — Security Deposit (${tName} - ${sd.unitCode})`,
+            type: "Security Deposit Guarantee Cheque",
+          });
+        }
+      }
+
+      // 2. Kahramaa Deposit Guarantee Cheques (42 entries)
+      for (const kd of KAHRAMAA_DEPOSIT_ENTRIES) {
+        if (!kd.unitCode || kd.mode !== "Guarantee Cheque" || Number(kd.amount) <= 0) continue;
+        const uUpper = kd.unitCode.trim().toUpperCase();
+        const chqRef = `KAH-GCHQ-${uUpper}`;
+        const exists = mappedPdcs.some(mp => {
+          const mChq = String(mp.chequeNo || mp.chequeNumber || "").trim().toLowerCase();
+          const mUnit = String(mp.unit || mp.unitName || "").trim().toUpperCase();
+          return (mChq === chqRef.toLowerCase()) || (mUnit === uUpper && (mp.isGuaranteeCheque || mp.notes?.toLowerCase().includes("kahramaa")));
+        });
+        if (!exists) {
+          const linkedLease = mappedLeases.find(l => String(l.unit).toUpperCase() === uUpper);
+          const tName = linkedLease?.tenantName || "Tenant";
+          const pName = kd.property || linkedLease?.property || resolvePropertyFromUnitCode(uUpper);
+          mappedPdcs.push({
+            id: `pdc-kah-gchq-${uUpper.toLowerCase()}`,
+            leaseId: linkedLease?.id || "",
+            chequeNo: chqRef,
+            chequeNumber: chqRef,
+            bank: "Guarantee Cheque (Undated / In Hand)",
+            propertyName: pName,
+            unitName: kd.unitCode,
+            tenantName: tName,
+            date: GUARANTEE_CHEQUE_DATE,
+            dueDate: GUARANTEE_CHEQUE_DATE,
+            depositDate: "",
+            unit: kd.unitCode,
+            property: pName,
+            tenureStart: "2026-10-01",
+            tenureEnd: GUARANTEE_CHEQUE_DATE,
+            amount: Number(kd.amount),
+            status: "received",
+            payerName: tName,
+            period: "Kahramaa Utility Deposit (Guarantee Cheque)",
+            isGuaranteeCheque: true,
+            notes: `Guarantee Cheque — Kahramaa Utility Deposit (${kd.unitCode})`,
+            type: "Kahramaa Utility Deposit Guarantee Cheque",
+          });
+        }
+      }
 
       // Map raw reservations or synthesize realistic reservations from available units and ALL active/expired leases
       const rawReservations: PmsReservation[] = (reservationsRes.data || []).map((r: any) => ({

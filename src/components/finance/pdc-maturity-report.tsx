@@ -52,6 +52,11 @@ export function PdcMaturityForecastReportSubModule() {
       const isEscalated = legalReceivables.some((l) => l.legal_case_id === caseId);
       const penaltyInvNo = `DN-BNC-${pdc.chequeNo}`;
       const hasPenaltyBilled = receivableInvoices.some((inv) => inv.invoice_no === penaltyInvNo);
+      const isGChq =
+        pdc.isGuaranteeCheque ||
+        matDateStr === "2036-12-31" ||
+        String(pdc.bank || "").includes("Guarantee") ||
+        String(pdc.notes || "").toLowerCase().includes("guarantee");
 
       return {
         ...pdc,
@@ -64,6 +69,7 @@ export function PdcMaturityForecastReportSubModule() {
         daysToMaturity,
         isEscalated,
         hasPenaltyBilled,
+        isGuaranteeCheque: isGChq,
       };
     });
   }, [pdcs, leases, referenceDate, legalReceivables, receivableInvoices]);
@@ -402,18 +408,33 @@ export function PdcMaturityForecastReportSubModule() {
                   <TableRow key={pdc.id} className="hover:bg-muted/30">
                     <TableCell className="text-xs font-mono font-semibold">{pdc.maturityDate}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={pdc.daysToMaturity < 0 ? "destructive" : "outline"}
-                        className="text-[10px] font-mono"
-                      >
-                        {pdc.daysToMaturity === 0
-                          ? "Due Today"
-                          : pdc.daysToMaturity > 0
-                          ? `In ${pdc.daysToMaturity}d`
-                          : `${Math.abs(pdc.daysToMaturity)}d ago`}
-                      </Badge>
+                      {pdc.maturityDate === "2036-12-31" || pdc.isGuaranteeCheque ? (
+                        <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 border-amber-300 font-semibold">
+                          Undated / Custody
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant={pdc.daysToMaturity < 0 ? "destructive" : "outline"}
+                          className="text-[10px] font-mono"
+                        >
+                          {pdc.daysToMaturity === 0
+                            ? "Due Today"
+                            : pdc.daysToMaturity > 0
+                            ? `In ${pdc.daysToMaturity}d`
+                            : `${Math.abs(pdc.daysToMaturity)}d ago`}
+                        </Badge>
+                      )}
                     </TableCell>
-                    <TableCell className="text-xs font-mono font-bold text-primary">#{pdc.chequeNo}</TableCell>
+                    <TableCell className="text-xs font-mono font-bold text-primary">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span>#{pdc.chequeNo}</span>
+                        {(pdc.maturityDate === "2036-12-31" || pdc.isGuaranteeCheque) && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-700 border-amber-300 font-semibold">
+                            Guarantee Cheque
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-xs">
                       <span className="inline-flex items-center gap-1">
                         <Landmark className="h-3 w-3 text-muted-foreground" /> {pdc.bank || "—"}
@@ -454,7 +475,13 @@ export function PdcMaturityForecastReportSubModule() {
                         )
                       ) : (
                         <span className="text-[11px] text-muted-foreground">
-                          {pdc.status === "received" ? "Ready for Bank Deposit" : "Tracked"}
+                          {pdc.maturityDate === "2036-12-31" || pdc.isGuaranteeCheque ? (
+                            <span className="text-amber-700 dark:text-amber-400 font-medium">In Safe Custody</span>
+                          ) : pdc.status === "received" ? (
+                            "Ready for Bank Deposit"
+                          ) : (
+                            "Tracked"
+                          )}
                         </span>
                       )}
                     </TableCell>

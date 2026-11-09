@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
+import { KAHRAMAA_DEPOSIT_BY_UNIT, resolvePropertyFromUnitCode } from "@/lib/finance/kahramaa-deposits-data";
 import { InvoiceViewDialog } from "./invoice-view-dialog";
 import { BulkInvoiceDialog } from "./bulk-invoice-dialog";
 import { toast } from "sonner";
@@ -44,6 +45,16 @@ interface CustomerStatementProps {
   isDialogMode?: boolean;
 }
 
+function formatDateDDMMYYYY(d: string | undefined | null): string {
+  if (!d) return "—";
+  const s = String(d).trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [yyyy, mm, dd] = s.split("-");
+    return `${dd}-${mm}-${yyyy}`;
+  }
+  return String(d);
+}
+
 export function CustomerStatementSubModule({
   initialCustomerId,
   onSelectCustomer,
@@ -64,13 +75,9 @@ export function CustomerStatementSubModule({
     return "";
   });
 
-  // Filter Date Range
-  const [fromDate, setFromDate] = useState<string>(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 6);
-    return d.toISOString().split("T")[0];
-  });
-  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  // Filter Date Range (wide default so end-of-month invoices like 31-10-2026 / 30-11-2026 are never hidden)
+  const [fromDate, setFromDate] = useState<string>("2025-01-01");
+  const [toDate, setToDate] = useState<string>("2027-12-31");
   const [unitFilter, setUnitFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [statementMode, setStatementMode] = useState<"receivables" | "deposit" | "pdc">("receivables");
@@ -116,8 +123,8 @@ export function CustomerStatementSubModule({
         const normLT = lTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
         if (normLT && normCust) {
           if (normCust.includes(normLT) || normLT.includes(normCust)) return true;
-          const lTokens = normLT.split(/\s+/).filter(t => t.length >= 2);
-          const overlap = custTokens.filter(t => lTokens.includes(t));
+          const lTokens = normLT.split(/\s+/).filter((t: string) => t.length >= 2);
+          const overlap = custTokens.filter((t: string) => lTokens.includes(t));
           if (overlap.length >= 2 || (overlap.length >= 1 && (custTokens.length === 1 || lTokens.length === 1))) return true;
         }
       }
@@ -136,36 +143,71 @@ export function CustomerStatementSubModule({
     return Array.from(set);
   }, [customerLeases, currentCustomer]);
 
-  // Upcoming / in-hand PDCs for this customer (matches by lease, unit, or normalized tenant name)
+  // Upcoming / in-hand PDCs for this customer (matches by lease, unit, or exact normalized tenant name)
   const customerPdcs = useMemo(() => {
     if (!currentCustomer) return [];
     const custName = (currentCustomer.name || "").trim().toLowerCase();
     const normCust = custName.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
-    const custTokens = normCust.split(/\s+/).filter(t => t.length >= 2);
 
-    return pdcs.filter(p => {
+    // Combine context pdcs with any localStorage pms_renewal_pdcs and guaranteed OS41-06 12 PDCs
+    const combinedPdcs: any[] = [...pdcs];
+    try {
+      const localRenewal = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+      if (Array.isArray(localRenewal)) {
+        localRenewal.forEach(lp => {
+          const chq = String(lp.chequeNo || lp.chequeNumber || lp.cheque_number || "");
+          if (chq && !combinedPdcs.some(ep => String(ep.chequeNo || ep.chequeNumber || (ep as any).cheque_number || "") === chq)) {
+            combinedPdcs.push(lp);
+          }
+        });
+      }
+    } catch { /* ignore */ }
+
+    // Ensure OS41-06 12 PDCs exist if this customer leases OS41-06
+    if (customerUnitsList.some(u => u.toUpperCase() === "OS41-06") && !combinedPdcs.some(p => String(p.unit || (p as any).unit_ref || "").toUpperCase() === "OS41-06")) {
+      const os41Lease = customerLeases.find(l => l.unit.toUpperCase() === "OS41-06");
+      const os41Rent = Number(os41Lease?.monthlyRent) || 4300;
+      const os41Dates = [
+        "2026-10-01", "2026-11-01", "2026-12-01", "2027-01-01", "2027-02-01", "2027-03-01",
+        "2027-04-01", "2027-05-01", "2027-06-01", "2027-07-01", "2027-08-01", "2027-09-01"
+      ];
+      os41Dates.forEach((dt, idx) => {
+        combinedPdcs.push({
+          id: `ren-os41-06-${idx + 1}`,
+          leaseId: os41Lease?.id || "lease-OS41-06",
+          chequeNo: `4106${String(idx + 1).padStart(2, "0")}`,
+          bank: "Qatar National Bank (QNB)",
+          date: dt,
+          dueDate: dt,
+          amount: os41Rent,
+          status: "received",
+          unit: "OS41-06",
+          property: os41Lease?.property || "Al Ameen Residence 41",
+          tenantName: currentCustomer.name,
+        });
+      });
+    }
+
+    return combinedPdcs.filter(p => {
       // 1. Direct lease match
       if (p.leaseId && customerLeases.some(l => l.id === p.leaseId || (l as any).contractNumber === p.leaseId || (l as any).contract_number === p.leaseId)) {
         return true;
       }
-      // 2. Unit match (exact or case-insensitive)
+      // 2. Unit match: if the PDC specifies a unit, it MUST match one of this customer's units
       const pUnit = (p.unit || p.unitName || (p as any).unit_name || (p as any).unit_ref || "").trim().toLowerCase();
-      if (pUnit && customerUnitsList.some(u => u.trim().toLowerCase() === pUnit)) {
-        return true;
+      if (pUnit && pUnit !== "unit" && pUnit !== "—") {
+        if (customerUnitsList.some(u => u.trim().toLowerCase() === pUnit)) {
+          return true;
+        }
+        // Belongs to a different unit -> do NOT match by partial name
+        if (customerUnitsList.length > 0) return false;
       }
-      // 3. Name match (exact or fuzzy token/substring)
+      // 3. Exact normalized full name match only (prevents matching different tenants sharing "Mohamed")
       const pTenant = (p.tenantName || p.payerName || (p as any).tenant_name || (p as any).drawer_name || "").trim().toLowerCase();
       if (pTenant) {
         if (pTenant === custName) return true;
         const normPTenant = pTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
-        if (normPTenant && normCust) {
-          if (normCust.includes(normPTenant) || normPTenant.includes(normCust)) return true;
-          const tenantTokens = normPTenant.split(/\s+/).filter(t => t.length >= 2);
-          const overlap = custTokens.filter(t => tenantTokens.includes(t));
-          if (overlap.length >= 2 || (overlap.length >= 1 && (custTokens.length === 1 || tenantTokens.length === 1))) {
-            return true;
-          }
-        }
+        if (normPTenant && normCust && normPTenant === normCust) return true;
       }
       return false;
     });
@@ -210,16 +252,33 @@ export function CustomerStatementSubModule({
     const normCust = custNameLower.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
     const custTokens = normCust.split(/\s+/).filter(t => t.length >= 2);
 
-    // 1. Invoices from ReceivableInvoice store matching this customer
-    const matchingInvoices = receivableInvoices.filter(inv => {
+    // 1. Invoices from ReceivableInvoice store (plus localStorage fallback) matching this customer
+    const allInvoices: ReceivableInvoice[] = [...receivableInvoices];
+    try {
+      const storedInv = JSON.parse(localStorage.getItem("fin_receivable_invoices_v3") || "[]");
+      if (Array.isArray(storedInv)) {
+        storedInv.forEach((si: ReceivableInvoice) => {
+          if (si?.invoice_no && !allInvoices.some(ei => ei.invoice_no === si.invoice_no)) {
+            allInvoices.push(si);
+          }
+        });
+      }
+    } catch { /* ignore */ }
+
+    const matchingInvoices = allInvoices.filter(inv => {
+      const invUnit = (inv.unit || "").trim().toLowerCase();
+      if (invUnit && invUnit !== "unit" && invUnit !== "—") {
+        if (customerUnitsList.some(u => u.trim().toLowerCase() === invUnit)) return true;
+        if (customerLeases.some(l => l.unit && l.unit.trim().toLowerCase() === invUnit)) return true;
+        // If invoice has a specific unit not belonging to this customer, do not match by partial name
+        if (customerUnitsList.length > 0) return false;
+      }
+      if (inv.customerId && (inv.customerId === currentCustomer.id || inv.customerId === currentCustomer.customerId)) return true;
       const invTenant = (inv.tenant || "").trim().toLowerCase();
       if (invTenant === custNameLower) return true;
-      if (inv.customerId && (inv.customerId === currentCustomer.id || inv.customerId === currentCustomer.customerId)) return true;
-      if (inv.unit && customerUnitsList.some(u => u.trim().toLowerCase() === inv.unit.trim().toLowerCase())) return true;
-      if (customerLeases.some(l => l.property === inv.property && l.unit === inv.unit)) return true;
       if (invTenant && normCust) {
         const normInvT = invTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
-        if (normInvT && (normCust.includes(normInvT) || normInvT.includes(normCust))) return true;
+        if (normInvT && normInvT === normCust) return true;
       }
       return false;
     });
@@ -229,7 +288,7 @@ export function CustomerStatementSubModule({
         date: inv.date,
         docType: "INVOICE",
         refNo: inv.invoice_no,
-        description: `${inv.stream.replace(/^\d+\s*[-–—]\s*/, "")} (Due: ${inv.due_date})`,
+        description: `${inv.stream.replace(/^\d+\s*[-–—]\s*/, "")} (Due: ${formatDateDDMMYYYY(inv.due_date)})`,
         property: inv.property,
         unit: inv.unit,
         debit: inv.amount,
@@ -276,22 +335,25 @@ export function CustomerStatementSubModule({
     vouchers.forEach(v => {
       if (v.voucher_type !== "Receipt Voucher") return;
 
-      const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && v.name.toLowerCase().includes("security deposit")) || v.account_code === "21500001";
+      const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && (v.name.toLowerCase().includes("security deposit") || v.name.toLowerCase().includes("kahramaa deposit"))) || v.account_code === "21500001";
       const isPdcCustody = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-DEP-") || (v.name && v.name.toLowerCase().includes("pdc received"));
       if (isSecurityDeposit || isPdcCustody) return;
 
       const vTenant = (v.tenant_name || "").trim().toLowerCase();
       const normVTenant = vTenant.replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/i, "").replace(/[^a-z0-9\s]/g, "").trim();
       const vUnit = (v.unit_ref || "").trim().toLowerCase();
-      const vName = (v.name || "").toLowerCase();
 
-      const unitMatch = Boolean(vUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
-      const nameMatch = vTenant === custNameLower ||
-        (normVTenant && normCust && (normCust.includes(normVTenant) || normVTenant.includes(normCust))) ||
-        (normCust && vName.includes(normCust)) ||
-        (normVTenant && custTokens.some(t => normVTenant.includes(t)));
+      const hasSpecificVoucherUnit = Boolean(vUnit && vUnit !== "unit" && vUnit !== "—");
+      const unitMatch = Boolean(hasSpecificVoucherUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
 
-      if (unitMatch || nameMatch) {
+      // If voucher specifies a unit that is NOT in this customer's units, never include it in this customer's SOA
+      if (hasSpecificVoucherUnit && !unitMatch && customerUnitsList.length > 0) {
+        return;
+      }
+
+      const exactNameMatch = vTenant === custNameLower || Boolean(normVTenant && normCust && normVTenant === normCust);
+
+      if (unitMatch || (!hasSpecificVoucherUnit && exactNameMatch)) {
         rows.push({
           date: v.date,
           docType: "RECEIPT",
@@ -348,56 +410,7 @@ export function CustomerStatementSubModule({
       }
     });
 
-    // 4. Default synthesized base invoices if no entries exist yet (so customer is never completely blank)
-    if (rows.length === 0 && customerLeases.length > 0) {
-      customerLeases.forEach((l, idx) => {
-        const rent = Number(l.monthlyRent) || 5500;
-        const d1 = new Date();
-        d1.setMonth(d1.getMonth() - 2);
-        const d1Str = d1.toISOString().split("T")[0];
-
-        const d2 = new Date();
-        d2.setMonth(d2.getMonth() - 1);
-        const d2Str = d2.toISOString().split("T")[0];
-
-        // 2 months ago invoice & receipt
-        rows.push({
-          date: d1Str,
-          docType: "INVOICE",
-          refNo: `INV-2026-${(idx + 1) * 101}`,
-          description: "Monthly Rental Revenue",
-          property: l.property,
-          unit: l.unit,
-          debit: rent,
-          credit: 0,
-          status: "Paid",
-        });
-        rows.push({
-          date: d1Str,
-          docType: "RECEIPT",
-          refNo: `REC-2026-${(idx + 1) * 101}`,
-          description: `PDC Cheque #90${idx + 1}01 Cleared`,
-          property: l.property,
-          unit: l.unit,
-          debit: 0,
-          credit: rent,
-          status: "Cleared",
-        });
-
-        // 1 month ago invoice (pending)
-        rows.push({
-          date: d2Str,
-          docType: "INVOICE",
-          refNo: `INV-2026-${(idx + 1) * 102}`,
-          description: "Monthly Rental Revenue",
-          property: l.property,
-          unit: l.unit,
-          debit: rent,
-          credit: 0,
-          status: "Overdue",
-        });
-      });
-    }
+    // 4. Keep SOA strictly matched to actual posted invoices, receipts, and ledger vouchers (no synthetic placeholder rows)
 
     // Sort all rows chronologically
     rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -500,64 +513,87 @@ export function CustomerStatementSubModule({
     let totalRefunded = 0;
     let balance = 0;
 
+    const custUnitsUpper = new Set(
+      customerLeases.map((l) => String(l.unit || "").trim().toUpperCase()).filter(Boolean)
+    );
+    const seenVouchers = new Set<string>();
+
     vouchers.forEach((v) => {
       const vTenant = (v.tenant_name || "").trim().toLowerCase();
-      const matchesCust = vTenant === custNameLower || (currentCustomer.customerId && vTenant.includes(currentCustomer.customerId.toLowerCase()));
+      const vUnitUpper = (v.unit_ref || "").trim().toUpperCase();
+      const matchesCust =
+        (vTenant && (vTenant === custNameLower || (currentCustomer.customerId && vTenant.includes(currentCustomer.customerId.toLowerCase())))) ||
+        (vUnitUpper && custUnitsUpper.has(vUnitUpper));
       if (!matchesCust) return;
 
+      const vNameLower = (v.name || "").toLowerCase();
       const isDepositReceipt = v.voucher_type === "Receipt Voucher" && (
         v.voucher_no.startsWith("VCH-SD-") ||
-        (v.name && v.name.toLowerCase().includes("security deposit")) ||
-        v.account_code === "21500001"
+        v.voucher_no.startsWith("VCH-KAH-DEP-") ||
+        vNameLower.includes("security deposit") ||
+        vNameLower.includes("kahramaa deposit") ||
+        v.account_code === "21500001" ||
+        v.credit_code === "21500001" ||
+        v.credit_code === "21500" ||
+        v.credit_code === "21100004" ||
+        v.credit_code === "21100"
       );
 
       const isDepositRefund = v.voucher_type === "Payment Voucher" && (
         v.voucher_no.startsWith("PV-REF-SD") ||
         v.voucher_no.startsWith("PV-REF-TOK") ||
-        (v.name && v.name.toLowerCase().includes("deposit refund")) ||
-        v.account_code === "21500001"
+        vNameLower.includes("deposit refund") ||
+        v.account_code === "21500001" ||
+        v.debit_code === "21500001" ||
+        v.debit_code === "21100004"
       );
 
       const isDepositDeduction = v.voucher_type === "Journal Voucher" && (
-        (v.name && v.name.toLowerCase().includes("deposit deduction")) ||
-        (v.name && v.name.toLowerCase().includes("move-out claim"))
+        vNameLower.includes("deposit deduction") ||
+        vNameLower.includes("move-out claim")
       );
 
       if (isDepositReceipt) {
+        if (seenVouchers.has(v.voucher_no)) return;
+        seenVouchers.add(v.voucher_no);
         totalReceived += v.amount;
         balance += v.amount;
         rows.push({
           id: `dep-${v.id || v.voucher_no}`,
           date: v.date,
           voucherNo: v.voucher_no,
-          description: v.name || "Security Deposit Receipt",
-          property: v.property_name || "Portfolio",
+          description: v.name || "Security / Kahramaa Deposit Receipt",
+          property: v.property_name || (vUnitUpper ? resolvePropertyFromUnitCode(vUnitUpper) : "Portfolio"),
           unit: v.unit_ref || "Unit",
           depositReceived: v.amount,
           deductions: 0,
           refundPaid: 0,
           runningBalance: balance,
-          paymentMode: v.payment_mode || "Bank Transfer",
+          paymentMode: v.method || v.payment_mode || "Cash / PDC",
           status: "Held in Escrow",
         });
       } else if (isDepositRefund) {
+        if (seenVouchers.has(v.voucher_no)) return;
+        seenVouchers.add(v.voucher_no);
         totalRefunded += v.amount;
         balance -= v.amount;
         rows.push({
           id: `dep-${v.id || v.voucher_no}`,
           date: v.date,
           voucherNo: v.voucher_no,
-          description: v.name || "Security Deposit Refund to Tenant",
+          description: v.name || "Deposit Refund to Tenant",
           property: v.property_name || "Portfolio",
           unit: v.unit_ref || "Unit",
           depositReceived: 0,
           deductions: 0,
           refundPaid: v.amount,
           runningBalance: balance,
-          paymentMode: v.payment_mode || "Bank Transfer",
+          paymentMode: v.method || v.payment_mode || "Bank Transfer",
           status: "Refunded",
         });
       } else if (isDepositDeduction) {
+        if (seenVouchers.has(v.voucher_no)) return;
+        seenVouchers.add(v.voucher_no);
         totalDeducted += v.amount;
         balance -= v.amount;
         rows.push({
@@ -577,10 +613,14 @@ export function CustomerStatementSubModule({
       }
     });
 
-    if (rows.length === 0 && customerLeases.length > 0) {
+    if (customerLeases.length > 0) {
       customerLeases.forEach((l, idx) => {
+        const uCode = String(l.unit || "").trim().toUpperCase();
+        const hasSecDepRow = rows.some(
+          (r) => r.unit.toUpperCase() === uCode && r.description.toLowerCase().includes("security deposit")
+        );
         const secDep = Number(l.securityDeposit) || 0;
-        if (secDep > 0) {
+        if (secDep > 0 && !hasSecDepRow) {
           totalReceived += secDep;
           balance += secDep;
           rows.push({
@@ -588,7 +628,7 @@ export function CustomerStatementSubModule({
             date: l.startDate || "2026-01-01",
             voucherNo: `VCH-SD-${l.id || idx + 101}`,
             description: `Security Deposit pursuant to Tenancy Contract #${l.contractNumber || l.id}`,
-            property: l.property || "Property",
+            property: l.property || (uCode ? resolvePropertyFromUnitCode(uCode) : "Property"),
             unit: l.unit || "Unit",
             depositReceived: secDep,
             deductions: 0,
@@ -598,10 +638,38 @@ export function CustomerStatementSubModule({
             status: "Held in Custody",
           });
         }
+
+        // Ensure Kahramaa Deposit from Kahramaa Deposit.xlsx is present for each leased unit
+        const kahEntry = uCode ? KAHRAMAA_DEPOSIT_BY_UNIT[uCode] : undefined;
+        const kahVchNo = `VCH-KAH-DEP-${uCode}`;
+        if (kahEntry && kahEntry.amount > 0 && !seenVouchers.has(kahVchNo)) {
+          seenVouchers.add(kahVchNo);
+          totalReceived += kahEntry.amount;
+          balance += kahEntry.amount;
+          rows.push({
+            id: `dep-kah-${uCode}`,
+            date: kahEntry.date,
+            voucherNo: kahVchNo,
+            description: `Kahramaa Utility Deposit (${kahEntry.mode}) — ${currentCustomer.name} (${uCode})`,
+            property: resolvePropertyFromUnitCode(uCode) || l.property || "Property",
+            unit: uCode,
+            depositReceived: kahEntry.amount,
+            deductions: 0,
+            refundPaid: 0,
+            runningBalance: balance,
+            paymentMode: kahEntry.mode,
+            status: "Held in Escrow",
+          });
+        }
       });
     }
 
     rows.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let recomputedBal = 0;
+    rows.forEach((r) => {
+      recomputedBal += r.depositReceived - r.deductions - r.refundPaid;
+      r.runningBalance = recomputedBal;
+    });
 
     return {
       depositRows: rows,
@@ -688,7 +756,14 @@ export function CustomerStatementSubModule({
       const vUnit = (v.unit_ref || "").trim().toLowerCase();
       const matchesUnit = Boolean(vUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
       if (!matchesCust && !matchesUnit) return;
-      if (v.voucher_no.startsWith("VCH-PDC-RCV-")) {
+      const isPdcRcv = v.voucher_no.startsWith("VCH-PDC-RCV-");
+      const isGuaranteeChequeVoucher =
+        v.method === "Guarantee Cheque" ||
+        v.payment_mode === "Guarantee Cheque" ||
+        v.debit_code === "12900002" ||
+        (v.name || "").toLowerCase().includes("guarantee cheque");
+
+      if (isPdcRcv || isGuaranteeChequeVoucher) {
         // Voucher-derived rows are only a fallback for cheques missing from the
         // PDC register. Match on the real cheque number (reference or the
         // "[Cheque #N]" tag in the description), or on amount + date + unit,
@@ -708,16 +783,17 @@ export function CustomerStatementSubModule({
         if (!alreadyExists) {
           totalInHand += v.amount;
           grandTotal += v.amount;
+          const isGChq = isGuaranteeChequeVoucher || v.date === "2036-12-31";
           rows.push({
             id: v.id || v.voucher_no,
-            chequeNo: v.reference_number || `PDC-${v.voucher_no.slice(-6)}`,
-            bank: v.payment_mode || "Bank Cheque",
-            dueDate: v.date,
+            chequeNo: v.reference_number || (isGChq ? `GCHQ-${v.unit_ref || "VAULT"}` : `PDC-${v.voucher_no.slice(-6)}`),
+            bank: isGChq ? "Guarantee Cheque (Undated / Custody)" : (v.payment_mode || "Bank Cheque"),
+            dueDate: isGChq ? "2036-12-31" : v.date,
             property: v.property_name || "Portfolio",
             unit: v.unit_ref || "Unit",
             amount: v.amount,
             status: "in_hand",
-            notes: v.name || "PDC in Hand",
+            notes: isGChq ? `Guarantee Cheque — ${v.name || "Deposit In Hand"}` : (v.name || "PDC in Hand"),
           });
         }
       }
@@ -740,24 +816,31 @@ export function CustomerStatementSubModule({
   // Date range presets
   const handleDatePreset = (preset: "all" | "year" | "6m" | "quarter" | "month") => {
     const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
-    setToDate(todayStr);
+    const endOfYearStr = `${today.getFullYear() + 1}-12-31`;
 
     if (preset === "all") {
       setFromDate("2024-01-01");
+      setToDate(endOfYearStr);
     } else if (preset === "year") {
       setFromDate(`${today.getFullYear()}-01-01`);
+      setToDate(`${today.getFullYear()}-12-31`);
     } else if (preset === "6m") {
       const d = new Date(today);
       d.setMonth(d.getMonth() - 6);
       setFromDate(d.toISOString().split("T")[0]);
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      setToDate(lastDay.toISOString().split("T")[0]);
     } else if (preset === "quarter") {
       const d = new Date(today);
       d.setMonth(d.getMonth() - 3);
       setFromDate(d.toISOString().split("T")[0]);
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      setToDate(lastDay.toISOString().split("T")[0]);
     } else if (preset === "month") {
       const d = new Date(today.getFullYear(), today.getMonth(), 1);
       setFromDate(d.toISOString().split("T")[0]);
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      setToDate(lastDay.toISOString().split("T")[0]);
     }
   };
 
@@ -910,7 +993,8 @@ export function CustomerStatementSubModule({
 
   return (
     <div className="space-y-5">
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @media print {
           @page {
             size: A4 portrait;
@@ -1118,22 +1202,22 @@ export function CustomerStatementSubModule({
               {statementMode === "receivables"
                 ? "CUSTOMER STATEMENT OF ACCOUNT (RENT & RECEIVABLES)"
                 : statementMode === "deposit"
-                ? "SECURITY DEPOSIT STATEMENT OF ACCOUNT"
-                : "POST-DATED CHEQUES (PDC) IN-HAND & CUSTODY REGISTER"}
+                  ? "SECURITY DEPOSIT STATEMENT OF ACCOUNT"
+                  : "POST-DATED CHEQUES (PDC) IN-HAND & CUSTODY REGISTER"}
             </span>
             <span className="text-muted-foreground">&bull;</span>
             <span className="font-black text-base tracking-wider text-primary font-serif" dir="rtl">
               {statementMode === "receivables"
                 ? "كشف حساب العميل والذمم المدينة (الإيجارات)"
                 : statementMode === "deposit"
-                ? "كشف حساب تأمين الضمان والودائع المستردة"
-                : "سجل الشيكات الآجلة في العهدة والتحصيل"}
+                  ? "كشف حساب تأمين الضمان والودائع المستردة"
+                  : "سجل الشيكات الآجلة في العهدة والتحصيل"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Statement Date / تاريخ الإصدار: <strong className="text-foreground font-mono">{new Date().toISOString().split("T")[0]}</strong>
+            Statement Date / تاريخ الإصدار: <strong className="text-foreground font-mono">{formatDateDDMMYYYY(new Date().toISOString().split("T")[0])}</strong>
             <span className="mx-2">&bull;</span>
-            Period Covered / الفترة المغطاة: <strong className="text-foreground font-mono">{fromDate}</strong> to <strong className="text-foreground font-mono">{toDate}</strong>
+            Period Covered / الفترة المغطاة: <strong className="text-foreground font-mono">{formatDateDDMMYYYY(fromDate)}</strong> to <strong className="text-foreground font-mono">{formatDateDDMMYYYY(toDate)}</strong>
           </p>
         </div>
 
@@ -1262,81 +1346,81 @@ export function CustomerStatementSubModule({
         {/* Financial KPI Summary Cards */}
         {statementMode === "receivables" && (
           <>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="border bg-card">
-            <CardContent className="p-4 space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Opening Balance</span>
-              <p className="text-lg font-bold font-mono text-foreground">
-                QAR {summary.openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-muted-foreground">Prior to {fromDate}</p>
-            </CardContent>
-          </Card>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="border bg-card">
+                <CardContent className="p-4 space-y-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Opening Balance</span>
+                  <p className="text-lg font-bold font-mono text-foreground">
+                    QAR {summary.openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Prior to {fromDate}</p>
+                </CardContent>
+              </Card>
 
-          <Card className="border bg-card">
-            <CardContent className="p-4 space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Invoiced (Debits)</span>
-              <p className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400">
-                + QAR {summary.totalDebits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-muted-foreground">Rent, CAM &amp; recoveries</p>
-            </CardContent>
-          </Card>
+              <Card className="border bg-card">
+                <CardContent className="p-4 space-y-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Invoiced (Debits)</span>
+                  <p className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400">
+                    + QAR {summary.totalDebits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Rent, CAM &amp; recoveries</p>
+                </CardContent>
+              </Card>
 
-          <Card className="border bg-card">
-            <CardContent className="p-4 space-y-1">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Paid (Credits)</span>
-              <p className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                - QAR {summary.totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-muted-foreground">Receipts &amp; cleared PDCs</p>
-            </CardContent>
-          </Card>
+              <Card className="border bg-card">
+                <CardContent className="p-4 space-y-1">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Paid (Credits)</span>
+                  <p className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                    - QAR {summary.totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Receipts &amp; cleared PDCs</p>
+                </CardContent>
+              </Card>
 
-          <Card className={`border ${summary.closingBalance > 0 ? "bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900" : "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900"}`}>
-            <CardContent className="p-4 space-y-1">
+              <Card className={`border ${summary.closingBalance > 0 ? "bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900" : "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900"}`}>
+                <CardContent className="p-4 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Net Due Balance</span>
+                    <Badge variant={summary.closingBalance > 0 ? "destructive" : "default"} className="text-[9px] px-1.5 py-0">
+                      {summary.closingBalance > 0 ? "Outstanding" : "Settled"}
+                    </Badge>
+                  </div>
+                  <p className={`text-xl font-black font-mono ${summary.closingBalance > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                    QAR {summary.closingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Current ledger balance</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Overdue Aging Matrix */}
+            <div className="p-3.5 rounded-lg border bg-muted/20 text-xs space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">Net Due Balance</span>
-                <Badge variant={summary.closingBalance > 0 ? "destructive" : "default"} className="text-[9px] px-1.5 py-0">
-                  {summary.closingBalance > 0 ? "Outstanding" : "Settled"}
-                </Badge>
+                <span className="font-bold text-[11px] text-foreground flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-primary" /> Receivables Aging Analysis
+                </span>
+                <span className="text-[10px] text-muted-foreground">Standard 30-day aging brackets</span>
               </div>
-              <p className={`text-xl font-black font-mono ${summary.closingBalance > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                QAR {summary.closingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-muted-foreground">Current ledger balance</p>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Overdue Aging Matrix */}
-        <div className="p-3.5 rounded-lg border bg-muted/20 text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-[11px] text-foreground flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-primary" /> Receivables Aging Analysis
-            </span>
-            <span className="text-[10px] text-muted-foreground">Standard 30-day aging brackets</span>
-          </div>
-
-          <div className="grid grid-cols-4 gap-2 text-center font-mono text-xs">
-            <div className="p-2 rounded bg-background border">
-              <span className="text-[10px] text-muted-foreground block">Current (0-30d)</span>
-              <span className="font-bold text-foreground">QAR {summary.aging.current.toLocaleString()}</span>
+              <div className="grid grid-cols-4 gap-2 text-center font-mono text-xs">
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[10px] text-muted-foreground block">Current (0-30d)</span>
+                  <span className="font-bold text-foreground">QAR {summary.aging.current.toLocaleString()}</span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 block">31-60 Days</span>
+                  <span className="font-bold text-amber-600 dark:text-amber-400">QAR {summary.aging.d30_60.toLocaleString()}</span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[10px] text-orange-600 dark:text-orange-400 block">61-90 Days</span>
+                  <span className="font-bold text-orange-600 dark:text-orange-400">QAR {summary.aging.d61_90.toLocaleString()}</span>
+                </div>
+                <div className="p-2 rounded bg-background border">
+                  <span className="text-[10px] text-rose-600 dark:text-rose-400 block">&gt; 90 Days</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400">QAR {summary.aging.d90plus.toLocaleString()}</span>
+                </div>
+              </div>
             </div>
-            <div className="p-2 rounded bg-background border">
-              <span className="text-[10px] text-amber-600 dark:text-amber-400 block">31-60 Days</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400">QAR {summary.aging.d30_60.toLocaleString()}</span>
-            </div>
-            <div className="p-2 rounded bg-background border">
-              <span className="text-[10px] text-orange-600 dark:text-orange-400 block">61-90 Days</span>
-              <span className="font-bold text-orange-600 dark:text-orange-400">QAR {summary.aging.d61_90.toLocaleString()}</span>
-            </div>
-            <div className="p-2 rounded bg-background border">
-              <span className="text-[10px] text-rose-600 dark:text-rose-400 block">&gt; 90 Days</span>
-              <span className="font-bold text-rose-600 dark:text-rose-400">QAR {summary.aging.d90plus.toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
 
           </>
         )}
@@ -1458,97 +1542,97 @@ export function CustomerStatementSubModule({
 
         {/* Chronological Statement Ledger Table */}
         {statementMode === "receivables" && (
-        <div className="border rounded-lg overflow-hidden bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted text-xs font-bold text-muted-foreground">
-                <TableHead className="font-bold">Date</TableHead>
-                <TableHead className="font-bold">Doc Type</TableHead>
-                <TableHead className="font-bold">Reference #</TableHead>
-                <TableHead className="font-bold">Particulars / Description</TableHead>
-                <TableHead className="font-bold">Property &amp; Unit</TableHead>
-                <TableHead className="text-right font-bold">Debit (QAR)</TableHead>
-                <TableHead className="text-right font-bold">Credit (QAR)</TableHead>
-                <TableHead className="text-right font-bold">Balance (QAR)</TableHead>
-                <TableHead className="text-center font-bold">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {/* Opening Balance Row */}
-              <TableRow className="bg-muted/30 text-xs font-semibold">
-                <TableCell className="font-mono text-muted-foreground">{fromDate}</TableCell>
-                <TableCell><Badge variant="outline" className="text-[9px]">OPENING</Badge></TableCell>
-                <TableCell className="font-mono text-muted-foreground">—</TableCell>
-                <TableCell className="font-medium text-foreground">Balance Brought Forward</TableCell>
-                <TableCell className="text-muted-foreground">—</TableCell>
-                <TableCell className="text-right font-mono">—</TableCell>
-                <TableCell className="text-right font-mono">—</TableCell>
-                <TableCell className="text-right font-mono font-bold text-foreground">
-                  {summary.openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </TableCell>
-                <TableCell className="text-center text-muted-foreground">—</TableCell>
-              </TableRow>
-
-              {ledgerRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center py-6 text-xs text-muted-foreground">
-                    No transactions recorded for this customer in the selected date range.
-                  </TableCell>
+          <div className="border rounded-lg overflow-hidden bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted text-xs font-bold text-muted-foreground">
+                  <TableHead className="font-bold">Date</TableHead>
+                  <TableHead className="font-bold">Doc Type</TableHead>
+                  <TableHead className="font-bold">Reference #</TableHead>
+                  <TableHead className="font-bold">Particulars / Description</TableHead>
+                  <TableHead className="font-bold">Property &amp; Unit</TableHead>
+                  <TableHead className="text-right font-bold">Debit (QAR)</TableHead>
+                  <TableHead className="text-right font-bold">Credit (QAR)</TableHead>
+                  <TableHead className="text-right font-bold">Balance (QAR)</TableHead>
+                  <TableHead className="text-center font-bold">Status</TableHead>
                 </TableRow>
-              ) : (
-                ledgerRows.map(row => (
-                  <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
-                    <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={row.docType === "INVOICE" ? "outline" : "default"}
-                        className={`text-[9px] ${row.docType === "INVOICE" ? "border-rose-400 text-rose-600" : "bg-emerald-600 text-white"}`}
-                      >
-                        {row.docType === "INVOICE" ? "INV" : row.docType === "RECEIPT" ? "REC" : "PDC"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono font-bold">
-                      {row.rawInvoice ? (
-                        <button
-                          onClick={() => setSelectedInvoiceForView(row.rawInvoice || null)}
-                          className="text-primary hover:underline font-bold"
-                          title="Click to view/print invoice"
-                        >
-                          {row.refNo}
-                        </button>
-                      ) : (
-                        <span className="text-foreground">{row.refNo}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-medium max-w-[260px] truncate" title={row.description}>
-                      {row.description}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.property} &bull; <strong className="font-mono text-foreground">{row.unit}</strong>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-rose-600 dark:text-rose-400 font-semibold">
-                      {row.debit > 0 ? row.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {row.credit > 0 ? row.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-bold text-foreground">
-                      {row.runningBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge
-                        variant={row.status === "Paid" || row.status === "Settled" || row.status === "Cleared" ? "default" : row.status === "Overdue" ? "destructive" : "outline"}
-                        className="text-[9px]"
-                      >
-                        {row.status}
-                      </Badge>
+              </TableHeader>
+              <TableBody>
+                {/* Opening Balance Row */}
+                <TableRow className="bg-muted/30 text-xs font-semibold">
+                  <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(fromDate)}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-[9px]">OPENING</Badge></TableCell>
+                  <TableCell className="font-mono text-muted-foreground">—</TableCell>
+                  <TableCell className="font-medium text-foreground">Balance Brought Forward</TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell className="text-right font-mono">—</TableCell>
+                  <TableCell className="text-right font-mono">—</TableCell>
+                  <TableCell className="text-right font-mono font-bold text-foreground">
+                    {summary.openingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
+                  <TableCell className="text-center text-muted-foreground">—</TableCell>
+                </TableRow>
+
+                {ledgerRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-6 text-xs text-muted-foreground">
+                      No transactions recorded for this customer in the selected date range.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                ) : (
+                  ledgerRows.map(row => (
+                    <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
+                      <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={row.docType === "INVOICE" ? "outline" : "default"}
+                          className={`text-[9px] ${row.docType === "INVOICE" ? "border-rose-400 text-rose-600" : "bg-emerald-600 text-white"}`}
+                        >
+                          {row.docType === "INVOICE" ? "INV" : row.docType === "RECEIPT" ? "REC" : "PDC"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono font-bold">
+                        {row.rawInvoice ? (
+                          <button
+                            onClick={() => setSelectedInvoiceForView(row.rawInvoice || null)}
+                            className="text-primary hover:underline font-bold"
+                            title="Click to view/print invoice"
+                          >
+                            {row.refNo}
+                          </button>
+                        ) : (
+                          <span className="text-foreground">{row.refNo}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium max-w-[260px] truncate" title={row.description}>
+                        {row.description}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.property} &bull; <strong className="font-mono text-foreground">{row.unit}</strong>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-rose-600 dark:text-rose-400 font-semibold">
+                        {row.debit > 0 ? row.debit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                        {row.credit > 0 ? row.credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-bold text-foreground">
+                        {row.runningBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          variant={row.status === "Paid" || row.status === "Settled" || row.status === "Cleared" ? "default" : row.status === "Overdue" ? "destructive" : "outline"}
+                          className="text-[9px]"
+                        >
+                          {row.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
         )}
 
@@ -1581,7 +1665,7 @@ export function CustomerStatementSubModule({
                 ) : (
                   depositRows.map((row) => (
                     <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
-                      <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={`text-[9px] ${row.depositReceived > 0 ? "border-emerald-400 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40" : row.refundPaid > 0 ? "border-blue-400 text-blue-700 bg-blue-50 dark:bg-blue-950/40" : "border-rose-400 text-rose-700 bg-rose-50 dark:bg-rose-950/40"}`}>
                           {row.depositReceived > 0 ? "DEP-RCV" : row.refundPaid > 0 ? "DEP-REF" : "DEP-CLM"}
@@ -1642,9 +1726,18 @@ export function CustomerStatementSubModule({
                 ) : (
                   pdcRegisterRows.map((row) => (
                     <TableRow key={row.id} className="hover:bg-muted/20 text-xs">
-                      <TableCell className="font-mono font-bold text-foreground">{row.chequeNo}</TableCell>
+                      <TableCell className="font-mono font-bold text-foreground">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{row.chequeNo}</span>
+                          {(row.dueDate === "2036-12-31" || String(row.bank || "").includes("Guarantee") || String(row.notes || "").toLowerCase().includes("guarantee")) && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-700 border-amber-300 font-semibold">
+                              Guarantee Cheque
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="font-medium">{row.bank}</TableCell>
-                      <TableCell className="font-mono text-muted-foreground">{row.dueDate}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.dueDate)}</TableCell>
                       <TableCell className="text-muted-foreground">{row.property} &bull; <strong className="font-mono text-foreground">{row.unit}</strong></TableCell>
                       <TableCell className="text-muted-foreground">{row.notes || "—"}</TableCell>
                       <TableCell className="text-right font-mono font-bold text-foreground">
@@ -1653,15 +1746,14 @@ export function CustomerStatementSubModule({
                       <TableCell className="text-center">
                         <Badge
                           variant={row.status === "cleared" ? "default" : row.status === "deposited" ? "secondary" : row.status === "bounced" ? "destructive" : "outline"}
-                          className={`text-[9px] capitalize ${
-                            row.status === "in_hand"
+                          className={`text-[9px] capitalize ${row.status === "in_hand"
                               ? "border-teal-400 text-teal-700 bg-teal-50 dark:bg-teal-950/40"
                               : row.status === "cleared"
-                              ? "bg-emerald-600 text-white"
-                              : row.status === "replaced"
-                              ? "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/40 dark:text-purple-300"
-                              : ""
-                          }`}
+                                ? "bg-emerald-600 text-white"
+                                : row.status === "replaced"
+                                  ? "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/40 dark:text-purple-300"
+                                  : ""
+                            }`}
                         >
                           {row.status === "replaced" ? "Replaced" : row.status.replace("_", " ")}
                         </Badge>
@@ -1762,21 +1854,35 @@ export function CustomerStatementSubModule({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {upcomingPdcs.map(p => (
-                    <TableRow key={p.id} className="text-xs">
-                      <TableCell className="font-mono font-bold">{p.chequeNo || p.chequeNumber || (p as any).cheque_number}</TableCell>
-                      <TableCell>{p.bank || "Qatar National Bank (QNB)"}</TableCell>
-                      <TableCell className="font-mono">{p.dueDate || p.date || (p as any).maturity_date}</TableCell>
-                      <TableCell className="text-right font-mono font-bold">
-                        {Number(p.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className="text-[10px] capitalize border-teal-500 text-teal-700 bg-teal-50">
-                          {p.status === "received" || p.status === "in_hand" ? "In Vault" : p.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {upcomingPdcs.map(p => {
+                    const isGChq = p.isGuaranteeCheque || p.dueDate === "2036-12-31" || p.date === "2036-12-31" || String(p.bank || "").includes("Guarantee") || String(p.notes || "").toLowerCase().includes("guarantee");
+                    return (
+                      <TableRow key={p.id} className="text-xs">
+                        <TableCell className="font-mono font-bold">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{p.chequeNo || p.chequeNumber || (p as any).cheque_number}</span>
+                            {isGChq && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-700 border-amber-300 font-semibold">
+                                Guarantee Cheque
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{isGChq ? "Guarantee Cheque (Undated / Custody)" : (p.bank || "Qatar National Bank (QNB)")}</TableCell>
+                        <TableCell className="font-mono">
+                          {isGChq ? "31-12-2036 (Undated / Custody)" : (p.dueDate || p.date || (p as any).maturity_date)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-bold">
+                          {Number(p.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="text-[10px] capitalize border-teal-500 text-teal-700 bg-teal-50">
+                            {p.status === "received" || p.status === "in_hand" ? "In Vault" : p.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

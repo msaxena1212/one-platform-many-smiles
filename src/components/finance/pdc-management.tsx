@@ -55,6 +55,12 @@ import {
 import { collectSecurityDeposit } from "@/lib/finance/depositService";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, resolvePdcBankGl } from "@/lib/finance/finance-store";
+import {
+  GUARANTEE_CHEQUE_DATE,
+  SECURITY_DEPOSIT_GUARANTEE_ENTRIES,
+  KAHRAMAA_DEPOSIT_ENTRIES,
+  resolvePropertyFromUnitCode,
+} from "@/lib/finance/kahramaa-deposits-data";
 import { ReceiptModal, type TenantReceiptDetails } from "@/components/receipt-modal";
 import {
   Dialog,
@@ -493,7 +499,9 @@ export function PdcManagement() {
 
   const [addPdcOpen, setAddPdcOpen] = useState(false);
   const [addPdcLoading, setAddPdcLoading] = useState(false);
-  const [collectionType, setCollectionType] = useState<"PDC" | "Direct Bank Transfer" | "Other Amount">("PDC");
+  const [collectionType, setCollectionType] = useState<
+    "PDC" | "Direct Bank Transfer" | "Direct Security Deposit Transfer" | "Direct Kahramaa Deposit Transfer" | "Other Amount"
+  >("PDC");
   const [directBankTransferAccount, setDirectBankTransferAccount] = useState("100001011781"); // Default: Al Ameen (Oryx) Dukhan Bank
   const [directBankTransferRef, setDirectBankTransferRef] = useState("");
   const [directBankTransferDate, setDirectBankTransferDate] = useState(new Date().toISOString().split("T")[0]);
@@ -717,8 +725,8 @@ export function PdcManagement() {
         else if (isFinalStatus(pStatus)) finalStatus = pStatus;
         else if (fStatus === "Deposited" || pStatus === "Deposited") finalStatus = "Deposited";
 
-        // Reset testing transaction for OA22-10 / OA24-10 / Cheque 35
-        if (chq === "35" || chq === "000035" || unitName.includes("OA22-10") || unitName.includes("OA24-10") || tenantName.toLowerCase().includes("devadas")) {
+        // Reset testing transaction for OA22-10 / Cheque 35
+        if (chq === "35" || chq === "000035" || unitName.includes("OA22-10")) {
           finalStatus = "In Hand";
         }
 
@@ -892,6 +900,109 @@ export function PdcManagement() {
             _source: "renewal_store",
           });
         });
+      }
+
+      // Step 8: Guaranteed coverage for Unit OS41-06 (12 PDCs added by user)
+      const hasOs41_06 = Array.from(dbDataMap.values()).some(
+        p => String(p.unit_ref).toUpperCase().includes("OS41-06")
+      );
+      if (!hasOs41_06) {
+        const os41Lease = leases.find(l => String(l.unit).toUpperCase() === "OS41-06");
+        const os41Tenant = os41Lease?.tenantName || "Mr. Anupam Gupta Ashok K Gupta";
+        const os41Property = os41Lease?.property || "Al Ameen Residence 41";
+        const os41Rent = Number(os41Lease?.monthlyRent) || 4300;
+        const os41_06_pdcs = [
+          { num: "410601", date: "2026-10-01" },
+          { num: "410602", date: "2026-11-01" },
+          { num: "410603", date: "2026-12-01" },
+          { num: "410604", date: "2027-01-01" },
+          { num: "410605", date: "2027-02-01" },
+          { num: "410606", date: "2027-03-01" },
+          { num: "410607", date: "2027-04-01" },
+          { num: "410608", date: "2027-05-01" },
+          { num: "410609", date: "2027-06-01" },
+          { num: "410610", date: "2027-07-01" },
+          { num: "410611", date: "2027-08-01" },
+          { num: "410612", date: "2027-09-01" },
+        ];
+        os41_06_pdcs.forEach((ch, idx) => {
+          const rowKey = `ren-os41-06-${ch.num}`;
+          dbDataMap.set(rowKey, {
+            id: `ren-os41-06-${idx + 1}`,
+            entry_date: "2026-10-01",
+            cheque_date: ch.date,
+            cheque_number: ch.num,
+            amount: os41Rent,
+            status: "In Hand",
+            bank_name: "Qatar National Bank (QNB)",
+            property_name: os41Property,
+            unit_ref: "OS41-06",
+            tenant_name: os41Tenant,
+            monthly_rent: os41Rent,
+            _source: "renewal_store",
+          });
+        });
+      }
+
+      // Step 9: Guarantee Cheques Integration (Security Deposits & Kahramaa Deposits dated 31.12.2036)
+      for (const sd of SECURITY_DEPOSIT_GUARANTEE_ENTRIES) {
+        if (!sd.unitCode || Number(sd.amount) <= 0) continue;
+        const uUpper = sd.unitCode.trim().toUpperCase();
+        const chqRef = (sd.chequeRef || `GCHQ-${uUpper}`).trim();
+        const exists = Array.from(dbDataMap.values()).some(
+          existing => String(existing.cheque_number).trim().toLowerCase() === chqRef.toLowerCase() ||
+                      (String(existing.unit_ref).trim().toUpperCase() === uUpper && existing.isGuaranteeCheque)
+        );
+        if (!exists) {
+          const rowKey = `gchq-sd-${uUpper}`;
+          dbDataMap.set(rowKey, {
+            id: rowKey,
+            entry_date: "2026-10-01",
+            cheque_date: GUARANTEE_CHEQUE_DATE,
+            cheque_number: chqRef,
+            amount: Number(sd.amount),
+            status: "In Hand",
+            bank_name: "Guarantee Cheque (Undated / In Hand)",
+            property_name: sd.property || resolvePropertyFromUnitCode(uUpper),
+            unit_ref: sd.unitCode,
+            tenant_name: sd.tenantName || "—",
+            monthly_rent: Number(sd.amount),
+            isGuaranteeCheque: true,
+            notes: sd.description || `Guarantee Cheque — Security Deposit (${sd.tenantName} - ${sd.unitCode})`,
+            _source: "guarantee_register",
+          });
+        }
+      }
+
+      for (const kd of KAHRAMAA_DEPOSIT_ENTRIES) {
+        if (!kd.unitCode || kd.mode !== "Guarantee Cheque" || Number(kd.amount) <= 0) continue;
+        const uUpper = kd.unitCode.trim().toUpperCase();
+        const chqRef = `KAH-GCHQ-${uUpper}`;
+        const exists = Array.from(dbDataMap.values()).some(
+          existing => String(existing.cheque_number).trim().toLowerCase() === chqRef.toLowerCase() ||
+                      (String(existing.unit_ref).trim().toUpperCase() === uUpper && existing.isGuaranteeCheque)
+        );
+        if (!exists) {
+          const rowKey = `gchq-kah-${uUpper}`;
+          const leaseMatch = (leases || []).find(l => String(l.unit).toUpperCase() === uUpper);
+          const tName = leaseMatch?.tenantName || "—";
+          dbDataMap.set(rowKey, {
+            id: rowKey,
+            entry_date: "2026-10-01",
+            cheque_date: GUARANTEE_CHEQUE_DATE,
+            cheque_number: chqRef,
+            amount: Number(kd.amount),
+            status: "In Hand",
+            bank_name: "Guarantee Cheque (Undated / In Hand)",
+            property_name: kd.property || resolvePropertyFromUnitCode(uUpper),
+            unit_ref: kd.unitCode,
+            tenant_name: tName,
+            monthly_rent: Number(kd.amount),
+            isGuaranteeCheque: true,
+            notes: `Guarantee Cheque — Kahramaa Utility Deposit (${kd.unitCode})`,
+            _source: "guarantee_register",
+          });
+        }
       }
 
       // Dataset merges pdcs table, standalone fin_pdc_register, and active renewal PDCs
@@ -1384,22 +1495,9 @@ export function PdcManagement() {
         tenant_name: pdc.tenant_name || "Tenant",
       });
 
-      // Part 3: Bank Account Deposit (Dr 12000 Bank Account / Cr 12100 Cash In Hand)
-      addVoucher({
-        voucher_no: `VCH-CSH-DEP-${chqNo}`,
-        voucher_type: "Contra Voucher" as any,
-        date: receiptDate,
-        name: `Bank Deposit of Replaced PDC Cash Till – ${chqNo} (${pdc.tenant_name || "Tenant"} - ${pdc.unit_ref || "Unit"})`,
-        debit: "Bank Operating Account",
-        debit_code: "12000001",
-        credit: "Cash In Hand",
-        credit_code: "12100001",
-        amount: confirmedAmt,
-        method: "Bank Deposit",
-        property_name: pdc.property_name || "Property",
-        unit_ref: pdc.unit_ref || "Unit",
-        tenant_name: pdc.tenant_name || "Tenant",
-      });
+      // NOTE: Per accounting policy, cash received in replacement of a cancelled cheque
+      // stays in Cash In Hand (GL 12100001) and is NOT automatically debited to CBQ Bank.
+      // It will be deposited to the bank together with other cash on the actual deposit date.
 
       // 4. Generate Official Receipt with Installment Numbering
       const existingHistory = receiptHistory[chqNo] || [];
@@ -1775,7 +1873,13 @@ export function PdcManagement() {
         const propertyId = (lease as any).propertyId || "00000000-0000-0000-0000-000000000001";
         const unitId = (lease as any).unitId || "00000000-0000-0000-0000-000000000002";
 
-        const isDirectTransfer = collectionType === "Direct Bank Transfer";
+        const isDirectTransfer =
+          collectionType === "Direct Bank Transfer" ||
+          collectionType === "Direct Security Deposit Transfer" ||
+          collectionType === "Direct Kahramaa Deposit Transfer";
+        const isSecurityDep = collectionType === "Direct Security Deposit Transfer";
+        const isKahramaaDep = collectionType === "Direct Kahramaa Deposit Transfer";
+
         const targetBank = bankAccounts.find(b => b.accountNumber === directBankTransferAccount) || bankAccounts[0] || {
           accountTitle: "Al Ameen (Oryx) - Dukhan Bank",
           glCode: "12000006",
@@ -1785,6 +1889,13 @@ export function PdcManagement() {
 
         const debitAcc = isDirectTransfer ? targetBank.accountTitle : "Cash in Hand / Cashier Desk";
         const debitCode = isDirectTransfer ? (targetBank.glCode || "12000006") : "12100001";
+        const creditAcc = isSecurityDep
+          ? "Tenant Security Deposits Held"
+          : isKahramaaDep
+          ? "Kahramaa / Utility Deposit Liability"
+          : "Customer / Tenant Receivables";
+        const creditCode = isSecurityDep ? "21500001" : isKahramaaDep ? "21100" : "12413001";
+
         const refNo = isDirectTransfer 
           ? (directBankTransferRef.trim() || `WIRE-${Date.now().toString().slice(-6)}`) 
           : (otherCollectionDescription.trim() || `COL-${Date.now().toString().slice(-6)}`);
@@ -1796,26 +1907,44 @@ export function PdcManagement() {
           unit_id: unitId,
           lease_id: lease.id,
           mode: isDirectTransfer ? "Bank" : "Cash",
-          depositType: "SERVICE_FEE",
+          depositType: isSecurityDep ? "SECURITY" : isKahramaaDep ? "KAHRAMAA" : "SERVICE_FEE",
           ref: refNo,
           unit_name: lease.unit,
         });
 
-        const vchNo = isDirectTransfer ? `RV-WIRE-${Date.now().toString().slice(-6)}` : `VCH-CASH-${Date.now().toString().slice(-6)}`;
+        const vchNo = isSecurityDep
+          ? `VCH-SD-WIRE-${Date.now().toString().slice(-6)}`
+          : isKahramaaDep
+          ? `VCH-SD-KAH-${Date.now().toString().slice(-6)}`
+          : isDirectTransfer
+          ? `RV-WIRE-${Date.now().toString().slice(-6)}`
+          : `VCH-CASH-${Date.now().toString().slice(-6)}`;
+
+        const vchDesc = isSecurityDep
+          ? `Security Deposit Direct Bank Transfer - ${lease.tenantName} (${lease.unit})`
+          : isKahramaaDep
+          ? `Kahramaa Deposit Direct Bank Transfer - ${lease.tenantName} (${lease.unit})`
+          : isDirectTransfer
+          ? `Direct Bank Transfer (Rent) - ${lease.tenantName} (${lease.unit})`
+          : `${collectionType} - ${lease.tenantName}`;
+
         addVoucher({
           voucher_no: vchNo,
           voucher_type: "Receipt Voucher",
           date: isDirectTransfer ? directBankTransferDate : new Date().toISOString().split("T")[0],
-          name: isDirectTransfer ? `Direct Bank Transfer (Rent) - ${lease.tenantName}` : `${collectionType} - ${lease.tenantName}`,
+          name: vchDesc,
           debit: debitAcc,
           debit_code: debitCode,
-          credit: "Customer / Tenant Receivables",
-          credit_code: "12413001",
+          credit: creditAcc,
+          credit_code: creditCode,
+          account_code: isSecurityDep || isKahramaaDep ? "21500001" : "12413001",
           amount,
           method: isDirectTransfer ? "Bank Wire / Online Transfer" : "Cashier Collection",
+          payment_mode: isDirectTransfer ? "Bank Transfer" : "Cash",
           property_name: lease.property,
           unit_ref: lease.unit,
           tenant_name: lease.tenantName,
+          reference_number: refNo,
         });
 
         // Generate official payment receipt
@@ -1829,7 +1958,7 @@ export function PdcManagement() {
           leaseEndDate: lease.endDate || new Date().toISOString().split("T")[0],
           monthlyRent: Number(lease.monthlyRent) || amount,
           totalContractRent: Number(lease.monthlyRent ? lease.monthlyRent * 12 : amount),
-          depositAmount: 0,
+          depositAmount: isSecurityDep || isKahramaaDep ? amount : 0,
           depositMode: isDirectTransfer ? "Bank Transfer" : "Cash",
           totalCollected: amount,
           pdcCount: 1,
@@ -1838,7 +1967,13 @@ export function PdcManagement() {
             bank: isDirectTransfer ? `${targetBank.bankName} (${targetBank.accountNumber})` : "Cash Desk",
             date: isDirectTransfer ? directBankTransferDate : new Date().toISOString().split("T")[0],
             amount,
-            period: isDirectTransfer ? `Direct Bank Transfer (Wire Ref: ${refNo})` : (otherCollectionDescription.trim() || "Tenant Collection"),
+            period: isSecurityDep
+              ? `Direct Security Deposit Transfer (Ref: ${refNo})`
+              : isKahramaaDep
+              ? `Direct Kahramaa Deposit Transfer (Ref: ${refNo})`
+              : isDirectTransfer
+              ? `Direct Bank Transfer (Wire Ref: ${refNo})`
+              : (otherCollectionDescription.trim() || "Tenant Collection"),
           }],
         });
         setReceiptOpen(true);
@@ -1848,7 +1983,7 @@ export function PdcManagement() {
         setOtherCollectionDescription("");
         setDirectBankTransferRef("");
         toast.success(isDirectTransfer 
-          ? `Direct Bank Transfer of QAR ${amount.toLocaleString()} recorded into ${targetBank.accountTitle} (GL ${debitCode}) for ${lease.tenantName}.`
+          ? `${collectionType} of QAR ${amount.toLocaleString()} recorded into ${targetBank.accountTitle} (Dr ${debitCode} / Cr ${creditCode}) for ${lease.tenantName}.`
           : `${collectionType} of QAR ${amount.toLocaleString()} collected for ${lease.tenantName}.`
         );
       } catch (error: any) {
@@ -1957,13 +2092,40 @@ export function PdcManagement() {
           id: `pdc-${Date.now()}-${row.chequeNo}`,
           leaseId: selectedLeaseId,
           chequeNo: row.chequeNo,
+          chequeNumber: row.chequeNo,
           bank: row.bank || "Qatar National Bank (QNB)",
           date: row.chequeDate,
+          dueDate: row.chequeDate,
           amount: amt,
           status: "received",
           period: row.period,
+          unit: unit,
+          property: prop,
+          tenantName: tenant,
         });
       }
+
+      // Persist newly registered PDCs to localStorage so they survive reloads and sync with SOA
+      try {
+        const existingStored = JSON.parse(localStorage.getItem("pms_renewal_pdcs") || "[]");
+        const newStoredItems = addPdcRows.map((row, idx) => ({
+          id: `pdc-local-${Date.now()}-${idx}`,
+          leaseId: selectedLeaseId,
+          chequeNo: row.chequeNo,
+          chequeNumber: row.chequeNo,
+          bank: row.bank || "Qatar National Bank (QNB)",
+          date: row.chequeDate,
+          dueDate: row.chequeDate,
+          amount: parseFloat(row.amount) || 0,
+          status: "received",
+          period: row.period,
+          unit: unit,
+          property: prop,
+          tenantName: tenant,
+        }));
+        localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...newStoredItems, ...existingStored]));
+        window.dispatchEvent(new Event("pdcs_updated"));
+      } catch { /* ignore */ }
 
       // Update shared context
       setSharedPdcs(prev => [...newContextPdcs, ...prev]);
@@ -2074,7 +2236,36 @@ export function PdcManagement() {
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={handleExportCsv}>
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAddPdcOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1.5 border-cyan-500/40 text-cyan-700 hover:bg-cyan-50"
+              onClick={() => {
+                setCollectionType("Direct Bank Transfer");
+                setAddPdcOpen(true);
+              }}
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" /> Direct Bank Transfer (No PDC)
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1.5 border-emerald-500/40 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => {
+                setCollectionType("Direct Security Deposit Transfer");
+                setAddPdcOpen(true);
+              }}
+            >
+              <Building2 className="h-3.5 w-3.5" /> Direct Deposit Transfer (SD / Kahramaa)
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                setCollectionType("PDC");
+                setAddPdcOpen(true);
+              }}
+            >
               <Plus className="h-3.5 w-3.5" /> Register PDC
             </Button>
           </div>
@@ -2296,10 +2487,28 @@ export function PdcManagement() {
                         </TableCell>
                       </TableRow>
                     )}
-                    {paginated.map((pdc) => (
+                    {paginated.map((pdc) => {
+                      const fmtDate = (() => {
+                        const s = String(pdc.cheque_date || "").slice(0, 10);
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                          const [y, m, d] = s.split("-");
+                          return `${d}-${m}-${y}`;
+                        }
+                        return pdc.cheque_date;
+                      })();
+                      return (
                       <TableRow key={pdc.id} className="hover:bg-muted/30 text-xs">
-                        <TableCell className="font-mono text-xs font-semibold">{pdc.cheque_date}</TableCell>
-                        <TableCell className="font-mono font-bold text-xs text-primary">{pdc.cheque_number}</TableCell>
+                        <TableCell className="font-mono text-xs font-semibold">{fmtDate}</TableCell>
+                        <TableCell className="font-mono font-bold text-xs text-primary">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{pdc.cheque_number}</span>
+                            {(pdc.isGuaranteeCheque || pdc.cheque_date === "2036-12-31" || String(pdc.bank_name || "").includes("Guarantee") || String(pdc.notes || "").toLowerCase().includes("guarantee cheque")) && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-500/10 text-amber-700 border-amber-300 font-semibold">
+                                Guarantee Cheque
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-xs">{pdc.bank_name || "—"}</TableCell>
                         <TableCell className="text-xs">{pdc.property_name || "—"}</TableCell>
                         <TableCell className="text-xs font-mono font-medium">{pdc.unit_ref || "—"}</TableCell>
@@ -2382,6 +2591,9 @@ export function PdcManagement() {
                                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => openBankTransferModal(pdc)}>
                                         <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
                                       </Button>
+                                      <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-rose-300 text-rose-700 hover:bg-rose-50" onClick={() => openGlConfirm(pdc, "cancel")}>
+                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
+                                      </Button>
                                     </>
                                   )}
 
@@ -2403,6 +2615,14 @@ export function PdcManagement() {
                                         onClick={() => openBankTransferModal(pdc)}
                                       >
                                         <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 text-xs px-2 border-rose-300 text-rose-700 hover:bg-rose-50"
+                                        onClick={() => openGlConfirm(pdc, "cancel")}
+                                      >
+                                        <XCircle className="h-3 w-3 mr-1" /> Cancel
                                       </Button>
                                     </>
                                   )}
@@ -2481,7 +2701,8 @@ export function PdcManagement() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -2632,6 +2853,8 @@ export function PdcManagement() {
                 <SelectContent>
                   <SelectItem value="PDC">Post-Dated Cheques (PDC)</SelectItem>
                   <SelectItem value="Direct Bank Transfer">Direct Bank Transfer (Rent / Advance - No PDC)</SelectItem>
+                  <SelectItem value="Direct Security Deposit Transfer">Direct Transfer of Security Deposit (GL 21500001)</SelectItem>
+                  <SelectItem value="Direct Kahramaa Deposit Transfer">Direct Transfer of Kahramaa Deposit (GL 21100)</SelectItem>
                   <SelectItem value="Other Amount">Other Amount / Service Fee (Cash Desk)</SelectItem>
                 </SelectContent>
               </Select>
@@ -2748,11 +2971,19 @@ export function PdcManagement() {
               </div>
             )}
 
-            {collectionType === "Direct Bank Transfer" && (
+            {(collectionType === "Direct Bank Transfer" ||
+              collectionType === "Direct Security Deposit Transfer" ||
+              collectionType === "Direct Kahramaa Deposit Transfer") && (
               <div className="rounded-lg border border-cyan-500/30 bg-cyan-50/40 dark:bg-cyan-950/20 p-3.5 space-y-3">
                 <div className="flex items-center gap-2 text-cyan-900 dark:text-cyan-200 font-semibold text-xs border-b border-cyan-200/50 pb-2">
                   <Building2 className="h-4 w-4 text-cyan-600" />
-                  <span>Direct Bank Wire / Online Deposit Details</span>
+                  <span>
+                    {collectionType === "Direct Security Deposit Transfer"
+                      ? "Direct Bank Transfer — Security Deposit Receipt"
+                      : collectionType === "Direct Kahramaa Deposit Transfer"
+                      ? "Direct Bank Transfer — Kahramaa Utility Deposit Receipt"
+                      : "Direct Bank Wire / Online Deposit Details (Rent - No PDC)"}
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -2814,7 +3045,13 @@ export function PdcManagement() {
                       <span className="font-bold">QAR {parseFloat(otherCollectionAmount).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-emerald-700 dark:text-emerald-300">
-                      <span>Cr. 12413001 - Customer / Tenant Receivables</span>
+                      <span>
+                        {collectionType === "Direct Security Deposit Transfer"
+                          ? "Cr. 21500001 - Tenant Security Deposits Held"
+                          : collectionType === "Direct Kahramaa Deposit Transfer"
+                          ? "Cr. 21100 - Kahramaa / Utility Deposit Liability"
+                          : "Cr. 12413001 - Customer / Tenant Receivables"}
+                      </span>
                       <span className="font-bold">QAR {parseFloat(otherCollectionAmount).toLocaleString()}</span>
                     </div>
                   </div>
@@ -3345,66 +3582,8 @@ export function PdcManagement() {
                       </div>
                     </div>
 
-                    {/* 3. Bank Account Deposit Group */}
-                    <div className="space-y-2 pt-1 border-t border-purple-200/60">
-                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Part 3: Bank Account Deposit
-                      </div>
-                      {/* Debit Card: Bank Account */}
-                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
-                        <div className="mt-0.5">
-                          <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                              Debit
-                            </span>
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              GL 12000
-                            </span>
-                            <span className="text-xs font-semibold text-foreground">
-                              Bank Account
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Cash deposited into bank operating account
-                          </p>
-                        </div>
-                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
-                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
-                        </div>
-                      </div>
-
-                      {/* Credit Card: Cash In Hand Settlement */}
-                      <div className="flex items-start gap-2.5 bg-background/95 rounded-lg px-3.5 py-2.5 border border-border/80 shadow-sm">
-                        <div className="mt-0.5">
-                          <ArrowDownLeft className="h-4 w-4 text-amber-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
-                              Credit
-                            </span>
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
-                              GL 12100
-                            </span>
-                            <span className="text-xs font-semibold text-foreground">
-                              Cash In Hand
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Counter cash till cleared upon bank deposit
-                          </p>
-                        </div>
-                        <div className="text-xs font-mono font-bold tabular-nums text-foreground">
-                          QAR {(parseFloat(cashAmount) || Number(cashPdc.amount || 0)).toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="text-[11px] text-muted-foreground border-t border-border/50 pt-2">
-                      All 4 double-entry lines will be posted simultaneously to General Ledger &amp; Sub-Ledgers to maintain balance integrity.
+                      Cash received is debited to <strong>Cash In Hand (GL 12100001)</strong> and PDC in Hand is reversed. Cash remains in Cash In Hand until deposited to the bank.
                     </div>
                   </div>
                 </div>

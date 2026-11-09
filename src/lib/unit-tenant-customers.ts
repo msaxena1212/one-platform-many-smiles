@@ -22,6 +22,15 @@ export type UnitTenantCustomer = {
   _source: string;
 };
 
+export function normalizeCustomerNameKey(name: string): string {
+  if (!name) return "";
+  let n = name.toLowerCase().trim();
+  n = n.replace(/^m\s*\/\s*s\.?\s*/i, "");
+  n = n.replace(/^(mr|mrs|ms|miss|dr|prof|eng|shk|sheikh|shaikh)\.?\s+/i, "");
+  n = n.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+  return n;
+}
+
 export function buildUnitTenantCustomers(
   units: Array<{ id?: string; current_tenant?: string | null; status?: string | null; lease_status?: string | null }>,
   seenNames: Set<string>,
@@ -33,9 +42,14 @@ export function buildUnitTenantCustomers(
   units.forEach((u) => {
     const raw = String(u.current_tenant || "").trim();
     if (!raw) return;
-    const norm = raw.toLowerCase();
-    if (seenNames.has(norm)) return;
+    const lower = raw.toLowerCase();
+    if (lower === "vacant" || lower === "occupied" || lower === "available" || lower === "tenant" || lower === "-" || lower === "—") return;
+    const norm = normalizeCustomerNameKey(raw);
+    const legacyNorm = raw.toLowerCase().replace(/^m\s*\/\s*s\.?\s*/i, "m/s ").replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+    if (!norm || seenNames.has(norm) || seenNames.has(legacyNorm) || seenNames.has(lower)) return;
     seenNames.add(norm);
+    seenNames.add(legacyNorm);
+    seenNames.add(lower);
 
     const isCompany = guessType
       ? guessType(raw) === "company"
