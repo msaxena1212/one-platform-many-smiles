@@ -727,7 +727,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           const t = getTenantName(leaseItem)?.toLowerCase()?.trim();
           const lNum = String(leaseItem.lease_number || '').toUpperCase().trim();
           const lId = String(leaseItem.id || '').toUpperCase().trim();
-          if (u.includes("OA22-10") || t.includes("devadas pappu")) {
+          if (u.includes("OA22-10") || t.includes("devadas melitta")) {
             return false;
           }
           if (deletedLeasesSet.has(lNum) || deletedLeasesSet.has(lId)) {

@@ -407,7 +407,7 @@ function loadSavedReceiptHistory(): Record<string, TenantReceiptDetails[]> {
     delete parsed["35"];
     delete parsed["000035"];
     for (const [k, v] of Object.entries(parsed)) {
-      if (Array.isArray(v) && v.some(r => (r.unitRef && (r.unitRef.includes("OA22-10") || r.unitRef.includes("OA24-10"))) || (r.tenantName && r.tenantName.toLowerCase().includes("devadas")))) {
+      if (Array.isArray(v) && v.some(r => (r.unitRef && r.unitRef.includes("OA22-10")) || (r.tenantName && r.tenantName.toLowerCase().includes("devadas melitta")))) {
         delete parsed[k];
       }
     }

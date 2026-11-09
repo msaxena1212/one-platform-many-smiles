@@ -728,8 +728,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
             vName.includes("bank deposit of replaced pdc cash till") ||
             uRef.includes("OA22-10") ||
             vName.includes("oa22-10") ||
-            vName.includes("devadas melitta") ||
-            vName.includes("devadas pappu")
+            vName.includes("devadas melitta")
           ) {
             return false;
           }
@@ -896,7 +895,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         void supabase
           .from("fin_vouchers")
           .delete()
-          .or("voucher_number.ilike.%TRF-35%,voucher_number.ilike.%TRF-CNL-35%,description.ilike.%OA22-10%,description.ilike.%Devadas%");
+          .or("voucher_number.ilike.%TRF-35%,voucher_number.ilike.%TRF-CNL-35%,description.ilike.%OA22-10%,description.ilike.%Devadas Melitta%");
 
         // Normalize processed salary amount from 115,250 to 96,820 in backend tables
         void supabase
@@ -925,8 +924,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 vNo.startsWith("BNK-DEP-") ||
                 desc.includes("bank deposit of replaced pdc cash till") ||
                 desc.includes("oa22-10") ||
-                desc.includes("devadas melitta") ||
-                desc.includes("devadas pappu")
+                desc.includes("devadas melitta")
               ) {
                 return false;
               }
@@ -3138,8 +3136,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         vchNo.includes("TRF-CNL-35") ||
         vchUnit.includes("OA22-10") ||
         vchDesc.includes("oa22-10") ||
-        vchDesc.includes("devadas melitta") ||
-        vchDesc.includes("devadas pappu")
+        vchDesc.includes("devadas melitta")
       ) {
         return;
       }

@@ -397,7 +397,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         const propTitle = u.properties?.title || propMap.get(u.property_id) || u.property_id || "Property";
         const unitName = u.unit_ref || u.unit_name || u.unit_code || "Unit";
         const cleanName = unitName.toUpperCase().trim();
-        const isVacatedTestUnit = cleanName.includes("OA22-10") || cleanName.includes("OA24-10");
+        // OA24-10 is a live, leased unit (Mr. Devadas Pappu) — only OA22-10 remains a vacated test unit.
+        const isVacatedTestUnit = cleanName.includes("OA22-10");
 
         return {
           id: u.id,
@@ -553,11 +554,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         .map((l: any) => {
           const uIdentifier = unitMap.get(l.unit_id) || l.unit_ref || l.unit || "";
           const uKey = uIdentifier.toUpperCase().trim();
-          const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
+          const rawExcel = (excelLeaseMasterData as Record<string, any>)[uKey];
 
-          if (uKey.includes("OA22-10") || uKey.includes("OA24-10") || excelOverride?.tenant === "Vacant") {
+          if (uKey.includes("OA22-10")) {
             return null as any;
           }
+
+          // The Excel master marks some units "Vacant". That placeholder only applies while the
+          // database has no live lease for the unit; a live DB lease (e.g. OA24-10) always wins.
+          const excelIsVacant = rawExcel?.tenant === "Vacant";
+          const dbLeaseIsLive = ["active", "fully_signed", "collection_completed", "renewal_due"].includes(
+            String(l.lease_status || "").toLowerCase()
+          );
+          if (excelIsVacant && !dbLeaseIsLive) {
+            return null as any;
+          }
+          const excelOverride = excelIsVacant ? undefined : rawExcel;
 
           // The database is the source of truth; the static Excel master is only a fallback
           // for records that have no value stored (otherwise contract edits would be ignored).
@@ -607,9 +619,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       (unitsRes.data || []).forEach((u: any, idx: number) => {
         const unitIdentifier = u.unit_ref || u.unit_name || u.unit_code || "Unit";
         const uKey = unitIdentifier.toUpperCase().trim();
-        if (uKey.includes("OA22-10") || uKey.includes("OA24-10")) return;
-        const excelOverride = (excelLeaseMasterData as Record<string, any>)[uKey];
-        if (excelOverride && (excelOverride.tenant === "Vacant" || excelOverride.rent === 0)) return;
+        if (uKey.includes("OA22-10")) return;
+        const rawExcel = (excelLeaseMasterData as Record<string, any>)[uKey];
+        const excelIsVacant = Boolean(rawExcel && (rawExcel.tenant === "Vacant" || rawExcel.rent === 0));
+        // Excel "Vacant" is overridden when the unit record itself carries a real tenant and rent.
+        const unitHasLiveTenant = Boolean(u.current_tenant && String(u.current_tenant).trim()) && Number(u.current_rent || 0) > 0;
+        if (excelIsVacant && !unitHasLiveTenant) return;
+        const excelOverride = excelIsVacant ? undefined : rawExcel;
 
         const isOccupied =
           (u.status?.toLowerCase() === "occupied" ||
@@ -812,8 +828,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           });
 
           const keysToDelete = [
-            "OA22-10", "OA24-10", "OA2210", "OA2410", "L-OA2210", "L-OA2410",
-            "DEVADAS MELITTA", "DEVADAS PAPPU", "devadas melitta", "devadas pappu"
+            "OA22-10", "OA2210", "L-OA2210",
+            "DEVADAS MELITTA", "devadas melitta"
           ];
           keysToDelete.forEach(k => {
             delete storedOverrides[k];
@@ -825,7 +841,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         console.warn("Could not load local lease overrides/renewals:", err);
       }
 
-      // Asynchronously ensure units OA22-10 and OA24-10 are vacant in Supabase database
+      // Asynchronously ensure test unit OA22-10 is vacant in Supabase database.
+      // (OA24-10 is a live leased unit and must never be vacated/purged here.)
       try {
         void supabase.from("units").update({
           status: "available",
@@ -835,9 +852,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           contract_start_date: null,
           contract_end_date: null,
           current_rent: 0,
-        }).or("unit_number.ilike.%OA22-10%,unit_ref.ilike.%OA22-10%,unit_number.ilike.%OA24-10%,unit_ref.ilike.%OA24-10%");
+        }).or("unit_number.ilike.%OA22-10%,unit_ref.ilike.%OA22-10%");
 
-        void supabase.from("leases").delete().or("lease_number.ilike.%OA2210%,lease_number.ilike.%OA2410%");
+        void supabase.from("leases").delete().or("lease_number.ilike.%OA2210%");
       } catch (e) {
         console.warn("Vacate unit in Supabase:", e);
       }
