@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { useAppData } from "@/lib/app-data-context";
 import { Loader2, PenLine, CheckSquare, Download, Search, Filter, X, Edit, FileEdit, CheckCircle2, ShieldAlert, FileCheck2, Scale, Building2, RefreshCw, Trash2 } from "lucide-react";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -243,9 +244,9 @@ export function LeasesModule({ role }: LeasesModuleProps) {
       try {
         const isOldUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(renewForm.oldLeaseId);
         if (isOldUUID) {
-          await supabase.from('leases').update({ lease_status: 'renewed' }).eq('id', renewForm.oldLeaseId);
+          await apiDb.from('leases').update({ lease_status: 'renewed' }).eq('id', renewForm.oldLeaseId);
         } else if (renewForm.oldLeaseNumber) {
-          await supabase.from('leases').update({ lease_status: 'renewed' }).eq('lease_number', renewForm.oldLeaseNumber);
+          await apiDb.from('leases').update({ lease_status: 'renewed' }).eq('lease_number', renewForm.oldLeaseNumber);
         }
 
         const { data: uMatch } = await supabase
@@ -255,7 +256,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           .maybeSingle();
 
         if (uMatch?.id) {
-          await supabase.from('leases').insert({
+          await apiDb.from('leases').insert({
             lease_number: newRenewedLease.lease_number,
             commencement_date: newRenewedLease.commencement_date,
             expiry_date: newRenewedLease.expiry_date,
@@ -268,7 +269,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
             property_id: uMatch.property_id,
           });
 
-          await supabase.from('units').update({
+          await apiDb.from('units').update({
             contract_no: newRenewedLease.lease_number,
             contract_start_date: newRenewedLease.commencement_date,
             contract_end_date: newRenewedLease.expiry_date,
@@ -407,7 +408,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         ? `id.eq.${editForm.id},lease_number.eq.${editForm.lease_number || editForm.id}`
         : `lease_number.eq.${editForm.lease_number || editForm.id}`;
 
-      let updateRes = await supabase
+      let updateRes = await apiDb
         .from('leases')
         .update({
           commencement_date: editForm.commencement_date,
@@ -427,7 +428,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
           .or(`unit_ref.eq.${editForm.unit_name},unit_code.eq.${editForm.unit_name},unit_name.eq.${editForm.unit_name}`)
           .maybeSingle();
         if (uMatch?.id) {
-          updateRes = await supabase
+          updateRes = await apiDb
             .from('leases')
             .update({
               commencement_date: editForm.commencement_date,
@@ -446,7 +447,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
 
       // Rent-free fields are written separately so a missing column cannot block the core update.
       if (matchVal) {
-        const { error: rfError } = await supabase
+        const { error: rfError } = await apiDb
           .from('leases')
           .update({
             has_rent_free: editForm.has_rent_free,
@@ -463,7 +464,7 @@ export function LeasesModule({ role }: LeasesModuleProps) {
     // 3. Persist to Supabase units table (match on the unit columns the app reads elsewhere)
     if (editForm.unit_name && editForm.unit_name !== '—') {
       try {
-        const { data: uData, error } = await supabase
+        const { data: uData, error } = await apiDb
           .from('units')
           .update({
             contract_start_date: editForm.commencement_date,
@@ -1303,10 +1304,10 @@ export function LeasesModule({ role }: LeasesModuleProps) {
                                   localStorage.setItem('pms_custom_lease_overrides', JSON.stringify(ov));
                                 }
                                 if (lease.lease_number) {
-                                  await supabase.from('leases').delete().eq('lease_number', lease.lease_number);
+                                  await apiDb.from('leases').delete().eq('lease_number', lease.lease_number);
                                 }
                                 if (lease.id) {
-                                  await supabase.from('leases').delete().eq('id', lease.id);
+                                  await apiDb.from('leases').delete().eq('id', lease.id);
                                 }
                                 setLeases(prev => prev.filter(l => l.id !== lease.id && l.lease_number !== lease.lease_number));
                                 toast.success(`Contract ${refNo} deleted successfully.`);

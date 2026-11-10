@@ -64,6 +64,7 @@ import {
   type MasterItem,
   type Unit,
 } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { useAppData } from "@/lib/app-data-context";
 
@@ -447,7 +448,7 @@ export function UnitsModule({ role }: UnitsModuleProps) {
             const unitLabel = form.unit_code || form.unit_ref || created.id.slice(0, 6);
             const unitCcCode = `CC-UNIT-${created.id.slice(0, 8).toUpperCase()}`;
             const unitCcName = `Unit ${unitLabel} Cost Center`;
-            await supabase.from('fin_cost_centers').upsert({
+            await apiDb.from('fin_cost_centers').upsert({
               code: unitCcCode,
               name: unitCcName,
               manager: '',

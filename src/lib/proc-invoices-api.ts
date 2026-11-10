@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { apiDb } from "@/lib/api-db";
 
 export type ProcApInvoice = {
   id: string;
@@ -109,7 +110,7 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
 
   try {
     // 1. Post to Supabase fin_vouchers (best-effort)
-    await supabase.from("fin_vouchers").insert({
+    await apiDb.from("fin_vouchers").insert({
       voucher_number: pvNum,
       voucher_date: paidDate,
       voucher_type: "PV",
@@ -310,7 +311,7 @@ export const ApInvoicesApi = {
 
     // Try Supabase insert
     try {
-      const { data } = await supabase.from('proc_ap_invoices').insert({
+      const { data } = await apiDb.from('proc_ap_invoices').insert({
         invoice_number: payload.invoice_number,
         vendor_id: payload.vendor_id,
         po_number: payload.po_number || null,
@@ -340,7 +341,7 @@ export const ApInvoicesApi = {
 
   update: async (id: string, payload: Partial<ProcApInvoice>): Promise<void> => {
     try {
-      await supabase.from('proc_ap_invoices').update(payload).eq('id', id);
+      await apiDb.from('proc_ap_invoices').update(payload).eq('id', id);
     } catch {
       // ignore
     }
@@ -463,7 +464,7 @@ export const ApInvoicesApi = {
 
   delete: async (id: string): Promise<void> => {
     try {
-      await supabase.from('proc_ap_invoices').delete().eq('id', id);
+      await apiDb.from('proc_ap_invoices').delete().eq('id', id);
     } catch {
       // ignore
     }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, type Lease } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export interface CreateLeaseInput {
   property_id: string;
@@ -66,7 +67,7 @@ export function useCreateLease() {
 
   return useMutation({
     mutationFn: async (payload: CreateLeaseInput) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("leases")
         .insert({
           ...payload,
@@ -87,7 +88,7 @@ export function useCreateLease() {
 
       // Update unit status to Reserved or Occupied if unit_id is provided
       if (payload.unit_id) {
-        await supabase
+        await apiDb
           .from("units")
           .update({ status: "Occupied", updated_at: new Date().toISOString() })
           .eq("id", payload.unit_id);
@@ -108,7 +109,7 @@ export function useUpdateLease() {
 
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Lease> }) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("leases")
         .update({
           ...updates,

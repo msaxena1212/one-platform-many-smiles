@@ -36,6 +36,7 @@ import {
 import { toast } from "sonner";
 import { openPrintable7DayLegalNotice, openPrintableRdcFilingPack } from "@/lib/qatar-legal-engine";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import {
   depositPdc,
   clearPdc,
@@ -2033,7 +2034,7 @@ export function PdcManagement() {
             lease_id: String(dbLeaseId),
           });
 
-          await supabase.from("pdcs").insert({
+          await apiDb.from("pdcs").insert({
             cheque_number: row.chequeNo,
             maturity_date: row.chequeDate,
             amount: amt,

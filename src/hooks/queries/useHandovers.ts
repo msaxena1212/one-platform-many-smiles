@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, type KeyHandover, type InspectionReport } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export function useKeyHandovers(leaseId?: string) {
   return useQuery({
@@ -26,7 +27,7 @@ export function useCreateKeyHandover() {
 
   return useMutation({
     mutationFn: async (payload: Omit<KeyHandover, "id" | "created_at">) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("key_handovers")
         .insert({
           ...payload,
@@ -69,7 +70,7 @@ export function useCreateInspectionReport() {
 
   return useMutation({
     mutationFn: async (payload: Omit<InspectionReport, "id" | "created_at" | "updated_at">) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("inspection_reports")
         .insert({
           ...payload,

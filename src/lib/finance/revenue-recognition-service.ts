@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { postVoucher } from "@/lib/finance/posting-engine";
 
 export interface MonthEndAccrualResult {
@@ -95,7 +96,7 @@ export async function executeMonthEndRevenueRecognition(
       result.voucherId = postingResult.voucher_id;
 
       // Log the month-end closing run to database
-      await supabase.from("revenue_recognition_logs").insert([
+      await apiDb.from("revenue_recognition_logs").insert([
         {
           closing_month: closingMonth,
           run_by: executedBy || null,

@@ -10,6 +10,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { logSecurityEvent } from "@/lib/security";
 
 // ─── Configuration Interfaces ────────────────────────────────────────────────
@@ -286,7 +287,7 @@ export async function saveSystemConfig<T extends Record<string, any>>(
     }
 
     // 2. Persist to database
-    const { error: dbError } = await supabase
+    const { error: dbError } = await apiDb
       .from("system_configurations")
       .upsert({
         config_key: key,
@@ -349,7 +350,7 @@ export async function fetchInAppNotifications(): Promise<SystemNotification[]> {
  */
 export async function markNotificationAsRead(id: string): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await apiDb
       .from("system_notifications")
       .update({ 
         is_read: true,
@@ -382,7 +383,7 @@ export async function createBroadcastNotification(notification: {
     const scheduleType = notification.schedule_type || "instant";
     const status = scheduleType === "instant" ? "sent" : "scheduled";
 
-    const { error } = await supabase
+    const { error } = await apiDb
       .from("system_notifications")
       .insert({
         title: notification.title,

@@ -1,4 +1,5 @@
 import { supabase, type Asset } from '../../supabase';
+import { apiDb } from "@/lib/api-db";
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -359,7 +360,7 @@ export const assetAdapter: EntityImportAdapter = {
           remarks: data.remarks,
         };
 
-        const { data: created, error } = await supabase.from('assets').insert(payload).select().single();
+        const { data: created, error } = await apiDb.from('assets').insert(payload).select().single();
         if (error) throw error;
 
         return {
@@ -381,7 +382,7 @@ export const assetAdapter: EntityImportAdapter = {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('assets').update(updatePayload).eq('id', existing.id);
+        const { error } = await apiDb.from('assets').update(updatePayload).eq('id', existing.id);
         if (error) throw error;
 
         return {
@@ -394,7 +395,7 @@ export const assetAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Asset record ID not found');
 
-        const { error } = await supabase.from('assets').update({ asset_status: 'Disposed', updated_at: new Date().toISOString() }).eq('id', existing.id);
+        const { error } = await apiDb.from('assets').update({ asset_status: 'Disposed', updated_at: new Date().toISOString() }).eq('id', existing.id);
         if (error) throw error;
 
         return {

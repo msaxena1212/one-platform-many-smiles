@@ -1,4 +1,5 @@
 import { supabase, type Customer } from "./supabase";
+import { apiDb } from "@/lib/api-db";
 
 /**
  * Check if a customer with the given identifiers already exists.
@@ -46,7 +47,7 @@ export async function checkDuplicateCustomer(customerData: Partial<Customer>): P
  * Create or upsert a customer in customers table.
  */
 export async function createCustomer(customer: Customer): Promise<Customer> {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from("customers")
     .upsert(customer)
     .select()

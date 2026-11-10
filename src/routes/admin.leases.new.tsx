@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -48,7 +49,7 @@ function NewLeaseForm() {
 
     try {
       // 1. Create the customer first
-      const { data: customerData, error: customerError } = await supabase
+      const { data: customerData, error: customerError } = await apiDb
         .from('customers')
         .insert({
           full_name: formData.customerName,
@@ -66,7 +67,7 @@ function NewLeaseForm() {
       const termMonths = formData.hasRentFree ? 13 : 12;
 
       // 2. Create the lease attached to the customer
-      const { data: leaseData, error: leaseError } = await supabase
+      const { data: leaseData, error: leaseError } = await apiDb
         .from('leases')
         .insert({
           customer_id: customerData.id,

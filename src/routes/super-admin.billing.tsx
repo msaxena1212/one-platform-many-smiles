@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { RBAC_MODULES } from "@/lib/rbac";
 import { logSecurityEvent } from "@/lib/security";
 import { toast } from "sonner";
@@ -229,7 +230,7 @@ export function BillingPage() {
     try {
       if (editingPlanId) {
         // Update existing plan
-        const { error } = await supabase
+        const { error } = await apiDb
           .from("platform_subscription_plans")
           .update({
             name: planForm.name,
@@ -260,7 +261,7 @@ export function BillingPage() {
         toast.success(`Plan "${planForm.name}" updated successfully!`);
       } else {
         // Insert new plan
-        const { error } = await supabase
+        const { error } = await apiDb
           .from("platform_subscription_plans")
           .insert({
             name: planForm.name,

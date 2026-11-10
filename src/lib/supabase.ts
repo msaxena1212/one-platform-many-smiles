@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const CANONICAL_SUPABASE_URL = 'https://rnebpqnzignwjeukgztz.supabase.co';
-const CANONICAL_SUPABASE_ANON_KEY =
+import { apiDb } from "@/lib/api-db";
+export const CANONICAL_SUPABASE_URL = 'https://rnebpqnzignwjeukgztz.supabase.co';
+export const CANONICAL_SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuZWJwcW56aWdud2pldWtnenR6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxNzU4ODIsImV4cCI6MjA5OTc1MTg4Mn0.maLd6Jgr8uggrfu5uZg9sjRmG0z0r7NlaMB4wIdSRTg';
 
 const supabaseUrl =
@@ -405,7 +406,7 @@ function sanitizePropertyWritePayload<T extends Record<string, unknown>>(payload
 
 /** Create a new property listing */
 export async function createProperty(payload: Omit<Property, 'id' | 'created_at' | 'property_images'>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('properties')
     .insert(sanitizePropertyWritePayload(payload as Record<string, unknown>))
     .select()
@@ -417,7 +418,7 @@ export async function createProperty(payload: Omit<Property, 'id' | 'created_at'
 
 /** Update an existing property */
 export async function updateProperty(id: string, payload: Partial<Omit<Property, 'id' | 'created_at' | 'property_images'>>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('properties')
     .update({
       ...sanitizePropertyWritePayload(payload as Record<string, unknown>),
@@ -433,7 +434,7 @@ export async function updateProperty(id: string, payload: Partial<Omit<Property,
 
 /** Update property images */
 export async function updatePropertyImages(propertyId: string, images: { image_url: string; is_primary: boolean; display_order: number }[]) {
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await apiDb
     .from('property_images')
     .delete()
     .eq('property_id', propertyId);
@@ -442,7 +443,7 @@ export async function updatePropertyImages(propertyId: string, images: { image_u
 
   if (images.length > 0) {
     const payload = images.map(img => ({ ...img, property_id: propertyId }));
-    const { error: insertError } = await supabase
+    const { error: insertError } = await apiDb
       .from('property_images')
       .insert(payload);
     if (insertError) throw insertError;
@@ -691,7 +692,7 @@ export async function fetchMaintenanceTickets(filters?: { property_id?: string; 
 }
 
 export async function createMaintenanceTicket(payload: Omit<MaintenanceTicket, 'id' | 'created_at' | 'updated_at'>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('maintenance_tickets')
     .insert(payload)
     .select()
@@ -702,7 +703,7 @@ export async function createMaintenanceTicket(payload: Omit<MaintenanceTicket, '
 }
 
 export async function updateMaintenanceTicket(id: string, payload: Partial<Omit<MaintenanceTicket, 'id' | 'created_at'>>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('maintenance_tickets')
     .update({ ...payload, updated_at: new Date().toISOString() })
     .eq('id', id)
@@ -776,25 +777,25 @@ export async function fetchAssets(filters?: { property_id?: string; employee_id?
 }
 
 export async function createAsset(payload: Partial<Asset>) {
-  const { data, error } = await supabase.from('assets').insert(payload).select().single();
+  const { data, error } = await apiDb.from('assets').insert(payload).select().single();
   if (error) throw error;
   return data as Asset;
 }
 
 export async function updateAsset(id: string, payload: Partial<Asset>) {
-  const { data, error } = await supabase.from('assets').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data, error } = await apiDb.from('assets').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw error;
   return data as Asset;
 }
 
 export async function deleteAsset(id: string) {
-  const { error } = await supabase.from('assets').delete().eq('id', id);
+  const { error } = await apiDb.from('assets').delete().eq('id', id);
   if (error) throw error;
   return true;
 }
 
 export async function deleteAllAssets() {
-  const { error } = await supabase.from('assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  const { error } = await apiDb.from('assets').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   if (error) throw error;
   return true;
 }
@@ -825,13 +826,13 @@ export async function fetchLeases(filters?: { host_id?: string; property_id?: st
 }
 
 export async function createLease(payload: Omit<Lease, 'id' | 'created_at' | 'updated_at'>) {
-  const { data, error } = await supabase.from('leases').insert(payload).select().single();
+  const { data, error } = await apiDb.from('leases').insert(payload).select().single();
   if (error) throw error;
   return data as Lease;
 }
 
 export async function updateLease(id: string, payload: Partial<Omit<Lease, 'id' | 'created_at'>>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('leases').update({ ...payload, updated_at: new Date().toISOString() })
     .eq('id', id).select().single();
   if (error) throw error;
@@ -847,13 +848,13 @@ export async function fetchRentSchedules(leaseId: string) {
 }
 
 export async function createRentSchedules(schedules: Omit<RentSchedule, 'id' | 'created_at'>[]) {
-  const { data, error } = await supabase.from('rent_schedules').insert(schedules).select();
+  const { data, error } = await apiDb.from('rent_schedules').insert(schedules).select();
   if (error) throw error;
   return data as RentSchedule[];
 }
 
 export async function updateRentSchedule(id: string, status: RentSchedule['status']) {
-  const { data, error } = await supabase.from('rent_schedules').update({ status }).eq('id', id).select().single();
+  const { data, error } = await apiDb.from('rent_schedules').update({ status }).eq('id', id).select().single();
   if (error) throw error;
   return data as RentSchedule;
 }
@@ -868,7 +869,7 @@ export async function fetchPDCs(leaseId?: string) {
 }
 
 export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'updated_at'>) {
-  const { data, error } = await supabase.from('pdcs').insert(payload).select().single();
+  const { data, error } = await apiDb.from('pdcs').insert(payload).select().single();
   if (error) throw error;
   const pdc = data as PDC;
 
@@ -877,7 +878,7 @@ export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'update
   const voucherNo = `VCH-PDC-RCV-${chequeNo}`;
   const today = new Date().toISOString().split('T')[0];
   try {
-    const { data: vData, error: vErr } = await supabase.from('fin_vouchers').insert({
+    const { data: vData, error: vErr } = await apiDb.from('fin_vouchers').insert({
       voucher_number: voucherNo,
       voucher_date: (pdc as any).deposit_date || (pdc as any).maturity_date || today,
       voucher_type: 'RV',
@@ -888,7 +889,7 @@ export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'update
     }).select('id').single();
     if (!vErr && vData?.id) {
       // Insert both ledger lines for this receipt voucher
-      await supabase.from('fin_voucher_lines').insert([
+      await apiDb.from('fin_voucher_lines').insert([
         { voucher_id: vData.id, account_code: '12900001', account_name: 'Rent PDC In Hand', debit: pdc.amount, credit: 0, description: `PDC Received — Cheque #${chequeNo}` },
         { voucher_id: vData.id, account_code: '21400001', account_name: 'Customer PDC Liability', debit: 0, credit: pdc.amount, description: `PDC Received — Cheque #${chequeNo}` },
       ]);
@@ -907,7 +908,7 @@ export async function createPDC(payload: Omit<PDC, 'id' | 'created_at' | 'update
 }
 
 export async function updatePDC(id: string, status: PDC['status']) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('pdcs').update({ status, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw error;
   return data as PDC;
@@ -924,13 +925,13 @@ export async function fetchARLedgers(filters?: { lease_id?: string; status?: ARL
 }
 
 export async function createAREntry(payload: Omit<ARLedger, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('ar_ledgers').insert(payload).select().single();
+  const { data, error } = await apiDb.from('ar_ledgers').insert(payload).select().single();
   if (error) throw error;
   return data as ARLedger;
 }
 
 export async function settleAREntry(id: string) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('ar_ledgers').update({ status: 'closed', balance: 0 }).eq('id', id).select().single();
   if (error) throw error;
   return data as ARLedger;
@@ -938,13 +939,13 @@ export async function settleAREntry(id: string) {
 
 // Journal Entries — Create & Update
 export async function createJournalEntry(payload: Omit<JournalEntry, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('journal_entries').insert(payload).select().single();
+  const { data, error } = await apiDb.from('journal_entries').insert(payload).select().single();
   if (error) throw error;
   return data as JournalEntry;
 }
 
 export async function updateJournalEntry(id: string, payload: Partial<Pick<JournalEntry, 'narration' | 'status'>>) {
-  const { data, error } = await supabase.from('journal_entries').update(payload).eq('id', id).select().single();
+  const { data, error } = await apiDb.from('journal_entries').update(payload).eq('id', id).select().single();
   if (error) throw error;
   return data as JournalEntry;
 }
@@ -959,13 +960,13 @@ export async function fetchFixedAssets(filters?: { property_id?: string }) {
 }
 
 export async function createFixedAsset(payload: Omit<FixedAsset, 'id' | 'created_at' | 'updated_at'>) {
-  const { data, error } = await supabase.from('fixed_assets').insert(payload).select().single();
+  const { data, error } = await apiDb.from('fixed_assets').insert(payload).select().single();
   if (error) throw error;
   return data as FixedAsset;
 }
 
 export async function updateFixedAsset(id: string, payload: Partial<Omit<FixedAsset, 'id' | 'created_at'>>) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('fixed_assets').update({ ...payload, updated_at: new Date().toISOString() })
     .eq('id', id).select().single();
   if (error) throw error;
@@ -973,7 +974,7 @@ export async function updateFixedAsset(id: string, payload: Partial<Omit<FixedAs
 }
 
 export async function transferFixedAsset(id: string, newPropertyId: string, newUnitRef: string) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('fixed_assets').update({ property_id: newPropertyId, unit_ref: newUnitRef, updated_at: new Date().toISOString() })
     .eq('id', id).select().single();
   if (error) throw error;
@@ -990,13 +991,13 @@ export async function fetchApprovalRequests(status?: ApprovalRequest['status']) 
 }
 
 export async function createApprovalRequest(payload: Omit<ApprovalRequest, 'id' | 'created_at' | 'updated_at'>) {
-  const { data, error } = await supabase.from('approval_requests').insert(payload).select().single();
+  const { data, error } = await apiDb.from('approval_requests').insert(payload).select().single();
   if (error) throw error;
   return data as ApprovalRequest;
 }
 
 export async function processApproval(id: string, decision: 'approved' | 'rejected', notes?: string) {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('approval_requests')
     .update({ status: decision, notes, updated_at: new Date().toISOString() })
     .eq('id', id).select().single();
@@ -1163,14 +1164,14 @@ export function sanitizeUnitWritePayload<T extends Record<string, unknown>>(payl
 
 export async function createUnit(payload: Partial<Unit>) {
   const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
-  const { data, error } = await supabase.from('units').insert(sanitized).select().single();
+  const { data, error } = await apiDb.from('units').insert(sanitized).select().single();
   if (error) throw error;
   return data as Unit;
 }
 
 export async function updateUnit(id: string, payload: Partial<Unit>) {
   const sanitized = sanitizeUnitWritePayload(payload as Record<string, unknown>);
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('units')
     .update({ ...sanitized, updated_at: new Date().toISOString() })
     .eq('id', id)
@@ -1197,14 +1198,14 @@ export async function fetchProfiles() {
 }
 
 export async function createProfile(payload: Partial<ProfileRow>) {
-  const { data, error } = await supabase.from('profiles').insert(payload).select().single();
+  const { data, error } = await apiDb.from('profiles').insert(payload).select().single();
   if (error) throw error;
   return data as ProfileRow;
 }
 
 // GL account create
 export async function createGLAccount(payload: Partial<GLAccount>) {
-  const { data, error } = await supabase.from('gl_accounts').insert(payload).select().single();
+  const { data, error } = await apiDb.from('gl_accounts').insert(payload).select().single();
   if (error) throw error;
   return data as GLAccount;
 }
@@ -1226,14 +1227,14 @@ export async function fetchProvisions() {
 }
 
 export async function createProvision(payload: Omit<Provision, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('provisions').insert(payload).select().single();
+  const { data, error } = await apiDb.from('provisions').insert(payload).select().single();
   if (error) throw error;
   return data as Provision;
 }
 
 // Additional helpers: single rent schedule creation, PDC processing, approval aliases
 export async function createRentSchedule(payload: Omit<RentSchedule, 'id' | 'created_at'>) {
-  const { data, error } = await supabase.from('rent_schedules').insert(payload).select().single();
+  const { data, error } = await apiDb.from('rent_schedules').insert(payload).select().single();
   if (error) throw error;
   return data as RentSchedule;
 }
@@ -1241,7 +1242,7 @@ export async function createRentSchedule(payload: Omit<RentSchedule, 'id' | 'cre
 export async function processPDC(id: string, status: PDC['status'], depositDate?: string) {
   const update: Partial<PDC> = { status };
   if (depositDate) update.deposit_date = depositDate;
-  const { data, error } = await supabase.from('pdcs').update({ ...update, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data, error } = await apiDb.from('pdcs').update({ ...update, updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (error) throw error;
   return data as PDC;
 }
@@ -1255,7 +1256,7 @@ export async function approveRequest(id: string, approverId: string, comment?: s
   const { data: req, error: reqErr } = await supabase.from('approval_requests').select('*').eq('id', id).single();
   if (reqErr) throw reqErr;
 
-  const { data: step, error: stepErr } = await supabase.from('approval_steps').insert({
+  const { data: step, error: stepErr } = await apiDb.from('approval_steps').insert({
     request_id: id,
     step_order: 1,
     approver_id: approverId,
@@ -1266,7 +1267,7 @@ export async function approveRequest(id: string, approverId: string, comment?: s
   if (stepErr) throw stepErr;
 
   // simplistic: mark request approved
-  const { data: updatedReq, error: updErr } = await supabase.from('approval_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id).select().single();
+  const { data: updatedReq, error: updErr } = await apiDb.from('approval_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', id).select().single();
   if (updErr) throw updErr;
   return { request: updatedReq as ApprovalRequest, step: step };
 }
@@ -1563,7 +1564,7 @@ export async function fetchCoaSLByGL(glIdOrCode: string) {
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
-  const { data, error } = await supabase.from('inventory_parts').insert([payload]).select().single();
+  const { data, error } = await apiDb.from('inventory_parts').insert([payload]).select().single();
   if (error) throw error;
   return data as InventoryPart;
 }
@@ -1576,7 +1577,7 @@ export async function fetchCostCenters(): Promise<{ id: number; code: string; na
 
 export async function createUnitRooms(rooms: Record<string, unknown>[]): Promise<unknown[]> {
   if (!rooms || rooms.length === 0) return [];
-  const { data, error } = await supabase.from('unit_rooms').insert(rooms).select();
+  const { data, error } = await apiDb.from('unit_rooms').insert(rooms).select();
   if (error) throw error;
   return data ?? [];
 }

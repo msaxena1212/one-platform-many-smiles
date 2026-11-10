@@ -1,4 +1,5 @@
 import { supabase, type Lease } from '../../supabase';
+import { apiDb } from "@/lib/api-db";
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -396,12 +397,12 @@ export const leaseAdapter: EntityImportAdapter = {
           special_conditions: data.remarks,
         };
 
-        const { data: created, error } = await supabase.from('leases').insert(payload).select().single();
+        const { data: created, error } = await apiDb.from('leases').insert(payload).select().single();
         if (error) throw error;
 
         // Also update unit status to Occupied if lease is ACTIVE
         if (data.unit_id && (data.lease_status === 'ACTIVE' || data.lease_status === 'RENEWAL_CONFIRMED')) {
-          await supabase.from('units').update({ status: 'Occupied', lease_status: 'ACTIVE' }).eq('id', data.unit_id);
+          await apiDb.from('units').update({ status: 'Occupied', lease_status: 'ACTIVE' }).eq('id', data.unit_id);
         }
 
         return {
@@ -423,7 +424,7 @@ export const leaseAdapter: EntityImportAdapter = {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('leases').update(updatePayload).eq('id', existing.id);
+        const { error } = await apiDb.from('leases').update(updatePayload).eq('id', existing.id);
         if (error) throw error;
 
         return {
@@ -436,7 +437,7 @@ export const leaseAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Lease record ID not found');
 
-        const { error } = await supabase.from('leases').update({ lease_status: 'TERMINATED', updated_at: new Date().toISOString() }).eq('id', existing.id);
+        const { error } = await apiDb.from('leases').update({ lease_status: 'TERMINATED', updated_at: new Date().toISOString() }).eq('id', existing.id);
         if (error) throw error;
 
         return {

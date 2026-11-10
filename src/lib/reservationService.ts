@@ -1,11 +1,12 @@
 ﻿import { supabase, type Reservation } from "./supabase";
+import { apiDb } from "@/lib/api-db";
 
 /**
  * Create or update a reservation in the database.
  * Uses the correct table name: lease_reservations
  */
 export async function createReservation(reservation: Reservation): Promise<Reservation> {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from("lease_reservations")
     .upsert(reservation, { onConflict: "id" })
     .select()
@@ -72,7 +73,7 @@ export async function updateReservationStatus(
   reservationId: string,
   status: "reserved" | "converted" | "expired" | "released"
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await apiDb
     .from("lease_reservations")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", reservationId);

@@ -1,4 +1,5 @@
 import { supabase, type Customer } from '../../supabase';
+import { apiDb } from "@/lib/api-db";
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -557,7 +558,7 @@ export const customerAdapter: EntityImportAdapter = {
         const currentPayload = { ...payload };
 
         for (let attempt = 0; attempt < 5; attempt++) {
-          const { data: created, error } = await supabase.from('customers').insert(currentPayload).select().single();
+          const { data: created, error } = await apiDb.from('customers').insert(currentPayload).select().single();
           if (!error) {
             createdRecord = created;
             lastError = null;
@@ -601,7 +602,7 @@ export const customerAdapter: EntityImportAdapter = {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('customers').update(updatePayload).eq('id', existing.id);
+        const { error } = await apiDb.from('customers').update(updatePayload).eq('id', existing.id);
         if (error) throw error;
 
         return {
@@ -614,7 +615,7 @@ export const customerAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Customer ID not found');
 
-        const { error } = await supabase.from('customers').delete().eq('id', existing.id);
+        const { error } = await apiDb.from('customers').delete().eq('id', existing.id);
         if (error) throw error;
 
         return {

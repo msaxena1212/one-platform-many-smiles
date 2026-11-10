@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import { createAccountingEvent } from '../finance/accounting-event-engine';
 import { postAccountingEvent } from '../finance/posting-engine';
 import { resolveGlOnlyAccount } from '../finance/account-resolver';
@@ -67,7 +68,7 @@ export async function capitalizePurchase(purchaseId: string) {
   await postAccountingEvent(event.id);
 
   // Asset creation itself remains owned by the existing Assets module; this phase posts the capitalization event.
-  const { data: updated, error: updateError } = await supabase.from('proc_purchases').update({
+  const { data: updated, error: updateError } = await apiDb.from('proc_purchases').update({
     posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: event.id, capitalized_amount: amount,
   }).eq('id', purchaseId).select().single();
   if (updateError) throw updateError;

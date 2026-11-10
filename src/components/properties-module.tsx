@@ -44,6 +44,7 @@ import {
   updatePropertyImages,
   type Property,
 } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { ImageUploader, type ImageFile } from "@/components/image-uploader";
 import { PropertyDocumentsManager, type PropertyDocument } from "@/components/property-documents-manager";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -348,7 +349,7 @@ export function PropertiesModule({ role }: PropertiesModuleProps) {
 
       if (newProperty) {
         try {
-          await supabase.from('fin_cost_centers').upsert({
+          await apiDb.from('fin_cost_centers').upsert({
             code: propCostCenterCode,
             name: propCostCenterName,
             manager: form.property_manager || 'Property Manager',

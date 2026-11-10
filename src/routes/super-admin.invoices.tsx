@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { toast } from "sonner";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
@@ -104,7 +105,7 @@ export function InvoicesPage() {
       }));
 
       // Try updating in supabase if row exists
-      await supabase
+      await apiDb
         .from("tenant_subscription_invoices")
         .update({
           status: "Paid",

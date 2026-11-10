@@ -1,4 +1,5 @@
 import { supabase } from '../../supabase';
+import { apiDb } from "@/lib/api-db";
 import { 
   type EntityImportAdapter, 
   type ColumnDefinition, 
@@ -321,7 +322,7 @@ export const vendorAdapter: EntityImportAdapter = {
           updated_at: new Date().toISOString(),
         };
 
-        const { data: created, error } = await supabase.from('fin_vendors').insert(payload).select().single();
+        const { data: created, error } = await apiDb.from('fin_vendors').insert(payload).select().single();
         if (error) throw error;
 
         return {
@@ -343,7 +344,7 @@ export const vendorAdapter: EntityImportAdapter = {
           updatePayload[change.field] = change.newValue === '[CLEARED]' ? null : change.newValue;
         }
 
-        const { error } = await supabase.from('fin_vendors').update(updatePayload).eq('id', existing.id);
+        const { error } = await apiDb.from('fin_vendors').update(updatePayload).eq('id', existing.id);
         if (error) throw error;
 
         return {
@@ -356,7 +357,7 @@ export const vendorAdapter: EntityImportAdapter = {
         const existing = record.originalDbData;
         if (!existing?.id) throw new Error('Vendor record ID not found');
 
-        const { error } = await supabase.from('fin_vendors').delete().eq('id', existing.id);
+        const { error } = await apiDb.from('fin_vendors').delete().eq('id', existing.id);
         if (error) throw error;
 
         return {

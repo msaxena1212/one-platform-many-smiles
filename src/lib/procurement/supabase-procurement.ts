@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import type { GoodsReceipt, PayableInvoice, Purchase, PurchaseOrder, PurchaseRequest, PurchaseRequestLine, Rfx, VendorQuote } from './types';
 
 const crud = <T extends { id: string }>(table: string, sort = 'created_at') => ({
@@ -13,12 +14,12 @@ const crud = <T extends { id: string }>(table: string, sort = 'created_at') => (
     return data as T;
   },
   create: async (payload: Record<string, unknown>): Promise<T> => {
-    const { data, error } = await supabase.from(table).insert(payload).select().single();
+    const { data, error } = await apiDb.from(table).insert(payload).select().single();
     if (error) throw error;
     return data as T;
   },
   update: async (id: string, payload: Record<string, unknown>): Promise<T> => {
-    const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+    const { data, error } = await apiDb.from(table).update(payload).eq('id', id).select().single();
     if (error) throw error;
     return data as T;
   },

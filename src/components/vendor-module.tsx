@@ -21,6 +21,7 @@ import {
   FileSpreadsheet, Download, Loader2
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
 import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
@@ -104,7 +105,7 @@ function postAdvanceVoucherToGL(params: {
 
   // Also record in supabase if available
   try {
-    supabase.from("fin_vouchers").insert({
+    apiDb.from("fin_vouchers").insert({
       voucher_number: pvNo,
       voucher_date: vDate,
       voucher_type: "Payment Voucher",
@@ -316,18 +317,18 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
     try {
       const payload = { code: vendorForm.code, name: vendorForm.name, contact_person: vendorForm.contact_person || null, email: vendorForm.email || null, phone: vendorForm.phone || null, tax_number: vendorForm.tax_number || null, address: vendorForm.address || null, city: vendorForm.city || null, country: vendorForm.country, vendor_type: vendorForm.vendor_type, payment_terms: vendorForm.payment_terms, settlement_mode: vendorForm.settlement_mode, currency: vendorForm.currency, status: vendorForm.status, notes: vendorForm.notes || null };
       if (editVendor) {
-        const { error } = await supabase.from("fin_vendors").update(payload).eq("id", editVendor.id);
+        const { error } = await apiDb.from("fin_vendors").update(payload).eq("id", editVendor.id);
         if (error) throw error;
         toast.success(`${vendorForm.name} updated.`);
       } else {
-        const { data: createdVendor, error } = await supabase.from("fin_vendors").insert(payload).select().single();
+        const { data: createdVendor, error } = await apiDb.from("fin_vendors").insert(payload).select().single();
         if (error) throw error;
         const vId = createdVendor.id;
 
         // Auto-insert Step 2 Contact if provided
         if (vendorForm.contact_name.trim()) {
           try {
-            await supabase.from("vendor_contacts").insert({
+            await apiDb.from("vendor_contacts").insert({
               vendor_id: vId,
               name: vendorForm.contact_name,
               role: vendorForm.contact_role || "Primary Contact",
@@ -341,7 +342,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
         // Auto-insert Step 3 Qualification if provided
         if (vendorForm.qual_category.trim()) {
           try {
-            await supabase.from("vendor_qualifications").insert({
+            await apiDb.from("vendor_qualifications").insert({
               vendor_id: vId,
               category: vendorForm.qual_category,
               certification: vendorForm.qual_certification || null,
@@ -355,7 +356,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
         // Auto-insert Step 4 Bank Details if provided
         if (vendorForm.bank_name.trim() && vendorForm.bank_account_number.trim()) {
           try {
-            await supabase.from("vendor_bank_details").insert({
+            await apiDb.from("vendor_bank_details").insert({
               vendor_id: vId,
               bank_name: vendorForm.bank_name,
               account_name: vendorForm.bank_account_name || vendorForm.name,
@@ -377,7 +378,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
   async function handleDeleteVendor(v: FinVendor) {
     if (!confirm(`Delete vendor "${v.name}"?`)) return;
     try {
-      const { error } = await supabase.from("fin_vendors").delete().eq("id", v.id);
+      const { error } = await apiDb.from("fin_vendors").delete().eq("id", v.id);
       if (error) throw error;
       toast.success(`${v.name} deleted.`);
       await loadAll();
@@ -386,7 +387,7 @@ export function VendorModule({ role }: { role: "admin" | "prop-mgr" }) {
   async function handleToggleStatus(v: FinVendor) {
     const ns = v.status === "Active" ? "Inactive" : "Active";
     try {
-      const { error } = await supabase.from("fin_vendors").update({ status: ns }).eq("id", v.id);
+      const { error } = await apiDb.from("fin_vendors").update({ status: ns }).eq("id", v.id);
       if (error) throw error;
       toast.success(`${v.name} → ${ns}`);
       await loadAll();
@@ -1422,7 +1423,7 @@ async function handleSaveInvoice() {
             <Button variant="outline" onClick={() => setShowContactModal(false)}>Cancel</Button>
             <Button onClick={async () => {
               if (!contactForm.vendorId || !contactForm.name.trim()) return toast.error("Vendor and Name required.");
-              try { const { error } = await supabase.from("vendor_contacts").insert({ vendor_id: contactForm.vendorId, name: contactForm.name, role: contactForm.role, phone: contactForm.phone || null, email: contactForm.email || null, is_primary: contactForm.is_primary }); if (error) throw error; toast.success("Contact added."); setShowContactModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
+              try { const { error } = await apiDb.from("vendor_contacts").insert({ vendor_id: contactForm.vendorId, name: contactForm.name, role: contactForm.role, phone: contactForm.phone || null, email: contactForm.email || null, is_primary: contactForm.is_primary }); if (error) throw error; toast.success("Contact added."); setShowContactModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
             }}>Add Contact</Button>
           </DialogFooter>
         </DialogContent>
@@ -1449,7 +1450,7 @@ async function handleSaveInvoice() {
             <Button variant="outline" onClick={() => setShowBankModal(false)}>Cancel</Button>
             <Button onClick={async () => {
               if (!bankForm.vendorId || !bankForm.bank_name || !bankForm.account_number) return toast.error("Vendor, Bank Name and Account Number required.");
-              try { const { error } = await supabase.from("vendor_bank_details").insert({ ...bankForm, vendor_id: bankForm.vendorId }); if (error) throw error; toast.success("Bank account added."); setShowBankModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
+              try { const { error } = await apiDb.from("vendor_bank_details").insert({ ...bankForm, vendor_id: bankForm.vendorId }); if (error) throw error; toast.success("Bank account added."); setShowBankModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
             }}>Save Bank Account</Button>
           </DialogFooter>
         </DialogContent>
@@ -1475,7 +1476,7 @@ async function handleSaveInvoice() {
             <Button variant="outline" onClick={() => setShowQualModal(false)}>Cancel</Button>
             <Button onClick={async () => {
               if (!qualForm.vendorId || !qualForm.category) return toast.error("Vendor and Category required.");
-              try { const { error } = await supabase.from("vendor_qualifications").insert({ vendor_id: qualForm.vendorId, category: qualForm.category, certification: qualForm.certification || null, expiry_date: qualForm.expiry_date || null, status: qualForm.status, notes: qualForm.notes || null }); if (error) throw error; toast.success("Qualification added."); setShowQualModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
+              try { const { error } = await apiDb.from("vendor_qualifications").insert({ vendor_id: qualForm.vendorId, category: qualForm.category, certification: qualForm.certification || null, expiry_date: qualForm.expiry_date || null, status: qualForm.status, notes: qualForm.notes || null }); if (error) throw error; toast.success("Qualification added."); setShowQualModal(false); await loadAll(); } catch (e: any) { toast.error(e.message); }
             }}>Add Qualification</Button>
           </DialogFooter>
         </DialogContent>

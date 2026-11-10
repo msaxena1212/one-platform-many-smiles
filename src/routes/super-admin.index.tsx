@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { RBAC_MODULES } from "@/lib/rbac";
 import { toast } from "sonner";
 
@@ -194,7 +195,7 @@ function SuperAdminDashboard() {
 
                   for (const table of tables) {
                     try {
-                      await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+                      await apiDb.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
                     } catch {
                       // Silently continue if table doesn't exist
                     }

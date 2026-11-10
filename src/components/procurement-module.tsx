@@ -20,6 +20,7 @@ import {
   ArrowRight, ShieldCheck, PieChart, Layers, Clock, Upload, Download, X, CheckCircle, XCircle
 } from "lucide-react";
 import { fetchProperties, fetchUnits, type Property, type Unit } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { supabase } from "@/lib/supabase";
 import { FinVendorsApi, type FinVendor } from "@/lib/supabase-finance";
 import { nextProcurementDocumentNumber } from "@/lib/procurement/numbering";
@@ -957,7 +958,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       toast.error(`Trade category "${name}" already exists.`);
       return;
     }
-    const { error } = await supabase.from("proc_trade_categories").insert({
+    const { error } = await apiDb.from("proc_trade_categories").insert({
       name, sort_order: (tradeCategories.length + 1) * 10,
     });
     if (error) { toast.error(`Could not add category: ${error.message}`); return; }
@@ -973,7 +974,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       toast.error(`"${cat.name}" is used by ${inUse} catalog item(s). Re-categorise them before deleting.`);
       return;
     }
-    const { error } = await supabase.from("proc_trade_categories").delete().eq("id", cat.id);
+    const { error } = await apiDb.from("proc_trade_categories").delete().eq("id", cat.id);
     if (error) { toast.error(`Could not delete category: ${error.message}`); return; }
     toast.success(`Trade category "${cat.name}" deleted.`);
     await loadTradeCategories();
@@ -1178,7 +1179,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       // Encode lines JSON inside remarks for multi-line fidelity
       const remarksPayload = `[LINES_JSON]: ${JSON.stringify(validLines)}\n${prForm.remarks || ""}`.trim();
 
-      const { data, error } = await supabase.from("proc_purchase_requests").insert({
+      const { data, error } = await apiDb.from("proc_purchase_requests").insert({
         doc_number: docNum,
         request_date: new Date().toISOString().slice(0, 10),
         status: "DRAFT",
@@ -1209,7 +1210,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   async function handleSubmitPR(pr: PurchaseRequest) {
     setSaving(true);
     try {
-      await supabase.from("proc_purchase_requests").update({ status: "SUBMITTED" }).eq("id", pr.id);
+      await apiDb.from("proc_purchase_requests").update({ status: "SUBMITTED" }).eq("id", pr.id);
       toast.success(`PR ${pr.doc_number} submitted for approval.`);
       await loadAll();
     } catch (e: any) {
@@ -1222,7 +1223,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   async function handleApprovePR(pr: PurchaseRequest) {
     setSaving(true);
     try {
-      await supabase.from("proc_purchase_requests").update({ status: "APPROVED" }).eq("id", pr.id);
+      await apiDb.from("proc_purchase_requests").update({ status: "APPROVED" }).eq("id", pr.id);
       toast.success(`PR ${pr.doc_number} approved. Ready to create RFX or PO.`);
       await loadAll();
     } catch (e: any) {
@@ -1255,7 +1256,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       const primaryPropertyId = validLines[0]?.propertyId || null;
       const primaryUnitId = validLines[0]?.unitId || null;
 
-      const { data: poData, error: poErr } = await supabase.from("proc_purchase_orders").insert({
+      const { data: poData, error: poErr } = await apiDb.from("proc_purchase_orders").insert({
         doc_number: docNum,
         po_date: new Date().toISOString().slice(0, 10),
         vendor_id: Number(poForm.vendorId) || 1,
@@ -1293,7 +1294,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         remarks: l.remarks || null,
       }));
 
-      const { error: lineErr } = await supabase.from("proc_purchase_order_lines").insert(linesToInsert);
+      const { error: lineErr } = await apiDb.from("proc_purchase_order_lines").insert(linesToInsert);
       if (lineErr) console.warn("Error inserting PO lines:", lineErr);
 
       // Update PR status to COMPLETED and update remarks with PO details
@@ -1302,7 +1303,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
           const targetPr = prs.find(p => p.id === poForm.sourcePrId);
           const currentRemarks = targetPr?.remarks || "";
           const updatedRemarks = currentRemarks ? `${currentRemarks} • [PO Issued: ${docNum}]` : `[PO Issued: ${docNum}]`;
-          await supabase.from("proc_purchase_requests").update({
+          await apiDb.from("proc_purchase_requests").update({
             status: "COMPLETED",
             posting_status: "POSTED",
             remarks: updatedRemarks,
@@ -1335,7 +1336,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
   async function handleApprovePO(po: PurchaseOrder) {
     setSaving(true);
     try {
-      await supabase.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", po.id);
+      await apiDb.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", po.id);
       toast.success(`PO ${po.doc_number} approved. Ready to dispatch shipment or receive.`);
       await loadAll();
     } catch (e: any) {
@@ -1397,7 +1398,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       const grnNum = await nextProcurementDocumentNumber("GRN");
       const totalAccVal = receiveForm.lines.reduce((sum, l) => sum + (Number(l.acceptedQty) || 0) * (Number(l.unitRate) || 0), 0);
 
-      const { data: grnData, error: grnErr } = await supabase.from("proc_goods_receipts").insert({
+      const { data: grnData, error: grnErr } = await apiDb.from("proc_goods_receipts").insert({
         grn_number: grnNum,
         purchase_order_id: po.id,
         vendor_id: po.vendor_id,
@@ -1420,7 +1421,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         const rate = Number(rl.unitRate) || 0;
         const lineAccVal = accQty * rate;
 
-        await supabase.from("proc_grn_lines").insert({
+        await apiDb.from("proc_grn_lines").insert({
           goods_receipt_id: grnData.id,
           purchase_order_line_id: rl.poLineId || null,
           line_no: idx + 1,
@@ -1439,7 +1440,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         if (rl.poLineId) {
           const originalPoLine = poLines.find(p => p.id === rl.poLineId);
           if (originalPoLine) {
-            await supabase.from("proc_purchase_order_lines").update({
+            await apiDb.from("proc_purchase_order_lines").update({
               received_quantity: (originalPoLine.received_quantity || 0) + accQty + rejQty,
               accepted_quantity: (originalPoLine.accepted_quantity || 0) + accQty,
               rejected_quantity: (originalPoLine.rejected_quantity || 0) + rejQty,
@@ -1458,7 +1459,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
               .maybeSingle();
 
             if (!existingAsset) {
-              await supabase.from("assets").insert({
+              await apiDb.from("assets").insert({
                 asset_tag: rl.itemCode,
                 name: rl.itemName,
                 category: rl.itemCode?.startsWith("AST-HVAC") ? "HVAC" : rl.itemCode?.startsWith("AST-PUMP") ? "Plumbing" : rl.itemCode?.startsWith("AST-FUR") ? "Furnishing" : "Appliances",
@@ -1477,7 +1478,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         }
       }
 
-      await supabase.from("proc_purchase_orders").update({
+      await apiDb.from("proc_purchase_orders").update({
         status: "CLOSED",
         posting_status: "POSTED",
       }).eq("id", po.id);
@@ -1561,7 +1562,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
       };
 
       if (editShipment) {
-        const { error } = await supabase.from("proc_shipments").update({
+        const { error } = await apiDb.from("proc_shipments").update({
           shipping_mode: shipmentForm.carrierName,
           tracking_number: shipmentForm.trackingNumber || null,
           origin_country: shipmentForm.originCountry || "Qatar",
@@ -1575,7 +1576,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         toast.success(`Shipment updated successfully.`);
       } else {
         const shNum = await nextProcurementDocumentNumber("SH");
-        const { error } = await supabase.from("proc_shipments").insert({
+        const { error } = await apiDb.from("proc_shipments").insert({
           shipment_number: shNum,
           purchase_order_id: shipmentForm.purchaseOrderId,
           vendor_id: targetPo?.vendor_id || 1,
@@ -2181,7 +2182,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                                   onClick={async () => {
                                     setSaving(true);
                                     try {
-                                      await supabase.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", po.id);
+                                      await apiDb.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", po.id);
                                       toast.success(`Purchase Order ${po.doc_number} confirmed and approved! Ready for Shipment or GRN Receiving.`);
                                       await loadAll();
                                     } catch (e: any) {
@@ -5747,7 +5748,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       onClick={async () => {
                         setSaving(true);
                         try {
-                          await supabase.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", viewPo.id);
+                          await apiDb.from("proc_purchase_orders").update({ status: "APPROVED" }).eq("id", viewPo.id);
                           toast.success(`Purchase Order ${viewPo.doc_number} approved!`);
                           setViewPo({ ...viewPo, status: "APPROVED" });
                           await loadAll();

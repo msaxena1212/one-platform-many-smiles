@@ -86,6 +86,7 @@ import { Route as EmployeePortalRouteImport } from './routes/employee.portal'
 import { Route as CashierReceiptsRouteImport } from './routes/cashier.receipts'
 import { Route as CashierPdcRouteImport } from './routes/cashier.pdc'
 import { Route as CashierEssRouteImport } from './routes/cashier.ess'
+import { Route as ApiDbRouteImport } from './routes/api.db'
 import { Route as AdminVendorsRouteImport } from './routes/admin.vendors'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminUnitsRouteImport } from './routes/admin.units'
@@ -497,6 +498,11 @@ const CashierEssRoute = CashierEssRouteImport.update({
   path: '/ess',
   getParentRoute: () => CashierRoute,
 } as any)
+const ApiDbRoute = ApiDbRouteImport.update({
+  id: '/api/db',
+  path: '/api/db',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminVendorsRoute = AdminVendorsRouteImport.update({
   id: '/vendors',
   path: '/vendors',
@@ -657,6 +663,7 @@ export interface FileRoutesByFullPath {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/api/db': typeof ApiDbRoute
   '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
@@ -752,6 +759,7 @@ export interface FileRoutesByTo {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/api/db': typeof ApiDbRoute
   '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
@@ -857,6 +865,7 @@ export interface FileRoutesById {
   '/admin/units': typeof AdminUnitsRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/vendors': typeof AdminVendorsRoute
+  '/api/db': typeof ApiDbRoute
   '/cashier/ess': typeof CashierEssRoute
   '/cashier/pdc': typeof CashierPdcRoute
   '/cashier/receipts': typeof CashierReceiptsRoute
@@ -963,6 +972,7 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/api/db'
     | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
@@ -1058,6 +1068,7 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/api/db'
     | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
@@ -1162,6 +1173,7 @@ export interface FileRouteTypes {
     | '/admin/units'
     | '/admin/users'
     | '/admin/vendors'
+    | '/api/db'
     | '/cashier/ess'
     | '/cashier/pdc'
     | '/cashier/receipts'
@@ -1249,6 +1261,7 @@ export interface RootRouteChildren {
   SalesRoute: typeof SalesRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SuperAdminRoute: typeof SuperAdminRouteWithChildren
+  ApiDbRoute: typeof ApiDbRoute
   EmployeePortalRoute: typeof EmployeePortalRoute
 }
 
@@ -1793,6 +1806,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CashierEssRouteImport
       parentRoute: typeof CashierRoute
     }
+    '/api/db': {
+      id: '/api/db'
+      path: '/api/db'
+      fullPath: '/api/db'
+      preLoaderRoute: typeof ApiDbRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/vendors': {
       id: '/admin/vendors'
       path: '/vendors'
@@ -2268,6 +2288,7 @@ const rootRouteChildren: RootRouteChildren = {
   SalesRoute: SalesRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SuperAdminRoute: SuperAdminRouteWithChildren,
+  ApiDbRoute: ApiDbRoute,
   EmployeePortalRoute: EmployeePortalRoute,
 }
 export const routeTree = rootRouteImport

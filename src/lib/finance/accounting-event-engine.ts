@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 
 export type AccountingEventLine = {
     account_code: string;
@@ -125,7 +126,7 @@ export async function createAccountingEvent(
     /*
      * 2. Create accounting event.
      */
-    const { data: event, error: eventError } = await supabase
+    const { data: event, error: eventError } = await apiDb
         .from('fin_accounting_events')
         .insert({
             event_type: payload.event_type,
@@ -233,7 +234,7 @@ export async function createAccountingEvent(
     }));
 
     try {
-        const { error: linesError } = await supabase
+        const { error: linesError } = await apiDb
             .from('fin_accounting_event_lines')
             .insert(lines);
 

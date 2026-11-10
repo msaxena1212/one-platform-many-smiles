@@ -16,6 +16,7 @@
  */
 
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import { resolveAccountingAccounts, normalizeUuid } from './account-resolver';
 import { postVoucher, postRentInvoiceReversal, type PostingResult } from './posting-engine';
 import { returnPdc } from './pdcService';
@@ -631,7 +632,7 @@ export async function returnFuturePdcsForLease(
       if (pdc.cheque_number && processedChequeNos.has(pdc.cheque_number)) continue;
       try {
         await returnPdc(pdc.id, pdc.cheque_number);
-        await supabase.from('fin_pdc_register').update({ status: 'Cancelled' }).eq('id', pdc.id);
+        await apiDb.from('fin_pdc_register').update({ status: 'Cancelled' }).eq('id', pdc.id);
         returned.push(pdc);
         if (pdc.cheque_number) processedChequeNos.add(pdc.cheque_number);
       } catch (e: any) {
@@ -658,7 +659,7 @@ export async function returnFuturePdcsForLease(
       if (chq && processedChequeNos.has(chq)) continue;
       try {
         await returnPdc(pdc.id, chq).catch(() => {});
-        await supabase.from('pdcs').update({ status: 'cancelled', status_pdc: 'Cancelled' }).eq('id', pdc.id);
+        await apiDb.from('pdcs').update({ status: 'cancelled', status_pdc: 'Cancelled' }).eq('id', pdc.id);
         returned.push(pdc);
         if (chq) processedChequeNos.add(chq);
       } catch (e: any) {

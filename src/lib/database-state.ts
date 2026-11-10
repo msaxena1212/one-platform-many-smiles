@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 /**
  * Universal Database-backed state storage (Replaces fragile client localStorage)
@@ -43,7 +44,7 @@ export async function setDbState<T>(key: string, value: T): Promise<void> {
 
   // Save to PostgreSQL table pms_app_state
   try {
-    await supabase.from("pms_app_state").upsert({
+    await apiDb.from("pms_app_state").upsert({
       id: key,
       data: value as any,
       updated_at: new Date().toISOString(),

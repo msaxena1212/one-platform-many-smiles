@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export type ItemType = "asset" | "maintenance_spare" | "consumable" | "service";
 export type BudgetHead = "Salary" | "Maintenance Items" | "Property Assets" | "Unit Assets" | "Common Area Assets" | "Other";
@@ -333,10 +334,10 @@ export async function loadCatalogItems(): Promise<CatalogItem[]> {
           active: item.active,
           updated_at: new Date().toISOString(),
         }));
-        supabase.from("procurement_items").upsert(payload, { onConflict: "item_code" }).then(() => {});
+        apiDb.from("procurement_items").upsert(payload, { onConflict: "item_code" }).then(() => {});
       }
       if (dbItems.some((r: any) => LEGACY_INITIAL_SEED_CODES.has(String(r.item_code || "").toUpperCase()))) {
-        supabase
+        apiDb
           .from("procurement_items")
           .delete()
           .in("item_code", Array.from(LEGACY_INITIAL_SEED_CODES))
@@ -383,7 +384,7 @@ export async function persistCatalogItem(item: CatalogItem, currentCatalog: Cata
   } catch {}
 
   try {
-    await supabase.from("procurement_items").upsert({
+    await apiDb.from("procurement_items").upsert({
       item_code: item.item_code,
       name: item.name,
       category: item.category,
@@ -433,7 +434,7 @@ export async function persistCatalogBatch(newItems: CatalogItem[], currentCatalo
       updated_at: new Date().toISOString(),
     }));
 
-    await supabase.from("procurement_items").upsert(payload, { onConflict: "item_code" });
+    await apiDb.from("procurement_items").upsert(payload, { onConflict: "item_code" });
   } catch (e) {
     console.warn("[Catalog] Supabase batch upsert notice:", e);
   }

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { createAccountingEvent } from "@/lib/finance/accounting-event-engine";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -452,7 +453,7 @@ export const HrmsApi = {
   },
 
   async createCompany(company: Partial<HrmsCompany>) {
-    return await supabase.from('hrms_companies').insert(company).select().single();
+    return await apiDb.from('hrms_companies').insert(company).select().single();
   },
 
   async getBranches(): Promise<HrmsBranch[]> {
@@ -468,7 +469,7 @@ export const HrmsApi = {
   },
 
   async createDepartment(dept: { name: string; description?: string }) {
-    return await supabase.from('departments').insert(dept).select().single();
+    return await apiDb.from('departments').insert(dept).select().single();
   },
 
   async getDesignations(): Promise<HrmsDesignation[]> {
@@ -478,7 +479,7 @@ export const HrmsApi = {
   },
 
   async createDesignation(desig: { title: string; department_id?: string }) {
-    return await supabase.from('designations').insert(desig).select().single();
+    return await apiDb.from('designations').insert(desig).select().single();
   },
 
   // Employees
@@ -563,7 +564,7 @@ export const HrmsApi = {
 
   async createEmployee(employeeData: any) {
     const sanitized = this.sanitizeEmployeePayload(employeeData);
-    const res = await supabase.from('employees').insert(sanitized).select().single();
+    const res = await apiDb.from('employees').insert(sanitized).select().single();
     if (!res.error && res.data) {
       saveEmployeeLeaveMeta(res.data.id, employeeData, res.data.employee_id_code || employeeData.employee_id_code);
       res.data = enrichEmployeeWithLeaveMeta(res.data);
@@ -579,7 +580,7 @@ export const HrmsApi = {
     if (Object.keys(sanitized).length === 0) {
       return { data: enrichEmployeeWithLeaveMeta({ id, ...employeeData }), error: null } as any;
     }
-    const res = await supabase.from('employees').update({ ...sanitized, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+    const res = await apiDb.from('employees').update({ ...sanitized, updated_at: new Date().toISOString() }).eq('id', id).select().single();
     if (!res.error && res.data) {
       saveEmployeeLeaveMeta(res.data.id, employeeData, res.data.employee_id_code);
       res.data = enrichEmployeeWithLeaveMeta(res.data);
@@ -595,7 +596,7 @@ export const HrmsApi = {
   },
 
   async createShift(shift: Partial<HrmsShift>) {
-    return await supabase.from('hrms_shifts').insert(shift).select().single();
+    return await apiDb.from('hrms_shifts').insert(shift).select().single();
   },
 
   // Attendance
@@ -618,7 +619,7 @@ export const HrmsApi = {
   },
 
   async recordAttendance(attendance: Partial<HrmsAttendanceDaily>) {
-    return await supabase
+    return await apiDb
       .from('hrms_attendance_daily')
       .upsert(attendance, { onConflict: 'employee_id,attendance_date' })
       .select()
@@ -669,10 +670,10 @@ export const HrmsApi = {
     }
     for (let i = 0; i < records.length; i += 500) {
       const chunk = records.slice(i, i + 500);
-      let { error } = await supabase.from('hrms_attendance_daily').upsert(chunk, { onConflict: 'employee_id,attendance_date' });
+      let { error } = await apiDb.from('hrms_attendance_daily').upsert(chunk, { onConflict: 'employee_id,attendance_date' });
       if (error) {
         // Column overtime_premium_minutes not deployed yet: save without the premium split.
-        ({ error } = await supabase
+        ({ error } = await apiDb
           .from('hrms_attendance_daily')
           .upsert(chunk.map(({ overtime_premium_minutes, ...rest }) => rest), { onConflict: 'employee_id,attendance_date' }));
       }
@@ -689,7 +690,7 @@ export const HrmsApi = {
   },
 
   async createLeaveType(leaveType: Partial<HrmsLeaveType>) {
-    return await supabase.from('hrms_leave_types').insert(leaveType).select().single();
+    return await apiDb.from('hrms_leave_types').insert(leaveType).select().single();
   },
 
   async getLeaveApplications(): Promise<HrmsLeaveApplication[]> {
@@ -760,7 +761,7 @@ export const HrmsApi = {
       status: 'Pending' as const,
     };
 
-    const res = await supabase.from('hrms_leave_applications').insert(dbPayload).select().single();
+    const res = await apiDb.from('hrms_leave_applications').insert(dbPayload).select().single();
     const recordId = res.data?.id || `lv-local-${Date.now()}`;
     const enrichedRecord: HrmsLeaveApplication = {
       ...(res.data || dbPayload),
@@ -863,7 +864,7 @@ export const HrmsApi = {
       status: 'Draft'
     };
 
-    return await supabase.from('hrms_fnf_settlements').insert(fnfPayload).select().single();
+    return await apiDb.from('hrms_fnf_settlements').insert(fnfPayload).select().single();
   },
 
   async deductLeaveBalance(employeeId: string, leaveTypeId: string, daysCount: number, year?: number) {
@@ -879,7 +880,7 @@ export const HrmsApi = {
     if (existing) {
       const newUsed = (Number(existing.used) || 0) + daysCount;
       const newBalance = Math.max(0, (Number(existing.allocated) || 0) - newUsed);
-      return await supabase
+      return await apiDb
         .from('hrms_leave_balances')
         .update({ used: newUsed, balance: newBalance })
         .eq('id', existing.id);
@@ -888,7 +889,7 @@ export const HrmsApi = {
       const { data: lt } = await supabase.from('hrms_leave_types').select('annual_allowance').eq('id', leaveTypeId).single();
       const annualAllowance = Number(lt?.annual_allowance) || 30;
       const balance = Math.max(0, annualAllowance - daysCount);
-      return await supabase
+      return await apiDb
         .from('hrms_leave_balances')
         .insert({
           employee_id: employeeId,
@@ -907,7 +908,7 @@ export const HrmsApi = {
     review_notes?: string,
     employeeObj?: any
   ) {
-    const res = await supabase
+    const res = await apiDb
       .from('hrms_leave_applications')
       .update({
         status,
@@ -1022,7 +1023,7 @@ export const HrmsApi = {
   },
 
   async createPayrollCycle(cycle: Partial<HrmsPayrollCycle>) {
-    const res = await supabase.from('hrms_payroll_cycles').insert(cycle).select().single();
+    const res = await apiDb.from('hrms_payroll_cycles').insert(cycle).select().single();
     const createdCycle: HrmsPayrollCycle = (res.data || {
       id: `pcycle-local-${Date.now()}`,
       name: cycle.name || 'Monthly Payroll',
@@ -1278,14 +1279,14 @@ export const HrmsApi = {
       writeLocalJson(HRMS_PAYROLL_CYCLES_LOCAL_KEY, updatedLocalCycles);
 
       try {
-        await supabase.from('hrms_payroll_payslips').delete().eq('payroll_cycle_id', cycleId);
-        let insertRes = await supabase.from('hrms_payroll_payslips').insert(
+        await apiDb.from('hrms_payroll_payslips').delete().eq('payroll_cycle_id', cycleId);
+        let insertRes = await apiDb.from('hrms_payroll_payslips').insert(
           payslips.map(({ employees, ...p }) => p)
         );
         if (insertRes.error) {
           // Database predates the payroll extension migration: store the core columns only.
           console.warn('Payslip insert with extended columns failed, retrying core columns:', insertRes.error.message);
-          insertRes = await supabase.from('hrms_payroll_payslips').insert(
+          insertRes = await apiDb.from('hrms_payroll_payslips').insert(
             payslips.map(({ employees, ...p }) => {
               const core: any = { ...p };
               PAYSLIP_EXTRA_COLUMNS.forEach(c => delete core[c]);
@@ -1294,7 +1295,7 @@ export const HrmsApi = {
           );
         }
         if (insertRes.error) console.error('Payslip insert failed:', insertRes.error.message);
-        await supabase.from('hrms_payroll_cycles').update({
+        await apiDb.from('hrms_payroll_cycles').update({
           total_gross: totalGross,
           total_deductions: totalDeductions,
           total_net: totalNet,
@@ -1323,7 +1324,7 @@ export const HrmsApi = {
   async savePayrollOverrides(cycleId: string, rows: Omit<HrmsPayrollOverride, 'payroll_cycle_id'>[]) {
     if (rows.length === 0) return { error: null };
     const records = rows.map(r => ({ ...r, payroll_cycle_id: cycleId, updated_at: new Date().toISOString() }));
-    const { error } = await supabase
+    const { error } = await apiDb
       .from('hrms_payroll_overrides')
       .upsert(records, { onConflict: 'payroll_cycle_id,employee_id' });
     if (error) {
@@ -1341,20 +1342,20 @@ export const HrmsApi = {
   /** Marks an approved cycle as paid once the WPS / bank transfer is confirmed. */
   async markPayrollPaid(cycleId: string, paymentReference: string) {
     const paidAt = new Date().toISOString();
-    let res: any = await supabase
+    let res: any = await apiDb
       .from('hrms_payroll_cycles')
       .update({ status: 'Paid', paid_at: paidAt, payment_reference: paymentReference })
       .eq('id', cycleId);
     if (res.error) {
-      res = await supabase.from('hrms_payroll_cycles').update({ status: 'Paid' }).eq('id', cycleId);
+      res = await apiDb.from('hrms_payroll_cycles').update({ status: 'Paid' }).eq('id', cycleId);
     }
     if (res.error) return { error: res.error };
-    let slipRes: any = await supabase
+    let slipRes: any = await apiDb
       .from('hrms_payroll_payslips')
       .update({ status: 'Paid', payment_reference: paymentReference, paid_at: paidAt })
       .eq('payroll_cycle_id', cycleId);
     if (slipRes.error) {
-      await supabase
+      await apiDb
         .from('hrms_payroll_payslips')
         .update({ status: 'Paid', payment_reference: paymentReference })
         .eq('payroll_cycle_id', cycleId);
@@ -1372,7 +1373,7 @@ export const HrmsApi = {
     );
     writeLocalJson(HRMS_PAYROLL_CYCLES_LOCAL_KEY, updatedLocal);
 
-    const res = await supabase
+    const res = await apiDb
       .from('hrms_payroll_cycles')
       .update({
         status: 'Approved',
@@ -1538,7 +1539,7 @@ export const HrmsApi = {
   },
 
   async createAppraisalCycle(cycle: Partial<HrmsAppraisalCycle>) {
-    return await supabase.from('hrms_appraisal_cycles').insert(cycle).select().single();
+    return await apiDb.from('hrms_appraisal_cycles').insert(cycle).select().single();
   },
 
   async getEmployeeAppraisals(cycleId?: string): Promise<HrmsEmployeeAppraisal[]> {
@@ -1568,13 +1569,13 @@ export const HrmsApi = {
   },
 
   async submitExpenseClaim(claim: Partial<HrmsExpenseClaim>) {
-    return await supabase.from('hrms_expense_claims').insert(claim).select().single();
+    return await apiDb.from('hrms_expense_claims').insert(claim).select().single();
   },
 
   async updateExpenseStatus(id: string, status: 'Approved' | 'Reimbursed' | 'Rejected') {
     const updateObj: any = { status };
     if (status === 'Reimbursed') updateObj.reimbursed_at = new Date().toISOString();
-    return await supabase.from('hrms_expense_claims').update(updateObj).eq('id', id).select().single();
+    return await apiDb.from('hrms_expense_claims').update(updateObj).eq('id', id).select().single();
   },
 
   // Resignations & FNF
@@ -1591,11 +1592,11 @@ export const HrmsApi = {
   },
 
   async submitResignation(resignation: Partial<HrmsResignation>) {
-    return await supabase.from('hrms_resignations').insert(resignation).select().single();
+    return await apiDb.from('hrms_resignations').insert(resignation).select().single();
   },
 
   async updateResignationStatus(id: string, status: string, approvedDate?: string) {
-    return await supabase
+    return await apiDb
       .from('hrms_resignations')
       .update({
         status,
@@ -1619,7 +1620,7 @@ export const HrmsApi = {
   },
 
   async createFnfSettlement(fnf: Partial<HrmsFnfSettlement>) {
-    return await supabase.from('hrms_fnf_settlements').insert(fnf).select().single();
+    return await apiDb.from('hrms_fnf_settlements').insert(fnf).select().single();
   },
 
   // Announcements & Help Desk
@@ -1630,7 +1631,7 @@ export const HrmsApi = {
   },
 
   async createAnnouncement(announcement: Partial<HrmsAnnouncement>) {
-    return await supabase.from('hrms_announcements').insert(announcement).select().single();
+    return await apiDb.from('hrms_announcements').insert(announcement).select().single();
   },
 
   async getHelpdeskTickets(): Promise<HrmsHelpdeskTicket[]> {
@@ -1646,7 +1647,7 @@ export const HrmsApi = {
   },
 
   async createHelpdeskTicket(ticket: Partial<HrmsHelpdeskTicket>) {
-    return await supabase.from('hrms_helpdesk_tickets').insert(ticket).select().single();
+    return await apiDb.from('hrms_helpdesk_tickets').insert(ticket).select().single();
   }
 };
 

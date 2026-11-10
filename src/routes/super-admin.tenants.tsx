@@ -22,6 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { logSecurityEvent } from "@/lib/security";
 import { startImpersonation } from "@/lib/impersonation";
 import { createBroadcastNotification } from "@/lib/system-config";
@@ -434,10 +435,10 @@ export function TenantsPage() {
     }
     try {
       // 1. Delete associated subscription invoices first if any
-      await supabase.from("tenant_subscription_invoices").delete().eq("tenant_id", tenant.id);
+      await apiDb.from("tenant_subscription_invoices").delete().eq("tenant_id", tenant.id);
       
       // 2. Delete tenant organisation record
-      const { error } = await supabase.from("tenant_organisations").delete().eq("id", tenant.id);
+      const { error } = await apiDb.from("tenant_organisations").delete().eq("id", tenant.id);
       if (error) throw error;
 
       await logSecurityEvent({
@@ -461,9 +462,9 @@ export function TenantsPage() {
     }
     try {
       // Delete child subscription invoices
-      await supabase.from("tenant_subscription_invoices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await apiDb.from("tenant_subscription_invoices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       // Delete all tenant organisations
-      const { error } = await supabase.from("tenant_organisations").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const { error } = await apiDb.from("tenant_organisations").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       if (error) throw error;
 
       toast.success("All tenant data has been wiped. You can now onboard a fresh tenant.");
@@ -551,7 +552,7 @@ export function TenantsPage() {
       }
 
       // 2. Insert into tenant_organisations table with payment and settlement details
-      const { data: tenantInsertData, error: dbError } = await supabase.from("tenant_organisations").insert({
+      const { data: tenantInsertData, error: dbError } = await apiDb.from("tenant_organisations").insert({
         tenant_key: tenantKey,
         name: form.name,
         legal_entity_name: form.legal_entity_name || form.name,
@@ -593,7 +594,7 @@ export function TenantsPage() {
 
       // 3. Create Subscription Invoice in tenant_subscription_invoices
       if (newTenantId) {
-        await supabase.from("tenant_subscription_invoices").insert({
+        await apiDb.from("tenant_subscription_invoices").insert({
           invoice_number: invoiceNo,
           tenant_id: newTenantId,
           tenant_key: tenantKey,

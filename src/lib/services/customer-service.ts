@@ -1,4 +1,5 @@
 import { supabase, Customer } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export interface DuplicateCheckResult {
   isDuplicate: boolean;
@@ -79,7 +80,7 @@ export async function checkCustomerDuplicateServer(
  */
 export async function persistCustomerToDb(customerData: Partial<Customer>): Promise<Customer> {
   if (customerData.id && !customerData.id.startsWith("TEMP_") && !customerData.id.startsWith("CUST-")) {
-    const { data, error } = await supabase
+    const { data, error } = await apiDb
       .from("customers")
       .update({
         ...customerData,
@@ -95,7 +96,7 @@ export async function persistCustomerToDb(customerData: Partial<Customer>): Prom
     // Insert new customer
     const payload = { ...customerData };
     delete payload.id; // Let DB generate UUID if it's a temp id
-    const { data, error } = await supabase
+    const { data, error } = await apiDb
       .from("customers")
       .insert([payload])
       .select()

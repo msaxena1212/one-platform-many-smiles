@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { apiDb } from "@/lib/api-db";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,13 +44,13 @@ function PricingEngine() {
   }, []);
 
   const handleAddRule = async () => {
-    const { error } = await supabase.from('pricing_rules').insert([formData]);
+    const { error } = await apiDb.from('pricing_rules').insert([formData]);
     if (error) alert("Error adding rule: " + error.message);
     else loadData();
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('pricing_rules').delete().eq('id', id);
+    const { error } = await apiDb.from('pricing_rules').delete().eq('id', id);
     if (!error) loadData();
   };
 

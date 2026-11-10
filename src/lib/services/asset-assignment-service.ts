@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export interface AssetAssignment {
   id: string;
@@ -55,7 +56,7 @@ export async function createAssetAssignment(
   assignment: Omit<AssetAssignment, "id" | "created_at" | "asset_name" | "asset_code" | "asset_category">
 ): Promise<AssetAssignment | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await apiDb
       .from("asset_assignments")
       .insert([assignment])
       .select()
@@ -82,7 +83,7 @@ export async function returnAssetAssignment(
   }
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await apiDb
       .from("asset_assignments")
       .update({
         return_date: params.return_date,

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { postVoucher } from "@/lib/finance/posting-engine";
 
 export interface PendingVoucher {
@@ -32,7 +33,7 @@ export async function submitVoucherForApproval(voucher: {
   const totalAmount = voucher.lines.reduce((sum, l) => sum + (l.debit || 0), 0);
   const voucherNo = `DRF-${Date.now().toString().slice(-6)}`;
 
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from("fin_vouchers")
     .insert([
       {
@@ -63,7 +64,7 @@ export async function submitVoucherForApproval(voucher: {
       credit: l.credit || 0,
       narration: l.narration || voucher.narration,
     }));
-    await supabase.from("fin_voucher_lines").insert(linesPayload);
+    await apiDb.from("fin_voucher_lines").insert(linesPayload);
   }
 
   return data;
@@ -104,7 +105,7 @@ export async function approveAndPostVoucher(voucherId: string, reviewerId?: stri
   });
 
   // Update voucher status
-  await supabase
+  await apiDb
     .from("fin_vouchers")
     .update({
       approval_status: "posted",
@@ -120,7 +121,7 @@ export async function approveAndPostVoucher(voucherId: string, reviewerId?: stri
  * Rejects a draft voucher with a reason
  */
 export async function rejectVoucher(voucherId: string, reason: string, reviewerId?: string) {
-  const { error } = await supabase
+  const { error } = await apiDb
     .from("fin_vouchers")
     .update({
       approval_status: "rejected",

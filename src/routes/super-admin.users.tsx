@@ -20,6 +20,7 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { logSecurityEvent } from "@/lib/security";
 import { toast } from "sonner";
 import {
@@ -290,7 +291,7 @@ function UsersPage() {
       saveLocalProfileOverride(selectedUser.id, { role: selectedRole });
 
       // 2. Best-effort update to Supabase profiles table
-      const { error: dbError } = await supabase
+      const { error: dbError } = await apiDb
         .from("profiles")
         .update({ role: selectedRole })
         .eq("id", selectedUser.id);

@@ -22,6 +22,7 @@ import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, Pagi
 import { useAppData } from "@/lib/app-data-context";
 import { buildUnitTenantCustomers } from "@/lib/unit-tenant-customers";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { generateLeaseAgreementBlob, printBilingualLeaseContract } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
@@ -1339,9 +1340,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       };
 
       if (editPdcForm.pdcId) {
-        await supabase.from("pdcs").update(pdcUpdate).eq("id", editPdcForm.pdcId);
+        await apiDb.from("pdcs").update(pdcUpdate).eq("id", editPdcForm.pdcId);
       } else {
-        await supabase.from("pdcs").update(pdcUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
+        await apiDb.from("pdcs").update(pdcUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
       }
 
       // 3. Update fin_pdc_register table (status strictly In Hand; reset any previous clearance/deposit dates)
@@ -1358,13 +1359,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       };
 
       if (editPdcForm.pdcId) {
-        await supabase.from("fin_pdc_register").update(finUpdate).eq("original_pdc_id", editPdcForm.pdcId);
+        await apiDb.from("fin_pdc_register").update(finUpdate).eq("original_pdc_id", editPdcForm.pdcId);
       }
-      await supabase.from("fin_pdc_register").update(finUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
+      await apiDb.from("fin_pdc_register").update(finUpdate).eq("cheque_number", editPdcForm.originalChequeNumber);
 
       // 4. Update fin_vouchers if matched
       try {
-        await supabase.from("fin_vouchers")
+        await apiDb.from("fin_vouchers")
           .update({
             voucher_date: editPdcForm.maturityDate,
             total_amount: Number(editPdcForm.amount),
@@ -3254,7 +3255,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         tenant_name: lease.tenantName,
       });
 
-      void supabase
+      void apiDb
         .from("fin_vouchers")
         .insert({
           voucher_number: cnlVoucherNo,
@@ -3269,7 +3270,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         .single()
         .then(({ data: vData, error: vErr }) => {
           if (!vErr && vData?.id) {
-            void supabase.from("fin_voucher_lines").insert([
+            void apiDb.from("fin_voucher_lines").insert([
               {
                 voucher_id: vData.id,
                 account_code: "21400001",
@@ -3295,17 +3296,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     try {
       const chqArr = Array.from(chequeNumbers);
       if (chqArr.length > 0) {
-        await supabase
+        await apiDb
           .from("pdcs")
           .update({ status: "cancelled", status_pdc: "Cancelled" } as any)
           .in("cheque_no", chqArr);
-        await supabase
+        await apiDb
           .from("fin_pdc_register")
           .update({ status: "Cancelled" } as any)
           .in("cheque_number", chqArr);
       }
       if (lease.unit) {
-        let q = supabase
+        let q = apiDb
           .from("pdcs")
           .update({ status: "cancelled", status_pdc: "Cancelled" } as any)
           .eq("unit_name", lease.unit)
@@ -3336,7 +3337,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       );
       setUnits((items) => items.map((u) => (u.unit === lease.unit ? { ...u, status: targetDisp } : u)));
       setRealUnits((items) => items.map((u) => (u.unit === lease.unit ? { ...u, status: targetDisp } : u)));
-      void supabase
+      void apiDb
         .from("units")
         .update({
           status: targetDisp,
@@ -3751,7 +3752,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
     let savedCustomer: { id: string; customer_code: string } | null = null;
     try {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("customers")
         .insert([dbPayload])
         .select("id, customer_code")
@@ -4003,7 +4004,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
       // If UUID, update database
       if (targetId && !targetId.startsWith("l")) {
-        await supabase
+        await apiDb
           .from("leases")
           .update(leaseDbUpdate)
           .eq("id", targetId);
@@ -4057,8 +4058,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       setLeases(prev => prev.map(l => l.id === targetLease.id ? { ...l, status: "active" as LeaseStatus } : l));
       setUnits(prev => prev.map(u => (u.unit === targetLease.unit || (u as any).unit_number === targetLease.unit) ? { ...u, status: "Occupied" } : u));
       try {
-        void supabase.from("leases").update({ status: "active" }).eq("id", targetLease.id);
-        void supabase.from("units").update({ status: "Occupied" }).eq("unit_number", targetLease.unit);
+        void apiDb.from("leases").update({ status: "active" }).eq("id", targetLease.id);
+        void apiDb.from("units").update({ status: "Occupied" }).eq("unit_number", targetLease.unit);
       } catch (e) {
         console.warn("Lease approval Supabase sync:", e);
       }
@@ -4199,7 +4200,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           ? Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24 * 30)))
           : (lease.pdcCount || 12);
 
-        await supabase.from("leases").insert({
+        await apiDb.from("leases").insert({
           lease_number: `LS-${lease.id.toUpperCase()}`,
           commencement_date: lease.startDate,
           expiry_date: lease.endDate,
@@ -4213,7 +4214,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           customer_id: customer?.id && customer.id.length === 36 ? customer.id : undefined,
         } as any);
 
-        await supabase
+        await apiDb
           .from("units")
           .update({
             status: "Occupied",
@@ -4226,7 +4227,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           } as any)
           .or(`unit_ref.eq.${lease.unit},unit_code.eq.${lease.unit},unit_name.eq.${lease.unit}`);
 
-        await supabase.from("reservations").update({ status: "converted" }).eq("id", reservation.id);
+        await apiDb.from("reservations").update({ status: "converted" }).eq("id", reservation.id);
         window.dispatchEvent(new Event("pms_data_updated"));
       } catch (e) {
         console.warn("Supabase lease sync:", e);
@@ -4661,7 +4662,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       void (async () => {
         for (const pdc of nextPdcs) {
           try {
-            await supabase.from("pdcs").insert({
+            await apiDb.from("pdcs").insert({
               cheque_number: pdc.chequeNo,
               maturity_date: pdc.date,
               amount: pdc.amount,
@@ -4671,7 +4672,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               bank: pdc.bank || "Qatar National Bank (QNB)",
               status: "In Hand",
             });
-            await supabase.from("fin_pdc_register").insert({
+            await apiDb.from("fin_pdc_register").insert({
               cheque_number: pdc.chequeNo,
               cheque_date: pdc.date,
               amount: pdc.amount,
@@ -5026,7 +5027,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
     const lease = leases.find(l => l.id === leaseId);
     const tenantLabel = lease?.tenantName || lease?.tenant || "Tenant";
     const unitLabel = lease?.unit || lease?.unitRef || "";
-    void supabase.from("fin_vouchers").insert({
+    void apiDb.from("fin_vouchers").insert({
       voucher_number: `VCH-SD-RCV-${voucherRef}`,
       voucher_date: postingDate,
       voucher_type: "RV",
@@ -5036,7 +5037,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       posted_at: new Date().toISOString(),
     }).select("id").single().then(({ data: vData, error: vErr }) => {
       if (!vErr && vData?.id) {
-        void supabase.from("fin_voucher_lines").insert([
+        void apiDb.from("fin_voucher_lines").insert([
           { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: numAmount, credit: 0, description: `Security Deposit — ${tenantLabel}` },
           { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: numAmount, description: `Security Deposit — ${tenantLabel}` },
         ]);
@@ -5369,7 +5370,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           ? `id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`
           : `lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`;
 
-        await supabase
+        await apiDb
           .from("leases")
           .update({ lease_status: "renewed" })
           .or(oldFilter);
@@ -5396,10 +5397,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
           property_id: uRow?.property_id || undefined,
           customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
         };
-        await supabase.from("leases").insert(leasePayload);
+        await apiDb.from("leases").insert(leasePayload);
 
         if (uRow?.id) {
-          await supabase.from("units").update({
+          await apiDb.from("units").update({
             contract_start_date: newStartDate,
             contract_end_date: newEndDate,
             current_rent: agreedRent,
@@ -5488,7 +5489,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
       const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
       const postingDate = data.securityDeposit.chequeDate || today.toISOString().split("T")[0];
-      void supabase.from("fin_vouchers").insert({
+      void apiDb.from("fin_vouchers").insert({
         voucher_number: `VCH-SD-${sdRef}`,
         voucher_date: postingDate,
         voucher_type: "RV",
@@ -5498,7 +5499,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         posted_at: new Date().toISOString(),
       }).select("id").single().then(({ data: vData, error: vErr }) => {
         if (!vErr && vData?.id) {
-          void supabase.from("fin_voucher_lines").insert([
+          void apiDb.from("fin_voucher_lines").insert([
             { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: depositTopUp, credit: 0, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
             { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
           ]);
@@ -5717,7 +5718,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             ? `id.eq.${oldLease.id},lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`
             : `lease_number.eq.${oldLease.id},lease_number.eq.${oldLease.contractNumber || ''}`;
 
-          await supabase.from("leases").update({ lease_status: "renewed" }).or(oldFilter);
+          await apiDb.from("leases").update({ lease_status: "renewed" }).or(oldFilter);
 
           const { data: uRow } = await supabase
             .from("units")
@@ -5741,10 +5742,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             property_id: uRow?.property_id || undefined,
             customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
           };
-          await supabase.from("leases").insert(leasePayload);
+          await apiDb.from("leases").insert(leasePayload);
 
           if (uRow?.id) {
-            await supabase.from("units").update({
+            await apiDb.from("units").update({
               contract_no: contractNo,
               contract_start_date: newStartDate,
               contract_end_date: newEndDate,
@@ -5854,7 +5855,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
       const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
       const postingDate = renewalResponseForm.rentPaymentDate || today.toISOString().split("T")[0];
-      void supabase.from("fin_vouchers").insert({
+      void apiDb.from("fin_vouchers").insert({
         voucher_number: `VCH-RENT-${rentRef}`,
         voucher_date: postingDate,
         voucher_type: "RV",
@@ -5864,7 +5865,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         posted_at: new Date().toISOString(),
       }).select("id").single().then(({ data: vData, error: vErr }) => {
         if (!vErr && vData?.id) {
-          void supabase.from("fin_voucher_lines").insert([
+          void apiDb.from("fin_voucher_lines").insert([
             { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: rentAmt, credit: 0, description: `Rent Differential — ${oldLease.tenantName}` },
             { voucher_id: vData.id, account_code: "41100001", account_name: "Rental Revenue", debit: 0, credit: rentAmt, description: `Rent Differential — ${oldLease.tenantName}` },
           ]);
@@ -5914,7 +5915,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       const drCode = isPdc ? "12900001" : isCash ? "12100001" : "12000001";
       const drName = isPdc ? "Rent PDC In Hand" : isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
       const postingDate = renewalResponseForm.securityChequeDate || today.toISOString().split("T")[0];
-      void supabase.from("fin_vouchers").insert({
+      void apiDb.from("fin_vouchers").insert({
         voucher_number: `VCH-SD-${sdRef}`,
         voucher_date: postingDate,
         voucher_type: "RV",
@@ -5924,7 +5925,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         posted_at: new Date().toISOString(),
       }).select("id").single().then(({ data: vData, error: vErr }) => {
         if (!vErr && vData?.id) {
-          void supabase.from("fin_voucher_lines").insert([
+          void apiDb.from("fin_voucher_lines").insert([
             { voucher_id: vData.id, account_code: drCode, account_name: drName, debit: depositTopUp, credit: 0, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
             { voucher_id: vData.id, account_code: "21500001", account_name: "Security Deposit Liability", debit: 0, credit: depositTopUp, description: `Security Deposit Top-Up — ${oldLease.tenantName}` },
           ]);
@@ -6833,7 +6834,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       : "Available") as Unit["status"];
     setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: releasedStatus } : item)));
     setRealUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: releasedStatus } : item)));
-    void supabase
+    void apiDb
       .from("units")
       .update({
         status: releasedStatus,
@@ -8955,7 +8956,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                     trade_licence_no: customerForm.tradeLicenceNo || null,
                     computer_card_no: customerForm.computerCardNo || null,
                   };
-                  supabase.from("customers").update(dbUpdatePayload).eq("id", editCustomerData.id).then(({ error }) => {
+                  apiDb.from("customers").update(dbUpdatePayload).eq("id", editCustomerData.id).then(({ error }) => {
                     if (error) {
                       console.warn("[editCustomer] Supabase update warning:", error.message);
                     } else {
@@ -15341,7 +15342,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                       onValueChange={(val) => {
                         setCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
                         setDirectCustomers((prev) => prev.map((c) => c.id === customer.id ? { ...c, customerStatus: val } : c));
-                        supabase.from("customers").update({ customer_status: val }).eq("id", customer.id).then(() => { });
+                        apiDb.from("customers").update({ customer_status: val }).eq("id", customer.id).then(() => { });
                       }}
                     >
                       <SelectTrigger className={`h-7 text-xs w-32 font-semibold border ${(customer?.customerStatus || "Active") === "Active" ? "bg-green-50 text-green-700 border-green-200" :

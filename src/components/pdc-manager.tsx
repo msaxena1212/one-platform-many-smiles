@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { apiDb } from "@/lib/api-db";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,7 +60,7 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
 
   const handleSave = async () => {
     setSaving(true);
-    const { error } = await supabase.from('pdcs').insert([{
+    const { error } = await apiDb.from('pdcs').insert([{
       ...formData,
       lease_id: leaseId
     }]);

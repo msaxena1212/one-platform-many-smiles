@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import { createAccountingEvent, type AccountingEventLine } from '../finance/accounting-event-engine';
 import { postAccountingEvent, type PostingResult } from '../finance/posting-engine';
 import { resolveGlOnlyAccount } from '../finance/account-resolver';
@@ -84,7 +85,7 @@ export async function postGrn(grnId: string) {
   });
 
   const result = await createAndPost('GRN', grn.id, grn.doc_number, 'Procurement GRN posting', accountingLines, `PROC:GRN:${grn.id}`);
-  const { data: updated, error: updateError } = await supabase.from('proc_goods_receipts').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId }).eq('id', grnId).select().single();
+  const { data: updated, error: updateError } = await apiDb.from('proc_goods_receipts').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId }).eq('id', grnId).select().single();
   if (updateError) throw updateError;
   return updated;
 }
@@ -138,7 +139,7 @@ export async function postPayableInvoice(invoiceId: string) {
   });
 
   const result = await createAndPost('AP_INVOICE', invoice.id, invoice.doc_number, 'Procurement payable invoice posting', lines, `PROC:AP:${invoice.id}`);
-  const { data: updated, error: updateError } = await supabase.from('proc_payable_invoices').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId, outstanding_amount: total }).eq('id', invoiceId).select().single();
+  const { data: updated, error: updateError } = await apiDb.from('proc_payable_invoices').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId, outstanding_amount: total }).eq('id', invoiceId).select().single();
   if (updateError) throw updateError;
   return updated;
 }
@@ -181,7 +182,7 @@ export async function postLandedCost(landedCostId: string) {
   ];
 
   const result = await createAndPost('LANDED_COST', cost.id, cost.doc_number, `Procurement landed cost: ${cost.cost_type}`, lines, `PROC:LC:${cost.id}`);
-  const { data: updated, error: updateError } = await supabase.from('proc_landed_costs').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId }).eq('id', landedCostId).select().single();
+  const { data: updated, error: updateError } = await apiDb.from('proc_landed_costs').update({ posting_status: 'POSTED', status: 'APPROVED', accounting_event_id: result.eventId }).eq('id', landedCostId).select().single();
   if (updateError) throw updateError;
   return updated;
 }

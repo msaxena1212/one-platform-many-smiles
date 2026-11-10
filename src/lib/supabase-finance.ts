@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { apiDb } from "@/lib/api-db";
 
 // ── Extended Finance Data Types & API Helpers ─────────────────────────────────
 
@@ -203,16 +204,16 @@ function createFinanceCrud<T extends { id: string }>(tableName: string, defaultS
       return data || [];
     },
     create: async (payload: Omit<T, 'id'>): Promise<T> => {
-      const { data, error } = await supabase.from(tableName).insert(payload as any).select().single();
+      const { data, error } = await apiDb.from(tableName).insert(payload as any).select().single();
       if (error) throw error;
       return data;
     },
     update: async (id: string, payload: Partial<Omit<T, 'id'>>): Promise<void> => {
-      const { error } = await supabase.from(tableName).update(payload as any).eq('id', id);
+      const { error } = await apiDb.from(tableName).update(payload as any).eq('id', id);
       if (error) throw error;
     },
     delete: async (id: string): Promise<void> => {
-      const { error } = await supabase.from(tableName).delete().eq('id', id);
+      const { error } = await apiDb.from(tableName).delete().eq('id', id);
       if (error) throw error;
     }
   };

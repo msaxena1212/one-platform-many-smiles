@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, type Reservation } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export interface CreateReservationInput {
   unit_id?: string;
@@ -35,7 +36,7 @@ export function useCreateReservation() {
 
   return useMutation({
     mutationFn: async (payload: CreateReservationInput) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("reservations")
         .insert({
           ...payload,
@@ -50,7 +51,7 @@ export function useCreateReservation() {
 
       // Update unit status to Reserved
       if (payload.unit_id) {
-        await supabase
+        await apiDb
           .from("units")
           .update({ status: "Reserved", updated_at: new Date().toISOString() })
           .eq("id", payload.unit_id);
@@ -76,7 +77,7 @@ export function useUpdateReservationStatus() {
       id: string;
       status: "Active" | "Extended" | "Cancelled" | "Expired" | "Converted" | "Reserved";
     }) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("reservations")
         .update({
           status,

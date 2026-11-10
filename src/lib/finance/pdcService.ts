@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import {
   postPdcCollection,
   postPdcDepositToBank,
@@ -260,14 +261,14 @@ export async function receivePdc(payload: {
 async function syncFinPdcRegister(ctx: any, updates: Record<string, any>) {
   try {
     if (ctx?.sl_no != null) {
-      await supabase
+      await apiDb
         .from('fin_pdc_register')
         .update(updates)
         .eq('original_pdc_id', ctx.sl_no);
       return;
     }
     if (ctx?.cheque_number && ctx?.amount) {
-      let q = supabase
+      let q = apiDb
         .from('fin_pdc_register')
         .update(updates)
         .eq('cheque_number', ctx.cheque_number)
@@ -347,7 +348,7 @@ export async function depositPdc(
   }
 
   if (!isNaN(Number(pdcId))) {
-    const { error: finError } = await supabase
+    const { error: finError } = await apiDb
       .from('fin_pdc_register')
       .update(finUpdate)
       .eq('id', Number(pdcId));
@@ -364,7 +365,7 @@ export async function depositPdc(
   }
 
   // Update target PDC strictly by ID (never mass-update by cheque_number)
-  const { error: legacyError } = await supabase
+  const { error: legacyError } = await apiDb
     .from('pdcs')
     .update(legacyUpdate)
     .eq('id', String(pdcId));
@@ -408,9 +409,9 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
     );
     // Update DB status to Deposited before proceeding
     if (!isNaN(Number(pdcId))) {
-      await supabase.from('fin_pdc_register').update({ status: 'Deposited', deposit_date: today }).eq('id', Number(pdcId));
+      await apiDb.from('fin_pdc_register').update({ status: 'Deposited', deposit_date: today }).eq('id', Number(pdcId));
     }
-    await supabase.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', String(pdcId));
+    await apiDb.from('pdcs').update({ status: 'deposited', status_pdc: 'deposited', deposit_date: today }).eq('id', String(pdcId));
   }
 
   // Accounting MUST succeed before the business status changes.
@@ -426,7 +427,7 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
       await supabase.rpc('set_config', { setting: 'app.pdc_manual_clear', value: 'true', is_local: true });
     } catch { /* continue */ }
 
-    const { error: finError } = await supabase
+    const { error: finError } = await apiDb
       .from('fin_pdc_register')
       .update({ status: 'Cleared', cleared_date: today })
       .eq('id', Number(pdcId));
@@ -434,7 +435,7 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   }
 
   // Update target PDC strictly by ID (pdcs table only stores status and status_pdc)
-  const { error: legacyError } = await supabase
+  const { error: legacyError } = await apiDb
     .from('pdcs')
     .update({ status: 'cleared', status_pdc: 'cleared' })
     .eq('id', String(pdcId));
@@ -518,7 +519,7 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
   // 3. Update status to Returned (NOT bounced) strictly for target PDC
   if (!isNaN(Number(pdcId))) {
     try {
-      await supabase
+      await apiDb
         .from('fin_pdc_register')
         .update({ status: 'Returned', returned_date: today })
         .eq('id', Number(pdcId));
@@ -526,7 +527,7 @@ export async function returnPdc(pdcId: number | string, chequeNo?: string) {
   }
 
   try {
-    await supabase
+    await apiDb
       .from('pdcs')
       .update({ status: 'returned', status_pdc: 'returned' })
       .eq('id', String(pdcId));
@@ -679,7 +680,7 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
   // Update target PDC strictly by ID
   if (!isNaN(Number(pdcId))) {
     try {
-      await supabase
+      await apiDb
         .from('fin_pdc_register')
         .update({ status: 'Bounced', returned_date: today })
         .eq('id', Number(pdcId));
@@ -687,7 +688,7 @@ export async function bouncePdc(pdcId: number | string, chequeNo?: string, reaso
   }
 
   try {
-    await supabase
+    await apiDb
       .from('pdcs')
       .update({ status: 'bounced', status_pdc: 'bounced' })
       .eq('id', String(pdcId));
@@ -774,14 +775,14 @@ export async function cashDepositInPlaceOfPdc(
 
   // 3. Update registers strictly for target PDC
   if (!isNaN(Number(pdcId))) {
-    const { error } = await supabase
+    const { error } = await apiDb
       .from('fin_pdc_register')
       .update({ status: 'Replaced', deposit_date: dateStr })
       .eq('id', Number(pdcId));
     if (error) console.warn('[cashDepositInPlaceOfPdc] fin_pdc_register update warning:', error.message);
   }
 
-  const { error: idErr } = await supabase
+  const { error: idErr } = await apiDb
     .from('pdcs')
     .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
     .eq('id', String(pdcId));
@@ -866,14 +867,14 @@ export async function bankTransferInPlaceOfPdc(
 
   // 3. Update registers strictly for target PDC
   if (!isNaN(Number(pdcId))) {
-    const { error } = await supabase
+    const { error } = await apiDb
       .from('fin_pdc_register')
       .update({ status: 'Replaced', deposit_date: dateStr })
       .eq('id', Number(pdcId));
     if (error) console.warn('[bankTransferInPlaceOfPdc] fin_pdc_register update warning:', error.message);
   }
 
-  const { error: idErr } = await supabase
+  const { error: idErr } = await apiDb
     .from('pdcs')
     .update({ status: newStatus, status_pdc: newStatus, deposit_date: dateStr })
     .eq('id', String(pdcId));
@@ -937,7 +938,7 @@ export async function cancelPdc(
   // 1. Update fin_pdc_register by ID if numeric
   if (!isNaN(Number(pdcId))) {
     try {
-      await supabase
+      await apiDb
         .from('fin_pdc_register')
         .update({ status: 'Cancelled' })
         .eq('id', Number(pdcId));
@@ -946,7 +947,7 @@ export async function cancelPdc(
 
   // 2. Update pdcs strictly by id (UUID or string)
   try {
-    await supabase
+    await apiDb
       .from('pdcs')
       .update({ status: 'cancelled', status_pdc: 'cancelled' })
       .eq('id', String(pdcId));

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import {
   Check, X, Shield, Save, ChevronDown, ChevronRight,
   AlertTriangle
@@ -122,7 +123,7 @@ export function PermissionsManager({
         tenant_id: targetTenantId
       }));
 
-      const { error } = await supabase.from("role_permissions").upsert(upserts, {
+      const { error } = await apiDb.from("role_permissions").upsert(upserts, {
         onConflict: "role_name,module_id,tenant_id"
       });
 

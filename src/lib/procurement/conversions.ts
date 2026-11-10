@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import { nextProcurementDocumentNumber } from './numbering';
 
 export async function convertPurchaseRequestToRfx(purchaseRequestId: string, rfxType: 'RFI' | 'RFQ' | 'RFP' = 'RFQ') {
@@ -8,7 +9,7 @@ export async function convertPurchaseRequestToRfx(purchaseRequestId: string, rfx
   if (lineError) throw lineError;
 
   const docNumber = await nextProcurementDocumentNumber(rfxType);
-  const { data: rfx, error: rfxError } = await supabase.from('proc_rfx').insert({
+  const { data: rfx, error: rfxError } = await apiDb.from('proc_rfx').insert({
     doc_number: docNumber, rfx_type: rfxType, purchase_request_id: purchaseRequestId,
     property_id: pr.property_id, cost_center_id: pr.cost_center_id, total_amount: pr.total_amount,
     issue_date: new Date().toISOString().slice(0, 10), status: 'DRAFT', posting_status: 'UNPOSTED',
@@ -16,7 +17,7 @@ export async function convertPurchaseRequestToRfx(purchaseRequestId: string, rfx
   if (rfxError) throw rfxError;
 
   if ((lines ?? []).length) {
-    const { error } = await supabase.from('proc_rfx_lines').insert((lines ?? []).map((line: any) => ({
+    const { error } = await apiDb.from('proc_rfx_lines').insert((lines ?? []).map((line: any) => ({
       rfx_id: rfx.id, line_no: line.line_no, item_code: line.item_code, description: line.description,
       item_type: line.item_type, quantity: line.quantity, unit_rate: line.unit_rate, line_total: line.line_total,
       expense_account_code: line.expense_account_code, asset_category: line.asset_category, uom: line.uom,
@@ -33,7 +34,7 @@ export async function convertSelectedQuoteToPurchaseOrder(vendorQuoteId: string)
 
   const { data: rfx } = await supabase.from('proc_rfx').select('*').eq('id', quote.rfx_id).single();
   const docNumber = await nextProcurementDocumentNumber('PO');
-  const { data: po, error: poError } = await supabase.from('proc_purchase_orders').insert({
+  const { data: po, error: poError } = await apiDb.from('proc_purchase_orders').insert({
     doc_number: docNumber, vendor_id: quote.vendor_id, vendor_quote_id: quote.id,
     purchase_request_id: rfx?.purchase_request_id ?? null, property_id: rfx?.property_id ?? null,
     cost_center_id: rfx?.cost_center_id ?? null, subtotal: Math.max(0, quote.total_amount - quote.tax_amount),
@@ -46,7 +47,7 @@ export async function convertSelectedQuoteToPurchaseOrder(vendorQuoteId: string)
   const { data: quoteLines, error: linesError } = await supabase.from('proc_vendor_quote_lines').select('*').eq('vendor_quote_id', quote.id).order('line_no');
   if (linesError) throw linesError;
   if ((quoteLines ?? []).length) {
-    const { error } = await supabase.from('proc_po_lines').insert((quoteLines ?? []).map((line: any) => ({
+    const { error } = await apiDb.from('proc_po_lines').insert((quoteLines ?? []).map((line: any) => ({
       purchase_order_id: po.id, line_no: line.line_no, description: line.description, item_type: line.item_type,
       quantity: line.quantity, unit_rate: line.unit_rate, line_total: line.line_total,
       expense_account_code: line.expense_account_code, asset_category: line.asset_category, uom: line.uom,

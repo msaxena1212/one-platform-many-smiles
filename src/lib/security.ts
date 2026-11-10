@@ -10,6 +10,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export async function logSecurityEvent(
 
   // Best-effort persist to Supabase
   try {
-    const { error } = await supabase.from("security_audit_logs").insert(record);
+    const { error } = await apiDb.from("security_audit_logs").insert(record);
     if (error) {
       console.warn("Supabase security_audit_logs table unavailable or restricted by RLS; saved to local audit trail store.", error.message);
     }
@@ -123,7 +124,7 @@ export async function clearSecurityAuditLogs(): Promise<void> {
   }
   _memoryLog.length = 0;
   try {
-    await supabase.from("security_audit_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    await apiDb.from("security_audit_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   } catch (err) {
     console.warn("Could not delete from security_audit_logs table", err);
   }

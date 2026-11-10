@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { apiDb } from "@/lib/api-db";
 
 // -- System Masters (Appended) --
 
@@ -32,18 +33,18 @@ export async function fetchTicketCategories(): Promise<TicketCategory[]> {
 }
 
 export async function createTicketCategory(cat: Omit<TicketCategory, 'id' | 'created_at'>): Promise<TicketCategory> {
-  const { data, error } = await supabase.from('mst_ticket_categories').insert(cat).select().single();
+  const { data, error } = await apiDb.from('mst_ticket_categories').insert(cat).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateTicketCategory(id: number, cat: Partial<Omit<TicketCategory, 'id' | 'created_at'>>): Promise<void> {
-  const { error } = await supabase.from('mst_ticket_categories').update(cat).eq('id', id);
+  const { error } = await apiDb.from('mst_ticket_categories').update(cat).eq('id', id);
   if (error) throw error;
 }
 
 export async function deleteTicketCategory(id: number): Promise<void> {
-  const { error } = await supabase.from('mst_ticket_categories').delete().eq('id', id);
+  const { error } = await apiDb.from('mst_ticket_categories').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -54,18 +55,18 @@ export async function fetchFacilityMasters(): Promise<FacilityMaster[]> {
 }
 
 export async function createFacilityMaster(fac: Omit<FacilityMaster, 'id' | 'created_at'>): Promise<FacilityMaster> {
-  const { data, error } = await supabase.from('mst_facilities').insert(fac).select().single();
+  const { data, error } = await apiDb.from('mst_facilities').insert(fac).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updateFacilityMaster(id: number, fac: Partial<Omit<FacilityMaster, 'id' | 'created_at'>>): Promise<void> {
-  const { error } = await supabase.from('mst_facilities').update(fac).eq('id', id);
+  const { error } = await apiDb.from('mst_facilities').update(fac).eq('id', id);
   if (error) throw error;
 }
 
 export async function deleteFacilityMaster(id: number): Promise<void> {
-  const { error } = await supabase.from('mst_facilities').delete().eq('id', id);
+  const { error } = await apiDb.from('mst_facilities').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -76,18 +77,18 @@ export async function fetchPaymentModes(): Promise<PaymentMode[]> {
 }
 
 export async function createPaymentMode(mode: Omit<PaymentMode, 'id' | 'created_at'>): Promise<PaymentMode> {
-  const { data, error } = await supabase.from('mst_payment_modes').insert(mode).select().single();
+  const { data, error } = await apiDb.from('mst_payment_modes').insert(mode).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updatePaymentMode(id: number, mode: Partial<Omit<PaymentMode, 'id' | 'created_at'>>): Promise<void> {
-  const { error } = await supabase.from('mst_payment_modes').update(mode).eq('id', id);
+  const { error } = await apiDb.from('mst_payment_modes').update(mode).eq('id', id);
   if (error) throw error;
 }
 
 export async function deletePaymentMode(id: number): Promise<void> {
-  const { error } = await supabase.from('mst_payment_modes').delete().eq('id', id);
+  const { error } = await apiDb.from('mst_payment_modes').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -102,18 +103,18 @@ async function fetchSimple(table: string): Promise<Simplemaster[]> {
 }
 
 async function createSimple(table: string, name: string): Promise<Simplemaster> {
-  const { data, error } = await supabase.from(table).insert({ name }).select().single();
+  const { data, error } = await apiDb.from(table).insert({ name }).select().single();
   if (error) throw error;
   return data;
 }
 
 async function updateSimple(table: string, id: number, name: string): Promise<void> {
-  const { error } = await supabase.from(table).update({ name }).eq('id', id);
+  const { error } = await apiDb.from(table).update({ name }).eq('id', id);
   if (error) throw error;
 }
 
 async function deleteSimple(table: string, id: number): Promise<void> {
-  const { error } = await supabase.from(table).delete().eq('id', id);
+  const { error } = await apiDb.from(table).delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -210,7 +211,7 @@ export async function fetchAssetSubcategories(categoryId?: number): Promise<Asse
 }
 
 export async function createAssetSubcategory(name: string, categoryId: number | null): Promise<AssetSubcategory> {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('mst_asset_subcategories')
     .insert({ name, category_id: categoryId })
     .select().single();
@@ -219,7 +220,7 @@ export async function createAssetSubcategory(name: string, categoryId: number | 
 }
 
 export async function updateAssetSubcategory(id: number, name: string, categoryId: number | null): Promise<void> {
-  const { error } = await supabase
+  const { error } = await apiDb
     .from('mst_asset_subcategories')
     .update({ name, category_id: categoryId })
     .eq('id', id);
@@ -260,18 +261,18 @@ export async function fetchPropertyCodes(): Promise<PropertyCode[]> {
 }
 
 export async function createPropertyCode(code: string): Promise<PropertyCode> {
-  const { data, error } = await supabase.from('mst_property_codes').insert({ code }).select().single();
+  const { data, error } = await apiDb.from('mst_property_codes').insert({ code }).select().single();
   if (error) throw error;
   return data;
 }
 
 export async function updatePropertyCode(id: number, code: string): Promise<void> {
-  const { error } = await supabase.from('mst_property_codes').update({ code }).eq('id', id);
+  const { error } = await apiDb.from('mst_property_codes').update({ code }).eq('id', id);
   if (error) throw error;
 }
 
 export async function deletePropertyCode(id: number): Promise<void> {
-  const { error } = await supabase.from('mst_property_codes').delete().eq('id', id);
+  const { error } = await apiDb.from('mst_property_codes').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -284,7 +285,7 @@ export async function fetchUnitCodes(propertyCodeId?: number): Promise<UnitCode[
 }
 
 export async function createUnitCode(code: string, propertyCodeId: number | null): Promise<UnitCode> {
-  const { data, error } = await supabase
+  const { data, error } = await apiDb
     .from('mst_unit_codes')
     .insert({ code, property_code_id: propertyCodeId })
     .select().single();
@@ -293,7 +294,7 @@ export async function createUnitCode(code: string, propertyCodeId: number | null
 }
 
 export async function updateUnitCode(id: number, code: string, propertyCodeId: number | null): Promise<void> {
-  const { error } = await supabase
+  const { error } = await apiDb
     .from('mst_unit_codes')
     .update({ code, property_code_id: propertyCodeId })
     .eq('id', id);
@@ -301,7 +302,7 @@ export async function updateUnitCode(id: number, code: string, propertyCodeId: n
 }
 
 export async function deleteUnitCode(id: number): Promise<void> {
-  const { error } = await supabase.from('mst_unit_codes').delete().eq('id', id);
+  const { error } = await apiDb.from('mst_unit_codes').delete().eq('id', id);
   if (error) throw error;
 }
 

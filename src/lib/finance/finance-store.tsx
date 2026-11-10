@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 import { resolveAccountingAccounts } from "./account-resolver";
 import { postVoucher } from "./posting-engine";
 import {
@@ -887,20 +888,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         .order("voucher_date", { ascending: false });
 
       if (!vError && vData) {
-        // Normalize processed salary amount from 115,250 to 96,820 in backend tables
-        void supabase
-          .from("fin_vouchers")
-          .update({ total_amount: 96820 })
-          .eq("total_amount", 115250);
-        void supabase
-          .from("fin_payroll_syncs")
-          .update({ total_amount: 96820 })
-          .eq("total_amount", 115250);
-        void supabase
-          .from("fin_accounting_events")
-          .update({ total_debit: 96820, total_credit: 96820 })
-          .eq("total_debit", 115250);
-
+        // NOTE: the old on-load "normalize 115,250 -> 96,820" rewrite of backend rows was removed: silently
+        // rewriting stored amounts on every page load is a data-integrity risk. Display-side mapping below remains.
         setVouchers(prev => {
           const existingNos = new Set(prev.map(v => v.voucher_no));
           const mapped: FinanceVoucher[] = vData
@@ -2165,7 +2154,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // Persist to Supabase journal_entries table (best-effort, fire-and-forget).
     void Promise.resolve(
-      supabase.from("journal_entries").insert({
+      apiDb.from("journal_entries").insert({
         je_no: newEntry.je_no,
         posting_date: newEntry.posting_date,
         period: newEntry.posting_date?.slice(0, 7) ?? new Date().toISOString().slice(0, 7),
@@ -2257,7 +2246,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     // Persist to Supabase fin_vouchers (best-effort, fire-and-forget).
     const typeCode = newVch.voucher_type === "Payment Voucher" ? "PV" : newVch.voucher_type === "Receipt Voucher" ? "RV" : "JV";
     void Promise.resolve(
-      supabase.from("fin_vouchers").insert({
+      apiDb.from("fin_vouchers").insert({
         voucher_number: newVch.voucher_no,
         voucher_date: newVch.date,
         voucher_type: typeCode,
@@ -2643,7 +2632,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (newBankCode) {
         updatePayload.reference_no = `${newBankCode} - ${newBankName || ""}`.trim();
       }
-      await supabase
+      await apiDb
         .from("fin_vouchers")
         .update(updatePayload)
         .eq("voucher_number", voucherNo);
@@ -2659,9 +2648,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           if (voucherNo.startsWith("VCH-DEP-")) {
             const pdcUpdate: Record<string, any> = { deposit_date: newDate };
             if (newBankName) pdcUpdate.deposit_bank = newBankName;
-            await supabase.from("pdcs").update(pdcUpdate).eq("id", pdcId);
+            await apiDb.from("pdcs").update(pdcUpdate).eq("id", pdcId);
           } else if (voucherNo.startsWith("VCH-CLR-")) {
-            await supabase.from("pdcs").update({ cleared_date: newDate }).eq("id", pdcId);
+            await apiDb.from("pdcs").update({ cleared_date: newDate }).eq("id", pdcId);
           }
         } catch (e) {
           console.warn("[correctVoucherDate] pdcs date update warning:", e);
@@ -2671,7 +2660,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // Record immutable audit log
     try {
-      await supabase.from("security_audit_logs").insert({
+      await apiDb.from("security_audit_logs").insert({
         event_type: "data_mutation",
         severity: "warning",
         action: "CORRECT_VOUCHER_DATE_OR_BANK",

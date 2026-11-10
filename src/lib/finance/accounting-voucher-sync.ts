@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 
 export async function syncAccountingEventToErp(
     eventId: string,
@@ -96,7 +97,7 @@ export async function syncAccountingEventToErp(
         `EVT-${String(event.id).slice(0, 8)}`;
 
     const { data: voucher, error: voucherError } =
-        await supabase
+        await apiDb
             .from('erp_vouchers')
             .insert({
                 voucher_no: voucherNo,
@@ -157,7 +158,7 @@ export async function syncAccountingEventToErp(
     });
 
     const { error: journalError } =
-        await supabase
+        await apiDb
             .from('erp_journal_entries')
             .insert(journalLines);
 
@@ -165,7 +166,7 @@ export async function syncAccountingEventToErp(
         /*
          * Cleanup orphan voucher.
          */
-        await supabase
+        await apiDb
             .from('erp_vouchers')
             .delete()
             .eq('id', voucher.id);
@@ -177,7 +178,7 @@ export async function syncAccountingEventToErp(
      * 6. Mark accounting event posted.
      */
     const { error: updateError } =
-        await supabase
+        await apiDb
             .from('fin_accounting_events')
             .update({
                 status: 'POSTED',

@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 import {
   resolveAccountingAccounts,
   type PaymentMethod,
@@ -448,7 +449,7 @@ async function markEventPosting(
   const {
     data,
     error,
-  } = await supabase
+  } = await apiDb
     .from(
       'fin_accounting_events',
     )
@@ -481,7 +482,7 @@ async function restoreDraftStatus(
 ) {
   const {
     error,
-  } = await supabase
+  } = await apiDb
     .from(
       'fin_accounting_events',
     )

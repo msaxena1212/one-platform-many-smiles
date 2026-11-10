@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { apiDb } from "@/lib/api-db";
 
 export interface PdcRecord {
   id: string;
@@ -43,7 +44,7 @@ export function useCreatePdc() {
 
   return useMutation({
     mutationFn: async (payload: Omit<PdcRecord, "id" | "created_at">) => {
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("fin_pdc_register")
         .insert({
           ...payload,
@@ -84,7 +85,7 @@ export function useUpdatePdcStatus() {
       if (clearingDate) updates.clearing_date = clearingDate;
       if (remarks) updates.remarks = remarks;
 
-      const { data, error } = await supabase
+      const { data, error } = await apiDb
         .from("fin_pdc_register")
         .update(updates)
         .eq("id", id)

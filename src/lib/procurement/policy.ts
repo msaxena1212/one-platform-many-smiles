@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from "@/lib/api-db";
 
 export type ProcurementApprovalPolicy = {
   allowed: boolean;
@@ -43,7 +44,7 @@ export async function getProcurementPolicySnapshot(tenantId?: string | null) {
 }
 
 export async function activateProcurementPolicyVersion(policyId: string, effectiveTo?: string | null) {
-  const { error } = await supabase
+  const { error } = await apiDb
     .from('procurement_policy_versions')
     .update({ status: 'ACTIVE', effective_to: effectiveTo ?? null, updated_at: new Date().toISOString() })
     .eq('id', policyId);
@@ -58,7 +59,7 @@ export async function createProcurementPolicyVersion(input: {
   effectiveTo?: string | null;
   notes?: string;
 }) {
-  const { data, error } = await supabase.from('procurement_policy_versions').insert({
+  const { data, error } = await apiDb.from('procurement_policy_versions').insert({
     policy_code: input.policyCode,
     version_no: input.versionNo,
     status: 'DRAFT',
@@ -81,7 +82,7 @@ export async function createProcurementPolicyRule(input: {
   slaHours?: number;
   escalationRole?: string | null;
 }) {
-  const { data, error } = await supabase.from('procurement_policy_rules').insert({
+  const { data, error } = await apiDb.from('procurement_policy_rules').insert({
     policy_version_id: input.policyVersionId,
     document_type: input.documentType ?? 'PO',
     min_amount: input.minAmount,
@@ -106,7 +107,7 @@ export async function createProcurementDelegation(input: {
   effectiveTo: string;
   reason?: string;
 }) {
-  const { data, error } = await supabase.from('procurement_approval_delegations').insert({
+  const { data, error } = await apiDb.from('procurement_approval_delegations').insert({
     policy_version_id: input.policyVersionId ?? null,
     source_role: input.sourceRole ?? null,
     delegate_role: input.delegateRole ?? null,
