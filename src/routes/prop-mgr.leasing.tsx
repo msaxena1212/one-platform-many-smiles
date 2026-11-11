@@ -17,6 +17,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import { useAppData } from "@/lib/app-data-context";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
+import { persistContractPdcs } from "@/lib/finance/persist-contract-pdcs";
 import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
 import { generateReceiptBlob } from "@/components/receipt-template";
 import { LeaseRenewalStepperModal, type RenewalSubmitData } from "@/components/lease-renewal-stepper-modal";
@@ -2273,40 +2274,23 @@ function LeasingPage() {
 
     // Persist renewal PDCs directly to Supabase pdcs and fin_pdc_register
     try {
-      const dbPdcs = renewalPdcs.map(p => ({
-        cheque_number: p.chequeNo,
-        amount: p.amount,
-        bank: p.bank,
-        status: "In Hand",
-        status_pdc: "in hand",
-        unit_name: oldLease.unit,
-        property_name: oldLease.property,
-        property_code: (oldLease as any).propertyCode || oldLease.property?.split(" - ")[0] || "Al Ameen",
-        tenant_name: oldLease.tenantName,
-        maturity_date: p.date,
-        deposit_date: p.date,
-        rent_from_date: p.tenureStart,
-        rent_to_date: p.tenureEnd,
-        lease_id: renewed.id,
-      }));
-      void apiDb.from("pdcs").insert(dbPdcs).then(({ error }) => {
-        if (error) console.warn("[renewLease] pdcs insert note:", error.message);
-        else console.log("[renewLease] PDCs inserted into pdcs table successfully");
-      });
-
-      const dbFinPdcs = renewalPdcs.map(p => ({
-        cheque_number: p.chequeNo,
-        cheque_date: p.date,
-        amount: p.amount,
-        bank_name: p.bank,
-        status: "In Hand",
-        unit_name: oldLease.unit,
-        property_name: oldLease.property,
-        tenant_name: oldLease.tenantName,
-      }));
-      void apiDb.from("fin_pdc_register").insert(dbFinPdcs).then(({ error }) => {
-        if (error) console.warn("[renewLease] fin_pdc_register insert note:", error.message);
-      });
+      void persistContractPdcs(
+        renewalPdcs.map((p) => ({
+          chequeNo: p.chequeNo,
+          date: p.date,
+          amount: p.amount,
+          bank: p.bank,
+          tenureStart: p.tenureStart,
+          tenureEnd: p.tenureEnd,
+        })),
+        {
+          unit: oldLease.unit,
+          property: oldLease.property,
+          propertyCode: (oldLease as any).propertyCode,
+          tenantName: oldLease.tenantName,
+          leaseId: renewed.id,
+        },
+      );
     } catch (e) {
       console.warn("Error persisting renewal PDCs to Supabase:", e);
     }

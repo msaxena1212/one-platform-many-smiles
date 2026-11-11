@@ -29,6 +29,7 @@ import {
   type JournalEntry, type ARLedger, type GLAccount, type ERPChartOfAccount, type UnitCOA,
   type CoaType, type CoaGroup, type CoaClass, type CoaGL, type CoaSL, type PropertyCoaMapping, type UnitCoaMapping
 } from "@/lib/supabase";
+import { useMergedCoa, persistCoaAccount, migrateLocalCustomCoa, fetchLiveCoaOptions } from "@/lib/finance/live-coa";
 import {
   FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
   FinPostingPeriodsApi, FinBanksApi, FinBankAccountsApi, FinBankReconciliationsApi, FinContractsApi,
@@ -1940,6 +1941,8 @@ function ChartOfAccountsSubModule() {
   async function loadData() {
     setLoading(true);
     try {
+      // Ledgers saved only in this browser by earlier versions are moved into the database first.
+      await migrateLocalCustomCoa().catch(() => 0);
       const [accs, uCoas, tree, propMaps] = await Promise.all([
         fetchERPChartOfAccounts(),
         fetchUnitCOAs(),
@@ -2067,36 +2070,22 @@ function ChartOfAccountsSubModule() {
         Expenses: { type_code: "5", group_name: "Operating Expenses", class_name: "Direct & Admin Expenses" },
       };
       const meta = typeMap[form.type] || typeMap.Expenditure;
-      const newCustomAcc: ERPChartOfAccount = {
-        id: `custom-coa-${Date.now()}`,
+      const saved = await persistCoaAccount({
         code: codeTrimmed,
         name: nameTrimmed,
-        type: (form.type === "Expenses" ? "Expenditure" : form.type) as any,
-        type_code: meta.type_code,
-        group_code: `${meta.type_code}1`,
+        type: form.type,
         group_name: form.group_name || meta.group_name,
-        class_code: `${meta.type_code}101`,
         class_name: form.class_name || meta.class_name,
-        gl_code: codeTrimmed,
-        gl_name: nameTrimmed,
-      } as ERPChartOfAccount;
-
-      try {
-        const rawCustom = localStorage.getItem("fin_custom_coa_accounts_v1");
-        const existing: ERPChartOfAccount[] = rawCustom ? JSON.parse(rawCustom) : [];
-        const filtered = existing.filter(a => a.code !== codeTrimmed);
-        filtered.push(newCustomAcc);
-        localStorage.setItem("fin_custom_coa_accounts_v1", JSON.stringify(filtered));
-        window.dispatchEvent(new Event("fin_custom_coa_updated"));
-      } catch {}
-
-      try {
-        await createGLAccount({ code: codeTrimmed, name_en: nameTrimmed, type: form.type.toLowerCase() as any });
-      } catch {
-        // Persist in localStorage even if remote DB table constraint rejects custom format
+      });
+      if (!saved.ok) {
+        toast.error(`Could not save ledger ${codeTrimmed}: ${saved.error}`);
+        return;
+      }
+      if (!saved.created) {
+        toast.info(`Ledger ${codeTrimmed} already exists in the Chart of Accounts.`);
       }
 
-      toast.success(`Ledger Account ${codeTrimmed} - ${nameTrimmed} added to Chart of Accounts!`);
+      if (saved.created) toast.success(`Ledger Account ${codeTrimmed} - ${nameTrimmed} saved to the Chart of Accounts and is available for journal / voucher posting.`);
       setForm({ code: "", name: "", type: "Expenditure", type_code: "5", group_name: "Operating Expenses", class_name: "Direct & Admin Expenses", gl_name: "" });
       setOpen(false);
       await loadData();
@@ -2579,6 +2568,7 @@ function ChartOfAccountsSubModule() {
 }
 
 function JournalLedgerSubModule() {
+  const COMMON_GL_ACCOUNTS = useMergedCoa(BASE_COMMON_GL_ACCOUNTS);
   const { leases, units } = useAppData();
   const { journalEntries: storeJournalEntries, addJournalEntry } = useFinanceStore();
   const [open, setOpen] = useState(false);
@@ -3012,6 +3002,7 @@ function JournalLedgerSubModule() {
 }
 
 function CreditDebitBuilderSubModule() {
+  const COMMON_GL_ACCOUNTS = useMergedCoa(BASE_COMMON_GL_ACCOUNTS);
   const { leases, units } = useAppData();
   const { addJournalEntry } = useFinanceStore();
   const propertiesList = useMemo(() => {
@@ -3732,8 +3723,19 @@ function PayableInvoiceSubModule() {
   }, [loadInvoices]);
 
   useEffect(() => {
-    const refreshCoa = () => setExpenseAccountOptions(getAvailableExpenseGlAccounts());
+    const refreshCoa = () => {
+      const base = getAvailableExpenseGlAccounts();
+      setExpenseAccountOptions(base);
+      // Add every active expense (5xxxxx) account from the live chart of accounts.
+      void fetchLiveCoaOptions(true).then(live => {
+        const seen = new Set(base.map(o => o.split(" - ")[0].trim()));
+        const extra = live.filter(a => a.code.startsWith("5") && !seen.has(a.code)).map(a => a.name);
+        if (extra.length) setExpenseAccountOptions([...base, ...extra]);
+      });
+    };
+    refreshCoa();
     window.addEventListener("fin_custom_coa_updated", refreshCoa);
+    window.addEventListener("fin_coa_updated", refreshCoa);
     const defaultFinVendors: FinVendor[] = DEFAULT_VENDORS.map((dv, idx) => ({
       id: dv.id,
       code: `VND-00${idx + 1}`,
@@ -3776,7 +3778,7 @@ function PayableInvoiceSubModule() {
       .catch(() => {
         setSupplierMaster(defaultFinVendors);
       });
-    return () => window.removeEventListener("fin_custom_coa_updated", refreshCoa);
+    return () => { window.removeEventListener("fin_custom_coa_updated", refreshCoa); window.removeEventListener("fin_coa_updated", refreshCoa); };
   }, []);
 
   // Merge Store AP invoices and Procurement AP invoices
@@ -4616,7 +4618,7 @@ const BANK_GL_ACCOUNTS = [
   { code: "12000006", name: "12000006 - Al Ameen (Oryx) - Dukhan Bank" },
 ];
 
-const COMMON_GL_ACCOUNTS = [
+const BASE_COMMON_GL_ACCOUNTS = [
   { code: "12000", name: "12000 - Bank Operating Account (QNB/CBQ)" },
   { code: "12100", name: "12100 - Cash In Hand (Office Vault)" },
   { code: "12411", name: "12411 - Legal Receivables (Defaulted Cases)" },
@@ -4638,6 +4640,7 @@ const COMMON_GL_ACCOUNTS = [
 ];
 
 function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment Voucher" | "Receipt Voucher" }) {
+  const COMMON_GL_ACCOUNTS = useMergedCoa(BASE_COMMON_GL_ACCOUNTS);
   const { vouchers: sharedVouchers, setVouchers: setSharedVouchers, leases, units } = useAppData();
   const { addVoucher: addFinanceStoreVoucher } = useFinanceStore();
   const [open, setOpen] = useState(false);

@@ -502,6 +502,7 @@ export function PdcManagement() {
   const [otherCollectionDescription, setOtherCollectionDescription] = useState("");
   const [batchPdcFile, setBatchPdcFile] = useState<File | null>(null);
   const [selectedLeaseId, setSelectedLeaseId] = useState("");
+  const [leaseSearch, setLeaseSearch] = useState("");
   const [addPdcRows, setAddPdcRows] = useState<AddPdcRow[]>([
     {
       id: "1",
@@ -2854,6 +2855,12 @@ export function PdcManagement() {
                 <Label className="text-[11px] font-semibold flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5 text-primary" /> Lease / Tenant Agreement <span className="text-destructive">*</span>
                 </Label>
+                <Input
+                  className="h-8 text-xs bg-background"
+                  placeholder="Search tenant, unit or property..."
+                  value={leaseSearch}
+                  onChange={(e) => setLeaseSearch(e.target.value)}
+                />
                 <Select
                   value={selectedLeaseId}
                   onValueChange={(v) => {
@@ -2879,11 +2886,17 @@ export function PdcManagement() {
                     <SelectValue placeholder="Select tenant lease agreement" />
                   </SelectTrigger>
                   <SelectContent>
-                    {leases.map((l) => (
-                      <SelectItem key={l.id} value={l.id}>
-                        {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
-                      </SelectItem>
-                    ))}
+                    {leases
+                      .filter((l) => {
+                        const q = leaseSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return l.id === selectedLeaseId || `${l.tenantName} ${l.unit} ${l.property}`.toLowerCase().includes(q);
+                      })
+                      .map((l) => (
+                        <SelectItem key={l.id} value={l.id}>
+                          {l.tenantName} — {l.unit} ({l.property}) • QR {l.monthlyRent?.toLocaleString()}/mo
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

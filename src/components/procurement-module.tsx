@@ -881,6 +881,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
     paymentTerms: string;
     settlementMode: string;
     deliveryTerms: string;
+    poDate: string;
     remarks: string;
     lines: ProcLineItem[];
   }>({
@@ -890,6 +891,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
     paymentTerms: "Net 30 Days",
     settlementMode: "Bank Wire / Electronic Transfer (QNB)",
     deliveryTerms: "FOB Destination",
+    poDate: new Date().toISOString().slice(0, 10),
     remarks: "",
     lines: [createDefaultLineItem()],
   });
@@ -1258,7 +1260,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
 
       const { data: poData, error: poErr } = await apiDb.from("proc_purchase_orders").insert({
         doc_number: docNum,
-        po_date: new Date().toISOString().slice(0, 10),
+        po_date: poForm.poDate || new Date().toISOString().slice(0, 10),
         vendor_id: Number(poForm.vendorId) || 1,
         status: "DRAFT",
         posting_status: "UNPOSTED",
@@ -1322,6 +1324,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
         paymentTerms: "Net 30 Days",
         settlementMode: "Bank Wire / Electronic Transfer (QNB)",
         deliveryTerms: "FOB Destination",
+        poDate: new Date().toISOString().slice(0, 10),
         remarks: "",
         lines: [createDefaultLineItem()],
       });
@@ -1999,6 +2002,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                                     paymentTerms: "Net 30 Days",
                                     settlementMode: "Bank Wire / Electronic Transfer (QNB)",
                                     deliveryTerms: "FOB Destination",
+                                    poDate: new Date().toISOString().slice(0, 10),
                                     remarks: `Issued from Approved PR #${pr.doc_number}`,
                                     lines: extractedLines.length > 0 ? extractedLines : [createDefaultLineItem(pr.property_id || "", pr.unit_id || "")],
                                   });
@@ -4585,6 +4589,14 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                     <SelectItem value="Cash in Hand / Petty Cash">Cash in Hand / Petty Cash</SelectItem>
                   </SelectContent>
                 </Select>
+              </Field>
+              <Field label="PO Date *">
+                <Input
+                  type="date"
+                  className="h-9 text-xs"
+                  value={poForm.poDate}
+                  onChange={e => setPoForm({ ...poForm, poDate: e.target.value })}
+                />
               </Field>
               <Field label="Delivery Terms">
                 <Input

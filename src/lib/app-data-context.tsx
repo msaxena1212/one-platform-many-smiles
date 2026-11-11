@@ -607,11 +607,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       // Also synthesize active leases for occupied units or units with current_tenant / contract
       const seenLeaseUnits = new Set(existingLeases.map((l) => `${l.property}-${l.unit}`.toLowerCase()));
+      // A unit that already has a live database lease must not also get a lease synthesised from the unit record
+      // (that produced two leases for one unit, e.g. "active" + "documents_verified", and double invoicing).
+      const NOT_LIVE = new Set(["closed", "terminated", "cancelled", "renewed", "expired", "vacant"]);
+      const liveLeaseUnits = new Set(
+        existingLeases
+          .filter((l) => !NOT_LIVE.has(String(l.status || "").toLowerCase()))
+          .map((l) => String(l.unit || "").toUpperCase().trim())
+          .filter(Boolean),
+      );
       const unitContracts: PmsLease[] = [];
 
       (unitsRes.data || []).forEach((u: any, idx: number) => {
         const unitIdentifier = u.unit_ref || u.unit_name || u.unit_code || "Unit";
         const uKey = unitIdentifier.toUpperCase().trim();
+        if (liveLeaseUnits.has(uKey)) return;
         const rawExcel = (excelLeaseMasterData as Record<string, any>)[uKey];
         const excelIsVacant = Boolean(rawExcel && (rawExcel.tenant === "Vacant" || rawExcel.rent === 0));
         // Excel "Vacant" is overridden when the unit record itself carries a real tenant and rent.

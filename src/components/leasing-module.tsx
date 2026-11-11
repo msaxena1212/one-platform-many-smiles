@@ -23,6 +23,7 @@ import { useAppData } from "@/lib/app-data-context";
 import { buildUnitTenantCustomers } from "@/lib/unit-tenant-customers";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
+import { persistContractPdcs } from "@/lib/finance/persist-contract-pdcs";
 import { generateLeaseAgreementBlob, printBilingualLeaseContract } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
@@ -399,6 +400,10 @@ type RenewalCase = {
   leaseId: string;
   noticeDate: string;
   status: "awaiting_response" | "under_discussion" | "renewal_confirmed" | "non_renewal_confirmed" | "renewal_declined" | "expired";
+  /** true once a renewed lease actually exists for this lease */
+  isRenewed?: boolean;
+  /** true when a user explicitly confirmed the renewal (not auto-generated) */
+  userConfirmed?: boolean;
   proposedRent: number;
   proposedPeriod: string;
   revisedTerms: string;
@@ -1904,18 +1909,23 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         const proposedRent = Math.round(lease.monthlyRent || 6000);
         const noticeDate = today instanceof Date ? today.toISOString().split("T")[0] : "2026-09-01";
         const lastConfDate = lease.endDate ? addDays(new Date(lease.endDate), -30) : "2026-11-30";
-        const status = renewed
-          ? "renewal_confirmed"
-          : isExpired
-            ? "expired"
-            : idx % 3 === 0
-              ? "awaiting_response"
-              : idx % 3 === 1
-                ? "under_discussion"
-                : "renewal_confirmed";
+        // A case is only "renewal_confirmed" when a renewed lease really exists (or a user confirmed it).
+        // It used to be assigned round-robin (idx % 3), which showed unrenewed leases as "Renewal Confirmed"
+        // and disabled their Renew button.
+        const status: RenewalCase["status"] = renewed ? "renewal_confirmed" : isExpired ? "expired" : "awaiting_response";
 
         const existingIdx = updated.findIndex((r) => r.leaseId === lease.id);
         if (existingIdx >= 0) {
+          const cur = updated[existingIdx];
+          if (cur.isRenewed !== renewed) {
+            updated[existingIdx] = { ...updated[existingIdx], isRenewed: renewed };
+            changed = true;
+          }
+          // Repair rows wrongly auto-marked "Renewal Confirmed" while no renewed lease exists
+          if (!renewed && cur.status === "renewal_confirmed" && !cur.userConfirmed) {
+            updated[existingIdx] = { ...updated[existingIdx], status: "awaiting_response" };
+            changed = true;
+          }
           // If already in list but marked expired when it's actually renewed, fix to renewal_confirmed
           if (renewed && updated[existingIdx].status === "expired") {
             updated[existingIdx] = {
@@ -1933,6 +1943,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             leaseId: lease.id,
             noticeDate: noticeDate,
             status: status,
+            isRenewed: renewed,
             proposedRent: proposedRent,
             proposedPeriod: "12 Months (1 Year Extension)",
             revisedTerms: renewed
@@ -4659,32 +4670,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
         localStorage.setItem("pms_renewal_pdcs", JSON.stringify([...nextPdcs, ...existingStored]));
         window.dispatchEvent(new Event("pdcs_updated"));
       } catch { /* ignore */ }
-      void (async () => {
-        for (const pdc of nextPdcs) {
-          try {
-            await apiDb.from("pdcs").insert({
-              cheque_number: pdc.chequeNo,
-              maturity_date: pdc.date,
-              amount: pdc.amount,
-              property_code: lease.property,
-              unit_name: lease.unit,
-              tenant_name: lease.tenantName,
-              bank: pdc.bank || "Qatar National Bank (QNB)",
-              status: "In Hand",
-            });
-            await apiDb.from("fin_pdc_register").insert({
-              cheque_number: pdc.chequeNo,
-              cheque_date: pdc.date,
-              amount: pdc.amount,
-              property_name: lease.property,
-              unit_ref: lease.unit,
-              tenant_name: lease.tenantName,
-              bank_name: pdc.bank || "Qatar National Bank (QNB)",
-              status: "In Hand",
-            });
-          } catch { /* ignore duplicate or schema notice */ }
-        }
-      })();
+      void persistContractPdcs(
+        nextPdcs.map((pdc) => ({ chequeNo: pdc.chequeNo, date: pdc.date, amount: pdc.amount, bank: pdc.bank || "Qatar National Bank (QNB)" })),
+        { unit: lease.unit, property: lease.property, propertyCode: lease.property, tenantName: lease.tenantName, leaseId: lease.id },
+      );
     }
 
     setVouchers((items) => [...newVouchers, ...items]);
@@ -5445,6 +5434,19 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       window.dispatchEvent(new Event("pdcs_updated"));
     } catch { /* ignore */ }
 
+    // Persist the renewal PDCs to the database so PDC In Hand reaches the Trial Balance, GL and Customer SOA
+    void persistContractPdcs(
+      renewalPdcs.map((p: any) => ({
+        chequeNo: p.chequeNo,
+        date: p.date,
+        amount: Number(p.amount),
+        bank: p.bank,
+        tenureStart: p.tenureStart,
+        tenureEnd: p.tenureEnd,
+      })),
+      { unit: oldLease.unit, property: oldLease.property, tenantName: oldLease.tenantName, leaseId: renewed.id },
+    );
+
     // Process Security Deposit Top-Up / Payment Voucher
     const newVouchers: Voucher[] = [];
     if (depositTopUp > 0) {
@@ -5536,7 +5538,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
     // Update renewal case status
     setRenewals((items) =>
-      items.map((item) => (item.id === data.renewalId ? { ...item, status: "renewal_confirmed", proposedRent: agreedRent } : item))
+      items.map((item) => (item.id === data.renewalId ? { ...item, status: "renewal_confirmed", userConfirmed: true, proposedRent: agreedRent } : item))
     );
 
     // Audit trail
@@ -5938,7 +5940,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
       window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
     }
 
-    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed", proposedRent: agreedRent } : item)));
+    setRenewals((items) => items.map((item) => (item.id === renewal.id ? { ...item, status: "renewal_confirmed", userConfirmed: true, proposedRent: agreedRent } : item)));
 
     const provisionsSummary: string[] = [];
     if (renewalResponseForm.createNewLease) provisionsSummary.push(`New Agreement: ${contractNo}`);
@@ -17414,7 +17416,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                            disabled={(renewal?.status === "renewal_confirmed" && renewal?.isRenewed !== false) || renewal?.status === "non_renewal_confirmed"}
                             onClick={() => {
                               setSelectedDiscussRenewal(renewal);
                               setDiscussRenewalForm({
@@ -17432,7 +17434,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                            disabled={(renewal?.status === "renewal_confirmed" && renewal?.isRenewed !== false) || renewal?.status === "non_renewal_confirmed"}
                             onClick={() => openRenewalModal(renewal)}
                           >
                             Renew
@@ -17441,7 +17443,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={renewal?.status === "renewal_confirmed" || renewal?.status === "non_renewal_confirmed"}
+                              disabled={(renewal?.status === "renewal_confirmed" && renewal?.isRenewed !== false) || renewal?.status === "non_renewal_confirmed"}
                               onClick={() => {
                                 setIsFixedTenantCheckout(true);
                                 setCheckoutWorkflowLease(lease);

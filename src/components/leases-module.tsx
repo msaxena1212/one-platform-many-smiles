@@ -722,7 +722,27 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         }
       })();
 
-      const finalLeases = allLeases
+      // The same contract can arrive from several sources (database row, unit-derived record, Leasing-module
+      // local copy) under different ids. Collapse records for the same unit and the same contract period,
+      // keeping the database-backed one, so a new lease is not listed twice (e.g. "active" and "documents_verified").
+      const dbLeaseIds = new Set(dbLeases.map((l: any) => String(l.id)));
+      const seenContracts = new Map<string, any>();
+      const dedupedLeases: any[] = [];
+      for (const l of allLeases) {
+        const unitKey = (getUnitName(l) || '').toUpperCase().trim();
+        const startKey = toRawDate(l.commencement_date) || '';
+        const endKey = toRawDate(l.expiry_date) || '';
+        if (!unitKey || !startKey) { dedupedLeases.push(l); continue; }
+        const key = `${unitKey}|${startKey}|${endKey}`;
+        const prev = seenContracts.get(key);
+        if (!prev) { seenContracts.set(key, l); dedupedLeases.push(l); continue; }
+        if (!dbLeaseIds.has(String(prev.id)) && dbLeaseIds.has(String(l.id))) {
+          dedupedLeases[dedupedLeases.indexOf(prev)] = l;
+          seenContracts.set(key, l);
+        }
+      }
+
+      const finalLeases = dedupedLeases
         .filter((leaseItem) => {
           const lNum = String(leaseItem.lease_number || '').toUpperCase().trim();
           const lId = String(leaseItem.id || '').toUpperCase().trim();

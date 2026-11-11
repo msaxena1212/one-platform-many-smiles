@@ -161,6 +161,32 @@ export function PropertyWiseProfitAndLossSubModule() {
     return set;
   }, [propertiesList]);
 
+  // Resolve a ledger entry to its building. Entries often carry a property CODE ("OA22") or only a unit
+  // ref ("OA22-05") instead of the building title; without this they all fall into the Corporate Office bucket.
+  const resolveTxProperty = useMemo(() => {
+    const compact = (v?: string) => (v || "").toUpperCase().replace(/\s+/g, "");
+    const codeToTitle = new Map<string, string>();
+    const unitToTitle = new Map<string, string>();
+    units.forEach((u) => {
+      if (!u.property?.trim() || isCorporateOrHeadOfficeProperty(u.property)) return;
+      const unitCode = compact(u.unit);
+      if (unitCode) {
+        unitToTitle.set(unitCode, u.property.trim());
+        const prefix = unitCode.split("-")[0];
+        if (prefix) codeToTitle.set(prefix, u.property.trim());
+      }
+    });
+    return (tx: { property_name?: string; unit_ref?: string }): string => {
+      const raw = (tx.property_name || "").trim();
+      if (raw && knownBuildingKeys.has(normalizePropertyName(raw))) return raw;
+      const byCode = codeToTitle.get(compact(raw));
+      if (byCode) return byCode;
+      const unitRef = compact(tx.unit_ref);
+      const byUnit = unitToTitle.get(unitRef) || codeToTitle.get(unitRef.split("-")[0]);
+      return byUnit || raw;
+    };
+  }, [units, knownBuildingKeys]);
+
   // ──────────────────────────────────────────────────────────────────────────
   // COMPUTE PROPERTY-WISE P&L (STRICTLY INVOICED / LEDGER-POSTED REVENUE + EXPENSES)
   // Reconciles 100% with Trial Balance & General Ledger
@@ -291,7 +317,7 @@ export function PropertyWiseProfitAndLossSubModule() {
 
       allLedgerTransactions.forEach((tx) => {
         // Match by property name (Corporate Office / Head Office captures Head Office, Vehicle Cost Centers & Unassigned GL entries so TB and Property-Wise P&L reconcile 100%)
-        const txProp = (tx.property_name || "").trim();
+        const txProp = resolveTxProperty(tx as any).trim();
         if (!matchesPropertyName(txProp, propName, knownBuildingKeys)) return;
 
         // Date period filtering
@@ -354,7 +380,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         tenancySchedules,
       };
     });
-  }, [propertiesList, units, leases, receivableInvoices, allLedgerTransactions, selectedPeriod]);
+  }, [propertiesList, units, leases, receivableInvoices, allLedgerTransactions, selectedPeriod, resolveTxProperty]);
 
   // Filtered view by property dropdown or search
   const filteredMetricsList = useMemo(() => {

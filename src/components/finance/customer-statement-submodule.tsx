@@ -335,7 +335,16 @@ export function CustomerStatementSubModule({
     vouchers.forEach(v => {
       if (v.voucher_type !== "Receipt Voucher") return;
 
-      const isSecurityDeposit = v.voucher_no.startsWith("VCH-SD-") || (v.name && (v.name.toLowerCase().includes("security deposit") || v.name.toLowerCase().includes("kahramaa deposit"))) || v.account_code === "21500001";
+      // Deposits (security / Kahramaa / utility / token) belong in the Deposit SOA only, never in the receivable SOA.
+      const isSecurityDeposit =
+        v.voucher_no.startsWith("VCH-SD-") ||
+        v.voucher_no.startsWith("VCH-KAH-DEP-") ||
+        /(security|kahramaa|utility|token)\s+deposit/i.test(v.name || "") ||
+        v.account_code === "21500001" ||
+        v.credit_code === "21500001" ||
+        v.credit_code === "21500" ||
+        v.credit_code === "21100004" ||
+        v.credit_code === "21100";
       const isPdcCustody = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-DEP-") || (v.name && v.name.toLowerCase().includes("pdc received"));
       if (isSecurityDeposit || isPdcCustody) return;
 
@@ -352,8 +361,16 @@ export function CustomerStatementSubModule({
       }
 
       const exactNameMatch = vTenant === custNameLower || Boolean(normVTenant && normCust && normVTenant === normCust);
+      // Many receipt vouchers carry no unit_ref / tenant_name on the record (the ledger derives them from the
+      // description). Match on the description too so those receipts are not dropped from the SOA.
+      const vNameLower = (v.name || "").toLowerCase();
+      const descMatch = Boolean(
+        (custNameLower.length >= 3 && vNameLower.includes(custNameLower)) ||
+        (normCust.length >= 3 && vNameLower.includes(normCust)) ||
+        customerUnitsList.some((u) => u && u.trim().length >= 4 && vNameLower.includes(u.trim().toLowerCase()))
+      );
 
-      if (unitMatch || (!hasSpecificVoucherUnit && exactNameMatch)) {
+      if (unitMatch || (!hasSpecificVoucherUnit && (exactNameMatch || descMatch))) {
         rows.push({
           date: v.date,
           docType: "RECEIPT",
