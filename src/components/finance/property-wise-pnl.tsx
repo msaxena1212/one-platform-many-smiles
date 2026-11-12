@@ -405,9 +405,12 @@ export function PropertyWiseProfitAndLossSubModule() {
 
   // Portfolio Totals
   const portfolioSummary = useMemo(() => {
-    const totalRev = filteredMetricsList.reduce((acc, m) => acc + m.totalRevenue, 0);
-    const totalRental = filteredMetricsList.reduce((acc, m) => acc + m.rentalRevenue, 0);
-    const totalOther = filteredMetricsList.reduce((acc, m) => acc + m.otherRevenue, 0);
+    // Corporate / Head Office income stays in its own row but is excluded from portfolio revenue (policy agreed).
+    const corpRow = filteredMetricsList.find(m => m.property === CORPORATE_HEAD_OFFICE_LABEL);
+    const corporateRevenueExcluded = corpRow ? corpRow.totalRevenue : 0;
+    const totalRental = filteredMetricsList.reduce((acc, m) => acc + m.rentalRevenue, 0) - (corpRow ? corpRow.rentalRevenue : 0);
+    const totalOther = filteredMetricsList.reduce((acc, m) => acc + m.otherRevenue, 0) - (corpRow ? corpRow.otherRevenue : 0);
+    const totalRev = totalRental + totalOther;
     const totalExp = filteredMetricsList.reduce((acc, m) => acc + m.totalExpenses, 0);
     const totalContractRent = filteredMetricsList.reduce((acc, m) => acc + m.contractRentMonth, 0);
     const totalUninvoicedRent = filteredMetricsList.reduce((acc, m) => acc + m.uninvoicedContractRent, 0);
@@ -421,6 +424,7 @@ export function PropertyWiseProfitAndLossSubModule() {
 
     return {
       totalRevenue: totalRev,
+      corporateRevenueExcluded,
       totalRental,
       totalOther,
       totalExpenses: totalExp,
@@ -585,6 +589,12 @@ export function PropertyWiseProfitAndLossSubModule() {
           <span className="font-bold text-xs text-foreground font-mono">{selectedPeriod === "all" ? "Consolidated" : selectedPeriod}</span>
         </div>
       </div>
+
+      {portfolioSummary.corporateRevenueExcluded > 0 && (
+        <div className="p-3 rounded-lg border border-sky-500/30 bg-sky-500/10 text-xs text-sky-950 dark:text-sky-100">
+          <strong>Corporate / Head Office income:</strong> QR {portfolioSummary.corporateRevenueExcluded.toLocaleString()} is shown in its row but <strong>excluded</strong> from Portfolio Revenue and Net Operating Profit.
+        </div>
+      )}
 
       {portfolioSummary.totalUninvoicedRent > 0 && (
         <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs flex items-center justify-between gap-3 text-amber-950 dark:text-amber-100">
@@ -963,6 +973,65 @@ export function PropertyWiseProfitAndLossSubModule() {
                   </Table>
                 </div>
               </div>
+
+              {/* Ledger reconciliation: every 411 posting behind the total, flagged when it is not matched to a scheduled unit */}
+              {(() => {
+                const scheduledUnits = new Set(activePropertyData.tenancySchedules.map(ts => (ts.unit || "").trim().toLowerCase()));
+                const lines = allLedgerTransactions.filter(tx => {
+                  if (tx.account_type !== "Revenue" || !tx.account_code.startsWith("411")) return false;
+                  if (!matchesPropertyName(resolveTxProperty(tx as any).trim(), activePropertyData.property, knownBuildingKeys)) return false;
+                  if (selectedPeriod !== "all" && tx.date && !tx.date.startsWith(selectedPeriod)) return false;
+                  return true;
+                });
+                if (lines.length === 0) return null;
+                const netOf = (tx: any) => (Number(tx.credit) || 0) - (Number(tx.debit) || 0);
+                const ledgerTotal = lines.reduce((s, tx) => s + netOf(tx), 0);
+                const isUnmatched = (tx: any) => !scheduledUnits.has(String(tx.unit_ref || "").trim().toLowerCase());
+                const unmatchedTotal = lines.filter(isUnmatched).reduce((s, tx) => s + netOf(tx), 0);
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-xs flex items-center gap-1.5 text-foreground">
+                        <FileText className="h-4 w-4 text-primary" />
+                        <span>Ledger Rental Revenue Reconciliation (411 postings: QR {ledgerTotal.toLocaleString()})</span>
+                      </h4>
+                      <span className="text-[11px] text-muted-foreground font-mono">Unmatched: QR {unmatchedTotal.toLocaleString()}</span>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/60 text-[11px]">
+                            <TableHead className="font-bold">Date</TableHead>
+                            <TableHead className="font-bold">Reference</TableHead>
+                            <TableHead className="font-bold">Unit</TableHead>
+                            <TableHead className="font-bold">Description</TableHead>
+                            <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
+                            <TableHead className="font-bold">Match</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {lines.map((tx, idx) => {
+                            const unmatched = isUnmatched(tx);
+                            return (
+                              <TableRow key={idx} className={unmatched ? "text-xs bg-amber-50 dark:bg-amber-950/30" : "text-xs"}>
+                                <TableCell className="font-mono">{tx.date || "—"}</TableCell>
+                                <TableCell className="font-mono">{tx.reference || "—"}</TableCell>
+                                <TableCell className="font-mono">{tx.unit_ref || "—"}</TableCell>
+                                <TableCell>{(tx as any).description || "—"}</TableCell>
+                                <TableCell className="text-right font-mono font-medium">{netOf(tx).toLocaleString()}</TableCell>
+                                <TableCell>{unmatched ? <span className="text-amber-700 font-medium">No scheduled unit</span> : <span className="text-emerald-700">Matched</span>}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {unmatchedTotal !== 0 && (
+                      <p className="text-[11px] text-amber-700 font-medium">QR {unmatchedTotal.toLocaleString()} of this total is not matched to a scheduled unit. Check these postings for duplicates or a wrong unit/property and correct them in the ledger.</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Expense Breakdown Card */}
               <div className="p-4 rounded-lg border bg-muted/20 space-y-2">

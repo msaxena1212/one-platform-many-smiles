@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -669,6 +669,49 @@ function LeasingPage() {
     }
     fetchRealUnits();
   }, []);
+
+  // Move-out date reached: release the unit for a new lease even if inspection/clearances are still open.
+  // The deposit settlement stays open under the old lease, so the refund is never mixed with the next tenant.
+  const moveOutReleasedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    leases.forEach((lease) => {
+      if (String(lease.status) !== "checkout" || !lease.unit) return;
+      const moveOut = (lease as any).plannedVacateDate || checkouts.find((c) => c.leaseId === lease.id)?.moveOutDate;
+      if (!moveOut || moveOut > todayStr) return;
+      if (moveOutReleasedRef.current.has(lease.id)) return;
+      const unit = units.find((u) => u.unit === lease.unit);
+      if (!unit || String(unit.status) !== "Occupied") return;
+      // Another live lease on the same unit means it is re-let; do not release it.
+      const reLet = leases.some((l) => l.id !== lease.id && l.unit === lease.unit && !(["checkout", "closed", "draft", "cancelled"].includes(String(l.status))));
+      if (reLet) return;
+      moveOutReleasedRef.current.add(lease.id);
+      setUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Available" as Unit["status"] } : item)));
+      setRealUnits((items) => items.map((item) => (item.unit === lease.unit ? { ...item, status: "Available" as Unit["status"] } : item)));
+      void apiDb
+        .from("units")
+        .update({
+          status: "available",
+          lease_status: "VACANT",
+          current_tenant: null,
+          contract_no: null,
+          contract_start_date: null,
+          contract_end_date: null,
+          current_rent: null,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .or("unit_ref.eq." + lease.unit + ",unit_code.eq." + lease.unit + ",unit_name.eq." + lease.unit)
+        .select("id")
+        .then(({ data, error }: { data: any; error: any }) => {
+          if (error || !data?.length) {
+            moveOutReleasedRef.current.delete(lease.id);
+            toast.error("Unit " + lease.unit + " could not be released in the database" + (error ? ": " + error.message : "") + ".");
+          } else {
+            window.dispatchEvent(new Event("pms_data_updated"));
+          }
+        });
+    });
+  }, [leases, checkouts, units, setUnits]);
 
   // ── Customer Dialog States ────────────────────────────────────
   const [viewCustomerOpen, setViewCustomerOpen] = useState(false);
