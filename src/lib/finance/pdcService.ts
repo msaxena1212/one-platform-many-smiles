@@ -377,6 +377,80 @@ export async function depositPdc(
   }
 }
 
+interface FinRegisterStatusUpdate {
+  status: string;
+  deposit_date?: string;
+  cleared_date?: string;
+  returned_date?: string;
+  bank_id?: number;
+}
+
+/**
+ * Update a single `fin_pdc_register` row using the transactional
+ * `fin_manual_pdc_status_update` RPC (so `app.pdc_manual_clear` runs inside
+ * the same DB transaction for `Cleared`), falling back strictly when the RPC
+ * is not deployed yet and verifying the resulting status was not reverted.
+ */
+async function updateSingleFinRegisterRow(
+  finId: number,
+  finUpdates: FinRegisterStatusUpdate,
+  chequeNumber: string,
+) {
+  const { data: rpcRow, error: rpcErr } = await supabase.rpc('fin_manual_pdc_status_update', {
+    p_pdc_id:        finId,
+    p_status:        finUpdates.status,
+    p_deposit_date:  finUpdates.deposit_date ?? null,
+    p_cleared_date:  finUpdates.cleared_date ?? null,
+    p_returned_date: finUpdates.returned_date ?? null,
+    p_bank_id:       finUpdates.bank_id ?? null,
+  });
+
+  if (!rpcErr) {
+    const savedStatus = String((rpcRow as any)?.status || '').toLowerCase();
+    if (finUpdates.status.toLowerCase() === 'cleared' && savedStatus !== 'cleared') {
+      throw new Error(`Cheque ${chequeNumber} status update to Cleared was reverted by database guard.`);
+    }
+    return;
+  }
+
+  const errMsg = String(rpcErr.message || '');
+  const isMissingRpc =
+    (rpcErr as any).code === 'PGRST202' ||
+    /fin_manual_pdc_status_update|schema cache|Could not find the function/i.test(errMsg);
+
+  if (!isMissingRpc) {
+    throw new Error(`Failed to update fin_pdc_register #${finId} (${chequeNumber}): ${errMsg}`);
+  }
+
+  const directPayload: Record<string, any> = { status: finUpdates.status };
+  if (finUpdates.deposit_date !== undefined) directPayload.deposit_date = finUpdates.deposit_date;
+  if (finUpdates.cleared_date !== undefined) directPayload.cleared_date = finUpdates.cleared_date;
+  if (finUpdates.returned_date !== undefined) directPayload.returned_date = finUpdates.returned_date;
+  if (finUpdates.bank_id !== undefined) directPayload.bank_id = finUpdates.bank_id;
+
+  const { data: updatedRow, error: updErr } = await supabase
+    .from('fin_pdc_register')
+    .update(directPayload)
+    .eq('id', finId)
+    .select('id, status')
+    .maybeSingle();
+
+  if (updErr) {
+    throw new Error(`Failed to update fin_pdc_register #${finId} (${chequeNumber}): ${updErr.message}`);
+  }
+  if (!updatedRow) {
+    throw new Error(`PDC register row #${finId} (${chequeNumber}) could not be updated in fin_pdc_register.`);
+  }
+  if (
+    finUpdates.status.toLowerCase() === 'cleared' &&
+    String(updatedRow.status || '').toLowerCase() !== 'cleared'
+  ) {
+    throw new Error(
+      `Manual clear for cheque ${chequeNumber} was reverted by DB trigger trg_fin_guard_pdc_auto_clear. Apply migration 20261112000000_fix_pdc_manual_clear_and_os41_06.sql to enable fin_manual_pdc_status_update.`,
+    );
+  }
+}
+
 /**
  * Event 3 — Cheque Cleared by Bank
  * Updates status to Cleared + posts GL:
@@ -421,17 +495,10 @@ export async function clearPdc(pdcId: number | string, chequeNo?: string) {
   );
 
   if (!isNaN(Number(pdcId))) {
-    // Set session variable so the guard trigger (trg_fin_guard_pdc_auto_clear) allows
-    // this MANUAL clear to proceed. Without this, the trigger silently reverts the status.
-    try {
-      await supabase.rpc('set_config', { setting: 'app.pdc_manual_clear', value: 'true', is_local: true });
-    } catch { /* continue */ }
-
-    const { error: finError } = await apiDb
-      .from('fin_pdc_register')
-      .update({ status: 'Cleared', cleared_date: today })
-      .eq('id', Number(pdcId));
-    if (finError) console.warn('[clearPdc] fin_pdc_register id update warning:', finError.message);
+    // Uses the transactional RPC so the guard trigger (trg_fin_guard_pdc_auto_clear)
+    // accepts this manual clear. Separate set_config + update calls ran in different
+    // transactions and the clear was silently reverted.
+    await updateSingleFinRegisterRow(Number(pdcId), { status: 'Cleared', cleared_date: today }, String(ctx.cheque_number ?? pdcId));
   }
 
   // Update target PDC strictly by ID (pdcs table only stores status and status_pdc)

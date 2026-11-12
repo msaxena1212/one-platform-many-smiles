@@ -1034,10 +1034,18 @@ export function generateBilingualLeaseContractHtml(inputData: Partial<LeaseContr
           <!-- Clause 15 -->
           <tr>
             <td class="col-en">
-              <span class="clause-num">15)</span> The LANDLORD shall have the right to terminate this LEASE and take possession of the property and eject the tenant giving <strong>${d.landlordTerminationNoticePeriodEn}</strong> notice in writing if: (a) Assigns premises without prior written approval; (b) Tenant is in breach of obligations; (c) Any cheque returned from bank; (d) Any other circumstances deemed force majeure.
+              <span class="clause-num">15)</span> The LANDLORD shall have the right to terminate this LEASE and take possession of the property and eject the tenant giving <strong>${d.landlordTerminationNoticePeriodEn}</strong> notice in writing if:<br/>
+              <div style="padding-left: 10px; margin-top: 2px;">a. Assigns the leased premises to a third party without obtaining prior written approval from the LANDLORD.</div>
+              <div style="padding-left: 10px; margin-top: 2px;">b. The TENANT is in breach of any obligations within this LEASE.</div>
+              <div style="padding-left: 10px; margin-top: 2px;">c. In case of any cheque return from bank.</div>
+              <div style="padding-left: 10px; margin-top: 2px;">d. In case of any other circumstances that are deemed force majeure by the LANDLORD.</div>
             </td>
             <td class="col-ar">
-              <span class="clause-num">15)</span> ويحق للمؤجر إنهاء هذا الإيجار والاستيلاء على الممتلكات وإخلاء المستأجر الذي يصدر إخطارا خطيا ب<strong>${d.landlordTerminationNoticePeriodAr}</strong> : (أ) تأجير العقار إلى طرف ثالث دون موافقة مسبقة؛ (ب) مخالفة التزامات العقد؛ (ج) عودة أي شيك من البنك؛ (د) وجود ظروف قوة قاهرة.
+              <span class="clause-num">15)</span> ويحق للمؤجر إنهاء هذا الإيجار والاستيلاء على الممتلكات وإخلاء المستأجر بإعطائه إخطاراً خطياً مدته <strong>${d.landlordTerminationNoticePeriodAr}</strong> إذا:<br/>
+              <div style="padding-right: 10px; margin-top: 2px;">أ. التنازل عن العين المؤجرة لطرف ثالث دون الحصول على موافقة خطية مسبقة من المؤجر.</div>
+              <div style="padding-right: 10px; margin-top: 2px;">ب. إخلال المستأجر بأي من الالتزامات الواردة في هذا العقد.</div>
+              <div style="padding-right: 10px; margin-top: 2px;">ج. في حال رجوع أي شيك من البنك.</div>
+              <div style="padding-right: 10px; margin-top: 2px;">د. في حالة وجود أي ظروف أخرى يعتبرها المؤجر قوة قاهرة.</div>
             </td>
           </tr>
 
