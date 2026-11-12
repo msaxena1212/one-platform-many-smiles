@@ -18,7 +18,7 @@ import { useAppData } from "@/lib/app-data-context";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
 import { persistContractPdcs } from "@/lib/finance/persist-contract-pdcs";
-import { generateLeaseAgreementBlob } from "@/components/lease-agreement-template";
+import { generateLeaseAgreementBlob, fetchUnitContractAttributes } from "@/components/lease-agreement-template";
 import { generateReceiptBlob } from "@/components/receipt-template";
 import { LeaseRenewalStepperModal, type RenewalSubmitData } from "@/components/lease-renewal-stepper-modal";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
@@ -1923,7 +1923,9 @@ function LeasingPage() {
 
   async function downloadLeaseAgreement(lease: Lease) {
     try {
+      const unitAttrs = await fetchUnitContractAttributes(lease.unit);
       const blob = await generateLeaseAgreementBlob({
+        ...unitAttrs,
         tenantName: lease.tenantName,
         landlordName: "Landlord",
         propertyAddress: lease.property,

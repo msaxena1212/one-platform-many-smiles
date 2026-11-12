@@ -352,6 +352,28 @@ function toArabicTenantName(raw: string): string {
 /**
  * Builds full dynamic contract data matching the specific tenant and property
  */
+// Whole months between two ISO dates, inclusive of both ends (2026-11-01 -> 2027-08-31 = 10).
+function monthsBetweenInclusive(start: string, end: string): number {
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return 0;
+  const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+  return Math.max(1, Math.round(days / 30.4375));
+}
+
+const MONTH_WORDS_EN = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two", "twenty-three", "twenty-four"];
+
+function durationWordsEn(months: number): string {
+  if (months === 12) return "one year";
+  const words = MONTH_WORDS_EN[months] ?? String(months);
+  return words + " months";
+}
+
+function durationWordsAr(months: number): string {
+  if (months === 12) return "سنة واحدة";
+  return months + " شهراً";
+}
+
 export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseContractData {
   // 0. Check localStorage overrides if available in browser
   let localOverride: any = null;
@@ -410,7 +432,8 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
   const street = raw.streetNumber || raw.street_building_name || raw.street_no || "993";
   const building = raw.buildingNumber || raw.building_no || raw.property_code || "01";
 
-  const termMonths = hasRentFree ? 13 : (raw.leaseMonthsCount || 12);
+  const computedMonths = monthsBetweenInclusive(sDate, eDate);
+  const termMonths = hasRentFree ? 13 : (Number(raw.leaseMonthsCount) || computedMonths || 12);
 
   return {
     contractNumber: standardContractNum,
@@ -465,8 +488,8 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
     electricityWaterDepositWordsEn: raw.electricityWaterDepositWordsEn || numberToEnglishWords(utilDeposit),
     electricityWaterDepositWordsAr: raw.electricityWaterDepositWordsAr || numberToArabicWords(utilDeposit),
 
-    leaseDurationWordsEn: hasRentFree ? "13 months (12 paid + 1 rent-free concession month)" : (raw.leaseDurationWordsEn || "one year"),
-    leaseDurationWordsAr: hasRentFree ? "13 شهراً (12 شهراً مدفوعاً + شهر إعفاء من الإيجار)" : (raw.leaseDurationWordsAr || "سنة واحد"),
+    leaseDurationWordsEn: hasRentFree ? "13 months (12 paid + 1 rent-free concession month)" : (raw.leaseDurationWordsEn || durationWordsEn(termMonths)),
+    leaseDurationWordsAr: hasRentFree ? "13 شهراً (12 شهراً مدفوعاً + شهر إعفاء من الإيجار)" : (raw.leaseDurationWordsAr || durationWordsAr(termMonths)),
     leaseStartDate: formatEnglishDate(sDate),
     leaseStartDateAr: formatArabicDate(sDate),
     leaseEndDate: formatEnglishDate(eDate),

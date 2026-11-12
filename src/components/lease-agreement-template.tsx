@@ -36,6 +36,29 @@ export interface LeaseAgreementData extends LeaseContractData {
 }
 
 /**
+ * Bedroom count and furnishing for a unit, read from the units table so the printed
+ * contract describes the actual unit instead of template defaults.
+ */
+export async function fetchUnitContractAttributes(unitCode: string): Promise<{ bedroomCount?: string; furnishingStatusEn?: string }> {
+  try {
+    const { supabase } = await import('@/lib/supabase');
+    const { data } = await supabase
+      .from('units')
+      .select('no_of_bedrooms, furnishing_type')
+      .or('unit_ref.eq.' + unitCode + ',unit_code.eq.' + unitCode + ',unit_name.eq.' + unitCode)
+      .limit(1)
+      .maybeSingle();
+    const row = data as { no_of_bedrooms?: number | null; furnishing_type?: string | null } | null;
+    return {
+      bedroomCount: row?.no_of_bedrooms ? String(row.no_of_bedrooms) : undefined,
+      furnishingStatusEn: row?.furnishing_type || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Generates an HTML Blob of the Qatar Bilingual Lease Contract
  */
 export async function generateLeaseAgreementBlob(data: LeaseAgreementData): Promise<Blob> {
