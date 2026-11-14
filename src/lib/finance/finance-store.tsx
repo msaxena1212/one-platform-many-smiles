@@ -5,6 +5,7 @@ import { apiDb } from "@/lib/api-db";
 import { resolveAccountingAccounts } from "./account-resolver";
 import { postVoucher } from "./posting-engine";
 import { persistVoucher, persistReceivables, updateReceivable, loadReceivables } from "./finance-persistence";
+import { useDbCollection, upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
 import {
   GUARANTEE_CHEQUE_DATE,
   KAHRAMAA_DEPOSIT_ENTRIES,
@@ -560,6 +561,11 @@ export function saveStoredVoucherDateCorrections(corrections: Record<string, Vou
   try {
     localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(corrections));
   } catch {}
+  // Also to the database. The built-in corrections are not client data, so only the ones that differ are written.
+  const changed = Object.entries(corrections).filter(([k, v]) => JSON.stringify(INITIAL_DATE_CORRECTIONS[k]) !== JSON.stringify(v));
+  if (changed.length === 0) return;
+  void upsertCollectionRecords("voucher.date_corrections", changed.map(([id, data]) => ({ id, data })))
+    .then(err => { if (err) toast.error(`Voucher date correction was NOT saved to the database: ${err}`); });
 }
 
 export function resolvePdcBankGl(bank?: string | number | null): { glCode: string; glName: string } {
@@ -861,6 +867,17 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     } catch { return INITIAL_CASH_BOOK; }
   });
   const [pettyCashEntries, setPettyCashEntries] = useState<PettyCashEntry[]>(INITIAL_PETTY_CASH);
+
+  // Client records are kept in the database (app_documents); the browser copy is only a cache. See db-collection.ts.
+  useDbCollection("fin.journals", journalEntries, setJournalEntries, j => j.id, "Journal entries");
+  useDbCollection("fin.ap", payableInvoices, setPayableInvoices, i => i.id, "Payable invoices");
+  useDbCollection("fin.cashbook", cashBookEntries, setCashBookEntries, c => c.id, "Cash book entries");
+  useDbCollection("fin.petty_cash", pettyCashEntries, setPettyCashEntries, p => p.id, "Petty cash entries");
+  useDbCollection("fin.legal_receivables", legalReceivables, setLegalReceivables, l => l.id, "Legal receivables");
+  useDbCollection("fin.payroll_syncs", payrollSyncs, setPayrollSyncs, p => p.id, "Payroll sync runs");
+  useDbCollection("fin.bank_clearances", bankClearances, setBankClearances, b => b.id, "Bank clearances");
+  useDbCollection("fin.bank_reconciliations", bankReconciliations, setBankReconciliations, b => b.id, "Bank reconciliations");
+  useDbCollection("fin.reconciliation_statements", reconciliationStatements, setReconciliationStatements, r => r.id, "Reconciliation statements");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Sync to local storage on changes
@@ -1039,10 +1056,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                   if (vchUnit.includes("-")) vchProp = resolvePropertyFromUnitCode(vchUnit);
                 } else {
                   const match = r.description.match(/Security Deposit Receipt\s*[-–]\s*(.*?)\s*\((.*?)\)/i);
+                  // PDC vouchers end with "(Tenant Name - UNIT-CODE)", e.g. "PDC Collected – 38 (Mr. X - OS40-74)".
+                  const endMatch = r.description.match(/\(([^()]+?)\s+[-–]\s+([A-Z]{2,4}\d{2,4}-[A-Za-z0-9]+)\)\s*$/);
                   if (match) {
                     vchTenant = match[1].trim();
                     vchUnit = match[2].trim();
                     if (vchUnit.includes("-")) vchProp = resolvePropertyFromUnitCode(vchUnit);
+                  } else if (endMatch) {
+                    vchTenant = endMatch[1].trim();
+                    vchUnit = endMatch[2].trim();
+                    vchProp = resolvePropertyFromUnitCode(vchUnit);
                   }
                 }
               }
@@ -1700,6 +1723,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         console.warn("Payroll syncs DB fetch note:", pErr);
       }
 
+      // 5a. Voucher date corrections saved to the database are loaded back into the cache the readers use.
+      try {
+        const dcRows = await loadCollectionRows("voucher.date_corrections");
+        if (dcRows && typeof window !== "undefined") {
+          const merged = { ...INITIAL_DATE_CORRECTIONS, ...Object.fromEntries(dcRows.map(r => [r.id, r.data])) };
+          localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(merged));
+        }
+      } catch { /* cache only */ }
+
       // 5b. Receivable invoices: the database is the record. Invoices that exist only in this browser (created before
       // write-through was in place) are uploaded first, then the list is read back from the database.
       try {
@@ -1724,26 +1756,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         console.warn("[FinanceStore] receivable invoice sync:", arErr);
       }
 
-      // 6. Reload localStorage caches for journals/AP/Cashbook (vouchers and receivables are maintained authoritatively above)
-      if (typeof window !== "undefined") {
-        try {
-          const jDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
-          if (jDataSaved) {
-            const parsed = JSON.parse(jDataSaved);
-            if (Array.isArray(parsed) && parsed.length) setJournalEntries(parsed);
-          }
-          const apDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ap`);
-          if (apDataSaved) {
-            const parsed = JSON.parse(apDataSaved);
-            if (Array.isArray(parsed) && parsed.length) setPayableInvoices(parsed);
-          }
-          const cbDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-cashbook`);
-          if (cbDataSaved) {
-            const parsed = JSON.parse(cbDataSaved);
-            if (Array.isArray(parsed) && parsed.length) setCashBookEntries(parsed);
-          }
-        } catch { /* ignore */ }
-      }
+      // 6. Journals, payables and cashbook are loaded from the database by useDbCollection (not from the browser cache).
 
       if (showToast) {
         toast.success("Financial records & reports refreshed successfully");

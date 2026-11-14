@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { apiDb } from '../api-db';
 
 export interface CompanyBankAccount {
   id: string;
@@ -127,25 +128,22 @@ export async function saveCompanyBankAccount(acc: CompanyBankAccount): Promise<C
     updated = [...current, acc];
   }
 
+  // The database is written first. If it refuses the account, nothing is stored locally and the caller is told.
+  const { error: dbErr } = await (apiDb as any)
+    .from('fin_bank_accounts')
+    .upsert({
+      account_number: acc.accountNumber,
+      account_title: acc.accountTitle,
+      currency: acc.currency || 'QAR',
+    }, { onConflict: 'account_number' });
+  if (dbErr) throw new Error(`Bank account ${acc.accountNumber} was NOT saved to the database: ${dbErr.message}`);
+
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(BANK_ACCOUNTS_STORAGE_KEY, JSON.stringify(updated));
     } catch {
       // ignore storage quota issues
     }
-  }
-
-  // Attempt to sync to Supabase database if fin_bank_accounts table is accessible
-  try {
-    await (supabase as any)
-      .from('fin_bank_accounts')
-      .upsert({
-        account_number: acc.accountNumber,
-        account_title: acc.accountTitle,
-        currency: acc.currency || 'QAR',
-      }, { onConflict: 'account_number' });
-  } catch {
-    // Non-blocking fallback
   }
 
   return updated.filter(a => a.status !== 'Inactive' && a.status !== 'inactive');

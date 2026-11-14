@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { openPrintable7DayLegalNotice, openPrintableRdcFilingPack } from "@/lib/qatar-legal-engine";
 import { supabase } from "@/lib/supabase";
+import { useDbCollection } from "@/lib/db-collection";
 import { apiDb } from "@/lib/api-db";
 import {
   depositPdc,
@@ -432,6 +433,15 @@ export function PdcManagement() {
   const [receiptData, setReceiptData] = useState<TenantReceiptDetails | null>(null);
   // Per-PDC receipt history: cheque_number -> list of TenantReceiptDetails (one per partial payment)
   const [receiptHistory, setReceiptHistory] = useState<Record<string, TenantReceiptDetails[]>>(loadSavedReceiptHistory);
+  // Receipts are kept in the database: one record per cheque (app_documents store "pdc.cash_receipts").
+  const receiptEntries = useMemo(() => Object.entries(receiptHistory).map(([id, rows]) => ({ id, rows })), [receiptHistory]);
+  useDbCollection(
+    "pdc.cash_receipts",
+    receiptEntries,
+    (next) => setReceiptHistory(Object.fromEntries(next.map(e => [e.id, e.rows]))),
+    e => e.id,
+    "PDC cash receipts",
+  );
   const [receiptHistoryOpen, setReceiptHistoryOpen] = useState(false);
   const [receiptHistoryPdc, setReceiptHistoryPdc] = useState<any | null>(null);
   const [receiptHistoryIndex, setReceiptHistoryIndex] = useState(0);

@@ -773,7 +773,8 @@ export function CustomerStatementSubModule({
       const vUnit = (v.unit_ref || "").trim().toLowerCase();
       const matchesUnit = Boolean(vUnit && customerUnitsList.some(u => u.trim().toLowerCase() === vUnit));
       if (!matchesCust && !matchesUnit) return;
-      const isPdcRcv = v.voucher_no.startsWith("VCH-PDC-RCV-");
+      // "PDC Collected – 38 (Tenant - UNIT)" vouchers (VCH-PDC-REC-) are the cheques in hand, same as PDC Management shows.
+      const isPdcRcv = v.voucher_no.startsWith("VCH-PDC-RCV-") || v.voucher_no.startsWith("VCH-PDC-REC-");
       const isGuaranteeChequeVoucher =
         v.method === "Guarantee Cheque" ||
         v.payment_mode === "Guarantee Cheque" ||
@@ -786,7 +787,7 @@ export function CustomerStatementSubModule({
         // "[Cheque #N]" tag in the description), or on amount + date + unit,
         // never on the random voucher suffix.
         const vChq = String(
-          (v as any).reference_number || /cheque\s*#\s*([\w-]+)/i.exec(String(v.name || ""))?.[1] || "",
+          (v as any).reference_number || /cheque\s*#\s*([\w-]+)/i.exec(String(v.name || ""))?.[1] || /[-–]\s*(\d+)\s*\(/.exec(String(v.name || ""))?.[1] || "",
         ).trim().toLowerCase();
         const vDate = String(v.date || "").slice(0, 10);
         const vUnit = String(v.unit_ref || "").trim().toLowerCase();

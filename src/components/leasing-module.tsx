@@ -6841,6 +6841,17 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
 
     // Release the vacated unit for a new lease now. The deposit settlement stays open
     // under the old lease/tenant, so the refund liability is never mixed with the next tenant.
+    // Close the vacated lease in the database as well. Otherwise the old lease stays ACTIVE, the unit still counts as
+    // leased to the old tenant, and a new lease cannot be started on it.
+    setLeases((items) => items.map((item) => (item.id === lease.id ? { ...item, status: "closed" as LeaseStatus } : item)));
+    void apiDb
+      .from("leases")
+      .update({ lease_status: "CLOSED", updated_at: new Date().toISOString() } as any)
+      .or(`lease_number.eq.${lease.contractNumber || lease.id},lease_number.eq.${lease.id}`)
+      .then(({ error }: { error: any }) => {
+        if (error) toast.error(`Lease ${lease.contractNumber || lease.id} could not be closed in the database: ${error.message}`);
+      });
+
     const releasedStatus = (String(completeCheckoutForm.unitDisposition || "Available").toLowerCase().includes("maintenance")
       ? "Vacant - Under Maintenance"
       : "Available") as Unit["status"];

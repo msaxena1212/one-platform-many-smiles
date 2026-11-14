@@ -1,5 +1,40 @@
 import { supabase } from './supabase';
 import { apiDb } from "@/lib/api-db";
+import { toast } from "sonner";
+import { upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
+import { persistVoucher } from "@/lib/finance/finance-persistence";
+
+/** Procurement AP invoices and payment receipts live in the database; the browser keeps a cache. */
+const dbSave = (store: string, rows: { id: string; data: unknown }[], what: string) => {
+  if (rows.length === 0) return;
+  void upsertCollectionRecords(store, rows).then(err => {
+    if (err) toast.error(`${what} was NOT saved to the database: ${err}`);
+  });
+};
+
+/** Load the procurement records from the database into the browser cache the screens read. */
+export async function syncProcFromDatabase(): Promise<void> {
+  const [inv, rec] = await Promise.all([loadCollectionRows("proc.ap_invoices"), loadCollectionRows("proc.payment_receipts")]);
+  // Browser-only records are uploaded first, then the database list becomes the cache.
+  const sync = (
+    rows: { id: string; data: unknown }[] | null,
+    local: any[],
+    store: string,
+    key: string,
+    evt: string,
+    what: string,
+    idOf: (x: any) => string,
+  ) => {
+    if (!rows || typeof window === "undefined") return;
+    const known = new Set(rows.map(r => r.id));
+    const localOnly = local.filter(x => !known.has(idOf(x)));
+    dbSave(store, localOnly.map(x => ({ id: idOf(x), data: x })), what);
+    localStorage.setItem(key, JSON.stringify([...rows.map(r => r.data), ...localOnly]));
+    window.dispatchEvent(new Event(evt));
+  };
+  sync(inv, getLocalInvoices(), "proc.ap_invoices", INVOICE_STORAGE_KEY, "ap_invoices_updated", "AP invoice", x => String(x.id ?? x.invoice_number));
+  sync(rec, getLocalReceipts(), "proc.payment_receipts", RECEIPT_STORAGE_KEY, "payment_receipts_updated", "Payment receipt", x => String(x.id ?? x.receipt_number));
+}
 
 export type ProcApInvoice = {
   id: string;
@@ -64,6 +99,8 @@ if (typeof window !== 'undefined') {
     if (e.key === INVOICE_STORAGE_KEY) window.dispatchEvent(new Event('ap_invoices_updated'));
     if (e.key === RECEIPT_STORAGE_KEY) window.dispatchEvent(new Event('payment_receipts_updated'));
   });
+  // Start from the database copy, not whatever this browser last cached.
+  void syncProcFromDatabase().catch(() => { /* the cache is still shown */ });
 }
 
 function getLocalInvoices(): ProcApInvoice[] {
@@ -77,6 +114,7 @@ function getLocalInvoices(): ProcApInvoice[] {
 }
 
 function saveLocalInvoices(list: ProcApInvoice[]) {
+  dbSave("proc.ap_invoices", list.map(i => ({ id: String((i as any).id ?? i.invoice_number), data: i })), "AP invoice");
   try {
     localStorage.setItem(INVOICE_STORAGE_KEY, JSON.stringify(list));
     window.dispatchEvent(new Event('ap_invoices_updated'));
@@ -96,6 +134,7 @@ function getLocalReceipts(): PaymentReceipt[] {
 }
 
 function saveLocalReceipts(list: PaymentReceipt[]) {
+  dbSave("proc.payment_receipts", list.map(r => ({ id: String((r as any).id ?? (r as any).receipt_number), data: r })), "Payment receipt");
   try {
     localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(list));
     window.dispatchEvent(new Event('payment_receipts_updated'));
@@ -108,20 +147,23 @@ function saveLocalReceipts(list: PaymentReceipt[]) {
 async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: string, pvNum: string) {
   const paidDate = invoice.paid_at || new Date().toISOString().slice(0, 10);
 
+  // 1. Post the payment voucher with its account lines to the database. If it is refused, say so.
   try {
-    // 1. Post to Supabase fin_vouchers (best-effort)
-    await apiDb.from("fin_vouchers").insert({
-      voucher_number: pvNum,
-      voucher_date: paidDate,
-      voucher_type: "PV",
-      reference_no: invoice.invoice_number,
-      description: `Vendor Payment: ${invoice.invoice_number} | PO: ${invoice.po_number || 'N/A'} | GRN: ${invoice.grn_number || 'N/A'} | Rcpt: ${receiptNum} | Method: ${invoice.payment_method || 'Bank'}`,
-      total_amount: invoice.total_amount,
-      status: "posted",
-      posted_at: new Date().toISOString()
+    const pv = await persistVoucher({
+      id: pvNum,
+      voucher_no: pvNum,
+      voucher_type: "Payment Voucher",
+      date: paidDate,
+      name: `Vendor Payment: ${invoice.invoice_number} | PO: ${invoice.po_number || 'N/A'} | GRN: ${invoice.grn_number || 'N/A'} | Rcpt: ${receiptNum} | Method: ${invoice.payment_method || 'Bank'}`,
+      debit: "Trade Payables - Vendors",
+      debit_code: "22100001",
+      credit: "Bank Operating Account",
+      credit_code: "12000001",
+      amount: Number(invoice.total_amount) || 0,
     });
-  } catch (e) {
-    console.warn("[ApInvoicesApi] fin_vouchers Supabase insert note:", e);
+    if (!pv.ok) toast.error(`Payment voucher ${pvNum} was NOT saved to the database: ${pv.error}`);
+  } catch (e: any) {
+    toast.error(`Payment voucher ${pvNum} was NOT saved to the database: ${e?.message || e}`);
   }
 
   // 2. Write into Finance Store localStorage — vouchers key
@@ -166,6 +208,8 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
         i.invoice_no === invNo ? { ...i, status: "Paid" } : i
       );
       localStorage.setItem(AP_STORE_KEY, JSON.stringify(updatedAp));
+      const changedAp = updatedAp.filter((i: any) => i.invoice_no === invNo);
+      dbSave("fin.ap", changedAp.map((i: any) => ({ id: String(i.id), data: i })), "Payable invoice status");
     } else {
       const apEntry = {
         id: `ap-proc-${Date.now()}`,
@@ -179,6 +223,7 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
         status: "Paid",
       };
       localStorage.setItem(AP_STORE_KEY, JSON.stringify([apEntry, ...existingAp]));
+      dbSave("fin.ap", [{ id: apEntry.id, data: apEntry }], "Payable invoice");
     }
   } catch (e) {
     console.error("Failed to sync AP Invoice to Finance Store:", e);

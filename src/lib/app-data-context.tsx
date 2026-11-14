@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import "@/lib/db-keyed-cache"; // browser-held client records are written through to the database (see db-keyed-cache.ts)
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import excelLeaseMasterData from "@/lib/excel-lease-master-data.json";
 import {

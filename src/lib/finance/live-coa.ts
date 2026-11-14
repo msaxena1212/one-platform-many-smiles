@@ -154,13 +154,18 @@ export async function fetchLiveCoaOptions(force = false): Promise<CoaOption[]> {
       .from("fin_coa_accounts")
       .select("account_code, account_name")
       .eq("is_active", true)
-      // Pickers take GL control accounts only. Per-unit, per-tenant and per-vendor sub-ledgers (account_level = SL)
-      // are created by the lease, vendor and deposit flows, and listing all of them buries the real accounts.
-      .or("account_level.is.null,account_level.eq.GL")
       .order("account_code")
       .range(from, from + PAGE - 1);
     if (error || !data || data.length === 0) break;
-    data.forEach((r: any) => out.push({ code: String(r.account_code), name: `${r.account_code} - ${r.account_name}` }));
+    // Hide the per-unit, per-tenant and per-vendor sub-ledgers that the lease, deposit and vendor flows create
+    // (thousands of them). Keep GL accounts and the other sub-ledgers people post to, such as bank accounts
+    // (12000001), Bank Charges (51102016) and Repair and Maintenance Cost (51004001).
+    const isPartySubLedger = (code: string) => /^(12413|12411|21400|21500|21501|221|2240)/.test(code);
+    data.forEach((r: any) => {
+      const code = String(r.account_code);
+      if (r.account_level === "SL" && isPartySubLedger(code)) return;
+      out.push({ code, name: `${r.account_code} - ${r.account_name}` });
+    });
     if (data.length < PAGE) break;
   }
   liveCache = { at: Date.now(), options: out };

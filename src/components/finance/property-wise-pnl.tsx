@@ -228,7 +228,10 @@ export function PropertyWiseProfitAndLossSubModule() {
             if (invMonth !== selectedPeriod) return false;
           }
 
-          if (lease.id && inv.leaseId && inv.leaseId === lease.id) return true;
+          // An invoice that names its lease belongs to that lease only. Matching it by unit as well gave one invoice to
+          // every lease on the unit (OA23-01: two leases, one invoice, shown twice). Unit matching is only for invoices
+          // that name no lease.
+          if (inv.leaseId) return Boolean(lease.id && inv.leaseId === lease.id);
           if (unitNorm && (inv.unit || "").trim().toLowerCase() === unitNorm) return true;
           if (!unitNorm && tenantNorm && (inv.tenant || "").trim().toLowerCase() === tenantNorm) return true;
           return false;

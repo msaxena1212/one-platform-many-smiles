@@ -430,8 +430,9 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
   const waterMeter = raw.waterNumber || raw.water_meter_no || raw.kahramaa_water_no || "1264332";
   const zone = raw.zoneEn || raw.area_zone || (propName.includes("WAKRA") ? "Al Wakara-90" : propName.includes("SALATA") ? "Old Salata-18" : propName);
   const zoneAr = raw.zoneAr || (zone.includes("Wakara") ? "الوكرة 90" : zone.includes("Salata") ? "السلطة القديمة 18" : zone);
-  const street = raw.streetNumber || raw.street_building_name || raw.street_no || "993";
-  const building = raw.buildingNumber || raw.building_no || raw.property_code || "01";
+  // The property's own street and building numbers. A blank is better than a wrong number printed on a contract.
+  const street = raw.streetNumber || raw.street_no || "";
+  const building = raw.buildingNumber || raw.building_no || "";
 
   const computedMonths = monthsBetweenInclusive(sDate, eDate);
   const termMonths = hasRentFree ? 13 : (Number(raw.leaseMonthsCount) || computedMonths || 12);
