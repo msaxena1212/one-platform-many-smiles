@@ -420,8 +420,9 @@ export function buildContractData(raw: Partial<LeaseContractData> | any): LeaseC
   const standardContractNum = `${pCode}-${uCode}-${unique4}`;
 
   // Unit attributes
-  const bedrooms = raw.bedroomCount || raw.bedrooms || (unitNum.includes("2") ? "2" : unitNum.includes("3") ? "3" : "Three");
-  const furnishing = raw.furnishingStatusEn || raw.furnishing || "Semi Furnished";
+  // Only the unit's own record counts. A guess from the unit number (e.g. "WK95-08" has a "9" and a "5") printed wrong facts.
+  const bedrooms = raw.bedroomCount || raw.bedrooms || "";
+  const furnishing = raw.furnishingStatusEn || raw.furnishing || "";
   const furnishingAr = furnishing.toLowerCase().includes("fully") ? "مفروش بالكامل" : furnishing.toLowerCase().includes("unfurnished") ? "غير مفروش" : "نصف مفروش";
 
   // Meters and address

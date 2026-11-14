@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
 import { resolveAccountingAccounts } from "./account-resolver";
 import { postVoucher } from "./posting-engine";
+import { persistVoucher, persistReceivables, updateReceivable, loadReceivables } from "./finance-persistence";
 import {
   GUARANTEE_CHEQUE_DATE,
   KAHRAMAA_DEPOSIT_ENTRIES,
@@ -887,6 +888,28 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         .select("*, fin_voucher_lines(account_code, account_name, debit_amount, credit_amount)")
         .order("voucher_date", { ascending: false });
 
+      // Recovery: vouchers created in this browser before write-through existed are uploaded (with their accounts)
+      // if the database does not have them. Vouchers are matched by number, so a voucher is only uploaded once.
+      if (!vError && vData && typeof window !== "undefined") {
+        try {
+          const dbNos = new Set(vData.map((r: any) => r.voucher_number));
+          const localV: any[] = JSON.parse(localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`) || "[]");
+          const candidates = localV.filter(v =>
+            typeof v?.id === "string" && v.id.startsWith("vch-") && v.voucher_no &&
+            !dbNos.has(v.voucher_no) && Number(v.amount) > 0 && v.debit_code && v.credit_code
+          );
+          let saved = 0;
+          for (const v of candidates) {
+            const res = await persistVoucher(v);
+            if (res.ok) saved++;
+            else console.warn(`[FinanceStore] voucher ${v.voucher_no} not uploaded: ${res.error}`);
+          }
+          if (saved) toast.info(`${saved} voucher(s) from this browser saved to the database.`);
+        } catch (recErr) {
+          console.warn("[FinanceStore] voucher recovery:", recErr);
+        }
+      }
+
       if (!vError && vData) {
         // NOTE: the old on-load "normalize 115,250 -> 96,820" rewrite of backend rows was removed: silently
         // rewriting stored amounts on every page load is a data-integrity risk. Display-side mapping below remains.
@@ -1070,7 +1093,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
               return {
                 id: r.id,
                 voucher_no: r.voucher_number,
-                voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
+                voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : r.voucher_type === "CV" ? "Contra Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
                 date: effectiveVchDate,
                 name: effectiveDescription,
                 debit: drName || "Debit Account",
@@ -1677,18 +1700,37 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         console.warn("Payroll syncs DB fetch note:", pErr);
       }
 
-      // 6. Reload localStorage caches for AP/AR/Cashbook (vouchers are maintained authoritatively above)
+      // 5b. Receivable invoices: the database is the record. Invoices that exist only in this browser (created before
+      // write-through was in place) are uploaded first, then the list is read back from the database.
+      try {
+        const localAr: ReceivableInvoice[] = JSON.parse(localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`) || "[]");
+        const dbAr = await loadReceivables();
+        let unsaved: ReceivableInvoice[] = [];
+        if (Array.isArray(localAr) && localAr.length) {
+          const known = new Set((dbAr || []).map(i => i.invoice_no));
+          const missing = localAr.filter(i => i.invoice_no && !known.has(i.invoice_no));
+          if (missing.length) {
+            const res = await persistReceivables(missing as any);
+            if (res.ok) toast.info(`${missing.length} receivable invoice(s) saved from this browser to the database.`);
+            else {
+              unsaved = missing;
+              toast.error(`Could not save ${missing.length} receivable invoice(s) from this browser: ${res.error}`);
+            }
+          }
+        }
+        const fresh = dbAr ?? (await loadReceivables());
+        if (fresh) setReceivableInvoices([...(fresh as ReceivableInvoice[]), ...unsaved]);
+      } catch (arErr) {
+        console.warn("[FinanceStore] receivable invoice sync:", arErr);
+      }
+
+      // 6. Reload localStorage caches for journals/AP/Cashbook (vouchers and receivables are maintained authoritatively above)
       if (typeof window !== "undefined") {
         try {
           const jDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
           if (jDataSaved) {
             const parsed = JSON.parse(jDataSaved);
             if (Array.isArray(parsed) && parsed.length) setJournalEntries(parsed);
-          }
-          const arDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`);
-          if (arDataSaved) {
-            const parsed = JSON.parse(arDataSaved);
-            if (Array.isArray(parsed) && parsed.length) setReceivableInvoices(parsed);
           }
           const apDataSaved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ap`);
           if (apDataSaved) {
@@ -1960,6 +2002,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Realtime refresh: every change in the database reloads the finance data (debounced, so a burst of rows is one reload).
+  const fetchRef = useRef<(showToast?: boolean) => Promise<void>>(async () => {});
+  fetchRef.current = fetchSupabaseData;
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRealtimeRefresh = () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => { void fetchRef.current(false); }, 400);
+  };
+
   // Pull and subscribe to Supabase data on mount
   useEffect(() => {
     void fetchSupabaseData(false);
@@ -1971,33 +2022,23 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         "postgres_changes" as any,
         { event: "INSERT", schema: "public", table: "fin_vouchers" },
         (payload: any) => {
+          // Map through the same loader as the initial load, so the account lines (not a guessed account) are used.
           const r = payload.new;
           if (!r?.id || seenVoucherIds.current.has(r.id)) return;
           seenVoucherIds.current.add(r.id);
-          const isPV = r.voucher_type === "PV";
-          const isRV = r.voucher_type === "RV";
-          const mapped: FinanceVoucher = {
-            id: r.id,
-            voucher_no: r.voucher_number,
-            voucher_type: (isPV ? "Payment Voucher" : isRV ? "Receipt Voucher" : "Journal Voucher") as FinanceVoucher["voucher_type"],
-            date: r.voucher_date,
-            name: r.description || r.voucher_number,
-            debit: isPV ? "Accounts Payable / Expense" : isRV ? "Bank Operating Account" : "Journal Debit",
-            debit_code: isPV ? (r.reference_no && /^\d+$/.test(r.reference_no) ? r.reference_no : "22100001") : "12000001",
-            credit: isPV ? "Bank Operating Account" : isRV ? "Rental Revenue" : "Journal Credit",
-            credit_code: isPV ? "12000001" : (r.reference_no && /^\d+$/.test(r.reference_no) ? r.reference_no : "41100"),
-            amount: Number(r.total_amount) || 0,
-            status: "Posted",
-
-          };
-
-          setVouchers(prev => {
-            if (prev.some(v => v.id === r.id || v.voucher_no === r.voucher_number)) return prev;
-            return [mapped, ...prev];
-          });
-          toast.info(`Voucher ${r.voucher_number} posted to GL via Supabase.`);
+          scheduleRealtimeRefresh();
         }
       )
+      .subscribe();
+
+    // Lines arrive after their voucher; reload once they are there. Receivable invoices refresh the list live.
+    const linesChannel = supabase
+      .channel("finance-store:fin_voucher_lines")
+      .on("postgres_changes" as any, { event: "INSERT", schema: "public", table: "fin_voucher_lines" }, () => scheduleRealtimeRefresh())
+      .subscribe();
+    const arChannel = supabase
+      .channel("finance-store:fin_receivable_invoices")
+      .on("postgres_changes" as any, { event: "*", schema: "public", table: "fin_receivable_invoices" }, () => scheduleRealtimeRefresh())
       .subscribe();
 
     // Subscribe to fin_accounting_events for visibility into posting-engine writes.
@@ -2133,6 +2174,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     return () => {
       supabase.removeChannel(voucherChannel);
+      supabase.removeChannel(linesChannel);
+      supabase.removeChannel(arChannel);
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
       supabase.removeChannel(eventChannel);
       supabase.removeChannel(pdcChannel);
       supabase.removeChannel(eventUpdateChannel);
@@ -2242,33 +2286,20 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       id: `vch-${Date.now()}`,
       status: "Posted",
     };
-    setVouchers(prev => {
-      if (prev.some(v => v.voucher_no === newVch.voucher_no)) return prev;
-      return [newVch, ...prev];
-    });
-    toast.success(`${newVch.voucher_type} ${newVch.voucher_no} posted successfully!`);
-
-    // Persist to Supabase fin_vouchers (best-effort, fire-and-forget).
-    const typeCode = newVch.voucher_type === "Payment Voucher" ? "PV" : newVch.voucher_type === "Receipt Voucher" ? "RV" : "JV";
-    void Promise.resolve(
-      apiDb.from("fin_vouchers").insert({
-        voucher_number: newVch.voucher_no,
-        voucher_date: newVch.date,
-        voucher_type: typeCode,
-        reference_no: newVch.debit_code || null,
-        description: newVch.name,
-        total_amount: newVch.amount,
-        status: "posted",
-        posted_at: new Date().toISOString(),
-      }).select("id")
-    ).then(({ error, data }: any) => {
-      if (error) {
-        console.warn("[FinanceStore] fin_vouchers persist warn:", error.message);
+    if (vouchers.some(v => v.voucher_no === newVch.voucher_no)) return;
+    // Write-through: the voucher and its account lines are saved to the database first. The screen only shows it
+    // once the save succeeds, so an entry can't be lost in the browser.
+    void persistVoucher(newVch as any).then(res => {
+      if (!res.ok) {
+        toast.error(`${newVch.voucher_no} was NOT saved: ${res.error}`);
         return;
       }
-      // Mark the newly inserted row as seen so realtime won't toast it again.
-      const insertedId = Array.isArray(data) ? data[0]?.id : (data as any)?.id;
-      if (insertedId) seenVoucherIds.current.add(String(insertedId));
+      if (res.data?.id) seenVoucherIds.current.add(res.data.id);
+      setVouchers(prev => {
+        if (prev.some(v => v.voucher_no === newVch.voucher_no)) return prev;
+        return [{ ...newVch, id: res.data?.id || newVch.id }, ...prev];
+      });
+      toast.success(`${newVch.voucher_type} ${newVch.voucher_no} posted successfully!`);
     });
   }
 
@@ -2299,8 +2330,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       id: `ar-${Date.now()}`,
       status: "Pending"
     };
+    // Show it at once, save it to the database now, and take it back off the screen if the save fails.
     setReceivableInvoices(prev => [newInv, ...prev]);
-    toast.success(`AR Invoice ${newInv.invoice_no} generated and posted!`);
+    void persistReceivables([newInv]).then(res => {
+      if (!res.ok) {
+        setReceivableInvoices(prev => prev.filter(i => i.invoice_no !== newInv.invoice_no));
+        toast.error(`AR Invoice ${newInv.invoice_no} was NOT saved: ${res.error}`);
+        return;
+      }
+      toast.success(`AR Invoice ${newInv.invoice_no} generated and saved!`);
+    });
   }
 
   function addBulkReceivableInvoices(invoices: Omit<ReceivableInvoice, "id" | "status">[]) {
@@ -2312,29 +2351,36 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       }
     }
     const timestamp = Date.now();
-    setReceivableInvoices(prev => {
-      const seenKeys = new Set(
-        prev.map(existing => `${(existing.unit || "").trim().toLowerCase()}__${(existing.billingPeriod || existing.date || "").slice(0, 7)}`)
-      );
-      const uniqueInvoices: ReceivableInvoice[] = [];
-      invoices.forEach((inv, idx) => {
-        const periodKey = (inv.billingPeriod || inv.date || "").slice(0, 7);
-        const unitKey = `${(inv.unit || "").trim().toLowerCase()}__${periodKey}`;
-        if (seenKeys.has(unitKey)) return;
-        seenKeys.add(unitKey);
-        uniqueInvoices.push({
-          ...inv,
-          billingPeriod: inv.billingPeriod || periodKey,
-          id: `ar-bulk-${timestamp}-${idx}`,
-          status: "Pending" as const
-        });
+    // Decide the new invoices from the current list (not inside a state updater), so they can be saved to the database.
+    const seenKeys = new Set(
+      receivableInvoices.map(existing => `${(existing.unit || "").trim().toLowerCase()}__${(existing.billingPeriod || existing.date || "").slice(0, 7)}`)
+    );
+    const uniqueInvoices: ReceivableInvoice[] = [];
+    invoices.forEach((inv, idx) => {
+      const periodKey = (inv.billingPeriod || inv.date || "").slice(0, 7);
+      const unitKey = `${(inv.unit || "").trim().toLowerCase()}__${periodKey}`;
+      if (seenKeys.has(unitKey)) return;
+      seenKeys.add(unitKey);
+      uniqueInvoices.push({
+        ...inv,
+        billingPeriod: inv.billingPeriod || periodKey,
+        id: `ar-bulk-${timestamp}-${idx}`,
+        status: "Pending" as const
       });
-      if (uniqueInvoices.length === 0) {
-        toast.error("Duplicate Invoice Restricted: Selected unit(s) already have invoices for this period.");
-        return prev;
+    });
+    if (uniqueInvoices.length === 0) {
+      toast.error("Duplicate Invoice Restricted: Selected unit(s) already have invoices for this period.");
+      return;
+    }
+    const addedNos = new Set(uniqueInvoices.map(i => i.invoice_no));
+    setReceivableInvoices(prev => [...uniqueInvoices, ...prev]);
+    void persistReceivables(uniqueInvoices).then(res => {
+      if (!res.ok) {
+        setReceivableInvoices(prev => prev.filter(i => !addedNos.has(i.invoice_no)));
+        toast.error(`AR invoices were NOT saved: ${res.error}`);
+        return;
       }
-      toast.success(`${uniqueInvoices.length} AR Invoices generated and posted successfully!`);
-      return [...uniqueInvoices, ...prev];
+      toast.success(`${uniqueInvoices.length} AR Invoices generated and saved successfully!`);
     });
   }
 
@@ -2345,32 +2391,40 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       toast.error(`Cannot generate Receipt Voucher: Current period ${periodCheck.periodName} is CLOSED.`);
       return;
     }
-    setReceivableInvoices(prev => prev.map(inv => {
-      if (inv.invoice_no === invoiceNo) {
-        // Also record a Receipt Voucher
-        const rv: FinanceVoucher = {
-          id: `vch-rec-${Date.now()}`,
-          voucher_no: `VCH-REC-${Math.floor(1000 + Math.random() * 9000)}`,
-          voucher_type: "Receipt Voucher",
-          date: new Date().toISOString().split("T")[0],
-          name: `${inv.tenant} — Receipt for Rent Invoice ${invoiceNo}`,
-          property_name: inv.property,
-          unit_ref: inv.unit,
-          tenant_name: inv.tenant,
-          debit: "Bank Operating Account",
-          debit_code: "12000001",
-          credit: "Tenant Receivables",
-          credit_code: "12413001",
-          amount: inv.amount,
-          method: "Bank Transfer",
-          status: "Posted",
-        };
-        setVouchers(v => [rv, ...v]);
-        return { ...inv, status: "Paid" as const };
+    const target = receivableInvoices.find(inv => inv.invoice_no === invoiceNo);
+    if (!target) return;
+    const paid = { ...target, status: "Paid" as const };
+    // Receipt Voucher that settles the invoice: Dr Bank / Cr Tenant Receivables.
+    const rv: FinanceVoucher = {
+      id: `vch-rec-${Date.now()}`,
+      voucher_no: `VCH-REC-${Math.floor(1000 + Math.random() * 9000)}`,
+      voucher_type: "Receipt Voucher",
+      date: new Date().toISOString().split("T")[0],
+      name: `${target.tenant} — Receipt for Rent Invoice ${invoiceNo}`,
+      property_name: target.property,
+      unit_ref: target.unit,
+      tenant_name: target.tenant,
+      debit: "Bank Operating Account",
+      debit_code: "12000001",
+      credit: "Tenant Receivables",
+      credit_code: "12413001",
+      amount: target.amount,
+      method: "Bank Transfer",
+      status: "Posted",
+    };
+    setReceivableInvoices(prev => prev.map(inv => (inv.invoice_no === invoiceNo ? paid : inv)));
+    void Promise.all([updateReceivable(paid), persistVoucher(rv as any)]).then(([invRes, vchRes]) => {
+      if (!invRes.ok || !vchRes.ok) {
+        // Put the invoice back as it was; the voucher was not saved, so it is not shown either.
+        setReceivableInvoices(prev => prev.map(inv => (inv.invoice_no === invoiceNo ? target : inv)));
+        if (invRes.ok) void updateReceivable(target); // the invoice was marked Paid in the database; undo that too
+        const why = !invRes.ok ? invRes.error : (vchRes as { error: string }).error;
+        toast.error(`Collection of ${invoiceNo} was NOT saved: ${why}`);
+        return;
       }
-      return inv;
-    }));
-    toast.success(`AR Invoice ${invoiceNo} marked as Collected.`);
+      setVouchers(v => [rv, ...v]);
+      toast.success(`AR Invoice ${invoiceNo} marked as Collected and saved.`);
+    });
   }
 
   function addLegalEscalation(esc: Omit<LegalReceivable, "id">) {

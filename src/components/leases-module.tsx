@@ -649,44 +649,23 @@ export function LeasesModule({ role }: LeasesModuleProps) {
         if (localRenewals.length !== beforeLen) {
           localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(localRenewals));
         }
-        const hasOA2204 = localRenewals.some(r => r.unit === 'OA22-04' || r.id === 'L-OA2204-R1' || r.lease_number === 'L-OA2204-R1');
-        if (!hasOA2204) {
-          localRenewals.push({
-            id: 'L-OA2204-R1',
-            lease_number: 'L-OA2204-R1',
-            properties: { title: 'Al Ameen Residence 22' },
-            property_name: 'Al Ameen Residence 22',
-            unit_code: 'OA22-04',
-            tenant_name: 'Qatar Kentz',
-            commencement_date: '2026-10-01',
-            expiry_date: '2027-09-30',
-            monthlyRent: 6500,
-            rental_amount: 78000,
-            securityDeposit: 6500,
-            pdc_count: 12,
-            paymentFrequency: 'monthly',
-            lease_status: 'ACTIVE',
-            renewal_of: 'L-OA2204',
-          });
-          localStorage.setItem('pms_renewed_leases_v1', JSON.stringify(localRenewals));
-        }
-
         for (const ren of localRenewals) {
           const renLeaseNum = ren.lease_number || ren.id;
           const renId = ren.id || renLeaseNum;
           if (!allLeases.some(l => l.id === renId || l.lease_number === renLeaseNum)) {
+            // The renewal's own property and unit (as saved); never a fixed property.
             allLeases.unshift({
               id: renId,
               lease_number: renLeaseNum,
-              properties: ren.properties || { title: ren.property_name || ren.property || 'Al Ameen Residence 22' },
+              properties: ren.properties || { title: ren.property_name || ren.property || '' },
               units: null,
               customers: null,
-              tenant_name: ren.tenant_name || ren.tenantName || 'Qatar Kentz',
-              unit_code: ren.unit_code || ren.unit || 'OA22-04',
-              commencement_date: ren.commencement_date || ren.startDate || '2026-10-01',
-              expiry_date: ren.expiry_date || ren.endDate || '2027-09-30',
-              monthlyRent: Number(ren.monthlyRent || (ren.rental_amount ? Math.round(ren.rental_amount / 12) : 6500)),
-              rental_amount: Number(ren.rental_amount || (ren.monthlyRent ? ren.monthlyRent * 12 : 78000)),
+              tenant_name: ren.tenant_name || ren.tenantName || '',
+              unit_code: ren.unit_code || ren.unit || ren.unit_name || '',
+              commencement_date: ren.commencement_date || ren.startDate || '',
+              expiry_date: ren.expiry_date || ren.endDate || '',
+              monthlyRent: Number(ren.monthlyRent || (ren.rental_amount ? Math.round(ren.rental_amount / 12) : 0)),
+              rental_amount: Number(ren.rental_amount || (ren.monthlyRent ? ren.monthlyRent * 12 : 0)),
               lease_status: (ren.lease_status || ren.status || 'ACTIVE').toUpperCase(),
               renewal_of: ren.renewal_of || ren.renewalOf,
             });

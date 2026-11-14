@@ -154,6 +154,15 @@ function formatMoney(value: number | string | undefined | null) {
   return `QR ${Number(value || 0).toLocaleString()}`;
 }
 
+/** Whole months covered by two dates, both ends included (01-11 to 31-08 = 10 months). */
+function monthsForDates(start: string, end: string): number {
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return 12;
+  const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+  return Math.max(1, Math.round(days / 30.4375));
+}
+
 function addDaysHelper(dateStr: string, days: number): string {
   try {
     const d = new Date(dateStr);
@@ -369,9 +378,10 @@ export function LeaseRenewalStepperModal({
     customStart?: string,
     customEnd?: string
   ) {
-    const durMonths = dur === "6" ? 6 : dur === "24" ? 24 : dur === "custom" ? 12 : 12;
     const sDate = customStart || startDate || new Date().toISOString().split("T")[0];
-    const eDate = dur === "custom" ? (customEnd || endDate) : addDaysHelper(addMonthsHelper(sDate, durMonths), -1);
+    const eDate = dur === "custom" ? (customEnd || endDate) : addDaysHelper(addMonthsHelper(sDate, dur === "6" ? 6 : dur === "24" ? 24 : 12), -1);
+    // A custom term is as long as the dates say (a 10-month renewal is 10 months, not a year).
+    const durMonths = dur === "6" ? 6 : dur === "24" ? 24 : dur === "custom" ? monthsForDates(sDate, eDate) : 12;
 
     setTermDuration(dur);
     setStartDate(sDate);
@@ -778,8 +788,11 @@ ${renewalNotes}` : renewalNotes,
                         type="date"
                         value={endDate}
                         onChange={(e) => {
-                          setEndDate(e.target.value);
+                          const newEnd = e.target.value;
+                          setEndDate(newEnd);
                           setTermDuration("custom");
+                          const months = monthsForDates(startDate, newEnd);
+                          generateChequesSchedule(pdcCount, pdcAmountPerCheque, pdcBank, startingChequeNo, startDate, paymentFrequency, months);
                         }}
                       />
                     </div>

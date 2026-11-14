@@ -30,6 +30,7 @@ import {
   type CoaType, type CoaGroup, type CoaClass, type CoaGL, type CoaSL, type PropertyCoaMapping, type UnitCoaMapping
 } from "@/lib/supabase";
 import { useMergedCoa, persistCoaAccount, migrateLocalCustomCoa, fetchLiveCoaOptions } from "@/lib/finance/live-coa";
+import { useFinanceMasterLists } from "@/lib/finance/master-lists";
 import {
   FinFinancialYearsApi, FinRegionsApi, FinVendorsApi, FinCustomersApi, FinCostCentersApi,
   FinPostingPeriodsApi, FinBanksApi, FinBankAccountsApi, FinBankReconciliationsApi, FinContractsApi,
@@ -354,9 +355,121 @@ function FinanceSubModuleRouter({ subKey, role }: { subKey: string; role: Financ
     // Credit / Debit Notes
     case "debit_note": return <DebitNoteSubModule />;
     case "credit_note": return <CreditNoteSubModule />;
+    case "contra_entry": return <ContraEntrySubModule />;
 
     default: return <div className="text-center py-10 text-muted-foreground">Select a module</div>;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTRA ENTRY: move money between two accounts (e.g. bank to bank, cash to bank). Saved through the same
+// write-through path as every other voucher.
+// ─────────────────────────────────────────────────────────────────────────────
+function ContraEntrySubModule() {
+  const COA = useMergedCoa(BASE_COMMON_GL_ACCOUNTS);
+  const { vouchers, addVoucher } = useFinanceStore() as any;
+  const [form, setForm] = useState({
+    date: new Date().toISOString().split("T")[0],
+    from: "",
+    to: "",
+    amount: "",
+    reference: "",
+    narration: "",
+  });
+  const codeOf = (label: string) => label.trim().split(/\s+/)[0];
+  const contraRows = ((vouchers || []) as any[])
+    .filter(v => v.voucher_type === "Contra Voucher")
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  function save() {
+    const amt = parseFloat(form.amount) || 0;
+    if (!form.from || !form.to) return toast.error("Choose the account to take money from and the account to put it into.");
+    if (codeOf(form.from) === codeOf(form.to)) return toast.error("The From and To accounts must be different.");
+    if (amt <= 0) return toast.error("Amount must be greater than zero.");
+    const ref = form.reference.trim() || `CV-${Date.now().toString().slice(-6)}`;
+    addVoucher({
+      voucher_no: ref,
+      voucher_type: "Contra Voucher",
+      date: form.date,
+      name: form.narration.trim() || `Contra: ${codeOf(form.from)} to ${codeOf(form.to)}`,
+      debit: form.to,
+      debit_code: codeOf(form.to),
+      credit: form.from,
+      credit_code: codeOf(form.from),
+      amount: amt,
+      method: "Transfer",
+      property_name: "Corporate / General",
+    });
+    setForm(f => ({ ...f, amount: "", reference: "", narration: "" }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold">Contra Entries</h3>
+        <p className="text-xs text-muted-foreground">Transfers between two accounts, such as bank to bank or cash to bank.</p>
+      </div>
+      <div className="border rounded-lg p-4 bg-card grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <Label className="text-[11px] font-semibold">Entry Date *</Label>
+          <Input type="date" className="h-8 text-xs" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+        </div>
+        <div>
+          <Label className="text-[11px] font-semibold">Reference</Label>
+          <Input className="h-8 text-xs font-mono" placeholder="Auto if blank" value={form.reference} onChange={e => setForm({ ...form, reference: e.target.value })} />
+        </div>
+        <div>
+          <Label className="text-[11px] font-semibold">From (credit) account *</Label>
+          <SearchableSelect value={form.from} placeholder="Search code or name..." emptyText="No matching account"
+            options={COA.map(a => ({ label: a.name, value: a.name }))}
+            onValueChange={v => setForm({ ...form, from: v })} />
+        </div>
+        <div>
+          <Label className="text-[11px] font-semibold">To (debit) account *</Label>
+          <SearchableSelect value={form.to} placeholder="Search code or name..." emptyText="No matching account"
+            options={COA.map(a => ({ label: a.name, value: a.name }))}
+            onValueChange={v => setForm({ ...form, to: v })} />
+        </div>
+        <div>
+          <Label className="text-[11px] font-semibold">Amount (QAR) *</Label>
+          <Input type="number" className="h-8 text-xs font-mono" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+        </div>
+        <div>
+          <Label className="text-[11px] font-semibold">Narration</Label>
+          <Input className="h-8 text-xs" value={form.narration} onChange={e => setForm({ ...form, narration: e.target.value })} />
+        </div>
+        <div className="md:col-span-2 flex justify-end">
+          <Button size="sm" onClick={save} className="gap-2"><Plus className="h-4 w-4" /> Post Contra Entry</Button>
+        </div>
+      </div>
+      <div className="border rounded-lg overflow-hidden bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50 text-xs">
+              <TableHead className="font-bold">Date</TableHead>
+              <TableHead className="font-bold">Reference</TableHead>
+              <TableHead className="font-bold">From</TableHead>
+              <TableHead className="font-bold">To</TableHead>
+              <TableHead className="text-right font-bold">Amount (QAR)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {contraRows.length === 0 ? (
+              <TableRow><TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">No contra entries yet.</TableCell></TableRow>
+            ) : contraRows.map((v, i) => (
+              <TableRow key={`${v.voucher_no}-${i}`} className="text-xs">
+                <TableCell className="font-mono">{String(v.date || "").slice(0, 10)}</TableCell>
+                <TableCell className="font-mono">{v.voucher_no}</TableCell>
+                <TableCell>{v.credit}</TableCell>
+                <TableCell>{v.debit}</TableCell>
+                <TableCell className="text-right font-mono font-bold">{Number(v.amount).toLocaleString()}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7539,41 +7652,9 @@ function RevenueGenerationSubModule() {
   }, [dbPdcs, contextPdcs, leases, vouchers]);
 
   // ── Filter option lists derived from allLedgerTransactions & context data ─────────
-  const allProperties = useMemo(() => {
-    const s = new Set<string>();
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type === "Revenue" && tx.property_name && tx.property_name !== "Unassigned") {
-        s.add(tx.property_name);
-      }
-    });
-    receivableInvoices.forEach(ar => { if (ar.property) s.add(ar.property); });
-    unifiedRealizedPdcs.forEach(p => { if (p.property) s.add(p.property); });
-    return Array.from(s).sort();
-  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
-
-  const allUnits = useMemo(() => {
-    const s = new Set<string>();
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type === "Revenue" && tx.unit_ref && tx.unit_ref !== "Unassigned" && tx.unit_ref !== "General") {
-        s.add(tx.unit_ref);
-      }
-    });
-    receivableInvoices.forEach(ar => { if ((ar as any).unit) s.add((ar as any).unit); });
-    unifiedRealizedPdcs.forEach(p => { if (p.unit) s.add(p.unit); });
-    return Array.from(s).sort();
-  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
-
-  const allCustomers = useMemo(() => {
-    const s = new Set<string>();
-    allLedgerTransactions.forEach(tx => {
-      if (tx.account_type === "Revenue" && tx.tenant_name && tx.tenant_name !== "Unassigned") {
-        s.add(tx.tenant_name);
-      }
-    });
-    receivableInvoices.forEach(ar => { if (ar.tenant) s.add(ar.tenant); });
-    unifiedRealizedPdcs.forEach(p => { if (p.tenant) s.add(p.tenant); });
-    return Array.from(s).sort();
-  }, [allLedgerTransactions, receivableInvoices, unifiedRealizedPdcs]);
+  // Filter lists come from the master data (see master-lists.ts), not only from postings that already exist.
+  const { propertyOptions: allProperties, unitOptionsFor, customerOptions: allCustomers, propKey: revPropKey } = useFinanceMasterLists();
+  const allUnits = useMemo(() => unitOptionsFor(filterProperty), [unitOptionsFor, filterProperty]);
 
   const allMonthOptions = useMemo(() => {
     const months: { value: string; label: string }[] = [];
@@ -7635,7 +7716,7 @@ function RevenueGenerationSubModule() {
     if (periodFilter === "thisMonth" && mon !== thisMonth) return false;
     if (periodFilter === "lastMonth" && mon !== lastMonth) return false;
     // Dropdown filters
-    if (filterProperty !== "all" && rec.property !== filterProperty) return false;
+    if (filterProperty !== "all" && revPropKey(rec.property) !== revPropKey(filterProperty)) return false;
     if (filterUnit !== "all" && rec.unit !== filterUnit) return false;
     if (filterCustomer !== "all" && rec.tenant !== filterCustomer) return false;
     if (filterMonth !== "all" && mon !== filterMonth) return false;
@@ -7650,7 +7731,7 @@ function RevenueGenerationSubModule() {
       if (!haystack.includes(q)) return false;
     }
     return true;
-  }, [periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+  }, [periodFilter, thisMonth, lastMonth, filterProperty, revPropKey, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
 
   // ── Unified Revenue GL Ledger Transactions (Filtered) ─────────────────────
   // Derived from allLedgerTransactions (Revenue account_type, credit > debit)
@@ -7668,7 +7749,7 @@ function RevenueGenerationSubModule() {
       if (filterFromDate && (tx.date || "") < filterFromDate) return false;
       if (filterToDate && (tx.date || "") > filterToDate) return false;
       if (filterMonth !== "all" && mon !== filterMonth) return false;
-      if (filterProperty !== "all" && tx.property_name !== filterProperty) return false;
+      if (filterProperty !== "all" && revPropKey(tx.property_name) !== revPropKey(filterProperty)) return false;
       if (filterUnit !== "all" && tx.unit_ref !== filterUnit) return false;
       if (filterCustomer !== "all" && tx.tenant_name !== filterCustomer) return false;
       if (filterSource !== "all") {
@@ -7702,7 +7783,7 @@ function RevenueGenerationSubModule() {
       if (filterFromDate && (pdc.date || "") < filterFromDate) return;
       if (filterToDate && (pdc.date || "") > filterToDate) return;
       if (filterMonth !== "all" && mon !== filterMonth) return;
-      if (filterProperty !== "all" && pdc.property !== filterProperty) return;
+      if (filterProperty !== "all" && revPropKey(pdc.property) !== revPropKey(filterProperty)) return;
       if (filterUnit !== "all" && pdc.unit !== filterUnit) return;
       if (filterCustomer !== "all" && pdc.tenant !== filterCustomer) return;
       if (filterSource !== "all" && filterSource.toLowerCase() !== "pdc") return;
@@ -7730,7 +7811,7 @@ function RevenueGenerationSubModule() {
     });
 
     return [...glRows, ...pdcRows].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  }, [allLedgerTransactions, unifiedRealizedPdcs, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
+  }, [allLedgerTransactions, unifiedRealizedPdcs, revPropKey, periodFilter, thisMonth, lastMonth, filterProperty, filterUnit, filterCustomer, filterMonth, filterSource, filterFromDate, filterToDate, filterSearch]);
 
   // ── Aggregate revenue by stream code from unified filtered entries ─────────
   const revenueByCode = useMemo(() => {
@@ -9191,29 +9272,15 @@ function GeneralLedgerReportSubModule() {
   const [showInitConfirm, setShowInitConfirm] = useState(false);
   const [initResult, setInitResult] = useState<{ created: number; cleared: number } | null>(null);
 
+  // ── Filter lists come from the master tables (properties, units, customers, chart of accounts), not from
+  // whatever happens to have a posting. Property names in the ledger are a mix of codes (MG91) and titles, so
+  // both sides are matched on the property code.
+  const { propertyOptions, unitOptionsFor, customerOptions, accountOptions, propKey } = useFinanceMasterLists();
+
   // ── Compute ascending filter options ──────────────────────────────────────
   const txList: any[] = allLedgerTransactions || [];
 
-  const propertyOptions = useMemo(() => {
-    const set = new Set<string>();
-    txList.forEach(tx => { if (tx.property_name) set.add(tx.property_name); });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [txList]);
-
-  const unitOptions = useMemo(() => {
-    const set = new Set<string>();
-    txList.forEach(tx => {
-      if (selectedProperty !== "all" && tx.property_name !== selectedProperty) return;
-      if (tx.unit_ref) set.add(tx.unit_ref);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-  }, [txList, selectedProperty]);
-
-  const customerOptions = useMemo(() => {
-    const set = new Set<string>();
-    txList.forEach(tx => { if (tx.tenant_name) set.add(tx.tenant_name); });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  }, [txList]);
+  const unitOptions = useMemo(() => unitOptionsFor(selectedProperty), [unitOptionsFor, selectedProperty]);
 
   const monthOptions = useMemo(() => {
     const set = new Set<string>();
@@ -9227,17 +9294,6 @@ function GeneralLedgerReportSubModule() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [txList]);
 
-  const accountOptions = useMemo(() => {
-    const accounts = new Map<string, Set<string>>();
-    txList.forEach(tx => {
-      if (!tx.account_code) return;
-      const names = accounts.get(tx.account_code) || new Set<string>();
-      names.add(tx.account_name || tx.account_code);
-      accounts.set(tx.account_code, names);
-    });
-    return Array.from(accounts, ([code, names]) => ({ code, name: Array.from(names).join(" / ") }))
-      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-  }, [txList]);
   const accountSearchCodes = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return new Set<string>();
@@ -9254,9 +9310,9 @@ function GeneralLedgerReportSubModule() {
   const filtered = useMemo(() => {
     let list = txList.filter(tx => {
       // Property
-      if (selectedProperty !== "all" && tx.property_name !== selectedProperty) return false;
+      if (selectedProperty !== "all" && propKey(tx.property_name) !== propKey(selectedProperty)) return false;
       // Unit
-      if (selectedUnit !== "all" && tx.unit_ref !== selectedUnit) return false;
+      if (selectedUnit !== "all" && String(tx.unit_ref || "").trim().toUpperCase() !== selectedUnit.trim().toUpperCase()) return false;
       // Customer
       if (selectedCustomer !== "all" && tx.tenant_name !== selectedCustomer) return false;
       // Account — selecting a GL account isolates its postings for a proper ledger view.
@@ -9303,7 +9359,7 @@ function GeneralLedgerReportSubModule() {
     });
 
     return list;
-  }, [txList, selectedProperty, selectedUnit, selectedCustomer, selectedAccount, selectedSource, selectedMonth, startDate, endDate, search, accountSearchCodes, sortField, sortAsc]);
+  }, [txList, propKey, selectedProperty, selectedUnit, selectedCustomer, selectedAccount, selectedSource, selectedMonth, startDate, endDate, search, accountSearchCodes, sortField, sortAsc]);
 
   const effectivePageSize = pageSize === 0 ? Math.max(1, filtered.length) : pageSize;
   const totalPages = Math.max(1, Math.ceil(filtered.length / effectivePageSize));

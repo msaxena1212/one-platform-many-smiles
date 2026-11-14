@@ -695,42 +695,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         if (typeof window !== "undefined") {
           // 1. Load local renewals and ensure OA22-04 default renewal is present
           const rawRenewals = localStorage.getItem("pms_renewed_leases_v1");
-          let localRenewals: any[] = rawRenewals ? JSON.parse(rawRenewals) : [];
-          const hasOA2204Renewal = localRenewals.some(
-            (r) => r.unit === "OA22-04" || r.id === "L-OA2204-R1" || r.lease_number === "L-OA2204-R1"
-          );
-          if (!hasOA2204Renewal) {
-            localRenewals.push({
-              id: "L-OA2204-R1",
-              lease_number: "L-OA2204-R1",
-              property: "Al Ameen Residence 22",
-              unit: "OA22-04",
-              tenantName: "Qatar Kentz",
-              startDate: "2026-10-01",
-              endDate: "2027-09-30",
-              monthlyRent: 6500,
-              rental_amount: 78000,
-              securityDeposit: 6500,
-              pdcCount: 12,
-              paymentFrequency: "monthly",
-              status: "active",
-              renewalOf: "L-OA2204",
-            });
-            localStorage.setItem("pms_renewed_leases_v1", JSON.stringify(localRenewals));
-          }
+          const localRenewals: any[] = rawRenewals ? JSON.parse(rawRenewals) : [];
 
           // Merge local renewals into mappedLeases
           for (const ren of localRenewals) {
             const renId = ren.id || ren.lease_number;
             const renNum = ren.lease_number || ren.id;
             const existingIdx = mappedLeases.findIndex((l) => l.id === renId || (l as any).contractNumber === renNum);
+            // The lease this renewal continues: its property, unit and tenant are the source when the renewal omits them.
+            const prevId = ren.renewalOf || ren.renewal_of;
+            const prevLease = prevId ? mappedLeases.find((l) => l.id === prevId || (l as any).contractNumber === prevId) : undefined;
             const renLeaseObj: PmsLease = {
               id: renId,
-              customerId: ren.customerId || `cust-${renId}`,
+              customerId: ren.customerId || prevLease?.customerId || `cust-${renId}`,
               reservationId: `res-${renId}`,
-              property: ren.property || ren.propertyName || "Al Ameen Residence 22",
-              unit: ren.unit || ren.unit_code || "OA22-04",
-              tenantName: ren.tenantName || ren.tenant_name || "Qatar Kentz",
+              // Never a fixed property: the renewal's own property (saved as property or property_name), else the lease it renews.
+              property: ren.property || ren.property_name || ren.propertyName || ren.properties?.title || prevLease?.property || "",
+              unit: ren.unit || ren.unit_code || ren.unit_name || prevLease?.unit || "",
+              tenantName: ren.tenantName || ren.tenant_name || prevLease?.tenantName || "",
               startDate: ren.startDate || ren.commencement_date || "2026-10-01",
               endDate: ren.endDate || ren.expiry_date || "2027-09-30",
               monthlyRent: Number(ren.monthlyRent || (ren.rental_amount ? Math.round(ren.rental_amount / 12) : 6500)),

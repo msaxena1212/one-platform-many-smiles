@@ -24,7 +24,7 @@ import { buildUnitTenantCustomers } from "@/lib/unit-tenant-customers";
 import { fetchAssets, updateAsset, supabase, type Asset as SupabaseAsset } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
 import { persistContractPdcs } from "@/lib/finance/persist-contract-pdcs";
-import { generateLeaseAgreementBlob, printBilingualLeaseContract } from "@/components/lease-agreement-template";
+import { generateLeaseAgreementBlob, printBilingualLeaseContract, fetchUnitContractAttributes } from "@/components/lease-agreement-template";
 import { getTodayIST, getCurrentISTDate, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { DynamicMastersService } from "@/lib/dynamic-masters-service";
 import { DEFAULT_COMPANY_BANK_ACCOUNTS } from "@/lib/finance/bankAccounts";
@@ -4848,9 +4848,12 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   async function downloadLeaseAgreement(lease: Lease) {
     try {
       const customer = (customers || []).find((c) => c.id === lease.customerId || (c.name && lease.tenantName && c.name.toLowerCase().trim() === lease.tenantName.toLowerCase().trim()));
+      // The unit's own bedrooms and furnishing from the units table (not guessed from the unit number).
+      const unitAttrs = await fetchUnitContractAttributes(lease.unit);
 
       printBilingualLeaseContract({
         ...lease,
+        ...unitAttrs,
         contractNumber: lease.contractNumber || String(lease.id || "").toUpperCase(),
         tenantNameEn: lease.tenantName || customer?.name || "Valued Tenant",
         tenantQid: (customer as any)?.qatarId || customer?.qid || (customer as any)?.crNumber || (lease as any).tenantQid || "—",
@@ -5735,6 +5738,8 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             commencement_date: newStartDate,
             expiry_date: newEndDate,
             rental_amount: agreedRent * 12,
+            // Required by the leases table: the term in months, from the renewal dates (10-month term = 10).
+            lease_period_months: Math.max(1, Math.round((new Date(newEndDate).getTime() - new Date(newStartDate).getTime()) / (30.44 * 24 * 3600 * 1000))),
             lease_status: "ACTIVE",
             security_deposit: newSecurityDeposit,
             number_of_pdc: pdcCount,
@@ -5746,7 +5751,10 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             property_id: uRow?.property_id || undefined,
             customer_id: oldLease.customerId && oldLease.customerId.length === 36 ? oldLease.customerId : undefined,
           };
-          await apiDb.from("leases").insert(leasePayload);
+          const { error: leaseInsErr } = await apiDb.from("leases").insert(leasePayload);
+          if (leaseInsErr) {
+            toast.error(`Renewal ${contractNo} was NOT saved to the database: ${leaseInsErr.message}`);
+          }
 
           if (uRow?.id) {
             await apiDb.from("units").update({
