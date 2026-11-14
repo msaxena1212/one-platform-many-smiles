@@ -2041,7 +2041,9 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               restorationCharges: 0,
               otherDeductions: 0,
               refundableBalance: refundable,
-              approval: lease.status === "closed" ? "pending_approval" : "pending_approval",
+              // Check-out in progress is not yet a submission: it stays a draft until the inspection is complete
+              // and the settlement is submitted (completeCheckout), so it no longer shows "Pending Approval" on initiate.
+              approval: lease.status === "closed" ? "pending_approval" : "draft",
               settlementMode: "DEDUCT_FROM_DEPOSIT",
             });
             changed = true;

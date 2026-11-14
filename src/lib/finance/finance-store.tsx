@@ -988,6 +988,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
                 } else if (desc.includes("agency commission") || desc.includes("rv-l1-agn")) {
                   drCode = "12100001"; drName = "Cash In Hand";
                   crCode = "41400"; crName = "Agency Commission Income";
+                } else if (isRV && /direct rent collection/.test(desc)) {
+                  // A rent receipt settles the tenant's invoice (Dr Bank / Cr Tenant Receivables). The invoice already
+                  // recognized the revenue, so crediting Rental Revenue here counted the same rent twice.
+                  drCode = "12000001"; drName = "Bank Operating Account";
+                  crCode = "12413001"; crName = "Tenant Receivables — Unit SL";
                 } else if (!isPV && /pdc|cheque|in place of|transfer|settlement|replaced/.test(desc)) {
                   // PDC-related receipts settle the tenant receivable, never revenue.
                   drCode = "12000001"; drName = "Bank Operating Account";

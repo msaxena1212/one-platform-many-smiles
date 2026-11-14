@@ -4683,7 +4683,11 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
   const debitAccountOptions = type === "Receipt Voucher"
     ? [...BANK_GL_ACCOUNTS, { code: "12100001", name: "12100001 - Cash In Hand / Operating Cash" }]
     : COMMON_GL_ACCOUNTS;
-  const creditAccountOptions = COMMON_GL_ACCOUNTS;
+  // A receipt settles a receivable/liability. Rent revenue is recognized from the Receivable Invoice only,
+  // so revenue (4xxx) accounts are not offered as the credit of a Receipt Voucher.
+  const creditAccountOptions = type === "Receipt Voucher"
+    ? COMMON_GL_ACCOUNTS.filter(a => !a.code.trim().startsWith("4"))
+    : COMMON_GL_ACCOUNTS;
 
   // Multi-line state for Journal Voucher
   type JournalLine = {
@@ -4813,6 +4817,10 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
     }
     if (type === "Receipt Voucher" && form.credit.startsWith("12413001") && !selectedReceiptLease) {
       toast.error("Select the tenant lease and unit before posting a receipt to Tenant Receivables — Unit SL.");
+      return;
+    }
+    if (type === "Receipt Voucher" && accountCode(form.credit).startsWith("4")) {
+      toast.error("A receipt cannot credit revenue. Credit Tenant Receivables (12413001); rent revenue is recognized from the Receivable Invoice, so crediting revenue here counts the rent twice.");
       return;
     }
 
@@ -5124,23 +5132,16 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                             </Select>
                           </td>
                           <td className="py-2 px-2">
-                            <Select
+                            {/* Searchable by account code or name (the option label starts with the code) */}
+                            <SearchableSelect
                               value={line.account}
+                              placeholder="Search code or name..."
+                              emptyText="No matching account"
+                              options={COMMON_GL_ACCOUNTS.map(a => ({ label: a.name, value: a.name }))}
                               onValueChange={(val) => {
                                 setJournalLines(lines => lines.map((l, i) => i === idx ? { ...l, account: val } : l));
                               }}
-                            >
-                              <SelectTrigger className="h-8 text-xs font-mono w-full">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {COMMON_GL_ACCOUNTS.map(a => (
-                                  <SelectItem key={a.code} value={a.name} className="text-xs font-mono">
-                                    {a.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            />
                           </td>
                           <td className="py-2 px-2">
                             <Select

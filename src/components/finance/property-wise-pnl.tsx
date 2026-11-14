@@ -31,6 +31,7 @@ interface PropertyPnlMetrics {
   totalRevenue: number;
   contractRentMonth: number;
   uninvoicedContractRent: number;
+  receiptSettlementExcluded: number;
   maintenanceExpense: number;
   payrollExpense: number;
   utilitiesExpense: number;
@@ -85,6 +86,15 @@ function matchesPropertyName(candidate: string, property: string, knownBuildingK
     return false;
   }
   return normalizePropertyName(candidate) === normalizePropertyName(property);
+}
+
+// A Receipt Voucher that credits Rental Revenue (411) is the cash settlement of a rent invoice that has already
+// recognized that revenue. Counting it again doubles rent (e.g. MG91-03: invoice 3,500 + receipt 3,500 = 7,000).
+// Revenue must come from the invoice only, so receipt-sourced 411 credits are excluded from P&L revenue.
+// Correction entries that reverse a receipt's revenue credit (reference VCH-COR-*) are part of the same settlement,
+// so they are excluded too; otherwise the reversing debit would subtract rent a second time.
+function isReceiptSettlement(tx: { source?: string; reference?: string }): boolean {
+  return /receipt/i.test(tx.source || "") || /^VCH-REC-/i.test(tx.reference || "") || /^VCH-COR-/i.test(tx.reference || "");
 }
 
 function formatDateDDMMYYYY(dateStr?: string): string {
@@ -234,6 +244,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         const matchingTx = allLedgerTransactions.filter((tx) => {
           if (tx.account_type !== "Revenue" || !tx.account_code.startsWith("411")) return false;
           if (tx.source === "Receivable Invoice") return false; // already checked above
+          if (isReceiptSettlement(tx)) return false; // a receipt settles an invoice; it never proves revenue
           const txProp = (tx.property_name || "").trim();
           if (!matchesPropertyName(txProp, propName)) return false;
 
@@ -308,6 +319,7 @@ export function PropertyWiseProfitAndLossSubModule() {
       // 2. Compute authoritative Revenue & Expenses strictly from posted General Ledger transactions
       // This guarantees 100% alignment with the Trial Balance and General Ledger!
       let ledgerRentalRev = 0;
+      let receiptSettlementExcluded = 0;
       let otherRevenue = 0;
       let maintenanceExpense = 0;
       let payrollExpense = 0;
@@ -328,7 +340,11 @@ export function PropertyWiseProfitAndLossSubModule() {
         if (tx.account_type === "Revenue") {
           const net = (tx.credit || 0) - (tx.debit || 0);
           if (tx.account_code.startsWith("411")) {
-            ledgerRentalRev += net;
+            if (isReceiptSettlement(tx)) {
+              receiptSettlementExcluded += net; // settlement of an invoice already recognized; not new revenue
+            } else {
+              ledgerRentalRev += net;
+            }
           } else {
             otherRevenue += net;
           }
@@ -369,6 +385,7 @@ export function PropertyWiseProfitAndLossSubModule() {
         totalRevenue,
         contractRentMonth,
         uninvoicedContractRent,
+        receiptSettlementExcluded,
         maintenanceExpense,
         payrollExpense,
         utilitiesExpense,
@@ -986,8 +1003,10 @@ export function PropertyWiseProfitAndLossSubModule() {
                 if (lines.length === 0) return null;
                 const netOf = (tx: any) => (Number(tx.credit) || 0) - (Number(tx.debit) || 0);
                 const ledgerTotal = lines.reduce((s, tx) => s + netOf(tx), 0);
-                const isUnmatched = (tx: any) => !scheduledUnits.has(String(tx.unit_ref || "").trim().toLowerCase());
+                const isSettlement = (tx: any) => isReceiptSettlement(tx);
+                const isUnmatched = (tx: any) => !isSettlement(tx) && !scheduledUnits.has(String(tx.unit_ref || "").trim().toLowerCase());
                 const unmatchedTotal = lines.filter(isUnmatched).reduce((s, tx) => s + netOf(tx), 0);
+                const settlementTotal = lines.filter(isSettlement).reduce((s, tx) => s + netOf(tx), 0);
                 return (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -1019,13 +1038,22 @@ export function PropertyWiseProfitAndLossSubModule() {
                                 <TableCell className="font-mono">{tx.unit_ref || "—"}</TableCell>
                                 <TableCell>{(tx as any).description || "—"}</TableCell>
                                 <TableCell className="text-right font-mono font-medium">{netOf(tx).toLocaleString()}</TableCell>
-                                <TableCell>{unmatched ? <span className="text-amber-700 font-medium">No scheduled unit</span> : <span className="text-emerald-700">Matched</span>}</TableCell>
+                                <TableCell>
+                                  {isSettlement(tx)
+                                    ? <span className="text-muted-foreground font-medium">Excluded: settles invoice</span>
+                                    : unmatched
+                                      ? <span className="text-amber-700 font-medium">No scheduled unit</span>
+                                      : <span className="text-emerald-700">Matched</span>}
+                                </TableCell>
                               </TableRow>
                             );
                           })}
                         </TableBody>
                       </Table>
                     </div>
+                    {settlementTotal !== 0 && (
+                      <p className="text-[11px] text-muted-foreground font-medium">QR {settlementTotal.toLocaleString()} is Receipt Voucher settlement of invoices already recognized, so it is excluded from revenue (not counted twice).</p>
+                    )}
                     {unmatchedTotal !== 0 && (
                       <p className="text-[11px] text-amber-700 font-medium">QR {unmatchedTotal.toLocaleString()} of this total is not matched to a scheduled unit. Check these postings for duplicates or a wrong unit/property and correct them in the ledger.</p>
                     )}

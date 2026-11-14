@@ -60,8 +60,17 @@ export async function persistCoaAccount(
     .limit(1);
   const glRow: any = glRows?.[0];
 
-  const groupName = sib?.group_name || glRow?.group_name || acc.group_name || meta.group;
-  const className = sib?.class_name || glRow?.class_name || acc.class_name || meta.cls;
+  // The class (3-digit, e.g. 510 = Direct Expenses) decides where the ledger appears in the tree. Use the class that
+  // already exists for that code before the generic form default, which would put a 510 ledger under the wrong class.
+  const { data: classRows } = await supabase
+    .from("erp_chart_of_accounts")
+    .select("class_name, group_name")
+    .eq("class_code", code.slice(0, 3))
+    .limit(1);
+  const classRow: any = classRows?.[0];
+
+  const groupName = sib?.group_name || glRow?.group_name || classRow?.group_name || acc.group_name || meta.group;
+  const className = sib?.class_name || glRow?.class_name || classRow?.class_name || acc.class_name || meta.cls;
 
   const finRow: Record<string, unknown> = {
     account_code: code,
@@ -145,6 +154,9 @@ export async function fetchLiveCoaOptions(force = false): Promise<CoaOption[]> {
       .from("fin_coa_accounts")
       .select("account_code, account_name")
       .eq("is_active", true)
+      // Pickers take GL control accounts only. Per-unit, per-tenant and per-vendor sub-ledgers (account_level = SL)
+      // are created by the lease, vendor and deposit flows, and listing all of them buries the real accounts.
+      .or("account_level.is.null,account_level.eq.GL")
       .order("account_code")
       .range(from, from + PAGE - 1);
     if (error || !data || data.length === 0) break;
