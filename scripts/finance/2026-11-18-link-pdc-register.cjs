@@ -6,9 +6,10 @@
 //   - same cheque number and amount, but a different date: linked only if that is the single candidate;
 //   - several candidates: linked only if they all name the same unit and tenant;
 //   - anything else, or a legacy row already used by another register row: left unlinked and listed for review.
-// Customer comes from the lease on that unit. Units with no lease (staff accommodation) take the customer by name
-// from the customer list, if the name matches one customer exactly; otherwise the customer is left blank.
-// Nothing is written for a row that is listed for review.
+// Customer comes from the lease on that unit. Where the lease has no customer, or there is no lease, the customer is
+// taken by name from the customer list, if the name matches exactly one customer; otherwise the customer is left blank.
+// Existing links are cleared first, so the run gives one consistent result. Nothing is written for a row that is
+// listed for review. Dates are compared and written as full dates (year included), shown as dd-mm-yyyy.
 //   node scripts/finance/2026-11-18-link-pdc-register.cjs
 const path = require("path");
 const fs = require("fs");
@@ -21,6 +22,7 @@ const MIGRATION = path.join(root, "supabase/migrations/20261118000000_pdc_regist
 
 const norm = s => String(s || "").toLowerCase().replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/, "").replace(/[^a-z0-9]/g, "");
 const sameUnitTenant = list => list.every(p => p.unit_name === list[0].unit_name && norm(p.tenant_name) === norm(list[0].tenant_name));
+const ddmmyyyy = iso => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}` : "");
 
 (async () => {
   const c = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
@@ -28,9 +30,10 @@ const sameUnitTenant = list => list.every(p => p.unit_name === list[0].unit_name
   await c.query("begin");
   try {
     await c.query(fs.readFileSync(MIGRATION, "utf8"));
+    await c.query("update fin_pdc_register set property_ref = null, unit_ref_id = null, customer_ref = null, lease_ref = null, legacy_pdc_id = null");
 
-    const reg = (await c.query("select id, cheque_number, amount::numeric amt, cheque_date::date d, status from fin_pdc_register order by id")).rows;
-    const legacy = (await c.query("select id, cheque_number, amount::numeric amt, maturity_date::date d, unit_name, property_code, tenant_name, lease_id from pdcs")).rows;
+    const reg = (await c.query("select id, cheque_number, amount::numeric amt, to_char(cheque_date, 'YYYY-MM-DD') d, status from fin_pdc_register order by id")).rows;
+    const legacy = (await c.query("select id, cheque_number, amount::numeric amt, to_char(maturity_date, 'YYYY-MM-DD') d, unit_name, property_code, tenant_name, lease_id from pdcs")).rows;
     const units = new Map((await c.query("select id, upper(unit_code) code, property_id from units")).rows.map(u => [u.code, u]));
     const leases = new Map((await c.query("select id, customer_id from leases where lease_status = 'ACTIVE'")).rows.map(l => [String(l.id), l]));
     const custByName = new Map();
@@ -53,7 +56,7 @@ const sameUnitTenant = list => list.every(p => p.unit_name === list[0].unit_name
     const linked = [], review = [];
     for (const r of reg) {
       const cands = (legacyByChq.get(String(r.cheque_number)) || []).filter(p => Math.abs(Number(p.amt) - Number(r.amt)) < 0.005);
-      const dateExact = cands.filter(p => String(p.d).slice(0, 10) === String(r.d).slice(0, 10));
+      const dateExact = cands.filter(p => p.d === r.d);
       let pick = null, note = "";
       if (dateExact.length === 1) pick = dateExact[0];
       else if (dateExact.length > 1) { if (sameUnitTenant(dateExact)) { pick = dateExact[0]; note = "several legacy rows, same unit and tenant"; } else note = `${dateExact.length} legacy rows with different units or tenants`; }
@@ -61,7 +64,7 @@ const sameUnitTenant = list => list.every(p => p.unit_name === list[0].unit_name
       else if (cands.length > 1) { if (sameUnitTenant(cands)) { pick = cands[0]; note = "several legacy rows with other dates, same unit and tenant"; } else note = `${cands.length} legacy rows with different units or tenants`; }
       else note = "no legacy row with this cheque number and amount";
 
-      const base = { register_id: String(r.id), cheque_number: r.cheque_number, amount: Number(r.amt), cheque_date: String(r.d).slice(0, 10), status: r.status };
+      const base = { register_id: String(r.id), cheque_number: r.cheque_number, amount: Number(r.amt), cheque_date: ddmmyyyy(r.d), status: r.status };
       if (!pick) { review.push({ ...base, reason: note }); continue; }
       if (used.has(String(pick.id))) { review.push({ ...base, reason: "legacy row already linked to another register row" }); continue; }
       const unit = units.get(String(pick.unit_name || "").toUpperCase());
