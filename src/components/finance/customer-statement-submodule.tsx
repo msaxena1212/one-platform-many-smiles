@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useAppData } from "@/lib/app-data-context";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
-import { KAHRAMAA_DEPOSIT_BY_UNIT, resolvePropertyFromUnitCode } from "@/lib/finance/kahramaa-deposits-data";
+import { resolvePropertyFromUnitCode } from "@/lib/finance/kahramaa-deposits-data";
 import { InvoiceViewDialog } from "./invoice-view-dialog";
 import { BulkInvoiceDialog } from "./bulk-invoice-dialog";
 import { toast } from "sonner";
@@ -544,16 +544,15 @@ export function CustomerStatementSubModule({
       if (!matchesCust) return;
 
       const vNameLower = (v.name || "").toLowerCase();
-      const isDepositReceipt = v.voucher_type === "Receipt Voucher" && (
-        v.voucher_no.startsWith("VCH-SD-") ||
+      // Deposit section: cash and cheque deposits held as liabilities (21500 security, 21501 Kahramaa).
+      // Guarantee cheques and reclass journals are not deposits held here: they are shown under PDC in hand.
+      const isReclass = v.voucher_no.startsWith("VCH-COR-") || v.voucher_no.startsWith("VCH-REV-");
+      const isGuaranteeItem = vNameLower.includes("guarantee cheque");
+      const isDepositReceipt = !isReclass && !isGuaranteeItem && (
+        v.voucher_no.startsWith("VCH-SD-RV") ||
         v.voucher_no.startsWith("VCH-KAH-DEP-") ||
-        vNameLower.includes("security deposit") ||
-        vNameLower.includes("kahramaa deposit") ||
-        v.account_code === "21500001" ||
-        v.credit_code === "21500001" ||
-        v.credit_code === "21500" ||
-        v.credit_code === "21100004" ||
-        v.credit_code === "21100"
+        (v.voucher_type === "Receipt Voucher" && (vNameLower.includes("security deposit") || vNameLower.includes("kahramaa deposit") || vNameLower.includes("kahramaa utility deposit"))) ||
+        v.credit_code === "21500" || v.credit_code === "21500001" || v.credit_code === "21501"
       );
 
       const isDepositRefund = v.voucher_type === "Payment Voucher" && (
@@ -656,28 +655,7 @@ export function CustomerStatementSubModule({
           });
         }
 
-        // Ensure Kahramaa Deposit from Kahramaa Deposit.xlsx is present for each leased unit
-        const kahEntry = uCode ? KAHRAMAA_DEPOSIT_BY_UNIT[uCode] : undefined;
-        const kahVchNo = `VCH-KAH-DEP-${uCode}`;
-        if (kahEntry && kahEntry.amount > 0 && !seenVouchers.has(kahVchNo)) {
-          seenVouchers.add(kahVchNo);
-          totalReceived += kahEntry.amount;
-          balance += kahEntry.amount;
-          rows.push({
-            id: `dep-kah-${uCode}`,
-            date: kahEntry.date,
-            voucherNo: kahVchNo,
-            description: `Kahramaa Utility Deposit (${kahEntry.mode}) — ${currentCustomer.name} (${uCode})`,
-            property: resolvePropertyFromUnitCode(uCode) || l.property || "Property",
-            unit: uCode,
-            depositReceived: kahEntry.amount,
-            deductions: 0,
-            refundPaid: 0,
-            runningBalance: balance,
-            paymentMode: kahEntry.mode,
-            status: "Held in Escrow",
-          });
-        }
+        // Kahramaa deposits come from the database vouchers above (VCH-KAH-DEP-*); nothing is added from code data.
       });
     }
 
