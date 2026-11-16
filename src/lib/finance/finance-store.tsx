@@ -708,19 +708,19 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     }
 
     // The property and unit of a line come from the voucher text (every client voucher names its unit, e.g. "(SD70-11)").
-    const UNIT_RE = /([A-Z]{2,4}d{2,3}-[A-Za-z0-9]+)/;
+    const UNIT_RE = /\b([A-Z]{2,4}\d{2,3}-[A-Za-z0-9]+)\b/;
     const unitOf = (text: string): string | undefined => UNIT_RE.exec(text)?.[1];
     const propertyOf = (text: string): string | undefined => {
       const unit = unitOf(text);
       if (unit) return resolvePropertyFromUnitCode(unit);
-      const named = /Al Ameen Residence d{2}/.exec(text);
+      const named = /Al Ameen Residence \d{2}/.exec(text);
       return named?.[0];
     };
     const rows: Array<Record<string, any>> = [];
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from("fin_voucher_lines")
-        .select("id, account_code, account_name, debit_amount, credit_amount, description, fin_vouchers!inner(voucher_number, voucher_date, description, status)")
+        .select("id, account_code, account_name, debit_amount, credit_amount, description, property_id, unit_id, customer_id, fin_vouchers!inner(voucher_number, voucher_date, description, status)")
         .order("id", { ascending: true })
         .range(from, from + 999);
       if (error || !data) return; // keep the last database read
@@ -728,11 +728,21 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       if (data.length < 1000) break;
     }
 
+    // Property, unit and customer come from the links on each line. The text in the voucher is used only for lines
+    // that were posted before the links existed.
+    const { data: propRows } = await supabase.from("properties").select("id, title").limit(1000);
+    const { data: unitRows } = await supabase.from("units").select("id, unit_code").limit(20000);
+    const { data: custRows } = await supabase.from("customers").select("id, display_name, full_name").limit(20000);
+    const propName = new Map<string, string>((propRows || []).map((p: any) => [String(p.id), String(p.title)]));
+    const unitCode = new Map<string, string>((unitRows || []).map((u: any) => [String(u.id), String(u.unit_code)]));
+    const custName = new Map<string, string>((custRows || []).map((c: any) => [String(c.id), String(c.display_name || c.full_name || "")]));
+
     const list: LedgerTransaction[] = rows
       .filter(r => r.fin_vouchers?.status === "posted")
       .map(r => {
         const code = String(r.account_code);
         const acct = coa.get(code);
+        const text = String(r.description || "") + " " + String(r.fin_vouchers.description || "");
         return {
           id: String(r.id),
           date: String(r.fin_vouchers.voucher_date).slice(0, 10),
@@ -744,8 +754,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           credit: Number(r.credit_amount) || 0,
           source: "Voucher",
           description: String(r.description || r.fin_vouchers.description || ""),
-          unit_ref: unitOf(String(r.description || "") + " " + String(r.fin_vouchers.description || "")),
-          property_name: propertyOf(String(r.description || "") + " " + String(r.fin_vouchers.description || "")),
+          unit_ref: (r.unit_id && unitCode.get(String(r.unit_id))) || unitOf(text),
+          property_name: (r.property_id && propName.get(String(r.property_id))) || propertyOf(text),
+          tenant_name: (r.customer_id && custName.get(String(r.customer_id))) || undefined,
         };
       })
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
