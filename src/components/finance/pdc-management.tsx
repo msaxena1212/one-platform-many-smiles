@@ -984,9 +984,45 @@ export function PdcManagement() {
         }
       }
 
-      // Dataset merges pdcs table, standalone fin_pdc_register, and active renewal PDCs
-      const allPdcs = Array.from(dbDataMap.values());
-      setPdcs(allPdcs);
+      // Dataset merges pdcs table, standalone fin_pdc_register, and active renewal PDCs.
+      // Every row is then named from the master records (property, unit code and customer), so the filters list each
+      // property, unit and customer once. The register link (fin_id) is used where it exists.
+      const [propM, unitM, custM] = await Promise.all([
+        supabase.from("properties").select("id, title").limit(1000),
+        supabase.from("units").select("id, unit_code, property_id").limit(20000),
+        supabase.from("customers").select("id, display_name, full_name").limit(20000),
+      ]);
+      const pnorm = (s: any) => String(s || "").toLowerCase().replace(/^(ms\.|mr\.|mrs\.|dr\.|m\/s\.?)\s*/, "").replace(/[^a-z0-9]/g, "");
+      const propById = new Map<string, string>((propM.data || []).map((p: any) => [String(p.id), String(p.title)]));
+      const unitById = new Map<string, { code: string; property_id: string }>((unitM.data || []).map((u: any) => [String(u.id), { code: String(u.unit_code).toUpperCase(), property_id: String(u.property_id) }]));
+      const unitByCode = new Map<string, { code: string; property_id: string }>(Array.from(unitById.values()).map(u => [u.code, u]));
+      const custById = new Map<string, string>((custM.data || []).map((c: any) => [String(c.id), String(c.display_name || c.full_name || "")]));
+      const custByNorm = new Map<string, string>();
+      const ambiguousNorm = new Set<string>();
+      for (const c of (custM.data || []) as any[]) {
+        for (const nm of [c.display_name, c.full_name]) {
+          const k = pnorm(nm);
+          if (!k) continue;
+          if (custByNorm.has(k) && custByNorm.get(k) !== String(c.display_name || c.full_name)) ambiguousNorm.add(k);
+          custByNorm.set(k, String(c.display_name || c.full_name || ""));
+        }
+      }
+      const regById = new Map<string, any>(rawFinRegister.map((r: any) => [String(r.id), r]));
+      const canonical = Array.from(dbDataMap.values()).map((row: any) => {
+        const reg = row.fin_id != null ? regById.get(String(row.fin_id)) : undefined;
+        const rawUnit = row.unit_ref && row.unit_ref !== "—" ? String(row.unit_ref).trim().toUpperCase() : "";
+        const unit = (reg?.unit_ref_id ? unitById.get(String(reg.unit_ref_id)) : undefined) || (rawUnit ? unitByCode.get(rawUnit) : undefined);
+        const propId = unit?.property_id || (reg?.property_ref ? String(reg.property_ref) : undefined);
+        const property_name = (propId && propById.get(propId)) || (row.property_name && row.property_name !== "—" ? row.property_name : "—");
+        let tenant_name = row.tenant_name;
+        if (reg?.customer_ref && custById.get(String(reg.customer_ref))) tenant_name = custById.get(String(reg.customer_ref));
+        else {
+          const k = pnorm(row.tenant_name);
+          if (k && custByNorm.has(k) && !ambiguousNorm.has(k)) tenant_name = custByNorm.get(k);
+        }
+        return { ...row, property_name, unit_ref: unit ? unit.code : (rawUnit || row.unit_ref), tenant_name };
+      });
+      setPdcs(canonical);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
