@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -963,8 +964,8 @@ export function ArApAgingReportSubModule() {
                 {selectedPartyRow?.items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-mono text-xs font-semibold">{item.invoiceNo}</TableCell>
-                    <TableCell className="text-xs font-mono">{item.invoiceDate}</TableCell>
-                    <TableCell className="text-xs font-mono">{item.dueDate}</TableCell>
+                    <TableCell className="text-xs font-mono">{formatDateDDMMYYYY(item.invoiceDate)}</TableCell>
+                    <TableCell className="text-xs font-mono">{formatDateDDMMYYYY(item.dueDate)}</TableCell>
                     <TableCell>
                       <Badge
                         variant={item.daysOverdue > 60 ? "destructive" : "outline"}

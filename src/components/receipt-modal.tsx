@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useRef } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -314,7 +315,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
                   : (ackSub?.documentTitle || 'OFFICIAL PAYMENT RECEIPT')}
               </Badge>
               <p className="text-xs font-mono mt-1 text-muted-foreground">No: <strong className="text-foreground">{currentData.receiptNo}</strong></p>
-              <p className="text-xs text-muted-foreground">Date: {currentData.date}</p>
+              <p className="text-xs text-muted-foreground">Date: {formatDateDDMMYYYY(currentData.date)}</p>
             </div>
           </div>
 
@@ -337,7 +338,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
               </div>
               <p className="font-semibold text-foreground">{currentData.propertyName}</p>
               <p className="text-muted-foreground">Unit / Flat: <strong className="text-primary font-mono">{currentData.unitRef}</strong></p>
-              <p className="text-muted-foreground">Lease Period: <span className="font-medium text-foreground">{currentData.leaseStartDate}</span> to <span className="font-medium text-foreground">{currentData.leaseEndDate}</span></p>
+              <p className="text-muted-foreground">Lease Period: <span className="font-medium text-foreground">{formatDateDDMMYYYY(currentData.leaseStartDate)}</span> to <span className="font-medium text-foreground">{formatDateDDMMYYYY(currentData.leaseEndDate)}</span></p>
               <p className="text-muted-foreground">Monthly Rent: <strong className="text-foreground">QR {currentData.monthlyRent?.toLocaleString()}</strong></p>
             </div>
           </div>
@@ -396,7 +397,7 @@ export function ReceiptModal({ open, onOpenChange, data, secondaryData }: Receip
                           <td className="py-1.5 px-3 font-mono text-muted-foreground">{idx + 1}</td>
                           <td className="py-1.5 px-3 font-mono font-bold text-primary">{pdc.chequeNo}</td>
                           <td className="py-1.5 px-3">{pdc.bank}</td>
-                          <td className="py-1.5 px-3 font-mono">{pdc.date}</td>
+                          <td className="py-1.5 px-3 font-mono">{formatDateDDMMYYYY(pdc.date)}</td>
                           <td className="py-1.5 px-3 font-mono text-muted-foreground">{displayPeriod}</td>
                           <td className="py-1.5 px-3 text-right font-mono font-semibold">QR {pdc.amount.toLocaleString()}</td>
                         </tr>

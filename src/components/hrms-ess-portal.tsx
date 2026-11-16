@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   User, Calendar, Clock, DollarSign, Award, Receipt, FileText, Send,
@@ -845,7 +846,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
                       {filteredAttendance.map((a, i) => (
                         <TableRow key={i}>
                           <TableCell className="text-xs">
-                            <span className="font-semibold block">{a.date}</span>
+                            <span className="font-semibold block">{formatDateDDMMYYYY(a.date)}</span>
                             <span className="text-[10px] text-muted-foreground">{a.day}</span>
                           </TableCell>
                           <TableCell className="font-mono text-xs text-emerald-600 font-semibold">{a.inTime}</TableCell>
@@ -1592,7 +1593,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{exp.type}</TableCell>
-                        <TableCell className="text-xs">{exp.date}</TableCell>
+                        <TableCell className="text-xs">{formatDateDDMMYYYY(exp.date)}</TableCell>
                         <TableCell className="text-xs font-bold text-primary">{exp.amount.toLocaleString()} QAR</TableCell>
                         <TableCell className="text-right">
                           <Badge
@@ -1876,7 +1877,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
                         <TableCell className="font-mono font-bold text-xs text-primary">{t.number}</TableCell>
                         <TableCell className="text-xs font-medium">{t.subject}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{t.category}</TableCell>
-                        <TableCell className="text-xs">{t.date}</TableCell>
+                        <TableCell className="text-xs">{formatDateDDMMYYYY(t.date)}</TableCell>
                         <TableCell className="text-right">
                           <Badge
                             variant="outline"
@@ -2295,7 +2296,7 @@ export function HrmsEssPortal({ currentEmployee, activeTabProp }: HrmsEssPortalP
                       Eligible Leave & Leave Salary Preview
                     </span>
                     <span className="font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
-                      Ref: {calc.serviceReferenceDate}
+                      Ref: {formatDateDDMMYYYY(calc.serviceReferenceDate)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">

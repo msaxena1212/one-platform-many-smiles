@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { getDbState, setDbState } from "@/lib/database-state";
@@ -2361,7 +2362,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                           <span className="text-[10px] text-muted-foreground">{wo.assigneeType === "in_house" ? "In-House Staff" : "3rd-Party Vendor"}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{wo.scheduledDate}</TableCell>
+                      <TableCell>{formatDateDDMMYYYY(wo.scheduledDate)}</TableCell>
                       <TableCell className="text-right font-mono font-bold">QAR {wo.totalCost.toLocaleString()}</TableCell>
                       <TableCell>
                         <Select
@@ -2454,7 +2455,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                         </div>
                       </TableCell>
                       <TableCell><Badge variant="secondary" className="text-[10px]">{ppm.frequency}</Badge></TableCell>
-                      <TableCell className="font-semibold text-orange-600">{ppm.nextDueDate}</TableCell>
+                      <TableCell className="font-semibold text-orange-600">{formatDateDDMMYYYY(ppm.nextDueDate)}</TableCell>
                       <TableCell>{ppm.assignedVendorName || "In-House Team"}</TableCell>
                       <TableCell className="text-right font-mono font-bold">QAR {ppm.estimatedCost.toLocaleString()}</TableCell>
                       <TableCell className="text-muted-foreground">{ppm.checklist.length} checklist checkpoints</TableCell>
@@ -2932,7 +2933,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
               <div className="rounded-lg bg-muted/40 p-3.5 text-xs space-y-2 border border-border/60">
                 <div className="grid grid-cols-2 gap-2 text-muted-foreground">
                   <p><span className="font-semibold text-foreground">Reported By:</span> {selectedTicket.reported_by || "Tenant"}</p>
-                  <p><span className="font-semibold text-foreground">Date Logged:</span> {selectedTicket.created_at}</p>
+                  <p><span className="font-semibold text-foreground">Date Logged:</span> {formatDateDDMMYYYY(selectedTicket.created_at)}</p>
                 </div>
                 <div className="pt-1 border-t border-border/40">
                   <span className="font-semibold text-foreground">Description & Symptoms:</span>
@@ -3773,7 +3774,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                   </div>
                   <div>
                     <span className="block text-[10px] uppercase font-semibold">Scheduled Date</span>
-                    <span className="font-medium text-foreground">{selectedWoForDetail.scheduledDate}</span>
+                    <span className="font-medium text-foreground">{formatDateDDMMYYYY(selectedWoForDetail.scheduledDate)}</span>
                   </div>
                   <div>
                     <span className="block text-[10px] uppercase font-semibold">Labor + Spares</span>
@@ -5727,7 +5728,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
               {/* Receipt Header Card */}
               <div className="p-3.5 rounded-xl bg-muted/30 border border-border space-y-2.5">
                 <div className="flex justify-between items-center text-[11px] text-muted-foreground pb-2 border-b border-border/50">
-                  <span>Issued Date: <strong className="text-foreground">{generatedReceipt.date}</strong></span>
+                  <span>Issued Date: <strong className="text-foreground">{formatDateDDMMYYYY(generatedReceipt.date)}</strong></span>
                   <span>Ref #: <strong className="font-mono text-orange-600">{generatedReceipt.referenceId}</strong></span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">

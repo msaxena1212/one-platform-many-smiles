@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -184,8 +185,8 @@ export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails
               </span>
               <p className="text-xl font-mono font-bold text-foreground">{invoice.invoice_no}</p>
               <div className="text-xs space-y-1 mt-2 text-muted-foreground font-medium">
-                <p>Issue Date: <span className="font-mono text-foreground font-semibold">{invoice.date}</span></p>
-                <p>Due Date: <span className="font-mono text-foreground font-semibold">{invoice.due_date}</span></p>
+                <p>Issue Date: <span className="font-mono text-foreground font-semibold">{formatDateDDMMYYYY(invoice.date)}</span></p>
+                <p>Due Date: <span className="font-mono text-foreground font-semibold">{formatDateDDMMYYYY(invoice.due_date)}</span></p>
                 <p>Payment Terms: <span className="text-foreground">Due Upon Receipt</span></p>
               </div>
             </div>
@@ -241,7 +242,7 @@ export function InvoiceViewDialog({ invoice, open, onOpenChange, customerDetails
                   <td className="px-4 py-3">
                     <p className="font-semibold text-foreground">{invoice.stream.replace(/^\d+\s*[-–—]\s*/, "")}</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Charges for {invoice.property} &bull; Unit {invoice.unit} &bull; Due: {invoice.due_date}
+                      Charges for {invoice.property} &bull; Unit {invoice.unit} &bull; Due: {formatDateDDMMYYYY(invoice.due_date)}
                     </p>
                   </td>
                   <td className="px-4 py-3 font-mono text-muted-foreground">{invoice.stream}</td>

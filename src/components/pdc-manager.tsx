@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiDb } from "@/lib/api-db";
@@ -107,7 +108,7 @@ export function PdcManager({ leaseId }: { leaseId: string }) {
                     <td className="px-4 py-3 font-mono">{pdc.cheque_number}</td>
                     <td className="px-4 py-3">{pdc.bank} {pdc.bank_branch ? `(${pdc.bank_branch})` : ''}</td>
                     <td className="px-4 py-3 font-medium text-foreground">QR {pdc.amount.toLocaleString()}</td>
-                    <td className="px-4 py-3">{pdc.deposit_date}</td>
+                    <td className="px-4 py-3">{formatDateDDMMYYYY(pdc.deposit_date)}</td>
                     <td className="px-4 py-3">{pdc.maturity_date || '—'}</td>
                     <td className="px-4 py-3">
                       <Badge variant={pdc.status === 'CLEARED' ? 'default' : pdc.status === 'BOUNCED' ? 'destructive' : 'outline'}>

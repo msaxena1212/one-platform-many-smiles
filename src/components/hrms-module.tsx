@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
 import {
@@ -1802,7 +1803,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                               </div>
                             </TableCell>
                             <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                              {att.attendance_date}
+                              {formatDateDDMMYYYY(att.attendance_date)}
                             </TableCell>
                             <TableCell className="text-xs font-mono whitespace-nowrap">
                               {att.first_in ? (
@@ -1976,7 +1977,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                         </TableCell>
                         <TableCell className="text-xs">
                           <div className="font-semibold">
-                            {l.start_date} → {l.end_date} ({l.days_count} Days)
+                            {formatDateDDMMYYYY(l.start_date)} → {formatDateDDMMYYYY(l.end_date)} ({l.days_count} Days)
                           </div>
                           {expectedRejoin && (
                             <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
@@ -2389,8 +2390,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                           <TableRow key={c.id}>
                             <TableCell className="font-semibold text-sm">{c.title}</TableCell>
                             <TableCell className="text-xs">{c.interval_type || "Annual"}</TableCell>
-                            <TableCell className="text-xs font-mono">{c.start_date}</TableCell>
-                            <TableCell className="text-xs font-mono">{c.end_date}</TableCell>
+                            <TableCell className="text-xs font-mono">{formatDateDDMMYYYY(c.start_date)}</TableCell>
+                            <TableCell className="text-xs font-mono">{formatDateDDMMYYYY(c.end_date)}</TableCell>
                             <TableCell>
                               <Badge variant={c.status === "Active" ? "default" : "outline"}>
                                 {c.status}
@@ -2447,7 +2448,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                         {claim.employees ? `${claim.employees.first_name} ${claim.employees.last_name}` : "Employee"}
                       </TableCell>
                       <TableCell className="text-sm font-semibold">{claim.title}</TableCell>
-                      <TableCell className="text-xs">{claim.expense_date}</TableCell>
+                      <TableCell className="text-xs">{formatDateDDMMYYYY(claim.expense_date)}</TableCell>
                       <TableCell className="text-sm font-bold">{Number(claim.amount).toLocaleString()} QAR</TableCell>
                       <TableCell>
                         <Badge
@@ -2540,8 +2541,8 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                       <TableCell className="font-medium text-sm">
                         {res.employees ? `${res.employees.first_name} ${res.employees.last_name}` : "Employee"}
                       </TableCell>
-                      <TableCell className="text-xs">{res.resignation_date}</TableCell>
-                      <TableCell className="text-xs font-semibold">{res.requested_last_working_date}</TableCell>
+                      <TableCell className="text-xs">{formatDateDDMMYYYY(res.resignation_date)}</TableCell>
+                      <TableCell className="text-xs font-semibold">{formatDateDDMMYYYY(res.requested_last_working_date)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground max-w-xs truncate">{res.reason}</TableCell>
                       <TableCell>
                         <Badge variant={res.status === "Accepted" ? "default" : "outline"}>{res.status}</Badge>
@@ -3543,7 +3544,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
           <DialogHeader>
             <DialogTitle>Update Attendance — {payrollCycle?.name}</DialogTitle>
             <DialogDescription>
-              Paid days default to the full calendar month ({payrollMonthDays} days, {payrollCycle?.start_date} to {payrollCycle?.end_date}).
+              Paid days default to the full calendar month ({payrollMonthDays} days, {formatDateDDMMYYYY(payrollCycle?.start_date)} to {formatDateDDMMYYYY(payrollCycle?.end_date)}).
               Enter unpaid days and overtime from the attendance records; changing either paid or unpaid days updates the other.
               Saving replaces the daily attendance for the edited employees in this cycle.
             </DialogDescription>

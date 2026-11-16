@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useState, useEffect, useMemo } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -2761,7 +2762,7 @@ export function PdcManagement() {
                       </div>
                       <div className="text-right">
                         <div className="text-[11px] text-muted-foreground">Date</div>
-                        <div className="font-mono font-bold">{current.date}</div>
+                        <div className="font-mono font-bold">{formatDateDDMMYYYY(current.date)}</div>
                       </div>
                     </div>
 
@@ -4258,7 +4259,7 @@ export function PdcManagement() {
                                 Instalment #{idx + 1}
                               </span>
                               <span className="text-[10px] font-mono text-muted-foreground">
-                                {r.date}
+                                {formatDateDDMMYYYY(r.date)}
                               </span>
                             </div>
                             <div className="text-sm font-mono font-bold text-foreground">
@@ -4283,7 +4284,7 @@ export function PdcManagement() {
                           Receipt #{activeReceipt.receiptNo}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
-                          Issued on {activeReceipt.date} • Cashier: {activeReceipt.cashierName || "Finance Department"}
+                          Issued on {formatDateDDMMYYYY(activeReceipt.date)} • Cashier: {activeReceipt.cashierName || "Finance Department"}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

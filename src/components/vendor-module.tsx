@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
@@ -841,8 +842,8 @@ async function handleSaveInvoice() {
                           <TableCell className="font-semibold">{vendors.find(v => String(v.id) === String(inv.vendor_id))?.name || inv.vendor_id}</TableCell>
                           <TableCell className="font-mono text-cyan-500">{inv.po_number || "—"}</TableCell>
                           <TableCell className="font-mono text-emerald-500">{inv.grn_number || "—"}</TableCell>
-                          <TableCell>{inv.invoice_date}</TableCell>
-                          <TableCell>{inv.due_date ? <span className={inv.status !== "PAID" && new Date(inv.due_date) < new Date() ? "text-destructive font-semibold" : ""}>{inv.due_date}</span> : "—"}</TableCell>
+                          <TableCell>{formatDateDDMMYYYY(inv.invoice_date)}</TableCell>
+                          <TableCell>{inv.due_date ? <span className={inv.status !== "PAID" && new Date(inv.due_date) < new Date() ? "text-destructive font-semibold" : ""}>{formatDateDDMMYYYY(inv.due_date)}</span> : "—"}</TableCell>
                           <TableCell className="text-right">
                             <div className="font-semibold">QAR {totalDue.toLocaleString()}</div>
                             <div className="text-[10px] text-muted-foreground font-mono">
@@ -924,7 +925,7 @@ async function handleSaveInvoice() {
                         <TableCell className="font-mono font-bold text-primary">{inv.invoice_number}</TableCell>
                         <TableCell className="font-semibold">{vendors.find(v => String(v.id) === String(inv.vendor_id))?.name || inv.vendor_id}</TableCell>
                         <TableCell className="font-mono text-muted-foreground">{[inv.po_number, inv.grn_number].filter(Boolean).join(" → ") || "—"}</TableCell>
-                        <TableCell>{inv.invoice_date}</TableCell>
+                        <TableCell>{formatDateDDMMYYYY(inv.invoice_date)}</TableCell>
                         <TableCell className="text-right font-semibold font-mono text-emerald-600">{Number(inv.total_amount || 0).toLocaleString()}</TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 text-emerald-600 border-emerald-500/40" onClick={() => openPaymentReceipt(inv)}>
@@ -1904,7 +1905,7 @@ async function handleSaveInvoice() {
                           {posForVendor.map((po) => (
                             <TableRow key={po.id} className="text-xs hover:bg-muted/30">
                               <TableCell className="font-mono font-bold text-primary">{po.doc_number}</TableCell>
-                              <TableCell>{po.po_date}</TableCell>
+                              <TableCell>{formatDateDDMMYYYY(po.po_date)}</TableCell>
                               <TableCell>{po.delivery_date || "—"}</TableCell>
                               <TableCell className="text-right font-mono font-bold">QAR {Number(po.total_amount).toLocaleString()}</TableCell>
                               <TableCell>

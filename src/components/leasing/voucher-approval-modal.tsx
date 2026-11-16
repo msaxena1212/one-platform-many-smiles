@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -120,7 +121,7 @@ export const VoucherApprovalModal: React.FC<VoucherApprovalModalProps> = ({
                           Origin: {v.origin_module || "leasing"}
                         </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">Date: {v.voucher_date}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Date: {formatDateDDMMYYYY(v.voucher_date)}</p>
                       <p className="text-sm mt-1">{v.narration}</p>
                     </div>
                     <div className="text-right">

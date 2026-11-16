@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1945,7 +1946,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                           <TableCell>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-mono font-bold text-primary text-xs">{pr.doc_number}</span>
-                              <span className="text-muted-foreground text-[11px]">{pr.request_date}</span>
+                              <span className="text-muted-foreground text-[11px]">{formatDateDDMMYYYY(pr.request_date)}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2076,7 +2077,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       jobCardIssues.map((iss) => (
                         <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
                           <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
-                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell className="font-mono">{formatDateDDMMYYYY(iss.issueDate)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
                               {iss.jobCardNo}
@@ -2131,7 +2132,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                           <TableCell>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-mono font-bold text-primary text-xs">{po.doc_number}</span>
-                              <span className="text-muted-foreground text-[11px]">{po.po_date}</span>
+                              <span className="text-muted-foreground text-[11px]">{formatDateDDMMYYYY(po.po_date)}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2291,7 +2292,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       jobCardIssues.map((iss) => (
                         <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
                           <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
-                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell className="font-mono">{formatDateDDMMYYYY(iss.issueDate)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
                               {iss.jobCardNo}
@@ -2419,7 +2420,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                           <TableCell>
                             <div className="flex flex-col gap-0.5">
                               <span className="font-semibold text-foreground text-xs truncate max-w-[160px]">{getVendorName(g.vendor_id)}</span>
-                              <span className="text-muted-foreground text-[11px]">{g.grn_date}</span>
+                              <span className="text-muted-foreground text-[11px]">{formatDateDDMMYYYY(g.grn_date)}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -2546,7 +2547,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       jobCardIssues.map((iss) => (
                         <TableRow key={iss.id} className="text-xs hover:bg-muted/30">
                           <TableCell className="font-mono font-bold text-primary">{iss.issueNo}</TableCell>
-                          <TableCell className="font-mono">{iss.issueDate}</TableCell>
+                          <TableCell className="font-mono">{formatDateDDMMYYYY(iss.issueDate)}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className="font-mono text-xs border-amber-500/40 bg-amber-500/10 text-amber-800">
                               {iss.jobCardNo}
@@ -2627,7 +2628,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       <TableCell className="font-mono font-bold text-primary">{r.rfx_number}</TableCell>
                       <TableCell className="font-semibold">{r.title}</TableCell>
                       <TableCell><Badge variant="outline">{r.rfx_type}</Badge></TableCell>
-                      <TableCell>{r.closing_date}</TableCell>
+                      <TableCell>{formatDateDDMMYYYY(r.closing_date)}</TableCell>
                       <TableCell><Badge variant="default">{r.status}</Badge></TableCell>
                     </TableRow>
                   ))}
@@ -2719,7 +2720,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       {prs.filter(p => p.status === "SUBMITTED").map(pr => (
                         <TableRow key={pr.id} className="text-xs hover:bg-muted/30">
                           <TableCell className="font-mono font-bold text-primary">{pr.doc_number}</TableCell>
-                          <TableCell>{pr.request_date}</TableCell>
+                          <TableCell>{formatDateDDMMYYYY(pr.request_date)}</TableCell>
                           <TableCell>{getPropertyName(pr.property_id)}</TableCell>
                           <TableCell><Badge variant="outline">{pr.priority || "NORMAL"}</Badge></TableCell>
                           <TableCell className="text-right font-mono font-bold">QAR {Number(pr.total_amount || 0).toLocaleString()}</TableCell>
@@ -2944,7 +2945,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                             <span className="text-[10px] text-muted-foreground">{modeDisplay}</span>
                           </div>
                         </TableCell>
-                        <TableCell>{inv.invoice_date}</TableCell>
+                        <TableCell>{formatDateDDMMYYYY(inv.invoice_date)}</TableCell>
                         <TableCell className="text-right">
                           <div className="font-mono font-bold">{totalDue.toLocaleString()}</div>
                           {isPartial && alreadyPaid > 0 && (
@@ -5524,7 +5525,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       <Badge variant="outline" className="text-[10px]">{viewPr.priority || "NORMAL"} Priority</Badge>
                     </div>
                     <DialogDescription className="text-xs mt-0.5">
-                      Purchase Requisition • Requested on {viewPr.request_date}
+                      Purchase Requisition • Requested on {formatDateDDMMYYYY(viewPr.request_date)}
                     </DialogDescription>
                   </div>
                   <div className="text-right">
@@ -5627,7 +5628,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       <Badge variant={statusBadgeVariant(viewPo.status)}>{viewPo.status}</Badge>
                     </div>
                     <DialogDescription className="text-xs mt-0.5">
-                      Purchase Order • Issued on {viewPo.po_date} • Vendor: {getVendorName(viewPo.vendor_id)}
+                      Purchase Order • Issued on {formatDateDDMMYYYY(viewPo.po_date)} • Vendor: {getVendorName(viewPo.vendor_id)}
                     </DialogDescription>
                   </div>
                   <div className="text-right">
@@ -6004,7 +6005,7 @@ export function ProcurementModule({ role }: { role: "admin" | "prop-mgr" | "fina
                       <Badge variant="default" className="bg-emerald-600">{viewGrn.status}</Badge>
                     </div>
                     <DialogDescription className="text-xs mt-0.5">
-                      Goods Receipt Note • Received on {viewGrn.grn_date} • Vendor: {getVendorName(viewGrn.vendor_id)}
+                      Goods Receipt Note • Received on {formatDateDDMMYYYY(viewGrn.grn_date)} • Vendor: {getVendorName(viewGrn.vendor_id)}
                     </DialogDescription>
                   </div>
                   <div className="text-right">

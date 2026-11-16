@@ -549,8 +549,8 @@ function FinancialYearSubModule() {
             {data.map((row) => (
               <TableRow key={row.id} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-semibold">{row.name}</TableCell>
-                <TableCell>{row.start_date}</TableCell>
-                <TableCell>{row.end_date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(row.start_date)}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(row.end_date)}</TableCell>
                 <TableCell><Badge variant={row.status === "Active" ? "default" : "secondary"}>{row.status}</Badge></TableCell>
                 <TableCell><Button variant="ghost" size="icon" onClick={() => handleDelete(String(row.id))}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>
               </TableRow>
@@ -3567,7 +3567,7 @@ function GrnCostMappingSubModule() {
           <TableBody>
             {grnList.map((row, idx) => (
               <TableRow key={row.id || idx} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.grn_no}</TableCell>
                 <TableCell className="font-mono text-cyan-600">{row.po_ref}</TableCell>
                 <TableCell className="font-semibold">{row.vendor}</TableCell>
@@ -5815,7 +5815,7 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
             ) : (
               filteredInvoices.map((row) => (
                 <TableRow key={row.invoice_no} className="hover:bg-muted/30 text-xs">
-                  <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                  <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">
                     <button
                       onClick={() => setSelectedInvoiceForView(row)}
@@ -5828,7 +5828,7 @@ function ReceivableInvoiceSubModule({ role }: { role: FinanceModuleProps["role"]
                   <TableCell className="font-semibold">{row.tenant}</TableCell>
                   <TableCell className="text-muted-foreground">{row.property} — <strong className="font-mono text-foreground">{row.unit}</strong></TableCell>
                   <TableCell className="font-mono text-xs text-blue-600 dark:text-blue-400">{row.stream}</TableCell>
-                  <TableCell className="font-mono">{row.due_date}</TableCell>
+                  <TableCell className="font-mono">{formatDateDDMMYYYY(row.due_date)}</TableCell>
                   <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant={row.status === "Paid" ? "default" : row.status === "Overdue" ? "destructive" : "outline"} className="text-[10px]">
@@ -6902,11 +6902,11 @@ function BankClearanceSubModule() {
           <TableBody>
             {[...combinedClearances].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row, idx) => (
               <TableRow key={idx} className="hover:bg-muted/30 text-xs">
-                <TableCell className="font-mono text-muted-foreground">{row.date}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">{formatDateDDMMYYYY(row.date)}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{row.ref}</TableCell>
                 <TableCell className="font-medium">{row.bank}</TableCell>
                 <TableCell>{row.type}</TableCell>
-                <TableCell>{row.date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(row.date)}</TableCell>
                 <TableCell className="text-right font-mono font-bold">{row.amount.toLocaleString()}</TableCell>
                 <TableCell>
                   <Badge variant={row.status === "Cleared" ? "default" : "outline"} className="text-[10px]">
@@ -7024,7 +7024,7 @@ function BankReconciliationSubModule() {
               <TableRow key={r.id} className="hover:bg-muted/30 text-xs">
                 <TableCell className="font-mono text-muted-foreground">{(r as any).entry_date || r.statement_date}</TableCell>
                 <TableCell className="font-mono font-bold text-primary">{r.account_number}</TableCell>
-                <TableCell>{r.statement_date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(r.statement_date)}</TableCell>
                 <TableCell className="text-right font-mono font-semibold">{r.book_balance.toLocaleString()}</TableCell>
                 <TableCell className="text-right font-mono font-semibold">{r.statement_balance.toLocaleString()}</TableCell>
                 <TableCell className="text-right font-mono font-bold text-emerald-600">{(r.book_balance - r.statement_balance).toLocaleString()} QAR</TableCell>
@@ -7091,7 +7091,7 @@ function BankReconciliationStatementListSubModule() {
           <div key={item.id} className="border rounded-lg p-3.5 bg-card flex justify-between items-center text-xs shadow-sm">
             <div>
               <p className="font-semibold text-foreground">{item.title}</p>
-              <p className="text-[11px] text-muted-foreground">Entry Date: <span className="font-mono">{item.entry_date}</span> • Period: {item.period} • Certified Balance: <strong className="text-emerald-600">{item.balance}</strong></p>
+              <p className="text-[11px] text-muted-foreground">Entry Date: <span className="font-mono">{formatDateDDMMYYYY(item.entry_date)}</span> • Period: {item.period} • Certified Balance: <strong className="text-emerald-600">{item.balance}</strong></p>
             </div>
             <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast.success(`Exporting Statement PDF for ${item.title}`)}>
               <Download className="h-3 w-3" /> PDF Statement
@@ -8428,7 +8428,7 @@ function RevenueGenerationSubModule() {
                     {savedBatches.map((b) => (
                       <TableRow key={b.batchId} className="hover:bg-muted/30">
                         <TableCell className="font-mono font-bold text-primary">{b.batchId}</TableCell>
-                        <TableCell className="font-mono">{b.asOfDate}</TableCell>
+                        <TableCell className="font-mono">{formatDateDDMMYYYY(b.asOfDate)}</TableCell>
                         <TableCell className="text-muted-foreground">{new Date(b.generatedAt).toLocaleString()}</TableCell>
                         <TableCell className="text-[11px]">{b.prorationMethod}</TableCell>
                         <TableCell className="text-center font-mono">{b.totalTenants}</TableCell>
@@ -8537,7 +8537,7 @@ function RevenueGenerationSubModule() {
                   Revenue Batch Details — {selectedBatchDetails?.batchId}
                 </DialogTitle>
                 <DialogDescription className="text-xs">
-                  As-Of Date: <span className="font-mono font-bold text-slate-800">{selectedBatchDetails?.asOfDate}</span> • Generated: {selectedBatchDetails?.generatedAt ? new Date(selectedBatchDetails.generatedAt).toLocaleString() : ""}
+                  As-Of Date: <span className="font-mono font-bold text-slate-800">{formatDateDDMMYYYY(selectedBatchDetails?.asOfDate)}</span> • Generated: {selectedBatchDetails?.generatedAt ? new Date(selectedBatchDetails.generatedAt).toLocaleString() : ""}
                 </DialogDescription>
               </DialogHeader>
               <ScrollArea className="flex-1 mt-2">
@@ -8863,7 +8863,7 @@ function RevenueGenerationSubModule() {
                 const isPdc = (tx.source || "").toLowerCase() === "pdc";
                 return (
                   <TableRow key={tx.id} className={`hover:bg-muted/30 ${isPdc ? "bg-blue-50/30" : ""}`}>
-                    <TableCell className="font-mono">{tx.date}</TableCell>
+                    <TableCell className="font-mono">{formatDateDDMMYYYY(tx.date)}</TableCell>
                     <TableCell className="font-mono text-primary">
                       {tx.reference}
                       {isPdc && <span className="ml-1 text-[9px] bg-blue-100 text-blue-700 rounded px-1 py-0.5">PDC</span>}
@@ -10398,7 +10398,7 @@ function CashBookSubModule() {
             ) : (
               displayRows.map((row) => (
                 <TableRow key={row.id} className="hover:bg-muted/30">
-                  <TableCell className="font-mono">{row.date}</TableCell>
+                  <TableCell className="font-mono">{formatDateDDMMYYYY(row.date)}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">{row.voucher}</TableCell>
                   <TableCell className="font-medium">{row.description}</TableCell>
                   <TableCell className="text-right font-mono font-semibold text-emerald-600">{(row.cash_in || 0) > 0 ? (row.cash_in || 0).toLocaleString() : "—"}</TableCell>
@@ -10529,7 +10529,7 @@ function PettyCashBookSubModule() {
           <TableBody className="text-xs">
             {[...pettyCashEntries].sort((a, b) => new Date(b.date || "").getTime() - new Date(a.date || "").getTime()).map((row) => (
               <TableRow key={row.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono">{row.date}</TableCell>
+                <TableCell className="font-mono">{formatDateDDMMYYYY(row.date)}</TableCell>
                 <TableCell className="font-medium">{row.expense}</TableCell>
                 <TableCell>{row.paid_to}</TableCell>
                 <TableCell className="text-right font-mono font-bold text-rose-600">{row.amount.toLocaleString()}</TableCell>
@@ -10741,7 +10741,7 @@ function ContractManagementSubModule({ type }: { type: "Expense" | "Revenue" }) 
                 <TableCell className="text-right font-mono font-bold text-emerald-600">
                   QR {Number(c.total_value).toLocaleString()}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{c.start_date} to {c.end_date}</TableCell>
+                <TableCell className="text-muted-foreground">{formatDateDDMMYYYY(c.start_date)} to {formatDateDDMMYYYY(c.end_date)}</TableCell>
                 <TableCell>
                   <Badge variant={c.status === "Active" ? "default" : "outline"} className="text-[10px]">
                     {c.status}
@@ -11176,7 +11176,7 @@ function DebitNoteSubModule() {
             ) : notes.map(dn => (
               <TableRow key={dn.id} className="text-xs hover:bg-muted/30">
                 <TableCell className="font-mono font-bold text-rose-600">{dn.dn_number}</TableCell>
-                <TableCell>{dn.date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(dn.date)}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className={`text-[10px] ${dn.party_type === "Customer" ? "border-cyan-500 text-cyan-600 bg-cyan-50/40" : "border-violet-500 text-violet-600 bg-violet-50/40"}`}>
                     {dn.party_type || "Vendor"}
@@ -11584,7 +11584,7 @@ function CreditNoteSubModule() {
             ) : notes.map(cn => (
               <TableRow key={cn.id} className="text-xs hover:bg-muted/30">
                 <TableCell className="font-mono font-bold text-emerald-600">{cn.cn_number}</TableCell>
-                <TableCell>{cn.date}</TableCell>
+                <TableCell>{formatDateDDMMYYYY(cn.date)}</TableCell>
                 <TableCell>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cn.party_type === "Tenant" ? "bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/20 dark:text-cyan-400" : "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400"}`}>
                     {cn.party_type === "Tenant" ? "Customer / Tenant" : "Vendor"}
@@ -12404,7 +12404,7 @@ function VehicleExpenseReportSubModule() {
             ) : (
               filteredRows.map(row => (
                 <TableRow key={row.id} className="text-xs hover:bg-muted/30">
-                  <TableCell className="font-mono">{row.date}</TableCell>
+                  <TableCell className="font-mono">{formatDateDDMMYYYY(row.date)}</TableCell>
                   <TableCell className="font-mono font-bold text-primary">{row.reference}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-[10px]">{row.sourceType}</Badge>

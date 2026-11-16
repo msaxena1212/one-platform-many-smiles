@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -474,7 +475,7 @@ export function VendorStatementSubModule() {
 
               {ledgerRows.map((row) => (
                 <TableRow key={row.id} className="hover:bg-muted/30">
-                  <TableCell className="text-xs font-mono">{row.date}</TableCell>
+                  <TableCell className="text-xs font-mono">{formatDateDDMMYYYY(row.date)}</TableCell>
                   <TableCell className="text-xs font-mono font-semibold text-primary">{row.refNo}</TableCell>
                   <TableCell>
                     <Badge
