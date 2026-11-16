@@ -5,11 +5,11 @@
 // 2. Security deposit PDCs (43) and guarantee cheques (47) that were debited to the bank:
 //      PDC:        Dr 12900002 Deposit PDC In Hand      / Cr 12000001 bank      (correction voucher VCH-COR-SD-*)
 //      Guarantee:  Dr 12900002 Deposit PDC In Hand      / Cr 12000001 bank
-//                  Dr 21500    Security deposit liab.   / Cr 21400  Customer PDC liability
+//                  Dr 21500    Security deposit liab.   / Cr 21200001 Guarantee cheque received
 // 3. Kahramaa utility deposits (from kahramaa-deposits-data.ts), posted as database vouchers VCH-KAH-DEP-<UNIT>:
 //      Cash (382,000):       Dr 12100001 Cash In Hand  / Cr 21501 Kahramaa deposit liability (control)
 //      PDC (82,000):         Dr 12900002 Deposit PDC   / Cr 21501
-//      Guarantee (2,000):    Dr 12900002 Deposit PDC   / Cr 21400 Customer PDC liability
+//      Guarantee (2,000):    Dr 12900002 Deposit PDC   / Cr 21200001 Guarantee cheque received
 //    Non-cash entries keep the date 2036-12-31 from the data file.
 //
 // Everything runs in one transaction: any failure or unbalanced voucher rolls the whole run back.
@@ -47,7 +47,7 @@ const GCHQ_DATE = "2036-12-31";
   };
   const A = {
     cash: await acct("12100001"), pdc: await acct("12900002"), bank: await acct("12000001"),
-    sd: await acct("21500"), kah: await acct("21501"), cpdc: await acct("21400"),
+    sd: await acct("21500"), kah: await acct("21501"), gchq: await acct("21200001"),
   };
 
   await c.query("begin");
@@ -93,7 +93,7 @@ const GCHQ_DATE = "2036-12-31";
       if (s.kind === "GUAR") {
         lines.push(
           { a: A.sd, code: "21500", dr: amt, cr: 0, desc: "Reclass out of security deposit liability (guarantee cheque)" },
-          { a: A.cpdc, code: "21400", dr: 0, cr: amt, desc: "Customer PDC liability (guarantee cheque)" },
+          { a: A.gchq, code: "21200001", dr: 0, cr: amt, desc: "Guarantee cheque received (reclass from security deposit)" },
         );
       }
       const label = s.kind === "PDC" ? "deposit PDC" : "guarantee cheque";
@@ -116,8 +116,8 @@ const GCHQ_DATE = "2036-12-31";
       const date = isCash ? e.date : GCHQ_DATE;
       const dr = isCash ? A.cash : A.pdc;
       const drCode = isCash ? "12100001" : "12900002";
-      const cr = isGuar ? A.cpdc : A.kah;
-      const crCode = isGuar ? "21400" : "21501";
+      const cr = isGuar ? A.gchq : A.kah;
+      const crCode = isGuar ? "21200001" : "21501";
       const label = isCash ? "Kahramaa utility deposit (cash)" : isGuar ? "Guarantee cheque – Kahramaa utility deposit" : "Kahramaa utility deposit (PDC)";
       const desc = `${label} – ${u} (${e.property || ""})`;
       await post(num, date, desc, [
