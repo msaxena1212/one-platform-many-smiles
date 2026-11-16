@@ -28,3 +28,13 @@ where not exists (select 1 from public.fin_coa_accounts where account_code = '51
 insert into public.erp_chart_of_accounts (id, code, name, type, created_at, type_code, type_name, group_code, group_name, class_code, class_name, gl_code, gl_name, sl_code, sl_name)
 select gen_random_uuid(), '51005001', 'Rent to Landlord', 'Expenditure', now(), '5', 'Expenditure', '51', 'Expenditure', '510', 'Direct Expenses', '51005', 'Rent to Landlord', '51005001', 'Rent to Landlord'
 where not exists (select 1 from public.erp_chart_of_accounts where code = '51005001');
+
+-- Kahramaa deposit liability (GL 21501) for direct receipt of Kahramaa deposits.
+-- Note: 21501xxx sub-ledgers already exist as inactive legacy RP1 apartment accounts, so no new sub-ledger is added.
+insert into public.fin_coa_accounts (id, account_code, account_name, account_type, parent_id, is_active, created_at, updated_at, parent_account_id, group_name, class_name, account_level)
+select gen_random_uuid(), '21501', 'Kahramaa Deposits - Leasing Customers', 'LIABILITY', null, true, now(), now(), null, 'Current Liabilities', 'Deposits Received', 'GL'
+where not exists (select 1 from public.fin_coa_accounts where account_code = '21501');
+
+insert into public.erp_chart_of_accounts (id, code, name, type, created_at, type_code, type_name, group_code, group_name, class_code, class_name, gl_code, gl_name, sl_code, sl_name)
+select gen_random_uuid(), '21501', 'Kahramaa Deposits - Leasing Customers', 'Liabilities', now(), '2', 'Liabilities', '21', 'Current Liabilities', '215', 'Deposits Received', '21501', 'Kahramaa Deposits - Leasing Customers', '21501', 'Kahramaa Deposits - Leasing Customers'
+where not exists (select 1 from public.erp_chart_of_accounts e where e.code = '21501');

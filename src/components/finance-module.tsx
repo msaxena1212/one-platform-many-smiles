@@ -47,7 +47,7 @@ import { formatDDMMMYYYY, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { postVoucher } from "@/lib/finance/posting-engine";
 import { isPostingPeriodClosed, refreshPostingPeriods } from "@/lib/finance/posting-periods";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
-import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
+import { ApInvoicesApi, syncProcFromDatabase, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
 import {
   generatePortfolioRevenueBatch,
@@ -70,7 +70,7 @@ import { PdcMaturityForecastReportSubModule } from "@/components/finance/pdc-mat
 import { LeaseExpiryVacancyReportSubModule } from "@/components/finance/lease-expiry-vacancy-report";
 import { UtilityRechargeRecoverySubModule } from "@/components/finance/utility-recharge-report";
 import { SecurityDepositReconciliationSubModule } from "@/components/finance/security-deposit-reconciliation-report";
-import { useDbCollection } from "@/lib/db-collection";
+import { useDbCollection, upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
 
 export function isDateInClosedPostingPeriod(dateStr?: string): { closed: boolean; periodName?: string } {
   return isPostingPeriodClosed(dateStr);
@@ -3787,6 +3787,7 @@ function PayableInvoiceSubModule() {
 
   // Payment Settlement Dialog state
   const [payTarget, setPayTarget] = useState<any | null>(null);
+  const [payNowAmount, setPayNowAmount] = useState("0");
   const [payForm, setPayForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
     paymentMethod: "Bank Wire / QNB Corporate Electronic",
@@ -4058,6 +4059,7 @@ function PayableInvoiceSubModule() {
 
   function openPayModal(inv: any) {
     setPayTarget(inv);
+    setPayNowAmount(String(Math.max(0, Number(inv.amount || 0) - Number(inv.raw?.amount_paid || 0))));
     setPayForm({
       paymentDate: new Date().toISOString().slice(0, 10),
       paymentMethod: "Bank Wire / QNB Corporate Electronic",
@@ -4075,66 +4077,61 @@ function PayableInvoiceSubModule() {
 
   async function handleConfirmDisbursement() {
     if (!payTarget) return;
+    const total = Number(payTarget.amount || 0);
+    const alreadyPaid = Number(payTarget.raw?.amount_paid || 0);
+    const outstanding = Math.round((total - alreadyPaid) * 100) / 100;
+    const amt = Math.round((parseFloat(payNowAmount) || 0) * 100) / 100;
+    if (amt <= 0) { toast.error("Enter the amount to pay now."); return; }
+    if (amt > outstanding + 0.01) { toast.error(`Amount exceeds the outstanding balance of QAR ${outstanding.toLocaleString()}.`); return; }
+
+    const isCash = payForm.paymentMethod.includes("Cash") || payForm.paymentMethod.includes("Petty");
+    const crCode = isCash ? "12100001" : "12000001";
+    const crName = isCash ? "Cash In Hand - Office Vault" : "Commercial Bank of Qatar (CBQ)";
+    const suffix = String(payTarget.invoice_no).replace(/^APINV-|^INV-AP-|^INV-/, "");
+    const pvNo = `PV-${suffix}-${Date.now().toString().slice(-6)}`;
+
     try {
-      const isCash = payForm.paymentMethod.includes("Cash") || payForm.paymentMethod.includes("Petty");
-      const crCode = isCash ? "12100001" : "12000001";
-      const crName = isCash ? "Cash in Hand / Operating Cash" : "Bank Operating Account (QNB)";
-
-      // Update ApInvoicesApi with invoice ID or invoice_no
-      const targetId = payTarget.raw?.id || payTarget.id || payTarget.invoice_no;
-      await ApInvoicesApi.update(targetId, {
-        invoice_number: payTarget.invoice_no,
-        status: "PAID",
-        amount_paid: payTarget.amount,
-        posting_status: "POSTED",
-        payment_method: payForm.paymentMethod,
-        payment_reference: payForm.transactionReference,
+      // 1. One payment voucher: Dr Trade Payables / Cr bank or cash, posted through the posting engine.
+      await postVoucher({
+        voucher_date: payForm.paymentDate,
+        voucher_type: "Payment",
+        description: `Vendor settlement ${payTarget.invoice_no} (${payTarget.vendor}) — ${payForm.paymentMethod}${payForm.transactionReference ? ` — ref ${payForm.transactionReference}` : ""}`,
+        reference_no: pvNo,
+        source_type: "AP_SETTLEMENT",
+        source_id: String(payTarget.raw?.id ?? payTarget.invoice_no),
+        lines: [
+          { account_code: "22100001", debit: amt, credit: 0, description: `Settlement of ${payTarget.invoice_no}` },
+          { account_code: crCode, debit: 0, credit: amt, description: `Paid via ${payForm.paymentMethod} (${crName})` },
+        ],
       });
 
-      // Update local storage for pms_vendor_invoices
-      try {
-        const mntRaw = localStorage.getItem("pms_vendor_invoices");
-        if (mntRaw) {
-          const mntList: any[] = JSON.parse(mntRaw);
-          const updatedMnt = mntList.map((m: any) =>
-            m.invoiceNo === payTarget.invoice_no ? { ...m, status: "Approved" } : m
-          );
-          localStorage.setItem("pms_vendor_invoices", JSON.stringify(updatedMnt));
-        }
-      } catch {}
+      // 2. Invoice status: partial or fully paid, in the database.
+      const newPaid = Math.round((alreadyPaid + amt) * 100) / 100;
+      const fully = newPaid >= total - 0.01;
+      if (payTarget.raw?.id) {
+        const procUpdated = {
+          ...payTarget.raw,
+          amount_paid: newPaid,
+          status: fully ? "PAID" : "PARTIAL",
+          posting_status: fully ? "POSTED" : "PARTIAL_POSTED",
+          payment_method: payForm.paymentMethod,
+          payment_reference: payForm.transactionReference,
+          paid_at: fully ? payForm.paymentDate : payTarget.raw?.paid_at,
+        };
+        const err = await upsertCollectionRecords("proc.ap_invoices", [{ id: String(payTarget.raw.id), data: procUpdated }]);
+        if (err) throw new Error(`Invoice status was not saved: ${err}`);
+        await syncProcFromDatabase();
+      }
+      const finRows = await loadCollectionRows("fin.ap");
+      const finMatch = (finRows || []).find(r => (r.data as any)?.invoice_no === payTarget.invoice_no);
+      if (finMatch) {
+        const err = await upsertCollectionRecords("fin.ap", [{ id: finMatch.id, data: { ...(finMatch.data as any), status: fully ? "Paid" : "Partially Paid", amount_paid: newPaid } }]);
+        if (err) throw new Error(`Payable record was not saved: ${err}`);
+      }
 
-      // Update local storage for zyno-pms-finance-data-v1-ap and finance-store state
-      try {
-        if (typeof markPayableInvoicePaid === "function") {
-          markPayableInvoicePaid(payTarget.invoice_no);
-        }
-      } catch {}
-
-      // Add Payment Voucher into Finance Store
-      const suffix = payTarget.invoice_no.replace('APINV-', '').replace('INV-AP-', '').replace('INV-', '');
-      const pvNo = `PV-${suffix}`;
-      addVoucher({
-        voucher_no: pvNo,
-        voucher_type: "Payment Voucher",
-        date: payForm.paymentDate,
-        name: `Vendor Settlement — ${payTarget.invoice_no} (${payTarget.vendor})`,
-        debit: "Trade Payables - Vendors",
-        debit_code: "22100001",
-        credit: crName,
-        credit_code: crCode,
-        amount: payTarget.amount,
-        method: isCash ? "Cash" : "Bank Transfer",
-        property_name: payTarget.property || payTarget.raw?.property || "Al Ameen Real Estate Head Office",
-        unit_ref: payTarget.raw?.unit_ref || payTarget.po_number || "Corporate Head Office",
-        tenant_name: payTarget.vendor,
-      });
-
-      // Trigger cross-module updates
       window.dispatchEvent(new Event("finance_vouchers_updated"));
       window.dispatchEvent(new Event("ap_invoices_updated"));
-      window.dispatchEvent(new Event("pms_vendor_invoices_updated"));
-
-      toast.success(`Payment of QAR ${payTarget.amount.toLocaleString()} settled. Payment Voucher ${pvNo} posted to GL.`);
+      toast.success(`QAR ${amt.toLocaleString()} settled on ${payTarget.invoice_no}. Payment voucher ${pvNo} posted. ${fully ? "Invoice fully paid." : `Outstanding QAR ${(total - newPaid).toLocaleString()}.`}`);
       setPayTarget(null);
       await loadInvoices();
     } catch (e: any) {
@@ -4556,6 +4553,13 @@ function PayableInvoiceSubModule() {
                   <span className="text-emerald-600 font-mono">QAR {Number(payTarget.amount || 0).toLocaleString()}</span>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">Amount to Pay Now (QAR)</Label>
+                  <Input type="number" className="h-8 text-xs font-mono font-bold bg-background" value={payNowAmount} onChange={e => setPayNowAmount(e.target.value)} />
+                  <p className="text-[10px] text-muted-foreground">Partial payments are allowed; the rest stays outstanding.</p>
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -4753,7 +4757,14 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
         : "12100 - Cash In Hand (Office Vault)",
     amount: "5000",
     method: type === "Payment Voucher" ? "Bank Transfer" : type === "Receipt Voucher" ? "Bank Transfer" : "Batch",
+    receiptKind: "rent" as "rent" | "security" | "kahramaa",
   });
+  // Receipt type decides the credit account: rent settles the tenant receivable, deposits are liabilities.
+  const RECEIPT_KINDS = {
+    rent: { label: "Rent / Charges", credit: "12413001 - Tenant Receivables — Unit SL", prefix: "Direct Rent Collection" },
+    security: { label: "Security Deposit", credit: "21500 - Deposits - Leasing Customers", prefix: "Security Deposit Receipt" },
+    kahramaa: { label: "Kahramaa Deposit", credit: "21501 - Kahramaa Deposits - Leasing Customers", prefix: "Kahramaa Deposit Receipt" },
+  } as const;
 
   // Extract distinct properties
   const propertiesList = useMemo(() => {
@@ -4771,6 +4782,7 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
   const selectedReceiptLease = type === "Receipt Voucher"
     ? leases.find(lease => lease.id === form.leaseId)
     : undefined;
+  const receiptPrefix = type === "Receipt Voucher" ? RECEIPT_KINDS[form.receiptKind].prefix : undefined;
   const debitAccountOptions = type === "Receipt Voucher"
     ? [...BANK_GL_ACCOUNTS, { code: "12100001", name: "12100001 - Cash In Hand / Operating Cash" }]
     : COMMON_GL_ACCOUNTS;
@@ -4906,8 +4918,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
       toast.error("Amount must be greater than zero.");
       return;
     }
-    if (type === "Receipt Voucher" && form.credit.startsWith("12413001") && !selectedReceiptLease) {
-      toast.error("Select the tenant lease and unit before posting a receipt to Tenant Receivables — Unit SL.");
+    if (type === "Receipt Voucher" && (form.credit.startsWith("12413001") || form.credit.startsWith("21500") || form.credit.startsWith("21501")) && !selectedReceiptLease) {
+      toast.error("Select the tenant lease and unit before posting a receipt (rent or deposit).");
       return;
     }
     if (type === "Receipt Voucher" && accountCode(form.credit).startsWith("4")) {
@@ -4917,8 +4929,8 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
 
     try {
       const voucherName = selectedReceiptLease
-        ? `${form.name} — ${selectedReceiptLease.tenantName} (${selectedReceiptLease.unit})`
-        : form.name;
+        ? `${receiptPrefix ?? form.name} — ${selectedReceiptLease.tenantName} (${selectedReceiptLease.unit})`
+        : (receiptPrefix ?? form.name);
       const result = await postVoucher({
         voucher_date: form.date,
         voucher_type: type,
@@ -5392,6 +5404,23 @@ function VoucherManagerSubModule({ type }: { type: "Journal Voucher" | "Payment 
                       </SelectContent>
                     </Select>
                   </div>
+                  {type === "Receipt Voucher" && (
+                    <div>
+                      <Label className="text-[11px] font-semibold">Receipt Type</Label>
+                      <Select value={form.receiptKind} onValueChange={v => setForm(current => ({
+                        ...current,
+                        receiptKind: v as "rent" | "security" | "kahramaa",
+                        credit: RECEIPT_KINDS[v as "rent" | "security" | "kahramaa"].credit,
+                      }))}>
+                        <SelectTrigger className="h-8 text-xs bg-background"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="rent">Rent / Charges</SelectItem>
+                          <SelectItem value="security">Security Deposit (direct transfer)</SelectItem>
+                          <SelectItem value="kahramaa">Kahramaa Deposit (direct transfer)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Live GL / COA Impact Preview */}
