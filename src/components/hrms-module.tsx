@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { persistVoucherOnce } from "@/lib/finance/finance-persistence";
 import {
   HrmsApi,
   HrmsCompany,
@@ -891,9 +892,6 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
 
       if (typeof window !== "undefined") {
         try {
-          const vKey = "finance_master_v1-vouchers";
-          const raw = localStorage.getItem(vKey);
-          const list = raw ? JSON.parse(raw) : [];
           const today = new Date().toISOString().split("T")[0];
           const totalAccrual = Math.round(totalGratuityProvision + totalLeaveProvision);
           const newVch = {
@@ -916,9 +914,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
               { type: "CR", account: "Accrued Leave Salary Liability", account_code: "21220", amount: Math.round(totalLeaveProvision), description: `Leave Salary Liability - ${periodStr}` },
             ]
           };
-          if (!list.some((v: any) => v.voucher_no === newVch.voucher_no)) {
-            localStorage.setItem(vKey, JSON.stringify([newVch, ...list]));
-          }
+          void persistVoucherOnce(newVch as any).then(r => { if (!r.ok) toast.error(`Accrual voucher ${newVch.voucher_no} was NOT saved to the database: ${r.error}`); });
         } catch {}
         window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
       }
@@ -976,9 +972,6 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
           // Ensure local Finance store updates immediately so Trial Balance reflects without delay
           if (typeof window !== "undefined") {
             try {
-              const vKey = "finance_master_v1-vouchers";
-              const raw = localStorage.getItem(vKey);
-              const list = raw ? JSON.parse(raw) : [];
               const today = new Date().toISOString().split("T")[0];
               const newVch = {
                 id: `vch-pay-${Date.now()}`,
@@ -998,9 +991,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                   { type: "CR", account: "Salary Payable", account_code: "21900", amount: totalSalary, description: `Salary Payable Liability - ${periodStr}` },
                 ]
               };
-              if (!list.some((v: any) => v.voucher_no === newVch.voucher_no)) {
-                localStorage.setItem(vKey, JSON.stringify([newVch, ...list]));
-              }
+              void persistVoucherOnce(newVch as any).then(r => { if (!r.ok) toast.error(`Payroll voucher ${newVch.voucher_no} was NOT saved to the database: ${r.error}`); });
             } catch {}
             window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
           }

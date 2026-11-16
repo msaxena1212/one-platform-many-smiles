@@ -1,4 +1,6 @@
 import { supabase } from "@/lib/supabase";
+import { HRMS_MASTER_DEFAULTS, LEGACY_HRMS_DEFAULT_NAMES } from "@/lib/hrms-master-defaults";
+import { dbValueGet, dbValueSet, loadDbValues } from "@/lib/db-kv";
 
 export interface MasterItem {
   id: string;
@@ -69,49 +71,28 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Company Master",
     group: "Organization",
     codePrefix: "CMP",
-    defaultItems: [
-      { name: "Zyno Property Management W.L.L", code: "ZYNO", description: "Primary Real Estate Management & Operations Entity" },
-      { name: "Zyno Real Estate & Facilities Services", code: "ZRFS", description: "Facility Operations & Asset Maintenance" },
-      { name: "Al Ameen Property Holdings W.L.L", code: "AAPH", description: "Commercial & Residential Assets Division" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["companies"] ?? [],
   },
   {
     key: "branches",
     label: "Branch Setup",
     group: "Organization",
     codePrefix: "BRN",
-    defaultItems: [
-      { name: "Al Ameen Real Estate Head Office", code: "AMEEN-HQ", description: "Central Corporate Head Office & Employee Payroll / Overhead Expenses" },
-      { name: "Doha Head Office (D-Ring Road)", code: "DOH-HQ", description: "Central Corporate & Leasing Management HQ" },
-      { name: "Old Salata Site Operations Hub", code: "SLT-01", description: "Old Salata & Central Doha Properties" },
-      { name: "Al Wakra Operations Center", code: "WKR-01", description: "Wakra Residential & Commercial Portfolio" },
-      { name: "Mansoura Facility Office", code: "MNS-01", description: "Mansoura Community & Maintenance Desk" },
-      { name: "Musheireb Support Center", code: "MSH-01", description: "Downtown Residential Asset Management" },
-      { name: "Bin Omran Site Office", code: "BOM-01", description: "Bin Omran Portfolio Operations" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["branches"] ?? [],
   },
   {
     key: "entities",
     label: "Entity Master",
     group: "Organization",
     codePrefix: "ENT",
-    defaultItems: [
-      { name: "ZYNO-QA-DOH (PRIMARY)", code: "ZYNO-QA", description: "Primary Property Management & Hospitality Entity" },
-      { name: "ZYNO-FACILITIES-LLC", code: "ZYNO-FAC", description: "Integrated Facility Management & Maintenance" },
-      { name: "AL-AMEEN-ESTATES-WLL", code: "AMEEN-EST", description: "Real Estate Asset Holding SPV" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["entities"] ?? [],
   },
   {
     key: "business_units",
     label: "Business Unit (BU)",
     group: "Organization",
     codePrefix: "BU",
-    defaultItems: [
-      { name: "Residential Leasing & Tenancy", code: "BU-RES", description: "Residential Apartment & Villa Operations" },
-      { name: "Commercial & Retail Assets", code: "BU-COM", description: "Commercial Spaces, Offices & Retail Units" },
-      { name: "Facility Maintenance & MEP", code: "BU-FM", description: "Planned Preventive & Reactive Maintenance" },
-      { name: "Corporate & Shared Services", code: "BU-CORP", description: "Finance, HR, IT & Procurement" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["business_units"] ?? [],
   },
   {
     key: "departments",
@@ -119,32 +100,14 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "Organization",
     codePrefix: "DEP",
     supportsRoles: true,
-    defaultItems: [
-      { name: "Management", code: "MGMT", roles: ["Admin", "Executive"] },
-      { name: "Finance & Accounts", code: "FIN", roles: ["Finance"] },
-      { name: "HR & Administration", code: "HR", roles: ["HR"] },
-      { name: "Sales & Marketing", code: "SALES", roles: ["Sales"] },
-      { name: "Operations", code: "OPS", roles: ["Operations"] },
-      { name: "Procurement", code: "PROC", roles: ["Procurement"] },
-      { name: "Information Technology", code: "IT", roles: ["IT"] },
-      { name: "Customer Service", code: "CS", roles: ["Customer Service"] },
-      { name: "Maintenance / Technical", code: "TECH", roles: ["Maintenance"] },
-      { name: "Warehouse", code: "WH", roles: ["Operations"] },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["departments"] ?? [],
   },
   {
     key: "sub_departments",
     label: "Sub Department",
     group: "Organization",
     codePrefix: "SDEP",
-    defaultItems: [
-      { name: "Residential Leasing", code: "LEAS-RES", description: "Apartment & Villa Leases" },
-      { name: "Commercial Leasing", code: "LEAS-COM", description: "Retail & Office Leases" },
-      { name: "MEP Engineering", code: "MAINT-MEP", description: "Mechanical, Electrical, Plumbing" },
-      { name: "HVAC & Chiller Maintenance", code: "MAINT-HVAC", description: "Cooling & Ventilation" },
-      { name: "Payroll & Compensation", code: "HR-PAY", description: "Salary disbursement & benefits" },
-      { name: "Accounts Payable (AP)", code: "FIN-AP", description: "Vendor invoices & disbursements" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["sub_departments"] ?? [],
   },
   {
     key: "designations",
@@ -152,153 +115,77 @@ export const MASTER_CATEGORIES_CONFIG: {
     group: "HR & Workforce",
     codePrefix: "DSG",
     supportsRoles: true,
-    defaultItems: [
-      { name: "Director", code: "DIR", roles: ["Executive", "Admin"] },
-      { name: "General Manager", code: "GM", roles: ["Executive", "Manager"] },
-      { name: "Manager", code: "MGR", roles: ["Manager"] },
-      { name: "Assistant Manager", code: "AM", roles: ["Manager"] },
-      { name: "Accountant", code: "ACC", roles: ["Finance"] },
-      { name: "HR Executive", code: "HR-EXEC", roles: ["HR"] },
-      { name: "Admin Executive", code: "ADMIN-EXEC", roles: ["Admin"] },
-      { name: "Sales Executive", code: "SALES-EXEC", roles: ["Sales"] },
-      { name: "Operations Executive", code: "OPS-EXEC", roles: ["Operations"] },
-      { name: "Procurement Executive", code: "PROC-EXEC", roles: ["Procurement"] },
-      { name: "IT Support", code: "IT-SUPPORT", roles: ["IT"] },
-      { name: "Customer Service Executive", code: "CS-EXEC", roles: ["Customer Service"] },
-      { name: "Supervisor", code: "SUP", roles: ["Operations", "Manager"] },
-      { name: "Technician", code: "TECH", roles: ["Maintenance"] },
-      { name: "Driver", code: "DRIVER", roles: ["Operations"] },
-      { name: "Office Assistant", code: "OFFICE-ASST", roles: ["Admin"] },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["designations"] ?? [],
   },
   {
     key: "grades",
     label: "Grade Master",
     group: "HR & Workforce",
     codePrefix: "GRD",
-    defaultItems: [
-      { name: "Grade E (Executive / C-Suite)", code: "GRD-E", description: "Top Leadership Level" },
-      { name: "Grade M (Management / Heads)", code: "GRD-M", description: "Departmental Managers" },
-      { name: "Grade S (Senior Specialists)", code: "GRD-S", description: "Senior Engineers & Analysts" },
-      { name: "Grade A (Associates & Officers)", code: "GRD-A", description: "Operational Staff" },
-      { name: "Grade T (Technicians & Field)", code: "GRD-T", description: "Field Technical Staff" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["grades"] ?? [],
   },
   {
     key: "employment_types",
     label: "Employment Type",
     group: "HR & Workforce",
     codePrefix: "EMT",
-    defaultItems: [
-      { name: "Permanent / Full-Time", code: "PERM", description: "Standard regular employment" },
-      { name: "Probationary", code: "PROB", description: "Initial evaluation period" },
-      { name: "Fixed-Term Contract", code: "CONT", description: "Time-bound contract" },
-      { name: "Consultant / Advisor", code: "CONS", description: "Professional advisor" },
-      { name: "Part-Time / Intern", code: "PART", description: "Flexible / internship" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["employment_types"] ?? [],
   },
   {
     key: "genders",
     label: "Gender Master",
     group: "HR & Workforce",
     codePrefix: "GND",
-    defaultItems: [
-      { name: "Male", code: "M", description: "Male" },
-      { name: "Female", code: "F", description: "Female" },
-      { name: "Other", code: "O", description: "Other" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["genders"] ?? [],
   },
   {
     key: "employee_statuses",
     label: "Employee Status Master",
     group: "HR & Workforce",
     codePrefix: "EST",
-    defaultItems: [
-      { name: "Active", code: "ACT", description: "Active employee in service" },
-      { name: "Probation", code: "PROB", description: "Under probationary assessment" },
-      { name: "On Notice", code: "NOT", description: "Serving notice period" },
-      { name: "On Leave", code: "LVE", description: "Extended approved leave" },
-      { name: "Suspended", code: "SUSP", description: "Temporarily suspended" },
-      { name: "Resigned", code: "RES", description: "Resigned from service" },
-      { name: "Terminated", code: "TERM", description: "Service terminated" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["employee_statuses"] ?? [],
   },
   {
     key: "contract_types",
     label: "Contract Type",
     group: "HR & Workforce",
     codePrefix: "CNT",
-    defaultItems: [
-      { name: "Unlimited / Open-Ended (Standard)", code: "UNLTD", description: "Permanent Labor Contract" },
-      { name: "Fixed 1-Year Renewable", code: "FX1", description: "Annual Renewable Contract" },
-      { name: "Fixed 2-Year Term", code: "FX2", description: "Standard 24-Month Contract" },
-      { name: "Secondment / Deputation", code: "SECD", description: "Inter-entity transfer contract" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["contract_types"] ?? [],
   },
   {
     key: "leave_types",
     label: "Leave Types & Quotas",
     group: "HR & Workforce",
     codePrefix: "LTYP",
-    defaultItems: [
-      { name: "Annual Leave (30 Calendar Days)", code: "AL", description: "Standard Paid Annual Vacation under Qatar Labor Law" },
-      { name: "Sick Leave (Fully Paid 14 Days)", code: "SL", description: "Certified Medical Leave with Primary Health Centre slip" },
-      { name: "Casual & Emergency Leave (7 Days)", code: "CL", description: "Short urgent leaves for family or personal needs" },
-      { name: "Maternity Leave (50 Paid Days)", code: "ML", description: "Statutory maternity leave for female employees" },
-      { name: "Hajj Pilgrimage Leave (20 Days Unpaid)", code: "HAJJ", description: "Once in service pilgrimage leave" },
-      { name: "Compensatory Off / Duty Leave", code: "COMP-OFF", description: "Granted in lieu of weekend or holiday duty" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["leave_types"] ?? [],
   },
   {
     key: "document_types",
     label: "Document Types & Verification",
     group: "HR & Workforce",
     codePrefix: "DOC-TYP",
-    defaultItems: [
-      { name: "Qatar ID (QID / Residence Card)", code: "DOC-QID", description: "Official Ministry of Interior Civil ID" },
-      { name: "Passport & Bio Page", code: "DOC-PPT", description: "International travel passport copy" },
-      { name: "Ministry Attested Labor Contract", code: "DOC-MOL", description: "ADLSA / Labor department authenticated contract" },
-      { name: "Academic & Degree Certificate", code: "DOC-EDU", description: "Higher education qualification document" },
-      { name: "Qatar Driving License", code: "DOC-DL", description: "Valid Qatar Traffic Department license" },
-      { name: "Police Clearance Certificate (PCC)", code: "DOC-PCC", description: "Good conduct background clearance" },
-      { name: "Health Card & Medical Commission Fit", code: "DOC-MED", description: "Hamad Medical / Public Health certification" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["document_types"] ?? [],
   },
   {
     key: "recruitment_reasons",
     label: "Reason For Recruitment",
     group: "HR & Workforce",
     codePrefix: "REC",
-    defaultItems: [
-      { name: "Business Expansion & New Property Handover", code: "EXPAND", description: "New property phase" },
-      { name: "Backfill / Employee Resignation Replacement", code: "REPLACE", description: "Vacancy replacement" },
-      { name: "Specialized Technical Competency Requirement", code: "SPEC", description: "Niche technical skill" },
-      { name: "Workload Surge / Seasonal Operations", code: "SURGE", description: "Operational demand" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["recruitment_reasons"] ?? [],
   },
   {
     key: "notice_periods",
     label: "Notice Period Master",
     group: "HR & Workforce",
     codePrefix: "NOT",
-    defaultItems: [
-      { name: "30 Days (Standard Staff)", code: "NP-30", description: "1-Month standard notice" },
-      { name: "60 Days (Management / Key Roles)", code: "NP-60", description: "2-Month management notice" },
-      { name: "90 Days (C-Suite / Executive)", code: "NP-90", description: "3-Month executive notice" },
-      { name: "15 Days (Probation Period Exit)", code: "NP-15", description: "Probation notice period" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["notice_periods"] ?? [],
   },
   {
     key: "kt_masters",
     label: "Knowledge Transfer (KT) Master",
     group: "HR & Workforce",
     codePrefix: "KT",
-    defaultItems: [
-      { name: "Codebase & System Administration Handover", code: "KT-IT", description: "IT credentials and architecture" },
-      { name: "Property Keys & Access Card Handover", code: "KT-KEYS", description: "Physical access clearance" },
-      { name: "Active Tenant Lease Accounts & Collections", code: "KT-LEAS", description: "Leasing pipeline handover" },
-      { name: "Vendor Contracts & In-Progress Work Orders", code: "KT-MAINT", description: "Maintenance projects status" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["kt_masters"] ?? [],
   },
 
   // ── Locations ──
@@ -307,53 +194,28 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Country Master",
     group: "Location",
     codePrefix: "CTY",
-    defaultItems: [
-      { name: "Qatar", code: "QA", description: "State of Qatar" },
-      { name: "India", code: "IN", description: "Republic of India" },
-      { name: "United Arab Emirates", code: "AE", description: "UAE" },
-      { name: "Saudi Arabia", code: "SA", description: "KSA" },
-      { name: "United Kingdom", code: "GB", description: "UK" },
-      { name: "Philippines", code: "PH", description: "Republic of the Philippines" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["countries"] ?? [],
   },
   {
     key: "states",
     label: "State / Governorate Master",
     group: "Location",
     codePrefix: "ST",
-    defaultItems: [
-      { name: "Doha Municipality", code: "QA-DA", description: "Capital Governorate" },
-      { name: "Al Rayyan", code: "QA-RA", description: "Western Municipality" },
-      { name: "Al Daayen / Lusail", code: "QA-ZA", description: "Lusail & Waterfront" },
-      { name: "Al Wakrah", code: "QA-WA", description: "Southern Hub" },
-      { name: "Delhi NCR", code: "IN-DL", description: "National Capital Region" },
-      { name: "Haryana (Gurugram)", code: "IN-HR", description: "Millennium City Tech Hub" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["states"] ?? [],
   },
   {
     key: "cities",
     label: "City Master",
     group: "Location",
     codePrefix: "CIT",
-    defaultItems: [
-      { name: "Doha", code: "DOH", description: "Doha Metropolitan" },
-      { name: "Lusail", code: "LSL", description: "Lusail Smart City" },
-      { name: "The Pearl-Qatar", code: "PRL", description: "Island Community" },
-      { name: "West Bay", code: "WBY", description: "Diplomatic & Financial District" },
-      { name: "New Delhi", code: "DEL", description: "New Delhi Central" },
-      { name: "Gurugram", code: "GUR", description: "Cyber City" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["cities"] ?? [],
   },
   {
     key: "regions",
     label: "Region Master",
     group: "Location",
     codePrefix: "REG",
-    defaultItems: [
-      { name: "Middle East & GCC", code: "GCC", description: "Gulf Region" },
-      { name: "South Asia", code: "SA", description: "Indian Subcontinent" },
-      { name: "Europe & Levant", code: "EUR", description: "International Operations" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["regions"] ?? [],
   },
 
   // ── Payroll & Finance ──
@@ -362,96 +224,56 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Financial Year",
     group: "Payroll & Finance",
     codePrefix: "FY",
-    defaultItems: [
-      { name: "2026-2027 (Current Active)", code: "FY26-27", description: "01 Apr 2026 - 31 Mar 2027" },
-      { name: "2025-2026 (Audited Past)", code: "FY25-26", description: "01 Apr 2025 - 31 Mar 2026" },
-      { name: "2027-2028 (Projected)", code: "FY27-28", description: "01 Apr 2027 - 31 Mar 2028" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["financial_years"] ?? [],
   },
   {
     key: "currencies",
     label: "Currency Master",
     group: "Payroll & Finance",
     codePrefix: "CUR",
-    defaultItems: [
-      { name: "Qatari Riyal (QAR)", code: "QAR", description: "Base Operational Currency (1 USD = 3.64 QAR)" },
-      { name: "Indian Rupee (INR)", code: "INR", description: "Regional Tech Entity Currency" },
-      { name: "US Dollar (USD)", code: "USD", description: "International Contracts" },
-      { name: "UAE Dirham (AED)", code: "AED", description: "GCC Regional Settlements" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["currencies"] ?? [],
   },
   {
     key: "banks",
     label: "Bank Master",
     group: "Payroll & Finance",
     codePrefix: "BNK",
-    defaultItems: [
-      { name: "Qatar National Bank (QNB)", code: "QNBA", description: "Primary Operating Bank" },
-      { name: "Commercial Bank of Qatar (CBQ)", code: "CBQA", description: "Collection & Escrow Bank" },
-      { name: "Doha Bank", code: "DHBK", description: "Payroll Disbursement Partner" },
-      { name: "Qatar Islamic Bank (QIB)", code: "QISB", description: "Islamic Banking Services" },
-      { name: "HDFC Bank India", code: "HDFC", description: "India Corporate Bank" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["banks"] ?? [],
   },
   {
     key: "salary_components",
     label: "Salary Components",
     group: "Payroll & Finance",
     codePrefix: "SAL-COMP",
-    defaultItems: [
-      { name: "Basic Salary", code: "BASIC", description: "Fixed Base Pay (Earning)" },
-      { name: "House Rent Allowance (HRA)", code: "HRA", description: "Monthly Housing Allowance" },
-      { name: "Transport Allowance (TRA)", code: "TRA", description: "Conveyance & Travel" },
-      { name: "Special Operational Allowance", code: "SPEC_ALW", description: "Performance Fixed Allowance" },
-      { name: "Mobile & Utility Allowance", code: "MOB_ALW", description: "Communication reimbursement" },
-      { name: "Overtime (OT) Pay", code: "OT_PAY", description: "Calculated Hourly Overtime" },
-      { name: "Discretionary Bonus", code: "BONUS", description: "Quarterly / Annual KPI Incentive" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["salary_components"] ?? [],
   },
   {
     key: "statutory_components",
     label: "Statutory & Deductions",
     group: "Payroll & Finance",
     codePrefix: "STAT",
-    defaultItems: [
-      { name: "End-of-Service Gratuity Accrual", code: "GRAT", description: "21 Days basic pay per year of service" },
-      { name: "Social Insurance / Pension Contribution", code: "SI", description: "Statutory national social insurance" },
-      { name: "Disciplinary Penalty / Fine Deduction", code: "FINE", description: "Authorized HR disciplinary fine" },
-      { name: "Staff Advance / Loan Deduction", code: "LOAN_DED", description: "Monthly EMI recovery" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["statutory_components"] ?? [],
   },
   {
     key: "salary_templates",
     label: "Salary Structure Templates",
     group: "Payroll & Finance",
     codePrefix: "SAL-TMP",
-    defaultItems: [
-      { name: "Standard Executive Package (60% Basic + 30% HRA + 10% TRA)", code: "TMPL-EXEC", description: "Executive grade breakdown" },
-      { name: "Management Structure (55% Basic + 35% HRA + 10% TRA)", code: "TMPL-MGT", description: "Department heads & managers" },
-      { name: "Operational & Technical Package (50% Basic + 35% HRA + 15% TRA)", code: "TMPL-TECH", description: "Field engineers and technical staff" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["salary_templates"] ?? [],
   },
   {
     key: "tax_slabs",
     label: "Tax Slabs & Exemption Rules",
     group: "Payroll & Finance",
     codePrefix: "TAX",
-    defaultItems: [
-      { name: "Qatar Exemption (0% Personal Income Tax)", code: "QA-TAX-FREE", description: "100% Tax-Free Personal Income under State of Qatar Law" },
-      { name: "Standard Foreign Remittance Reporting", code: "INT-REMIT", description: "Cross-border compliance documentation" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["tax_slabs"] ?? [],
   },
   {
     key: "loan_types",
     label: "Staff Loan & Advance Types",
     group: "Payroll & Finance",
     codePrefix: "LOAN-TYP",
-    defaultItems: [
-      { name: "Annual Housing Advance Loan", code: "LN-HOUSE", description: "Advance for annual house rental cheques" },
-      { name: "Emergency Medical & Family Loan", code: "LN-EMERG", description: "Zero-interest staff emergency assistance" },
-      { name: "Annual Air Ticket Advance", code: "LN-TICKET", description: "Advance against annual leave flight entitlement" },
-      { name: "Vehicle / Transportation Advance", code: "LN-VEH", description: "Transportation acquisition loan" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["loan_types"] ?? [],
   },
 
   // ── System & Service ──
@@ -460,131 +282,86 @@ export const MASTER_CATEGORIES_CONFIG: {
     label: "Work Shifts Master",
     group: "HR & Workforce",
     codePrefix: "SHF",
-    defaultItems: [
-      { name: "General Day Shift (08:00 AM - 05:00 PM)", code: "SHF-DAY", description: "Standard Office Hours, 60m break" },
-      { name: "Property Site Morning Shift (07:00 AM - 04:00 PM)", code: "SHF-MORN", description: "Site operations & maintenance" },
-      { name: "Facility Night Shift (10:00 PM - 07:00 AM)", code: "SHF-NIGHT", description: "Overnight facility security & chiller monitor" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["shifts"] ?? [],
   },
   {
     key: "holidays",
     label: "Public Holidays Calendar",
     group: "HR & Workforce",
     codePrefix: "HOL",
-    defaultItems: [
-      { name: "Qatar National Day (18 December)", code: "HOL-QND", description: "National official holiday" },
-      { name: "Qatar National Sports Day (2nd Tuesday February)", code: "HOL-QSD", description: "Sports holiday" },
-      { name: "Eid Al-Fitr (3 Days)", code: "HOL-EID-FITR", description: "Religious festival" },
-      { name: "Eid Al-Adha (4 Days)", code: "HOL-EID-ADHA", description: "Religious feast" },
-      { name: "New Year's Day (01 January)", code: "HOL-NY", description: "Public holiday" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["holidays"] ?? [],
   },
   {
     key: "week_offs",
     label: "Week Off Configuration",
     group: "HR & Workforce",
     codePrefix: "WO",
-    defaultItems: [
-      { name: "Friday & Saturday (Standard Corporate)", code: "WO-FRI-SAT", description: "2 Days weekly off for corporate office" },
-      { name: "Friday Only (Rotational Site Roster)", code: "WO-FRI", description: "1 Day off with compensatory off option" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["week_offs"] ?? [],
   },
   {
     key: "kpa_masters",
     label: "KPA & Performance Goals",
     group: "HR & Workforce",
     codePrefix: "KPA",
-    defaultItems: [
-      { name: "Property Occupancy & Lease Renewal Rate (>95%)", code: "KPA-OCCUP", description: "Leasing portfolio target" },
-      { name: "Service Ticket Resolution SLA Compliance (>98%)", code: "KPA-SLA", description: "Maintenance ticket timeliness" },
-      { name: "Rent Collection & Arrear Recovery (>99%)", code: "KPA-COLL", description: "Financial cash collection" },
-      { name: "Tenant Satisfaction & Net Promoter Score (>4.5/5)", code: "KPA-CSAT", description: "Customer satisfaction score" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["kpa_masters"] ?? [],
   },
   {
     key: "appraisal_intervals",
     label: "Appraisal Intervals",
     group: "HR & Workforce",
     codePrefix: "APP-INT",
-    defaultItems: [
-      { name: "Annual Performance Appraisal (12 Months)", code: "INT-ANNUAL", description: "Full year comprehensive evaluation" },
-      { name: "Mid-Year Milestone Review (6 Months)", code: "INT-MID", description: "Semi-annual progress check" },
-      { name: "Quarterly Objective & Key Results (Q1-Q4)", code: "INT-QTR", description: "Quarterly milestone check" },
-      { name: "Probation Clearance Review (90 Days)", code: "INT-PROB", description: "Confirmation appraisal" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["appraisal_intervals"] ?? [],
   },
   {
     key: "device_user_ids",
     label: "Device UserID / Biometric Link",
     group: "System & Service",
     codePrefix: "DEV-UID",
-    defaultItems: [
-      { name: "Biometric Face Recognition Machine - Doha HQ", code: "DEV-HQ-01", description: "IP: 192.168.1.120 - Terminal 1" },
-      { name: "Fingerprint Scanner - West Bay Site Office", code: "DEV-WB-02", description: "IP: 192.168.2.145 - Terminal 2" },
-      { name: "Mobile Geofence Attendance Punch App", code: "DEV-APP", description: "GPS verified mobile punch" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["device_user_ids"] ?? [],
   },
   {
     key: "ticket_categories",
     label: "Ticket Category",
     group: "System & Service",
     codePrefix: "TCAT",
-    defaultItems: [
-      { name: "HR & Salary Certificate Requests", code: "TCAT-HR", description: "Letters, embassy NOC, experience" },
-      { name: "IT & System Access Support", code: "TCAT-IT", description: "Software credentials and hardware" },
-      { name: "Payroll & Reimbursement Discrepancy", code: "TCAT-PAY", description: "Salary & expense inquiries" },
-      { name: "Facility & Workplace Assets", code: "TCAT-FAC", description: "Desk, chair, locker allocation" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["ticket_categories"] ?? [],
   },
   {
     key: "complaint_types",
     label: "Complaint Type",
     group: "System & Service",
     codePrefix: "CMPL",
-    defaultItems: [
-      { name: "Workplace Harassment & Ethics Grievance", code: "CMPL-ETHICS", description: "Confidential HR review" },
-      { name: "Shift & Overtime Dispute", code: "CMPL-SHIFT", description: "Roster discrepancy" },
-      { name: "Managerial Feedback / Dispute", code: "CMPL-MGT", description: "Mediation process" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["complaint_types"] ?? [],
   },
   {
     key: "course_categories",
     label: "Course & Learning Category",
     group: "System & Service",
     codePrefix: "CRS",
-    defaultItems: [
-      { name: "Property Management & Real Estate Law", code: "CRS-LAW", description: "Qatar Tenancy Law & Compliance" },
-      { name: "Facility Health & Safety (OSHA / First Aid)", code: "CRS-HSE", description: "Building fire and occupational safety" },
-      { name: "Customer Experience & Tenant Relations", code: "CRS-CSAT", description: "Hospitality & communication" },
-      { name: "ERP & Financial Accounting Systems", code: "CRS-ERP", description: "Software workflow mastery" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["course_categories"] ?? [],
   },
   {
     key: "expense_types",
     label: "Type Of Expense",
     group: "System & Service",
     codePrefix: "EXP",
-    defaultItems: [
-      { name: "Local Travel & Inspection Fuel (Travel Expense)", code: "EXP-TRAV", description: "Property inspection & tenant visits" },
-      { name: "Official Food & Refreshments (Reimbursement Expense)", code: "EXP-FOOD", description: "Client meetings & operational lunch" },
-      { name: "Office Supplies & Urgent Spares (Other Expense)", code: "EXP-MISC", description: "Emergency on-site petty purchases" },
-      { name: "Visa & Government Labor Attestation Fees", code: "EXP-GOV", description: "Official ministry fees" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["expense_types"] ?? [],
   },
   {
     key: "travel_allowances",
     label: "Travel Allowance & Per Diem",
     group: "System & Service",
     codePrefix: "TA",
-    defaultItems: [
-      { name: "Per Diem - Local Site Inspection (150 QAR/Day)", code: "TA-LOCAL", description: "Local daily allowance" },
-      { name: "Per Diem - International GCC Travel (500 QAR/Day)", code: "TA-GCC", description: "GCC travel rate" },
-      { name: "Mileage Allowance - Personal Vehicle (1.2 QAR/KM)", code: "TA-KM", description: "Fuel & vehicle wear rate" },
-    ],
+    defaultItems: HRMS_MASTER_DEFAULTS["travel_allowances"] ?? [],
   },
 ];
 
-const MASTER_CACHE_KEY_PREFIX = "zyno_hrms_master_cache_";
+const MASTER_CACHE_KEY_PREFIX = "zyno_hrms_master_v2_";
+const LEGACY_MASTER_CACHE_PREFIX = "zyno_hrms_master_cache_";
+// Start-up: load the database copy of every master category.
+if (typeof window !== "undefined") {
+  void loadDbValues(MASTER_CATEGORIES_CONFIG.map(c => `${MASTER_CACHE_KEY_PREFIX}${c.key}`));
+}
 const REPLACED_CATALOG_ITEMS: Partial<Record<MasterCategoryKey, string[]>> = {
   departments: [
     "Commercial & Leasing",
@@ -611,7 +388,7 @@ export const HrmsMastersApi = {
     const config = MASTER_CATEGORIES_CONFIG.find((c) => c.key === categoryKey);
     const localKey = `${MASTER_CACHE_KEY_PREFIX}${categoryKey}`;
 
-    // Default seeded data
+    // Defaults: only the approved HRMS Master list (hrms-master-defaults.ts)
     const defaults: MasterItem[] = (config?.defaultItems || []).map((item, idx) => ({
       id: `${categoryKey}-${idx + 1}`,
       name: item.name,
@@ -620,42 +397,46 @@ export const HrmsMastersApi = {
       is_active: true,
     }));
 
-    try {
-      const stored = localStorage.getItem(localKey);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Filter out legacy dummy entries like "Mindz Developers"
-          const clean = parsed.filter(p => !p.name?.includes("Mindz Developers") && !p.name?.includes("Gurugram"));
-          if (clean.length > 0) {
-            if (categoryKey !== "departments" && categoryKey !== "designations") return clean;
-
-            const replacedNames = new Set((REPLACED_CATALOG_ITEMS[categoryKey] || []).map((name) => name.toLowerCase()));
-            const currentItems = defaults.map((item) => {
-              const storedItem = clean.find((stored) => stored.name?.toLowerCase() === item.name.toLowerCase());
-              return storedItem ? { ...item, ...storedItem, code: item.code } : item;
-            });
-            const currentNames = new Set(currentItems.map((item) => item.name.toLowerCase()));
-            const customItems = clean.filter((item) =>
-              !replacedNames.has(item.name?.toLowerCase()) &&
-              !currentNames.has(item.name?.toLowerCase())
-            );
-            const migrated = [...currentItems, ...customItems];
-            localStorage.setItem(localKey, JSON.stringify(migrated));
-            return migrated;
-          }
+    // The list lives in the database (db-kv). On the first start-up after this change, an old browser copy is moved
+    // across, leaving out the default names that earlier versions seeded.
+    let stored: any[] | null = dbValueGet<any[] | null>(localKey, null);
+    const legacyKey = `${LEGACY_MASTER_CACHE_PREFIX}${categoryKey}`;
+    if (stored === null && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(legacyKey);
+        if (raw !== null) {
+          const legacyList: any[] = JSON.parse(raw);
+          const seeded = new Set((LEGACY_HRMS_DEFAULT_NAMES[categoryKey] || []).map(n => n.toLowerCase()));
+          stored = (Array.isArray(legacyList) ? legacyList : []).filter(p => !seeded.has(String(p?.name || "").toLowerCase()));
+          dbValueSet(localKey, stored);
+          window.localStorage.removeItem(legacyKey);
         }
+      } catch { /* unreadable browser copy: ignored */ }
+    }
+
+    if (stored && stored.length > 0) {
+      // Filter out legacy dummy entries like "Mindz Developers"
+      const clean = stored.filter(p => !p.name?.includes("Mindz Developers") && !p.name?.includes("Gurugram"));
+      if (clean.length > 0) {
+        if (categoryKey !== "departments" && categoryKey !== "designations") return clean;
+
+        const replacedNames = new Set((REPLACED_CATALOG_ITEMS[categoryKey] || []).map((name) => name.toLowerCase()));
+        const currentItems = defaults.map((item) => {
+          const storedItem = clean.find((s) => s.name?.toLowerCase() === item.name.toLowerCase());
+          return storedItem ? { ...item, ...storedItem, code: item.code } : item;
+        });
+        const currentNames = new Set(currentItems.map((item) => item.name.toLowerCase()));
+        const customItems = clean.filter((item) =>
+          !replacedNames.has(item.name?.toLowerCase()) &&
+          !currentNames.has(item.name?.toLowerCase())
+        );
+        const migrated = [...currentItems, ...customItems];
+        dbValueSet(localKey, migrated);
+        return migrated;
       }
-    } catch (e) {
-      console.warn("Could not read local master cache:", e);
     }
 
-    try {
-      localStorage.setItem(localKey, JSON.stringify(defaults));
-    } catch (e) {
-      console.warn("Could not seed local master cache:", e);
-    }
-
+    dbValueSet(localKey, defaults);
     return defaults;
   },
 
@@ -674,7 +455,7 @@ export const HrmsMastersApi = {
       is_active: true,
     };
     const updated = [newItem, ...current];
-    localStorage.setItem(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, JSON.stringify(updated));
+    dbValueSet(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, updated);
     window.dispatchEvent(new CustomEvent("hrms_masters_updated", { detail: { categoryKey, items: updated } }));
     return newItem;
   },
@@ -693,7 +474,7 @@ export const HrmsMastersApi = {
   ): Promise<MasterItem | null> {
     const current = await this.getMasterItems(categoryKey);
     const updated = current.map((i) => (i.id === id ? { ...i, ...updates } : i));
-    localStorage.setItem(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, JSON.stringify(updated));
+    dbValueSet(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, updated);
     window.dispatchEvent(new CustomEvent("hrms_masters_updated", { detail: { categoryKey, items: updated } }));
     return updated.find((i) => i.id === id) || null;
   },
@@ -701,7 +482,7 @@ export const HrmsMastersApi = {
   async deleteMasterItem(categoryKey: MasterCategoryKey, id: string): Promise<boolean> {
     const current = await this.getMasterItems(categoryKey);
     const updated = current.filter((i) => i.id !== id);
-    localStorage.setItem(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, JSON.stringify(updated));
+    dbValueSet(`${MASTER_CACHE_KEY_PREFIX}${categoryKey}`, updated);
     window.dispatchEvent(new CustomEvent("hrms_masters_updated", { detail: { categoryKey, items: updated } }));
     return true;
   },

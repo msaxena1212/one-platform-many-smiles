@@ -43,7 +43,16 @@ export type VoucherLike = {
   property_name?: string;
   unit_ref?: string;
   tenant_name?: string;
-  lines?: { type: "DR" | "CR"; account?: string; account_code?: string; amount: number; description?: string }[];
+  lines?: {
+    type?: "DR" | "CR";
+    account?: string;
+    account_name?: string;
+    account_code?: string;
+    amount?: number;
+    debit?: number;
+    credit?: number;
+    description?: string;
+  }[];
 };
 
 const VOUCHER_TYPE_CODE: Record<string, string> = {
@@ -110,12 +119,16 @@ export async function loadReceivables(): Promise<ArInvoiceLike[] | null> {
 /** Insert a voucher and its account lines. Rolls the voucher back if any line fails. */
 export async function persistVoucher(v: VoucherLike): Promise<PersistResult<{ id: string }>> {
   const lines = v.lines && v.lines.length > 0
-    ? v.lines.map(l => ({
-        code: String(l.account_code || l.account || "").trim().split(/\s+/)[0],
-        dr: l.type === "DR" ? Number(l.amount) || 0 : 0,
-        cr: l.type === "CR" ? Number(l.amount) || 0 : 0,
-        description: l.description || v.name,
-      }))
+    ? v.lines.map(l => {
+        // Two shapes exist: {type, amount} (journal screens) and {debit, credit} (vendor and advance vouchers).
+        const hasType = l.type === "DR" || l.type === "CR";
+        return {
+          code: String(l.account_code || l.account || "").trim().split(/\s+/)[0],
+          dr: hasType ? (l.type === "DR" ? Number(l.amount) || 0 : 0) : Number(l.debit) || 0,
+          cr: hasType ? (l.type === "CR" ? Number(l.amount) || 0 : 0) : Number(l.credit) || 0,
+          description: l.description || v.name,
+        };
+      })
     : [
         { code: String(v.debit_code || "").trim(), dr: Number(v.amount) || 0, cr: 0, description: v.debit || v.name },
         { code: String(v.credit_code || "").trim(), dr: 0, cr: Number(v.amount) || 0, description: v.credit || v.name },
@@ -148,7 +161,11 @@ export async function persistVoucher(v: VoucherLike): Promise<PersistResult<{ id
     })
     .select("id")
     .single();
-  if (vErr || !vRow) return { ok: false, error: errText(vErr) || "Voucher not saved" };
+  if (vErr || !vRow) {
+    const code = (vErr as { code?: string } | null)?.code;
+    if (code === "23505") return { ok: false, error: `voucher ${v.voucher_no} already exists in the database` };
+    return { ok: false, error: errText(vErr) || "Voucher not saved" };
+  }
   const voucherId = String((vRow as { id: string }).id);
 
   const { error: lErr } = await apiDb.from("fin_voucher_lines").insert(
@@ -171,4 +188,12 @@ export async function persistVoucher(v: VoucherLike): Promise<PersistResult<{ id
     return { ok: false, error: errText(lErr) };
   }
   return { ok: true, data: { id: voucherId } };
+}
+
+/** Save a voucher unless one with the same voucher number is already in the database. */
+export async function persistVoucherOnce(v: VoucherLike): Promise<PersistResult<{ id: string }>> {
+  const { data, error } = await supabase.from("fin_vouchers").select("id").eq("voucher_number", v.voucher_no).limit(1);
+  if (error) return { ok: false, error: errText(error) };
+  if (data && data.length > 0) return { ok: true, data: { id: String((data[0] as { id: string }).id) } };
+  return persistVoucher(v);
 }

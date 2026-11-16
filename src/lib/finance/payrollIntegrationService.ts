@@ -163,41 +163,8 @@ export async function syncPayrollRun(payload: PayrollSyncPayload) {
     // 7. Mark as Posted
     await FinPayrollSyncsApi.update(syncRecord.id, { status: 'Posted' });
 
-    // Also persist voucher locally in localStorage so Trial Balance & GL reflect immediately
+    // The voucher was posted to the database above; screens reload from there.
     if (typeof window !== 'undefined') {
-      try {
-        const vKey = 'finance_master_v1-vouchers';
-        const raw = localStorage.getItem(vKey);
-        const list = raw ? JSON.parse(raw) : [];
-        const vNo = `VCH-PAY-${payload.payroll_run_id}`;
-        if (!list.some((v: any) => v.voucher_no === vNo)) {
-          const newVch = {
-            id: `vch-pay-${Date.now()}`,
-            voucher_no: vNo,
-            voucher_type: 'Journal Voucher',
-            date: today,
-            name: `Payroll Sync Run — ${payload.period} (${payload.payroll_run_id})`,
-            debit: salaryExp.glName || 'Staff Salaries & Payroll',
-            debit_code: salaryExp.slCode || '50100',
-            credit: payrollPayable.glName || 'Salary Payable',
-            credit_code: payrollPayable.slCode || '21900',
-            amount: totalDebit,
-            method: 'Payroll Journal',
-            status: 'Posted',
-            lines: voucherLines.map((vl, idx) => ({
-              id: `vl-${Date.now()}-${idx}`,
-              type: vl.debit > 0 ? 'DR' : 'CR',
-              account: vl.account_name,
-              account_code: vl.account_code,
-              amount: vl.debit > 0 ? vl.debit : vl.credit,
-              description: vl.description,
-            })),
-          };
-          localStorage.setItem(vKey, JSON.stringify([newVch, ...list]));
-        }
-      } catch (storeErr) {
-        console.warn('[syncPayrollRun] Local storage sync note:', storeErr);
-      }
       window.dispatchEvent(new CustomEvent('finance_vouchers_updated'));
     }
 

@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
+import { persistReceivables } from "@/lib/finance/finance-persistence";
 import { Switch } from "@/components/ui/switch";
 import {
   Loader2,
@@ -1544,12 +1546,12 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
       const taxAmt = inv.tax_amount || 0;
       const totalAmt = inv.amount;
 
-      const FINANCE_AP_KEY = "zyno-pms-finance-data-v1-ap";
-      // Push AP invoice to Finance AP Key
-      const existing: any[] = JSON.parse(localStorage.getItem(FINANCE_AP_KEY) || "[]");
-      const alreadyExists = existing.some((i: any) => i.invoice_no === inv.invoice_no);
-      if (!alreadyExists) {
-        existing.unshift({
+      // Push the AP invoice to the finance payables in the database (store fin.ap), once per invoice number
+      void (async () => {
+        const apRows = await loadCollectionRows("fin.ap");
+        if (!apRows) { toast.error(`Payable invoice ${inv.invoice_no} was NOT saved: the database could not be read.`); return; }
+        if (apRows.some(r => (r.data as any)?.invoice_no === inv.invoice_no)) return;
+        const rec = {
           ...inv,
           id: `ap-mnt-${Date.now()}`,
           status: "Unpaid",
@@ -1563,9 +1565,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
           payment_terms: inv.payment_terms || "Net 30 Days",
           settlement_mode: inv.settlement_mode || "Bank Wire / Electronic Transfer (QNB)",
           receipt_attachment: inv.receipt_attachment,
-        });
-        localStorage.setItem(FINANCE_AP_KEY, JSON.stringify(existing));
-      }
+        };
+        const err = await upsertCollectionRecords("fin.ap", [{ id: rec.id, data: rec }]);
+        if (err) toast.error(`Payable invoice ${inv.invoice_no} was NOT saved to the database: ${err}`);
+      })();
 
       // Also register in centralized ApInvoicesApi cache so Vendor Management -> Financials -> AP Invoices reflects it
       void ApInvoicesApi.create({
@@ -1614,10 +1617,11 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
     amount: number;
   }) {
     try {
-      const FINANCE_JOURNALS_KEY = "zyno-pms-finance-data-v1-journals";
-      const journals: any[] = JSON.parse(localStorage.getItem(FINANCE_JOURNALS_KEY) || "[]");
-      journals.unshift({ ...entry, id: `je-mnt-${Date.now()}`, status: "Posted" });
-      localStorage.setItem(FINANCE_JOURNALS_KEY, JSON.stringify(journals));
+      // Journal line goes to the database (store fin.journals)
+      const journal = { ...entry, id: `je-mnt-${Date.now()}`, status: "Posted" };
+      void upsertCollectionRecords("fin.journals", [{ id: journal.id, data: journal }]).then(err => {
+        if (err) toast.error(`Journal line was NOT saved to the database: ${err}`);
+      });
       window.dispatchEvent(new Event("finance_vouchers_updated"));
     } catch (e) {
       console.warn("[Maintenance] GL Journal sync failed:", e);
@@ -1763,9 +1767,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
     // If "Direct Invoice" mode — also raise an AR receivable
     if (!isDepositDeduction) {
       try {
-        const FINANCE_AR_KEY = "zyno-pms-finance-data-v1-ar";
-        const existingAr: any[] = JSON.parse(localStorage.getItem(FINANCE_AR_KEY) || "[]");
-        existingAr.unshift({
+        const receivable = {
           id: `ar-cb-${Date.now()}`,
           invoice_no: `AR-CB-${chargebackForm.workOrderId.replace("WO-", "")}`,
           tenant: chargebackForm.tenantName,
@@ -1777,8 +1779,10 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
           account_code: "41300002",
           amount: chargebackAmount,
           status: "Pending",
+        };
+        void persistReceivables([receivable as any]).then(r => {
+          if (!r.ok) toast.error(`Tenant chargeback receivable was NOT saved to the database: ${r.error}`);
         });
-        localStorage.setItem(FINANCE_AR_KEY, JSON.stringify(existingAr));
         window.dispatchEvent(new Event("finance_vouchers_updated"));
       } catch (e) {
         console.warn("[Maintenance] AR chargeback sync failed:", e);

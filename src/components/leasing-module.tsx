@@ -721,6 +721,18 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
   });
   const [busyAction, setBusyAction] = useState("");
 
+  // Checkout and settlement rows are generated from lease status on load. A generated row is only stored once the
+  // user changes it: the signature of each generated row is kept here, and unchanged rows are not written.
+  const seedSigRef = useRef(new Map<string, string>());
+  useEffect(() => {
+    const userRows = checkouts.filter(r => seedSigRef.current.get(r.id) !== JSON.stringify(r));
+    try { localStorage.setItem("pms_checkout_cases_v3", JSON.stringify(userRows)); } catch { }
+  }, [checkouts]);
+  useEffect(() => {
+    const userRows = settlements.filter(r => seedSigRef.current.get(r.id) !== JSON.stringify(r));
+    try { localStorage.setItem("pms_settlement_cases_v3", JSON.stringify(userRows)); } catch { }
+  }, [settlements]);
+
   // ── Finance Staff from HRMS (for Cashier dropdown) ──────────────────
   const [financeEmployees, setFinanceEmployees] = useState<Array<{ id: string; name: string; designation: string }>>([]);
   useEffect(() => {
@@ -1988,7 +2000,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             const vDate = (lease as any).actualVacateDate || (lease as any).plannedVacateDate || lease.endDate || (today instanceof Date ? today.toISOString().split("T")[0] : "2026-09-30");
             const isReadyForSettlement = lease.status === "closed";
             const isInspectionDone = lease.status === "checkout";
-            updated.push({
+            const chkSeed = {
               id: `chk-${lease.id}`,
               leaseId: lease.id,
               noticeDate: lease.endDate || vDate,
@@ -2001,14 +2013,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               utilityClearance: true,
               keysReturned: true,
               status: isReadyForSettlement ? "ready_for_settlement" : isInspectionDone ? "inspection_done" : "closed",
-            });
+            };
+            seedSigRef.current.set(chkSeed.id, JSON.stringify(chkSeed));
+            updated.push(chkSeed as any);
             changed = true;
           }
         }
       });
-      if (changed) {
-        try { localStorage.setItem("pms_checkout_cases_v3", JSON.stringify(updated)); } catch { }
-      }
       return changed ? updated : prev;
     });
 
@@ -2030,7 +2041,7 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
             const cln = lease.status === "closed" ? 0 : 0;
             const totalDeductions = dmg + cln;
             const refundable = Math.max(0, dep - totalDeductions);
-            updated.push({
+            const setSeed = {
               id: `set-${lease.id}`,
               leaseId: lease.id,
               depositReceived: dep,
@@ -2045,14 +2056,13 @@ function LeasingPage({ role }: { role?: "admin" | "prop-mgr" | "leasing" }) {
               // and the settlement is submitted (completeCheckout), so it no longer shows "Pending Approval" on initiate.
               approval: lease.status === "closed" ? "pending_approval" : "draft",
               settlementMode: "DEDUCT_FROM_DEPOSIT",
-            });
+            };
+            seedSigRef.current.set(setSeed.id, JSON.stringify(setSeed));
+            updated.push(setSeed as any);
             changed = true;
           }
         }
       });
-      if (changed) {
-        try { localStorage.setItem("pms_settlement_cases_v3", JSON.stringify(updated)); } catch { }
-      }
       return changed ? updated : prev;
     });
   }, [leases]);

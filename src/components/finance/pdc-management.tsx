@@ -399,27 +399,6 @@ function GlConfirmModal({
   );
 }
 
-const RECEIPT_HISTORY_STORAGE_KEY = "zyno-pdc-cash-receipts-v2";
-
-function loadSavedReceiptHistory(): Record<string, TenantReceiptDetails[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(RECEIPT_HISTORY_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed: Record<string, TenantReceiptDetails[]> = JSON.parse(raw);
-    return parsed;
-  } catch {
-    return {};
-  }
-}
-
-function saveReceiptHistory(history: Record<string, TenantReceiptDetails[]>) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(RECEIPT_HISTORY_STORAGE_KEY, JSON.stringify(history));
-  } catch { /* ignore */ }
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 export function PdcManagement() {
   const routeSearch = useSearch({ strict: false }) as { collect?: string };
@@ -432,7 +411,7 @@ export function PdcManagement() {
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<TenantReceiptDetails | null>(null);
   // Per-PDC receipt history: cheque_number -> list of TenantReceiptDetails (one per partial payment)
-  const [receiptHistory, setReceiptHistory] = useState<Record<string, TenantReceiptDetails[]>>(loadSavedReceiptHistory);
+  const [receiptHistory, setReceiptHistory] = useState<Record<string, TenantReceiptDetails[]>>({});
   // Receipts are kept in the database: one record per cheque (app_documents store "pdc.cash_receipts").
   const receiptEntries = useMemo(() => Object.entries(receiptHistory).map(([id, rows]) => ({ id, rows })), [receiptHistory]);
   useDbCollection(
@@ -1540,7 +1519,6 @@ export function PdcManagement() {
         const key = String(chqNo);
         const existing = prev[key] || [];
         const next = { ...prev, [key]: [...existing, receipt] };
-        saveReceiptHistory(next);
         return next;
       });
 
@@ -1793,7 +1771,6 @@ export function PdcManagement() {
         const key = String(chqNo);
         const existing = prev[key] || [];
         const next = { ...prev, [key]: [...existing, receipt] };
-        saveReceiptHistory(next);
         return next;
       });
 
@@ -2062,7 +2039,8 @@ export function PdcManagement() {
 
         // Add to Finance store vouchers for immediate GL reflection
         addVoucher({
-          voucher_no: `VCH-PDC-REC-${row.chequeNo}`,
+          // Cheque numbers repeat across tenants, so the unit is part of the voucher number.
+          voucher_no: `VCH-PDC-REC-${row.chequeNo}-${String(unit || "").split(" ").join("")}`,
           voucher_type: "Journal Voucher",
           date: row.chequeDate,
           name: `PDC Collected – ${row.chequeNo} (${tenant} - ${unit})`,

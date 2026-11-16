@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
 import { persistVoucher } from "@/lib/finance/finance-persistence";
 
-/** Procurement AP invoices and payment receipts live in the database; the browser keeps a cache. */
+/** Procurement AP invoices and payment receipts live in the database. Screens read an in-memory copy of it. */
 const dbSave = (store: string, rows: { id: string; data: unknown }[], what: string) => {
   if (rows.length === 0) return;
   void upsertCollectionRecords(store, rows).then(err => {
@@ -12,28 +12,88 @@ const dbSave = (store: string, rows: { id: string; data: unknown }[], what: stri
   });
 };
 
-/** Load the procurement records from the database into the browser cache the screens read. */
+async function softDeleteIds(store: string, ids: string[]) {
+  for (const id of ids) {
+    const { error } = await apiDb.from("app_documents").update({ deleted: true, updated_at: new Date().toISOString() } as any).eq("store", store).eq("id", id);
+    if (error) toast.error(`Removal in ${store} was NOT saved to the database: ${error.message}`);
+  }
+}
+
+// In-memory copy of the database rows. Nothing is kept in browser storage.
+let apInvoicesMem: ProcApInvoice[] = [];
+let receiptsMem: PaymentReceipt[] = [];
+
+// Browser copies written by earlier versions of this screen. They are uploaded once and then removed.
+const LEGACY_INVOICE_KEY = "proc_ap_invoices_cache_v2";
+const LEGACY_RECEIPT_KEY = "proc_payment_receipts_v2";
+
+function readLegacy(key: string): any[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(key);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Load the procurement records from the database. Browser-only leftovers are uploaded first. */
 export async function syncProcFromDatabase(): Promise<void> {
   const [inv, rec] = await Promise.all([loadCollectionRows("proc.ap_invoices"), loadCollectionRows("proc.payment_receipts")]);
-  // Browser-only records are uploaded first, then the database list becomes the cache.
-  const sync = (
-    rows: { id: string; data: unknown }[] | null,
-    local: any[],
-    store: string,
-    key: string,
-    evt: string,
-    what: string,
-    idOf: (x: any) => string,
-  ) => {
-    if (!rows || typeof window === "undefined") return;
-    const known = new Set(rows.map(r => r.id));
-    const localOnly = local.filter(x => !known.has(idOf(x)));
-    dbSave(store, localOnly.map(x => ({ id: idOf(x), data: x })), what);
-    localStorage.setItem(key, JSON.stringify([...rows.map(r => r.data), ...localOnly]));
-    window.dispatchEvent(new Event(evt));
-  };
-  sync(inv, getLocalInvoices(), "proc.ap_invoices", INVOICE_STORAGE_KEY, "ap_invoices_updated", "AP invoice", x => String(x.id ?? x.invoice_number));
-  sync(rec, getLocalReceipts(), "proc.payment_receipts", RECEIPT_STORAGE_KEY, "payment_receipts_updated", "Payment receipt", x => String(x.id ?? x.receipt_number));
+
+  if (inv) {
+    const known = new Set(inv.map(r => r.id));
+    const legacy = readLegacy(LEGACY_INVOICE_KEY);
+    const localOnly = legacy.filter(x => !known.has(String(x.id ?? x.invoice_number)));
+    if (localOnly.length) {
+      const err = await upsertCollectionRecords("proc.ap_invoices", localOnly.map(x => ({ id: String(x.id ?? x.invoice_number), data: x })));
+      if (err) toast.error(`AP invoices from this browser were NOT saved to the database: ${err}`);
+      else localStorage.removeItem(LEGACY_INVOICE_KEY);
+    } else if (legacy.length) {
+      localStorage.removeItem(LEGACY_INVOICE_KEY);
+    }
+    apInvoicesMem = [...inv.map(r => r.data as ProcApInvoice), ...localOnly as ProcApInvoice[]];
+    window.dispatchEvent(new Event("ap_invoices_updated"));
+  }
+
+  if (rec) {
+    const known = new Set(rec.map(r => r.id));
+    const legacy = readLegacy(LEGACY_RECEIPT_KEY);
+    const localOnly = legacy.filter(x => !known.has(String(x.id ?? x.receipt_number)));
+    if (localOnly.length) {
+      const err = await upsertCollectionRecords("proc.payment_receipts", localOnly.map(x => ({ id: String(x.id ?? x.receipt_number), data: x })));
+      if (err) toast.error(`Payment receipts from this browser were NOT saved to the database: ${err}`);
+      else localStorage.removeItem(LEGACY_RECEIPT_KEY);
+    } else if (legacy.length) {
+      localStorage.removeItem(LEGACY_RECEIPT_KEY);
+    }
+    receiptsMem = [...rec.map(r => r.data as PaymentReceipt), ...localOnly as PaymentReceipt[]];
+    window.dispatchEvent(new Event("payment_receipts_updated"));
+  }
+}
+
+async function reloadStore(store: "proc.ap_invoices" | "proc.payment_receipts") {
+  const rows = await loadCollectionRows(store);
+  if (!rows) return;
+  if (store === "proc.ap_invoices") {
+    apInvoicesMem = rows.map(r => r.data as ProcApInvoice);
+    window.dispatchEvent(new Event("ap_invoices_updated"));
+  } else {
+    receiptsMem = rows.map(r => r.data as PaymentReceipt);
+    window.dispatchEvent(new Event("payment_receipts_updated"));
+  }
+}
+
+// Changes made in other sessions arrive through Supabase Realtime.
+if (typeof window !== "undefined") {
+  for (const store of ["proc.ap_invoices", "proc.payment_receipts"] as const) {
+    supabase
+      .channel(`app-documents:${store}`)
+      .on("postgres_changes" as any, { event: "*", schema: "public", table: "app_documents", filter: `store=eq.${store}` }, () => { void reloadStore(store); })
+      .subscribe();
+  }
+  void syncProcFromDatabase().catch(() => { /* the screens show what is already loaded */ });
 }
 
 export type ProcApInvoice = {
@@ -90,57 +150,31 @@ export type PaymentReceipt = {
   created_at: string;
 };
 
-const INVOICE_STORAGE_KEY = 'proc_ap_invoices_cache_v2';
-const RECEIPT_STORAGE_KEY = 'proc_payment_receipts_v2';
-
-// Real-time sync across browser tabs: when another tab saves AP invoices or receipts, tell this tab's screens to reload.
-if (typeof window !== 'undefined') {
-  window.addEventListener('storage', (e) => {
-    if (e.key === INVOICE_STORAGE_KEY) window.dispatchEvent(new Event('ap_invoices_updated'));
-    if (e.key === RECEIPT_STORAGE_KEY) window.dispatchEvent(new Event('payment_receipts_updated'));
-  });
-  // Start from the database copy, not whatever this browser last cached.
-  void syncProcFromDatabase().catch(() => { /* the cache is still shown */ });
-}
-
+/** Screens read the in-memory copy; every change is written to the database in the same call. */
 function getLocalInvoices(): ProcApInvoice[] {
-  try {
-    const raw = localStorage.getItem(INVOICE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error("Failed to read local AP Invoices:", e);
-  }
-  return [];
+  return apInvoicesMem;
 }
 
 function saveLocalInvoices(list: ProcApInvoice[]) {
+  const nextIds = new Set(list.map(i => String((i as any).id ?? i.invoice_number)));
+  const removed = apInvoicesMem.map(i => String((i as any).id ?? i.invoice_number)).filter(id => !nextIds.has(id));
+  apInvoicesMem = list;
   dbSave("proc.ap_invoices", list.map(i => ({ id: String((i as any).id ?? i.invoice_number), data: i })), "AP invoice");
-  try {
-    localStorage.setItem(INVOICE_STORAGE_KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event('ap_invoices_updated'));
-  } catch (e) {
-    console.error("Failed to save local AP Invoices:", e);
-  }
+  if (removed.length) void softDeleteIds("proc.ap_invoices", removed);
+  window.dispatchEvent(new Event("ap_invoices_updated"));
 }
 
 function getLocalReceipts(): PaymentReceipt[] {
-  try {
-    const raw = localStorage.getItem(RECEIPT_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error("Failed to read local Payment Receipts:", e);
-  }
-  return [];
+  return receiptsMem;
 }
 
 function saveLocalReceipts(list: PaymentReceipt[]) {
+  const nextIds = new Set(list.map(r => String((r as any).id ?? (r as any).receipt_number)));
+  const removed = receiptsMem.map(r => String((r as any).id ?? (r as any).receipt_number)).filter(id => !nextIds.has(id));
+  receiptsMem = list;
   dbSave("proc.payment_receipts", list.map(r => ({ id: String((r as any).id ?? (r as any).receipt_number), data: r })), "Payment receipt");
-  try {
-    localStorage.setItem(RECEIPT_STORAGE_KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event('payment_receipts_updated'));
-  } catch (e) {
-    console.error("Failed to save local Payment Receipts:", e);
-  }
+  if (removed.length) void softDeleteIds("proc.payment_receipts", removed);
+  window.dispatchEvent(new Event("payment_receipts_updated"));
 }
 
 // Helper to push vouchers into Finance Store & Supabase
@@ -166,50 +200,18 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
     toast.error(`Payment voucher ${pvNum} was NOT saved to the database: ${e?.message || e}`);
   }
 
-  // 2. Write into Finance Store localStorage — vouchers key
-  const FIN_STORE_KEY = "zyno-pms-finance-data-v1-vouchers";
+  // 2. Payable invoice in the database (store fin.ap): mark it Paid, or add it if the finance side does not have it yet.
   try {
-    const existing: any[] = JSON.parse(localStorage.getItem(FIN_STORE_KEY) || "[]");
-    const pvEntry = {
-      id: `vch-pv-${Date.now()}`,
-      voucher_no: pvNum,
-      voucher_type: "Payment Voucher",
-      date: paidDate,
-      name: `Vendor Settlement — ${invoice.invoice_number} (${receiptNum})`,
-      debit: "Trade Payables - Vendors",
-      debit_code: "22100001",
-      credit: "Bank Operating Account",
-      credit_code: "12000001",
-      amount: invoice.total_amount,
-      method: invoice.payment_method || "Bank Wire",
-      status: "Posted",
-      property_name: "Procurement",
-      unit_ref: invoice.grn_number || invoice.po_number || "N/A",
-      tenant_name: String(invoice.vendor_id),
-    };
-    // Avoid duplicates
-    if (!existing.some((v: any) => v.voucher_no === pvNum)) {
-      localStorage.setItem(FIN_STORE_KEY, JSON.stringify([pvEntry, ...existing]));
-      // Notify Finance module to reload
-      window.dispatchEvent(new Event("finance_vouchers_updated"));
+    window.dispatchEvent(new Event("finance_vouchers_updated"));
+    const rows = await loadCollectionRows("fin.ap");
+    if (rows === null) {
+      toast.error(`Payable invoice ${invoice.invoice_number} was NOT updated: the database could not be read.`);
+      return;
     }
-  } catch (e) {
-    console.error("Failed to sync Payment Voucher to Finance Store:", e);
-  }
-
-  // 3. Write into Finance Store localStorage — payableInvoices (AP) key
-  const AP_STORE_KEY = "zyno-pms-finance-data-v1-ap";
-  try {
-    const existingAp: any[] = JSON.parse(localStorage.getItem(AP_STORE_KEY) || "[]");
     const invNo = invoice.invoice_number;
-    // Update status to Paid if already exists, else add it
-    if (existingAp.some((i: any) => i.invoice_no === invNo)) {
-      const updatedAp = existingAp.map((i: any) =>
-        i.invoice_no === invNo ? { ...i, status: "Paid" } : i
-      );
-      localStorage.setItem(AP_STORE_KEY, JSON.stringify(updatedAp));
-      const changedAp = updatedAp.filter((i: any) => i.invoice_no === invNo);
-      dbSave("fin.ap", changedAp.map((i: any) => ({ id: String(i.id), data: i })), "Payable invoice status");
+    const match = rows.find(r => (r.data as any)?.invoice_no === invNo);
+    if (match) {
+      dbSave("fin.ap", [{ id: match.id, data: { ...(match.data as any), status: "Paid" } }], "Payable invoice status");
     } else {
       const apEntry = {
         id: `ap-proc-${Date.now()}`,
@@ -222,11 +224,10 @@ async function postFinancePaymentVoucher(invoice: ProcApInvoice, receiptNum: str
         amount: invoice.total_amount,
         status: "Paid",
       };
-      localStorage.setItem(AP_STORE_KEY, JSON.stringify([apEntry, ...existingAp]));
       dbSave("fin.ap", [{ id: apEntry.id, data: apEntry }], "Payable invoice");
     }
   } catch (e) {
-    console.error("Failed to sync AP Invoice to Finance Store:", e);
+    console.error("Failed to sync AP Invoice to Finance:", e);
   }
 }
 
@@ -299,9 +300,9 @@ export const ApInvoicesApi = {
 
       // 4. Merge Maintenance Vendor Invoices (pms_vendor_invoices)
       try {
-        const mntInvoicesRaw = localStorage.getItem("pms_vendor_invoices");
-        if (mntInvoicesRaw) {
-          const mntInvoices: any[] = JSON.parse(mntInvoicesRaw);
+        const mntRows = await loadCollectionRows("pms_vendor_invoices");
+        if (mntRows) {
+          const mntInvoices: any[] = mntRows.map(r => r.data);
           for (const m of mntInvoices) {
             if (m.invoiceNo && !existingInvNumbers.has(m.invoiceNo)) {
               invoices.push({
@@ -459,46 +460,17 @@ export const ApInvoicesApi = {
       // Post to Finance module vouchers & reports
       void postFinancePaymentVoucher({ ...existingInv, total_amount: paidAmount, payment_method: payload.payment_method || existingInv.payment_method }, rcptNum, pvNum);
 
-      // ── Cross-sync with Maintenance Vendor Invoices (pms_vendor_invoices) ──
+      // ── Cross-sync with Maintenance Vendor Invoices (database store pms_vendor_invoices) ──
       try {
-        const mntRaw = localStorage.getItem("pms_vendor_invoices");
-        if (mntRaw) {
-          const mntList: any[] = JSON.parse(mntRaw);
-          let mntChanged = false;
-          const updatedMnt = mntList.map((m: any) => {
-            if (m.invoiceNo === existingInv.invoice_number || m.id === existingInv.id) {
-              mntChanged = true;
-              return { ...m, status: payload.status === "PAID" ? "Approved" : m.status };
-            }
-            return m;
-          });
-          if (mntChanged) {
-            localStorage.setItem("pms_vendor_invoices", JSON.stringify(updatedMnt));
-          }
+        const mntRows = await loadCollectionRows("pms_vendor_invoices");
+        if (mntRows) {
+          const changed = mntRows
+            .filter(r => (r.data as any)?.invoiceNo === existingInv.invoice_number || (r.data as any)?.id === existingInv.id)
+            .map(r => ({ id: r.id, data: { ...(r.data as any), status: payload.status === "PAID" ? "Approved" : (r.data as any).status } }));
+          if (changed.length) dbSave("pms_vendor_invoices", changed, "Maintenance vendor invoice");
         }
       } catch (e) {
         console.warn("Failed cross-syncing pms_vendor_invoices:", e);
-      }
-
-      // ── Cross-sync with Finance Store AP (zyno-pms-finance-data-v1-ap) ──
-      try {
-        const finApRaw = localStorage.getItem("zyno-pms-finance-data-v1-ap");
-        if (finApRaw) {
-          const finApList: any[] = JSON.parse(finApRaw);
-          let finChanged = false;
-          const updatedFin = finApList.map((f: any) => {
-            if (f.invoice_no === existingInv.invoice_number || f.id === existingInv.id) {
-              finChanged = true;
-              return { ...f, status: payload.status === "PAID" ? "Paid" : f.status };
-            }
-            return f;
-          });
-          if (finChanged) {
-            localStorage.setItem("zyno-pms-finance-data-v1-ap", JSON.stringify(updatedFin));
-          }
-        }
-      } catch (e) {
-        console.warn("Failed cross-syncing zyno-pms-finance-data-v1-ap:", e);
       }
 
       // Dispatch global refresh events

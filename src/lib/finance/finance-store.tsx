@@ -6,6 +6,7 @@ import { resolveAccountingAccounts } from "./account-resolver";
 import { postVoucher } from "./posting-engine";
 import { persistVoucher, persistReceivables, updateReceivable, loadReceivables } from "./finance-persistence";
 import { useDbCollection, upsertCollectionRecords, loadCollectionRows } from "@/lib/db-collection";
+import { migrateFinanceBrowserCaches } from "./finance-cache-migration";
 import {
   GUARANTEE_CHEQUE_DATE,
   KAHRAMAA_DEPOSIT_ENTRIES,
@@ -16,20 +17,8 @@ import {
   resolvePropertyFromUnitCode,
 } from "./kahramaa-deposits-data";
 
-export function isPostingPeriodClosed(dateStr?: string): { closed: boolean; periodName?: string } {
-  if (!dateStr || typeof window === "undefined") return { closed: false };
-  try {
-    const ym = dateStr.split("T")[0].slice(0, 7);
-    const raw = localStorage.getItem("pms_posting_periods_cache");
-    if (!raw) return { closed: false };
-    const list = JSON.parse(raw) as Array<{ period_name: string; status: string }>;
-    const found = list.find(p => p.period_name === ym);
-    if (found && (found.status === "Closed" || (found as any).is_closed)) {
-      return { closed: true, periodName: ym };
-    }
-  } catch {}
-  return { closed: false };
-}
+import { isPostingPeriodClosed } from "./posting-periods";
+export { isPostingPeriodClosed };
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -541,26 +530,16 @@ export const INITIAL_DATE_CORRECTIONS: Record<string, VoucherDateCorrection> = {
   },
 };
 
+// Held in memory from the database (voucher.date_corrections); nothing is kept in browser storage.
+let dateCorrectionsMem: Record<string, VoucherDateCorrection> | null = null;
+
 export function getStoredVoucherDateCorrections(): Record<string, VoucherDateCorrection> {
-  if (typeof window === "undefined") return INITIAL_DATE_CORRECTIONS;
-  try {
-    const raw = localStorage.getItem(VOUCHER_DATE_CORRECTIONS_KEY);
-    if (!raw) {
-      localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(INITIAL_DATE_CORRECTIONS));
-      return INITIAL_DATE_CORRECTIONS;
-    }
-    const parsed = JSON.parse(raw);
-    return { ...INITIAL_DATE_CORRECTIONS, ...parsed };
-  } catch {
-    return INITIAL_DATE_CORRECTIONS;
-  }
+  return dateCorrectionsMem ?? INITIAL_DATE_CORRECTIONS;
 }
 
 export function saveStoredVoucherDateCorrections(corrections: Record<string, VoucherDateCorrection>): void {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(corrections));
-  } catch {}
+  dateCorrectionsMem = corrections;
   // Also to the database. The built-in corrections are not client data, so only the ones that differ are written.
   const changed = Object.entries(corrections).filter(([k, v]) => JSON.stringify(INITIAL_DATE_CORRECTIONS[k]) !== JSON.stringify(v));
   if (changed.length === 0) return;
@@ -648,7 +627,6 @@ export function resolvePdcBankGl(bank?: string | number | null): { glCode: strin
 }
 
 export function FinanceProvider({ children }: { children: ReactNode }) {
-  const FINANCE_STORAGE_KEY = "zyno-pms-finance-data-v6";
 
   // One-time cleanup of legacy/stale local caches that cause amount discrepancies
   useEffect(() => {
@@ -669,203 +647,29 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           "pms_cash_book_v2"
         ];
         legacyKeys.forEach(k => localStorage.removeItem(k));
-
-        // Deduplicate stored vouchers (e.g. redundant PV-SET vouchers for same tenant and unit)
-        const vKey = `${FINANCE_STORAGE_KEY}-vouchers`;
-        const raw = localStorage.getItem(vKey);
-        if (raw) {
-          const list: FinanceVoucher[] = JSON.parse(raw);
-          if (Array.isArray(list)) {
-            const seenPvSet = new Set<string>();
-            const deduped = list.filter(v => {
-              if (v.voucher_no && v.voucher_no.startsWith("PV-SET-")) {
-                const key = `${v.tenant_name || ""}_${v.unit_ref || ""}_${v.amount}`;
-                if (seenPvSet.has(key)) return false;
-                seenPvSet.add(key);
-              }
-              return true;
-            });
-            if (deduped.length !== list.length) {
-              localStorage.setItem(vKey, JSON.stringify(deduped));
-            }
-          }
-        }
       } catch {}
+      // Browser copies of finance records are moved to the database once, then removed (finance-cache-migration.ts).
+      void migrateFinanceBrowserCaches();
     }
   }, []);
 
   // ── States ────────────────────────────────────────────────────────────────
+  // Finance records are read from the database only (see the useDbCollection calls below and fetchSupabaseData).
   const [voucherDateCorrections, setVoucherDateCorrections] = useState<Record<string, VoucherDateCorrection>>(() => getStoredVoucherDateCorrections());
-  const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => {
-    if (typeof window === "undefined") return INITIAL_JOURNAL_LEDGER;
-    try {
-      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-journals`);
-      return saved ? JSON.parse(saved) : INITIAL_JOURNAL_LEDGER;
-    } catch { return INITIAL_JOURNAL_LEDGER; }
-  });
+  const [journalEntries, setJournalEntries] = useState<JournalLedgerEntry[]>(() => INITIAL_JOURNAL_LEDGER);
   const [grnMappings, setGrnMappings] = useState<GrnCostMapping[]>(INITIAL_GRN_MAPPINGS);
-  const [payableInvoices, setPayableInvoices] = useState<PayableInvoice[]>(() => {
-    if (typeof window === "undefined") return INITIAL_PAYABLE_INVOICES;
-    try {
-      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ap`);
-      return saved ? JSON.parse(saved) : INITIAL_PAYABLE_INVOICES;
-    } catch { return INITIAL_PAYABLE_INVOICES; }
-  });
+  const [payableInvoices, setPayableInvoices] = useState<PayableInvoice[]>(() => INITIAL_PAYABLE_INVOICES);
   const [vouchers, setVouchers] = useState<FinanceVoucher[]>(() => {
-    const initialKahramaa = buildKahramaaDepositVouchers();
-    const initialSdGuarantee = buildSecurityDepositGuaranteeVouchers();
-    const initialSpecialVouchers = [...initialKahramaa, ...initialSdGuarantee];
-    if (typeof window === "undefined") return [...initialSpecialVouchers, ...INITIAL_VOUCHERS];
-    try {
-      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`);
-      if (!saved) return [...initialSpecialVouchers, ...INITIAL_VOUCHERS];
-      const list: FinanceVoucher[] = JSON.parse(saved);
-      if (Array.isArray(list)) {
-        const seenPvSet = new Set<string>();
-        const cleaned = list.filter(v => {
-          const vNo = (v.voucher_no || "").toUpperCase();
-          const vName = (v.name || "").toLowerCase();
-
-          // Exclude known stale vouchers and legacy auto-generated Cash->Bank contra deposits on PDC cash replacement
-          if (
-            vNo === "PV-SET-970199" || vNo === "PV-SET-973725" || vNo === "PV-SET-073390" ||
-            vNo === "VCH-TRF-35" || vNo === "VCH-TRF-CNL-35" ||
-            vNo.startsWith("VCH-CSH-DEP-") ||
-            vNo.startsWith("BNK-DEP-") ||
-            vName.includes("bank deposit of replaced pdc cash till")
-          ) {
-            return false;
-          }
-
-          // Always refresh Kahramaa deposit vouchers and Security Deposit guarantee vouchers from authoritative Excel helpers
-          if (vNo.startsWith("VCH-KAH-DEP-") || vNo.startsWith("VCH-SD-GCHQ-")) {
-            return false;
-          }
-
-          if (v.voucher_no && v.voucher_no.startsWith("PV-SET-")) {
-            const key = `${v.tenant_name || ""}_${v.unit_ref || ""}_${v.amount}`;
-            if (seenPvSet.has(key)) return false;
-            seenPvSet.add(key);
-          }
-          return true;
-        }).map(v => {
-          const vNo = (v.voucher_no || "").toUpperCase();
-          const vName = (v.name || "").toLowerCase();
-          if (vNo.startsWith("VCH-TRF-CNL-") || vName.includes("pdc cancelled") || vName.includes("returned on bank transfer")) {
-            return {
-              ...v,
-              debit: "Customer PDC Liability",
-              debit_code: "21400",
-              credit: "PDC In Hand",
-              credit_code: "12900",
-            };
-          }
-          if (vNo.startsWith("VCH-TRF-") || vName.includes("bank transfer received in place of pdc")) {
-            return {
-              ...v,
-              debit: v.debit && !v.debit.includes("Revenue") ? v.debit : "Bank Operating Account",
-              debit_code: v.debit_code && v.debit_code !== "41100" ? v.debit_code : "12000001",
-              credit: "Tenant Receivables — Unit SL",
-              credit_code: "12413001",
-            };
-          }
-
-          const uUpper = (v.unit_ref || "").toUpperCase().trim();
-          const sdGuarantee = uUpper ? SECURITY_DEPOSIT_GUARANTEE_BY_UNIT[uUpper] : undefined;
-          const isSdVoucher =
-            (vName.includes("security deposit") || vNo.startsWith("VCH-SD-") || v.credit_code === "21500" || v.credit_code === "21500001") &&
-            !vName.includes("refund");
-          const isSdGuaranteeCheque =
-            isSdVoucher &&
-            (vName.includes("guarantee cheque") || /\|\s*pdc\b/i.test(v.name || "") || vName.includes("(pdc)") || Boolean(sdGuarantee));
-
-          const isPayrollAccrual =
-            v.credit_code === "21900" ||
-            v.debit_code === "50100" ||
-            vName.includes("payroll") ||
-            vName.includes("salary") ||
-            Number(v.amount) === 115250;
-          const normalizedAmt = isPayrollAccrual && Number(v.amount) === 115250 ? 96820 : v.amount;
-          const dateCorr = INITIAL_DATE_CORRECTIONS[v.voucher_no] || (typeof window !== "undefined" ? getStoredVoucherDateCorrections()[v.voucher_no] : null);
-
-          // For opening security deposits:
-          // Guarantee Cheques: DR 12900002 Deposit PDC In Hand / CR 21500001 Security Deposit Liability — Unit SL
-          // Cash/Bank opening deposits: DR 21500 Security Deposit Liability (Control) (not bank) / CR 21500001 Security Deposit Liability — Unit SL
-          const effectiveDrCode = dateCorr?.newBankCode || (
-            isSdGuaranteeCheque
-              ? "12900002"
-              : isSdVoucher
-                ? "21500"
-                : v.debit_code
-          );
-          const effectiveDrName = dateCorr?.newBankName || (
-            isSdGuaranteeCheque
-              ? "Deposit PDC In Hand"
-              : isSdVoucher
-                ? "Security Deposit Liability (Control)"
-                : v.debit
-          );
-          const effectiveCrCode = isSdVoucher ? "21500001" : v.credit_code;
-          const effectiveCrName = isSdVoucher ? "Security Deposit Liability — Unit SL" : v.credit;
-
-          const effectiveDate = dateCorr?.newDate || (isSdGuaranteeCheque ? GUARANTEE_CHEQUE_DATE : v.date);
-          const effectiveName = isSdGuaranteeCheque
-            ? (v.name || "")
-                .replace(/\|\s*PDC\s*$/i, "| Guarantee Cheque")
-                .replace(/^Security Deposit Receipt/i, "Guarantee Cheque — Security Deposit Receipt")
-            : v.name;
-
-          return {
-            ...v,
-            name: effectiveName,
-            amount: normalizedAmt,
-            date: effectiveDate,
-            debit_code: effectiveDrCode,
-            debit: effectiveDrName,
-            credit_code: effectiveCrCode,
-            credit: effectiveCrName,
-            account_code: effectiveCrCode,
-            ...(isSdGuaranteeCheque ? { method: "Guarantee Cheque", payment_mode: "Guarantee Cheque" } : {}),
-            lines: v.lines?.map(l => ({
-              ...l,
-              amount: isPayrollAccrual && Number(l.amount) === 115250 ? 96820 : l.amount,
-              account_code: l.type === "DR"
-                ? (dateCorr?.newBankCode || (isSdGuaranteeCheque ? "12900002" : (isSdVoucher ? "21500" : l.account_code)))
-                : (isSdVoucher ? "21500001" : l.account_code),
-              account: l.type === "DR"
-                ? (dateCorr?.newBankName || (isSdGuaranteeCheque ? "Deposit PDC In Hand" : (isSdVoucher ? "Security Deposit Liability (Control)" : l.account)))
-                : (isSdVoucher ? "Security Deposit Liability — Unit SL" : l.account),
-              description: isSdGuaranteeCheque ? effectiveName : l.description,
-            })),
-          };
-        });
-        const existingNos = new Set(cleaned.map(v => v.voucher_no));
-        const missingKahramaa = initialKahramaa.filter(kv => !existingNos.has(kv.voucher_no));
-        const missingSd = initialSdGuarantee.filter(sv => !existingNos.has(sv.voucher_no));
-        return [...missingKahramaa, ...missingSd, ...cleaned];
-      }
-      return [...initialSpecialVouchers, ...INITIAL_VOUCHERS];
-    } catch { return [...initialSpecialVouchers, ...INITIAL_VOUCHERS]; }
+    // The database (fin_vouchers) is the source; the built-in special vouchers are shown until it loads.
+    return [...buildKahramaaDepositVouchers(), ...buildSecurityDepositGuaranteeVouchers(), ...INITIAL_VOUCHERS];
   });
-  const [receivableInvoices, setReceivableInvoices] = useState<ReceivableInvoice[]>(() => {
-    if (typeof window === "undefined") return INITIAL_RECEIVABLE_INVOICES;
-    try {
-      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`);
-      return saved ? JSON.parse(saved) : INITIAL_RECEIVABLE_INVOICES;
-    } catch { return INITIAL_RECEIVABLE_INVOICES; }
-  });
+  const [receivableInvoices, setReceivableInvoices] = useState<ReceivableInvoice[]>(() => INITIAL_RECEIVABLE_INVOICES);
   const [legalReceivables, setLegalReceivables] = useState<LegalReceivable[]>(INITIAL_LEGAL_RECEIVABLES);
   const [payrollSyncs, setPayrollSyncs] = useState<PayrollSyncRun[]>(INITIAL_PAYROLL_SYNCS);
   const [bankClearances, setBankClearances] = useState<BankClearanceEntry[]>(INITIAL_BANK_CLEARANCES);
   const [bankReconciliations, setBankReconciliations] = useState<BankReconciliationRecord[]>(INITIAL_BANK_RECONCILIATIONS);
   const [reconciliationStatements, setReconciliationStatements] = useState<ReconciliationStatementArchive[]>(INITIAL_RECON_STATEMENTS);
-  const [cashBookEntries, setCashBookEntries] = useState<CashBookEntry[]>(() => {
-    if (typeof window === "undefined") return INITIAL_CASH_BOOK;
-    try {
-      const saved = localStorage.getItem(`${FINANCE_STORAGE_KEY}-cashbook`);
-      return saved ? JSON.parse(saved) : INITIAL_CASH_BOOK;
-    } catch { return INITIAL_CASH_BOOK; }
-  });
+  const [cashBookEntries, setCashBookEntries] = useState<CashBookEntry[]>(() => INITIAL_CASH_BOOK);
   const [pettyCashEntries, setPettyCashEntries] = useState<PettyCashEntry[]>(INITIAL_PETTY_CASH);
 
   // Client records are kept in the database (app_documents); the browser copy is only a cache. See db-collection.ts.
@@ -880,19 +684,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   useDbCollection("fin.reconciliation_statements", reconciliationStatements, setReconciliationStatements, r => r.id, "Reconciliation statements");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  // Sync to local storage on changes
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(vouchers));
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-journals`, JSON.stringify(journalEntries));
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-ar`, JSON.stringify(receivableInvoices));
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-ap`, JSON.stringify(payableInvoices));
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-cashbook`, JSON.stringify(cashBookEntries));
-      } catch { /* ignore */ }
-    }
-  }, [vouchers, journalEntries, receivableInvoices, payableInvoices, cashBookEntries]);
-
   // Track IDs already merged from Supabase to avoid duplicates
   const seenVoucherIds = useRef(new Set<string>());
 
@@ -904,28 +695,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         .from("fin_vouchers")
         .select("*, fin_voucher_lines(account_code, account_name, debit_amount, credit_amount)")
         .order("voucher_date", { ascending: false });
-
-      // Recovery: vouchers created in this browser before write-through existed are uploaded (with their accounts)
-      // if the database does not have them. Vouchers are matched by number, so a voucher is only uploaded once.
-      if (!vError && vData && typeof window !== "undefined") {
-        try {
-          const dbNos = new Set(vData.map((r: any) => r.voucher_number));
-          const localV: any[] = JSON.parse(localStorage.getItem(`${FINANCE_STORAGE_KEY}-vouchers`) || "[]");
-          const candidates = localV.filter(v =>
-            typeof v?.id === "string" && v.id.startsWith("vch-") && v.voucher_no &&
-            !dbNos.has(v.voucher_no) && Number(v.amount) > 0 && v.debit_code && v.credit_code
-          );
-          let saved = 0;
-          for (const v of candidates) {
-            const res = await persistVoucher(v);
-            if (res.ok) saved++;
-            else console.warn(`[FinanceStore] voucher ${v.voucher_no} not uploaded: ${res.error}`);
-          }
-          if (saved) toast.info(`${saved} voucher(s) from this browser saved to the database.`);
-        } catch (recErr) {
-          console.warn("[FinanceStore] voucher recovery:", recErr);
-        }
-      }
 
       if (!vError && vData) {
         // NOTE: the old on-load "normalize 115,250 -> 96,820" rewrite of backend rows was removed: silently
@@ -1572,9 +1341,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           }
 
           const combined = [...pdcVouchers, ...kahramaaVouchers, ...sdGuaranteeVouchers, ...nonPdcVouchers];
-          try {
-            localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(combined));
-          } catch {}
           return combined;
         });
       } else {
@@ -1657,7 +1423,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // 5. Reload localStorage caches for AP/AR/Cashbook (vouchers are maintained authoritatively above)
+      // 5. Payroll syncs from the database
       // 5. Pull fin_payroll_syncs from Supabase & ensure GL reflection
       try {
         const { data: pSyncData } = await supabase
@@ -1727,31 +1493,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       try {
         const dcRows = await loadCollectionRows("voucher.date_corrections");
         if (dcRows && typeof window !== "undefined") {
-          const merged = { ...INITIAL_DATE_CORRECTIONS, ...Object.fromEntries(dcRows.map(r => [r.id, r.data])) };
-          localStorage.setItem(VOUCHER_DATE_CORRECTIONS_KEY, JSON.stringify(merged));
+          dateCorrectionsMem = { ...INITIAL_DATE_CORRECTIONS, ...Object.fromEntries(dcRows.map(r => [r.id, r.data])) } as Record<string, VoucherDateCorrection>;
         }
       } catch { /* cache only */ }
 
       // 5b. Receivable invoices: the database is the record. Invoices that exist only in this browser (created before
       // write-through was in place) are uploaded first, then the list is read back from the database.
       try {
-        const localAr: ReceivableInvoice[] = JSON.parse(localStorage.getItem(`${FINANCE_STORAGE_KEY}-ar`) || "[]");
-        const dbAr = await loadReceivables();
-        let unsaved: ReceivableInvoice[] = [];
-        if (Array.isArray(localAr) && localAr.length) {
-          const known = new Set((dbAr || []).map(i => i.invoice_no));
-          const missing = localAr.filter(i => i.invoice_no && !known.has(i.invoice_no));
-          if (missing.length) {
-            const res = await persistReceivables(missing as any);
-            if (res.ok) toast.info(`${missing.length} receivable invoice(s) saved from this browser to the database.`);
-            else {
-              unsaved = missing;
-              toast.error(`Could not save ${missing.length} receivable invoice(s) from this browser: ${res.error}`);
-            }
-          }
-        }
-        const fresh = dbAr ?? (await loadReceivables());
-        if (fresh) setReceivableInvoices([...(fresh as ReceivableInvoice[]), ...unsaved]);
+        const fresh = await loadReceivables();
+        if (fresh) setReceivableInvoices(fresh as ReceivableInvoice[]);
       } catch (arErr) {
         console.warn("[FinanceStore] receivable invoice sync:", arErr);
       }
@@ -1992,12 +1742,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       setVouchers(freshVouchers);
       setJournalEntries([]);
 
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(freshVouchers));
-          localStorage.setItem(`${FINANCE_STORAGE_KEY}-journals`, JSON.stringify([]));
-        } catch {}
-      }
 
       const totalAmt = freshVouchers
         .filter(v => v.voucher_no.startsWith("VCH-PDC-RCV-"))
@@ -2091,30 +1835,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
     // Listen for cross-module voucher sync events (e.g. from procurement AP payments)
     const handleVoucherSync = () => {
-      const STORE_KEY_V = `${FINANCE_STORAGE_KEY}-vouchers`;
-      const STORE_KEY_AP = `${FINANCE_STORAGE_KEY}-ap`;
-      try {
-        const vData: FinanceVoucher[] = JSON.parse(localStorage.getItem(STORE_KEY_V) || "[]");
-        setVouchers(prev => {
-          const existingNos = new Set(prev.map(v => v.voucher_no));
-          const newOnes = vData.filter(v => !existingNos.has(v.voucher_no));
-          return newOnes.length ? [...newOnes, ...prev] : prev;
-        });
-        const apData: PayableInvoice[] = JSON.parse(localStorage.getItem(STORE_KEY_AP) || "[]");
-        setPayableInvoices(prev => {
-          const existingNos = new Set(prev.map(i => i.invoice_no));
-          const newOnes = apData.filter(i => !existingNos.has(i.invoice_no));
-          const updates = apData.filter(i => existingNos.has(i.invoice_no));
-          let merged = newOnes.length ? [...newOnes, ...prev] : [...prev];
-          if (updates.length) {
-            merged = merged.map(i => {
-              const u = updates.find(u => u.invoice_no === i.invoice_no);
-              return u ? { ...i, status: u.status } : i;
-            });
-          }
-          return merged;
-        });
-      } catch { /* ignore */ }
       // Trigger a full supabase re-fetch so any PDC/deposit written by any module
       // (pdc-manager, leasing, cashier) shows up in GL immediately
       void fetchSupabaseData(false);
@@ -2692,9 +2412,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           ...(updatedLines ? { lines: updatedLines } : {}),
         };
       });
-      try {
-        localStorage.setItem(`${FINANCE_STORAGE_KEY}-vouchers`, JSON.stringify(updated));
-      } catch {}
       return updated;
     });
 

@@ -45,6 +45,7 @@ import { ReceivablesLegal } from "./finance/receivables";
 import { PayrollSync } from "./finance/payroll-sync";
 import { formatDDMMMYYYY, formatDateDDMMYYYY } from "@/lib/date-utils";
 import { postVoucher } from "@/lib/finance/posting-engine";
+import { isPostingPeriodClosed, refreshPostingPeriods } from "@/lib/finance/posting-periods";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
 import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/proc-invoices-api";
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
@@ -69,20 +70,10 @@ import { PdcMaturityForecastReportSubModule } from "@/components/finance/pdc-mat
 import { LeaseExpiryVacancyReportSubModule } from "@/components/finance/lease-expiry-vacancy-report";
 import { UtilityRechargeRecoverySubModule } from "@/components/finance/utility-recharge-report";
 import { SecurityDepositReconciliationSubModule } from "@/components/finance/security-deposit-reconciliation-report";
+import { useDbCollection } from "@/lib/db-collection";
 
 export function isDateInClosedPostingPeriod(dateStr?: string): { closed: boolean; periodName?: string } {
-  if (!dateStr || typeof window === "undefined") return { closed: false };
-  try {
-    const ym = dateStr.split("T")[0].slice(0, 7);
-    const raw = localStorage.getItem("pms_posting_periods_cache");
-    if (!raw) return { closed: false };
-    const list = JSON.parse(raw) as Array<{ period_name: string; status: string }>;
-    const found = list.find(p => p.period_name === ym);
-    if (found && found.status === "Closed") {
-      return { closed: true, periodName: ym };
-    }
-  } catch {}
-  return { closed: false };
+  return isPostingPeriodClosed(dateStr);
 }
 export interface FinanceModuleProps {
   role: "admin" | "prop-mgr" | "finance" | "cashier";
@@ -482,12 +473,7 @@ function FinancialYearSubModule() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "FY 2026-2027", start_date: "2026-01-01", end_date: "2026-12-31", status: "Active" as const });
 
-  useEffect(() => { load(); }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined" && data.length > 0) {
-      try { localStorage.setItem("pms_posting_periods_cache", JSON.stringify(data)); } catch {}
-    }
-  }, [data]);
+  useEffect(() => { load(); void refreshPostingPeriods(); }, []);
   async function load() {
     setLoading(true);
     try {
@@ -4121,14 +4107,6 @@ function PayableInvoiceSubModule() {
       try {
         if (typeof markPayableInvoicePaid === "function") {
           markPayableInvoicePaid(payTarget.invoice_no);
-        }
-        const finApRaw = localStorage.getItem("zyno-pms-finance-data-v1-ap");
-        if (finApRaw) {
-          const finApList: any[] = JSON.parse(finApRaw);
-          const updatedFin = finApList.map((f: any) =>
-            f.invoice_no === payTarget.invoice_no ? { ...f, status: "Paid" } : f
-          );
-          localStorage.setItem("zyno-pms-finance-data-v1-ap", JSON.stringify(updatedFin));
         }
       } catch {}
 
@@ -10959,10 +10937,8 @@ function NoteStatusBadge({ status }: { status: NoteStatus }) {
 // GL: Dr. 22100001 Trade Payables / Cr. 51xxx Expense (reversal)
 // ─────────────────────────────────────────────────────────────────────────────
 function DebitNoteSubModule() {
-  const LS_KEY = "fin_debit_notes";
-  const [notes, setNotes] = useState<DebitNote[]>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
-  });
+  const [notes, setNotes] = useState<DebitNote[]>([]);
+  useDbCollection<DebitNote>("fin.debit_notes", notes, setNotes, n => n.id, "Debit notes");
   const [showModal, setShowModal] = useState(false);
   const [viewNote, setViewNote] = useState<DebitNote | null>(null);
   const [saving, setSaving] = useState(false);
@@ -10980,8 +10956,7 @@ function DebitNoteSubModule() {
   });
 
   function save(updatedNotes: DebitNote[]) {
-    setNotes(updatedNotes);
-    localStorage.setItem(LS_KEY, JSON.stringify(updatedNotes));
+    setNotes(updatedNotes); // written to the database by useDbCollection
   }
 
   function handlePartyTypeChange(type: "Vendor" | "Customer") {
@@ -11377,10 +11352,8 @@ function DebitNoteSubModule() {
 // GL: Dr. 41xxx Revenue (or expense) / Cr. 13100001 Trade Receivables
 // ─────────────────────────────────────────────────────────────────────────────
 function CreditNoteSubModule() {
-  const LS_KEY = "fin_credit_notes";
-  const [notes, setNotes] = useState<CreditNote[]>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
-  });
+  const [notes, setNotes] = useState<CreditNote[]>([]);
+  useDbCollection<CreditNote>("fin.credit_notes", notes, setNotes, n => n.id, "Credit notes");
   const [showModal, setShowModal] = useState(false);
   const [viewNote, setViewNote] = useState<CreditNote | null>(null);
   const [saving, setSaving] = useState(false);
@@ -11397,8 +11370,7 @@ function CreditNoteSubModule() {
   });
 
   function save(updatedNotes: CreditNote[]) {
-    setNotes(updatedNotes);
-    localStorage.setItem(LS_KEY, JSON.stringify(updatedNotes));
+    setNotes(updatedNotes); // written to the database by useDbCollection
   }
 
   function handlePartyTypeChange(type: "Vendor" | "Tenant") {

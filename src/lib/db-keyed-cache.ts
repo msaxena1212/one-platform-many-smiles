@@ -1,13 +1,15 @@
 /**
  * Browser-storage records written through to the database.
  *
- * Several screens keep their records in localStorage under a fixed key. Those writes are the client's data, so this
- * module makes every write to a registered key also go to the `app_documents` table (store = the key name):
+ * Several screens keep their records in localStorage under a fixed key, or under a key family (one key per vendor,
+ * per invoice, per HRMS master category). Those writes are the client's data, so this module makes every write to a
+ * registered key also go to the `app_documents` table (store = the full key name):
  *
  *  - Start-up: the database copy of each key is loaded into localStorage. Records that exist only in this browser are
  *    uploaded. Where a record exists in the database, the database version wins.
  *  - Every later write: changed records are upserted and removed records are soft-deleted, straight away.
  *  - Arrays store one row per item (id = item.id, or a stable key). Objects store one row per entry.
+ *    Plain values (numbers, strings) store one row under a fixed id.
  *
  * The write is intercepted at Storage.setItem, so every existing call site is covered without being edited.
  */
@@ -15,7 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
 import { toast } from "sonner";
 
-/** localStorage keys whose records are client data. Finance keys with their own hooks are not listed here. */
+/** Exact localStorage keys whose records are client data. Finance keys with their own hooks are not listed here. */
 export const DB_BACKED_KEYS: string[] = [
   // Leasing
   "pms_renewed_leases_v1",
@@ -50,14 +52,33 @@ export const DB_BACKED_KEYS: string[] = [
   "zyno_pms_import_batches_history_v2",
   "zyno_pms_import_audit_trail_v2",
   "pms_security_audit_logs",
+  // Organisation branding used on printed documents
+  "pms_organization_document_branding_v3",
+];
+
+/**
+ * Key families: every key starting with one of these prefixes is client data.
+ * Session and UI-only keys (demo session, impersonation, theme) are deliberately not listed.
+ */
+export const DB_BACKED_PREFIXES: string[] = [
+  "partial_paid_", // amount already paid against an AP invoice, keyed by invoice id
+  "vendor_advance_", // vendor advance balance, keyed by vendor id
+  "vendor_adv_util_", // vendor advance utilisation history, keyed by vendor id
 ];
 
 type Row = { id: string; data: unknown };
 const MAP_MARK = "__entry";
+const SCALAR_ID = "__scalar";
 
 const snapshots = new Map<string, Map<string, string>>();
 const hydrated = new Set<string>();
+const failed = new Set<string>();
 let suppress = false;
+let startupDone = false;
+
+export function isDbBackedKey(key: string): boolean {
+  return DB_BACKED_KEYS.includes(key) || DB_BACKED_PREFIXES.some(p => key.startsWith(p));
+}
 
 function hash(s: string): string {
   let h = 5381;
@@ -74,7 +95,7 @@ function itemId(x: any): string {
   return "h:" + hash(JSON.stringify(x));
 }
 
-/** Turn a stored value into rows. Arrays: one row per item. Objects: one row per entry. */
+/** Turn a stored value into rows. Arrays: one row per item. Objects: one row per entry. Plain values: one row. */
 function toRows(value: unknown): Row[] {
   const seen = new Map<string, Row>();
   if (Array.isArray(value)) {
@@ -83,12 +104,15 @@ function toRows(value: unknown): Row[] {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       seen.set(k, { id: k, data: { [MAP_MARK]: true, v } });
     }
+  } else if (value !== null && value !== undefined) {
+    seen.set(SCALAR_ID, { id: SCALAR_ID, data: { [MAP_MARK]: true, v: value } });
   }
   return [...seen.values()];
 }
 
 /** Rebuild the stored value from rows. Map entries are recognised by their marker. */
 function fromRows(rows: Row[]): unknown {
+  if (rows.length === 1 && rows[0].id === SCALAR_ID) return (rows[0].data as any)?.v;
   const isMap = rows.some(r => r.data && typeof r.data === "object" && (r.data as any)[MAP_MARK] === true);
   if (isMap) {
     const out: Record<string, unknown> = {};
@@ -151,17 +175,51 @@ async function syncKey(key: string, value: unknown): Promise<void> {
   snapshots.set(key, snap);
 }
 
-/** Load the database copy of one key into localStorage, uploading any browser-only records first. */
-export async function hydrateKey(key: string): Promise<void> {
-  const { data, error } = await supabase
-    .from("app_documents")
-    .select("id, data")
-    .eq("store", key)
-    .eq("deleted", false)
-    .limit(20000);
-  if (error || !data) return; // keep the browser copy; retry on the next start
+const PAGE = 1000;
 
-  const dbRows = data as Row[];
+/** Every live row of one key family, read in pages. Returns null when the read fails. */
+async function loadFamilyRows(prefix: string): Promise<Map<string, Row[]> | null> {
+  const pattern = prefix.replace(/[\\_%]/g, m => "\\" + m) + "%";
+  const byStore = new Map<string, Row[]>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("app_documents")
+      .select("store, id, data")
+      .like("store", pattern)
+      .eq("deleted", false)
+      .order("store", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) return null;
+    const batch = (data || []) as (Row & { store: string })[];
+    for (const r of batch) {
+      const list = byStore.get(r.store) ?? [];
+      list.push({ id: r.id, data: r.data });
+      byStore.set(r.store, list);
+    }
+    if (batch.length < PAGE) break;
+  }
+  return byStore;
+}
+
+/**
+ * Load the database copy of one key into localStorage, uploading any browser-only records first.
+ * `preloaded` is the key's live rows when a family read already fetched them.
+ */
+export async function hydrateKey(key: string, preloaded?: Row[]): Promise<void> {
+  let dbRows: Row[];
+  if (preloaded) {
+    dbRows = preloaded;
+  } else {
+    const { data, error } = await supabase
+      .from("app_documents")
+      .select("id, data")
+      .eq("store", key)
+      .eq("deleted", false)
+      .limit(20000);
+    if (error || !data) { failed.add(key); return; } // keep the browser copy; retry on the next start
+    dbRows = data as Row[];
+  }
   snapshots.set(key, new Map(dbRows.map(r => [r.id, JSON.stringify(r.data)])));
 
   let localValue: unknown = null;
@@ -171,7 +229,7 @@ export async function hydrateKey(key: string): Promise<void> {
   } catch { localValue = null; }
 
   const dbIds = new Set(dbRows.map(r => r.id));
-  const localRows = localValue ? toRows(localValue) : [];
+  const localRows = localValue !== null && localValue !== undefined ? toRows(localValue) : [];
   const localOnly = localRows.filter(r => !dbIds.has(r.id));
   if (localOnly.length) {
     const err = await upsert(key, localOnly);
@@ -192,6 +250,39 @@ export async function hydrateKey(key: string): Promise<void> {
 
 let installed = false;
 
+/** Start-up: find every key that is client data (listed, or in a family), then load and upload each. */
+async function startup(): Promise<void> {
+  const keys = new Set<string>(DB_BACKED_KEYS);
+  const preloaded = new Map<string, Row[]>();
+
+  for (const prefix of DB_BACKED_PREFIXES) {
+    const family = await loadFamilyRows(prefix);
+    if (family) {
+      for (const [store, rows] of family) {
+        keys.add(store);
+        preloaded.set(store, rows);
+      }
+      // Browser-only keys of this family: they have no database rows, so they are uploaded below.
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) {
+          keys.add(k);
+          if (!preloaded.has(k)) preloaded.set(k, []);
+        }
+      }
+    } else {
+      // The read failed: keep the browser copies of this family and do not write over the database.
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) failed.add(k);
+      }
+    }
+  }
+
+  await Promise.all([...keys].map(k => hydrateKey(k, preloaded.get(k))));
+  startupDone = true;
+}
+
 /** Start-up: intercept writes to the registered keys and load their database copies. Safe to call more than once. */
 export function installDbBackedKeys(): void {
   if (installed || typeof window === "undefined") return;
@@ -200,14 +291,21 @@ export function installDbBackedKeys(): void {
   const original = Storage.prototype.setItem;
   Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
     original.call(this, key, value);
-    if (suppress || this !== window.localStorage || !DB_BACKED_KEYS.includes(key)) return;
-    if (!hydrated.has(key)) return; // the start-up load will merge this browser copy
+    if (suppress || this !== window.localStorage || !isDbBackedKey(key)) return;
+    if (failed.has(key)) return; // database read failed: do not write over it
+    if (!hydrated.has(key)) {
+      // Not loaded yet: the start-up load will merge this browser copy.
+      if (!startupDone) return;
+      // A key first created after start-up: the start-up read found no database copy, so it starts empty.
+      hydrated.add(key);
+      snapshots.set(key, new Map());
+    }
     try {
       void syncKey(key, JSON.parse(value));
     } catch { /* not JSON: nothing to store */ }
   };
 
-  void Promise.all(DB_BACKED_KEYS.map(k => hydrateKey(k))).then(() => {
+  void startup().then(() => {
     window.dispatchEvent(new Event("pms_data_updated"));
   });
 }

@@ -27,6 +27,7 @@ import { ApInvoicesApi, type ProcApInvoice, type PaymentReceipt } from "@/lib/pr
 import { PaymentReceiptDialog } from "@/components/payment-receipt-dialog";
 import { ProformaInvoiceDialog } from "@/components/proforma-invoice-dialog";
 import { formatDDMMMYYYY } from "@/lib/date-utils";
+import { persistVoucher } from "@/lib/finance/finance-persistence";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type VendorContact = { id: string; vendor_id: string | number; name: string; role: string; phone?: string; email?: string; is_primary: boolean; };
@@ -54,7 +55,7 @@ function statusVariant(s: string): "default" | "destructive" | "secondary" | "ou
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="space-y-1.5"><Label className="text-xs font-semibold">{label}</Label>{children}</div>;
 }
-function postAdvanceVoucherToGL(params: {
+async function postAdvanceVoucherToGL(params: {
   amount: number;
   vendorId: string | number;
   vendorName: string;
@@ -92,29 +93,9 @@ function postAdvanceVoucherToGL(params: {
     ]
   };
 
-  try {
-    const k1 = "zyno-pms-finance-data-v1-vouchers";
-    const k2 = "zyno_finance_vouchers";
-    const existing1 = JSON.parse(localStorage.getItem(k1) || "[]");
-    const existing2 = JSON.parse(localStorage.getItem(k2) || "[]");
-    localStorage.setItem(k1, JSON.stringify([newVoucher, ...existing1]));
-    localStorage.setItem(k2, JSON.stringify([newVoucher, ...existing2]));
-  } catch (e) {
-    console.error("Failed to store voucher locally", e);
-  }
-
-  // Also record in supabase if available
-  try {
-    apiDb.from("fin_vouchers").insert({
-      voucher_number: pvNo,
-      voucher_date: vDate,
-      voucher_type: "Payment Voucher",
-      reference_no: refNo,
-      description: `Vendor Advance Disbursement to ${params.vendorName}`,
-      total_amount: params.amount,
-      status: "POSTED"
-    }).then(() => {});
-  } catch {}
+  // Write the voucher and its lines to the database (the browser copy above is only a cache)
+  const saved = await persistVoucher(newVoucher);
+  if (!saved.ok) toast.error(`Advance voucher ${pvNo} was NOT saved to the database: ${saved.error}`);
 
   window.dispatchEvent(new CustomEvent("finance_vouchers_updated"));
   window.dispatchEvent(new CustomEvent("ap_invoices_updated"));
@@ -551,16 +532,8 @@ async function handleSaveInvoice() {
           ]
         };
 
-        try {
-          const k1 = "zyno-pms-finance-data-v1-vouchers";
-          const k2 = "zyno_finance_vouchers";
-          const e1 = JSON.parse(localStorage.getItem(k1) || "[]");
-          const e2 = JSON.parse(localStorage.getItem(k2) || "[]");
-          localStorage.setItem(k1, JSON.stringify([advanceSettlementVoucher, ...e1]));
-          localStorage.setItem(k2, JSON.stringify([advanceSettlementVoucher, ...e2]));
-        } catch (e) {
-          console.error("Failed to store settlement voucher", e);
-        }
+        const savedSettle = await persistVoucher(advanceSettlementVoucher);
+        if (!savedSettle.ok) toast.error(`Advance settlement voucher was NOT saved to the database: ${savedSettle.error}`);
       }
 
       // If there is also cash/bank disbursement, post the cash/bank leg (Dr. 22100001 / Cr. 12000001 Bank or 12100001 Cash)
@@ -594,16 +567,8 @@ async function handleSaveInvoice() {
           ]
         };
 
-        try {
-          const k1 = "zyno-pms-finance-data-v1-vouchers";
-          const k2 = "zyno_finance_vouchers";
-          const e1 = JSON.parse(localStorage.getItem(k1) || "[]");
-          const e2 = JSON.parse(localStorage.getItem(k2) || "[]");
-          localStorage.setItem(k1, JSON.stringify([paymentVoucher, ...e1]));
-          localStorage.setItem(k2, JSON.stringify([paymentVoucher, ...e2]));
-        } catch (e) {
-          console.error("Failed to store payment voucher", e);
-        }
+        const savedPay = await persistVoucher(paymentVoucher);
+        if (!savedPay.ok) toast.error(`Payment voucher was NOT saved to the database: ${savedPay.error}`);
       }
 
       await ApInvoicesApi.update(paymentTargetInv.id, {

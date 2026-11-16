@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { apiDb } from "@/lib/api-db";
 import { createAccountingEvent } from "@/lib/finance/accounting-event-engine";
+import { loadDbValues, dbValueGet, dbValueSet } from "@/lib/db-kv";
 
 // ── Types ─────────────────────────────────────────────────────────────
 export interface HrmsCompany {
@@ -237,21 +238,22 @@ const PAYSLIP_EXTRA_COLUMNS = ['leave_salary', 'employer_contributions', 'overti
 const PAYROLL_LOCKED_STATUSES = ['Approved', 'Paid', 'Locked'];
 export const isPayrollCycleLocked = (status?: string) => PAYROLL_LOCKED_STATUSES.includes(String(status || ''));
 
+// These HRMS values are kept in the database (see db-kv.ts). Nothing is read from or written to the browser.
+const HRMS_DB_VALUE_KEYS = [
+  HRMS_EMP_LEAVE_META_KEY,
+  HRMS_LEAVE_APPS_LOCAL_KEY,
+  HRMS_PAYROLL_CYCLES_LOCAL_KEY,
+  HRMS_PAYSLIPS_LOCAL_KEY,
+  HRMS_PAYROLL_OVERRIDES_LOCAL_KEY,
+];
+if (typeof window !== 'undefined') void loadDbValues(HRMS_DB_VALUE_KEYS);
+
 function readLocalJson<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
+  return dbValueGet<T>(key, fallback);
 }
 
 function writeLocalJson<T>(key: string, value: T): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  dbValueSet<T>(key, value);
 }
 
 export function getEmployeeLeaveMetaMap(): Record<string, any> {
