@@ -181,7 +181,7 @@ export function useMergedCoa(base: CoaOption[]): CoaOption[] {
       void fetchLiveCoaOptions(force).then((o) => {
         if (alive) setLive(o);
       });
-    load(false);
+    load(true); // always read the live chart on mount so new sub-ledgers appear without a reload
     const onUpdate = () => load(true);
     window.addEventListener(COA_UPDATED_EVENT, onUpdate);
     return () => {

@@ -1552,15 +1552,40 @@ export async function fetchPropertyCoaMappings() {
 }
 
 export async function fetchCoaSLByGL(glIdOrCode: string) {
-  const query = supabase.from('coa_sl').select('*');
-  if (glIdOrCode.length === 36 && glIdOrCode.includes('-')) {
-    query.eq('gl_id', glIdOrCode);
-  } else {
-    query.eq('gl_code', glIdOrCode);
-  }
-  const { data, error } = await query.order('code');
+  // Sub-ledgers come from fin_coa_accounts, the chart the ledger posts to (the old coa_sl table was never kept in step).
+  const { data: gl, error: glErr } = await supabase
+    .from('fin_coa_accounts')
+    .select('id, account_code, account_type')
+    .eq('account_code', glIdOrCode)
+    .maybeSingle();
+  if (glErr) throw glErr;
+  if (!gl) return [] as CoaSL[];
+  const { data, error } = await supabase
+    .from('fin_coa_accounts')
+    .select('id, account_code, account_name, account_type, class_name, group_name')
+    .eq('parent_account_id', gl.id)
+    .eq('account_level', 'SL')
+    .eq('is_active', true)
+    .order('account_code')
+    .limit(20000);
   if (error) throw error;
-  return data as CoaSL[];
+  const debit = (t: string) => t === 'ASSET' || t === 'EXPENSE';
+  return (data ?? []).map((r: any) => ({
+    id: String(r.id),
+    gl_id: String(gl.id),
+    class_id: '',
+    group_id: '',
+    type_id: '',
+    gl_code: String(gl.account_code),
+    class_code: r.class_name ?? '',
+    group_code: r.group_name ?? '',
+    type_code: r.account_type ?? '',
+    code: String(r.account_code),
+    name: String(r.account_name),
+    normal_balance: debit(String(r.account_type)) ? 'Debit' : 'Credit',
+    is_control_account: false,
+    is_posting_account: true,
+  })) as unknown as CoaSL[];
 }
 
 export async function createInventoryPart(payload: Omit<InventoryPart, 'id'>) {
