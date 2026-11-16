@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ExcelImportEmbedded } from "@/components/excel-import-embedded";
@@ -1243,8 +1244,8 @@ export function UnitsModule({ role }: UnitsModuleProps) {
                             {isVacant ? "Past Contract Period" : "Contract Period"}
                           </div>
                           <div className="mt-0.5 text-sm font-medium">
-                            {selectedUnit.contract_start_date.slice(0, 10)} →{" "}
-                            {selectedUnit.contract_end_date?.slice(0, 10) || "-"}
+                            {formatDateDDMMYYYY(selectedUnit.contract_start_date)} →{" "}
+                            {formatDateDDMMYYYY(selectedUnit.contract_end_date)}
                           </div>
                         </div>
                       )}

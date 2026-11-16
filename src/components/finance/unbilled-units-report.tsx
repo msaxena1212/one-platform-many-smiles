@@ -1089,7 +1089,7 @@ export function UnbilledUnitsReportSubModule() {
             <div className="text-right text-xs font-mono">
               <p className="font-bold">Billing Period: {effectivePeriod.label}</p>
               <p className="text-muted-foreground">
-                Generated: {new Date().toISOString().split("T")[0]}
+                Generated: {formatDateDDMMYYYY(new Date().toISOString().slice(0, 10))}
               </p>
               <p className="text-rose-600 font-bold">
                 Unbilled Units: {kpiStats.unbilledCount} (QAR{" "}

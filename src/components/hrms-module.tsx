@@ -1513,11 +1513,11 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                           {emp.last_leave_rejoining_date ? (
                             <div className="space-y-0.5">
                               <div className="font-semibold text-indigo-700 dark:text-indigo-300">
-                                Rejoined: {String(emp.last_leave_rejoining_date).slice(0, 10)}
+                                Rejoined: {formatDateDDMMYYYY(emp.last_leave_rejoining_date)}
                               </div>
                               {emp.last_leave_start_date && (
                                 <div className="text-[11px] text-muted-foreground">
-                                  Last: {String(emp.last_leave_start_date).slice(0, 10)} → {String(emp.last_leave_end_date || "").slice(0, 10)}
+                                  Last: {formatDateDDMMYYYY(emp.last_leave_start_date)} → {formatDateDDMMYYYY(emp.last_leave_end_date)}
                                 </div>
                               )}
                             </div>
@@ -1525,7 +1525,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                             <div className="space-y-0.5">
                               <div className="text-muted-foreground">No prior leave</div>
                               <div className="text-[11px] text-muted-foreground">
-                                Joined: {emp.date_of_joining ? String(emp.date_of_joining).slice(0, 10) : "—"}
+                                Joined: {formatDateDDMMYYYY(emp.date_of_joining)}
                               </div>
                             </div>
                           )}
@@ -4203,7 +4203,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                         </div>
                         <div className="p-2.5 rounded-lg border bg-card/60">
                           <span className="text-[10px] text-muted-foreground block font-medium">Date of Birth</span>
-                          <span className="font-semibold">{selectedEmployeeProfile.date_of_birth ? String(selectedEmployeeProfile.date_of_birth).slice(0, 10) : "—"}</span>
+                          <span className="font-semibold">{formatDateDDMMYYYY(selectedEmployeeProfile.date_of_birth)}</span>
                         </div>
                         <div className="p-2.5 rounded-lg border bg-card/60">
                           <span className="text-[10px] text-muted-foreground block font-medium">Mobile Number</span>
@@ -4227,7 +4227,7 @@ export function HrmsModule({ role = "admin" }: HrmsModuleProps) {
                         </div>
                         <div className="p-2.5 rounded-lg border bg-card/60">
                           <span className="text-[10px] text-muted-foreground block font-medium">Date of Joining</span>
-                          <span className="font-semibold">{selectedEmployeeProfile.date_of_joining ? String(selectedEmployeeProfile.date_of_joining).slice(0, 10) : "—"}</span>
+                          <span className="font-semibold">{formatDateDDMMYYYY(selectedEmployeeProfile.date_of_joining)}</span>
                         </div>
                         <div className="p-2.5 rounded-lg border bg-card/60">
                           <span className="text-[10px] text-muted-foreground block font-medium">Employment Type</span>

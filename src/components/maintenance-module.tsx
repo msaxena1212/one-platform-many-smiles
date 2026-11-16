@@ -2210,7 +2210,7 @@ export function MaintenanceModule({ role }: MaintenanceModuleProps) {
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground font-mono">
-                              {ticket.created_at ? ticket.created_at.slice(0, 10) : "2026-09-04"}
+                              {formatDateDDMMYYYY(ticket.created_at || "2026-09-04")}
                             </TableCell>
                             <TableCell>
                               <Badge className={`text-[10px] capitalize font-medium ${

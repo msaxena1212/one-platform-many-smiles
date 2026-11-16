@@ -1147,7 +1147,7 @@ export function PropertyWiseProfitAndLossSubModule() {
               P&amp;L REPORT
             </span>
             <p className="text-xs text-muted-foreground mt-1">Period: {selectedPeriod === "all" ? "Consolidated" : selectedPeriod}</p>
-            <p className="text-xs text-muted-foreground">Date: {new Date().toISOString().split("T")[0]}</p>
+            <p className="text-xs text-muted-foreground">Date: {formatDateDDMMYYYY(new Date().toISOString().slice(0, 10))}</p>
           </div>
         </div>
 

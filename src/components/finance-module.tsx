@@ -477,7 +477,7 @@ function ContraEntrySubModule() {
               <TableRow><TableCell colSpan={5} className="text-center py-6 text-xs text-muted-foreground">No contra entries yet.</TableCell></TableRow>
             ) : contraRows.map((v, i) => (
               <TableRow key={`${v.voucher_no}-${i}`} className="text-xs">
-                <TableCell className="font-mono">{String(v.date || "").slice(0, 10)}</TableCell>
+                <TableCell className="font-mono">{formatDateDDMMYYYY(v.date)}</TableCell>
                 <TableCell className="font-mono">{v.voucher_no}</TableCell>
                 <TableCell>{v.credit}</TableCell>
                 <TableCell>{v.debit}</TableCell>

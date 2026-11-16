@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -141,7 +142,7 @@ export function ProformaInvoiceDialog({
               {invoice.invoice_number || invoice.invoice_no || "PROFORMA-INV"}
             </h2>
             <p className="text-xs text-slate-300 mt-1">
-              Issue Date: <strong className="text-white">{invoice.invoice_date || invoice.date || new Date().toISOString().slice(0, 10)}</strong>
+              Issue Date: <strong className="text-white">{formatDateDDMMYYYY(invoice.invoice_date || invoice.date || new Date())}</strong>
               {invoice.due_date && <> &bull; Due Date: <strong className="text-indigo-200">{invoice.due_date}</strong></>}
             </p>
           </div>
@@ -358,7 +359,7 @@ export function ProformaInvoiceDialog({
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-white border shadow-sm shrink-0">
                   <QRCodeSVG 
-                    value={`ALAMEEN|CR:CR-90821-QA|TIN:TAX-300912-QA|INV:${invoice.invoice_number || invoice.invoice_no}|TOTAL:${totalAmount}|DATE:${invoice.invoice_date || invoice.date || new Date().toISOString().slice(0, 10)}`}
+                    value={`ALAMEEN|CR:CR-90821-QA|TIN:TAX-300912-QA|INV:${invoice.invoice_number || invoice.invoice_no}|TOTAL:${totalAmount}|DATE:${formatDateDDMMYYYY(invoice.invoice_date || invoice.date || new Date())}`}
                     size={68}
                     level="M"
                   />

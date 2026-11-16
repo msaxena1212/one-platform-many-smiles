@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1346,7 +1347,7 @@ export function DepositsGuarantees() {
                     )}
                     {paginated.map(d => (
                       <TableRow key={String(d.id)} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-xs text-muted-foreground">{d.settled_at ? d.settled_at.split("T")[0] : (d.lease_start_date || d.created_at || "2026-08-01")}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{formatDateDDMMYYYY(d.settled_at || d.lease_start_date || d.created_at || "2026-08-01")}</TableCell>
                         <TableCell className="text-xs font-medium">
                           <div className="flex items-center gap-1.5">
                             <span>{d.deposit_type}</span>

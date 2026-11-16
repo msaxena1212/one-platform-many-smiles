@@ -1,3 +1,4 @@
+import { formatDateDDMMYYYY } from "@/lib/date-utils";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -359,7 +360,7 @@ function DocumentBrandingPage() {
                 <div className="text-right text-xs text-slate-500 space-y-0.5">
                   {branding.crNumber && <div><strong>CR No:</strong> {branding.crNumber}</div>}
                   {branding.taxNumber && <div><strong>Tax ID:</strong> {branding.taxNumber}</div>}
-                  <div><strong>Issue Date:</strong> {new Date().toLocaleDateString("en-GB")}</div>
+                  <div><strong>Issue Date:</strong> {formatDateDDMMYYYY(new Date())}</div>
                   <div className="font-mono text-slate-700 font-semibold pt-1">DOC-2026-08492</div>
                 </div>
               </div>
