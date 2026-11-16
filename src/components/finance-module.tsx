@@ -44,6 +44,7 @@ import { DepositsGuarantees } from "./finance/deposits-guarantees";
 import { ReceivablesLegal } from "./finance/receivables";
 import { PayrollSync } from "./finance/payroll-sync";
 import { formatDDMMMYYYY, formatDateDDMMYYYY } from "@/lib/date-utils";
+import { exportFinanceReport, type ExportableReport } from "@/lib/finance/report-export";
 import { postVoucher } from "@/lib/finance/posting-engine";
 import { isPostingPeriodClosed, refreshPostingPeriods } from "@/lib/finance/posting-periods";
 import { useFinanceStore, type ReceivableInvoice } from "@/lib/finance/finance-store";
@@ -271,6 +272,7 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
         )}
 
         {/* Content */}
+        {EXPORTABLE_REPORTS.includes(activeKey as ExportableReport) && <ReportExportButton report={activeKey as ExportableReport} />}
         <ScrollArea className="flex-1">
           <div className="p-6">
             <FinanceSubModuleRouter subKey={activeKey} role={role} />
@@ -282,6 +284,32 @@ export function FinanceModule({ role, collectionContext }: FinanceModuleProps) {
 }
 
 // ── Sub-Module Router ─────────────────────────────────────────────────────────
+
+const EXPORTABLE_REPORTS: ExportableReport[] = ["trial_balance", "profit_and_loss", "balance_sheet", "general_ledger"];
+
+/** Excel export for the report on screen. Built from the same figures the screen shows. */
+function ReportExportButton({ report }: { report: ExportableReport }) {
+  const { trialBalanceDetailed, profitAndLossReport, balanceSheetReport, allLedgerTransactions } = useFinanceStore();
+  return (
+    <div className="flex justify-end px-6 pt-4">
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        onClick={() =>
+          exportFinanceReport(report, {
+            trialBalance: trialBalanceDetailed as any,
+            profitAndLoss: profitAndLossReport as any,
+            balanceSheet: balanceSheetReport as any,
+            ledger: allLedgerTransactions as any,
+          })
+        }
+      >
+        <Download className="h-4 w-4" /> Export Excel
+      </Button>
+    </div>
+  );
+}
 
 function FinanceSubModuleRouter({ subKey, role }: { subKey: string; role: FinanceModuleProps["role"] }) {
   switch (subKey) {

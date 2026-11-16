@@ -707,6 +707,15 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       coa.set(String(a.account_code), { name: a.account_name, type: LEDGER_TYPE[a.account_type] ?? DIGIT_TYPE[String(a.account_code).charAt(0)] ?? "Assets" });
     }
 
+    // The property and unit of a line come from the voucher text (every client voucher names its unit, e.g. "(SD70-11)").
+    const UNIT_RE = /([A-Z]{2,4}d{2,3}-[A-Za-z0-9]+)/;
+    const unitOf = (text: string): string | undefined => UNIT_RE.exec(text)?.[1];
+    const propertyOf = (text: string): string | undefined => {
+      const unit = unitOf(text);
+      if (unit) return resolvePropertyFromUnitCode(unit);
+      const named = /Al Ameen Residence d{2}/.exec(text);
+      return named?.[0];
+    };
     const rows: Array<Record<string, any>> = [];
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
@@ -735,6 +744,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           credit: Number(r.credit_amount) || 0,
           source: "Voucher",
           description: String(r.description || r.fin_vouchers.description || ""),
+          unit_ref: unitOf(String(r.description || "") + " " + String(r.fin_vouchers.description || "")),
+          property_name: propertyOf(String(r.description || "") + " " + String(r.fin_vouchers.description || "")),
         };
       })
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
